@@ -1,0 +1,1434 @@
+{
+  "info": {
+    "name": "Console API - Meta WhatsApp Business",
+    "description": "Complete API collection for Console API - WhatsApp Business API management service\n\n**Authentication:**\n- x-api-key: Your API key from onboarding\n- x-company-key: Your company key from onboarding\n\n**Base URL:** {{base_url}}",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "console-api-v1"
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "1. Company Management",
+      "item": [
+        {
+          "name": "Onboard Company",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('company_id', response.data.id);",
+                  "    pm.environment.set('api_key', response.data.api_key);",
+                  "    pm.environment.set('company_key', response.data.company_key);",
+                  "    pm.environment.set('webhook_verify_token', response.data.webhook_verify_token);",
+                  "    console.log('✅ Saved: company_id, api_key, company_key');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Test Company\",\n  \"email\": \"test@company.com\",\n  \"phone\": \"+1234567890\",\n  \"business_id\": \"meta_business_id\",\n  \"webhook_url\": \"https://webhook.site/unique-url\",\n  \"initial_credit\": 100.00\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/companies",
+              "host": ["{{base_url}}"],
+              "path": ["companies"]
+            },
+            "description": "Onboard a new company. Returns api_key and company_key - save these!"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Company by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/companies/{{company_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["companies", "{{company_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Companies",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/companies",
+              "host": ["{{base_url}}"],
+              "path": ["companies"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Company",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Company Name\",\n  \"webhook_url\": \"https://new-webhook.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/companies/{{company_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["companies", "{{company_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "2. WABA & Phone Numbers",
+      "item": [
+        {
+          "name": "Create WABA Account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('waba_id', response.data.id);",
+                  "    console.log('✅ Saved waba_id:', response.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waba_id\": \"{{meta_waba_id}}\",\n  \"name\": \"Primary WABA\",\n  \"currency\": \"USD\",\n  \"timezone\": \"America/New_York\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/waba",
+              "host": ["{{base_url}}"],
+              "path": ["waba"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All WABA Accounts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/waba",
+              "host": ["{{base_url}}"],
+              "path": ["waba"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Phone Number",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('phone_number_id', response.data.id);",
+                  "    console.log('✅ Saved phone_number_id:', response.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{meta_phone_number_id}}\",\n  \"display_phone_number\": \"+1234567890\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/waba/{{waba_id}}/phone-numbers",
+              "host": ["{{base_url}}"],
+              "path": ["waba", "{{waba_id}}", "phone-numbers"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Phone Numbers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/waba/phone-numbers",
+              "host": ["{{base_url}}"],
+              "path": ["waba", "phone-numbers"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sync Phone Numbers from Meta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/waba/{{waba_id}}/sync-phone-numbers",
+              "host": ["{{base_url}}"],
+              "path": ["waba", "{{waba_id}}", "sync-phone-numbers"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "3. Templates",
+      "item": [
+        {
+          "name": "Sync Templates from Meta",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waba_id\": \"{{waba_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/templates/sync",
+              "host": ["{{base_url}}"],
+              "path": ["templates", "sync"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Template",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"waba_id\": \"{{waba_id}}\",\n  \"name\": \"welcome_message\",\n  \"language\": \"en_US\",\n  \"category\": \"UTILITY\",\n  \"components\": [\n    {\n      \"type\": \"BODY\",\n      \"text\": \"Welcome {{1}}! Your verification code is {{2}}.\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/templates",
+              "host": ["{{base_url}}"],
+              "path": ["templates"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/templates?status=APPROVED",
+              "host": ["{{base_url}}"],
+              "path": ["templates"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "APPROVED"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Template by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/templates/{{template_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["templates", "{{template_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "4. Messages",
+      "item": [
+        {
+          "name": "Send Text Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"+1234567890\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Hello! This is a test message from Console API.\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/messages/send",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "send"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Template Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"+1234567890\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"welcome_message\",\n    \"language\": \"en_US\",\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"John\"\n          },\n          {\n            \"type\": \"text\",\n            \"text\": \"123456\"\n          }\n        ]\n      }\n    ]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/messages/send",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "send"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Image Message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"+1234567890\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://example.com/image.jpg\",\n    \"caption\": \"Check out this image!\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/messages/send",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "send"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Mark Message as Read",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"message_id\": \"wamid.xxx\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/messages/mark-read",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "mark-read"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Messages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages?status=delivered&direction=outbound",
+              "host": ["{{base_url}}"],
+              "path": ["messages"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "delivered"
+                },
+                {
+                  "key": "direction",
+                  "value": "outbound"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Message Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/messages/stats",
+              "host": ["{{base_url}}"],
+              "path": ["messages", "stats"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "5. Webhooks",
+      "item": [
+        {
+          "name": "Create Webhook",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('webhook_id', response.data.id);",
+                  "    console.log('✅ Saved webhook_id:', response.data.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://webhook.site/unique-url\",\n  \"secret\": \"my_webhook_secret\",\n  \"events\": [\n    \"message.sent\",\n    \"message.delivered\",\n    \"message.read\",\n    \"message.failed\",\n    \"message.received\"\n  ],\n  \"max_retries\": 3,\n  \"timeout_ms\": 10000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/webhooks",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Webhooks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/webhooks",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Webhook Logs",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/webhooks/{{webhook_id}}/logs?limit=100",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks", "{{webhook_id}}", "logs"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "100"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Webhook",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\",\n  \"max_retries\": 5\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/webhooks/{{webhook_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["webhooks", "{{webhook_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "6. Credits",
+      "item": [
+        {
+          "name": "Get Credit Balance",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/credits/balance",
+              "host": ["{{base_url}}"],
+              "path": ["credits", "balance"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Credits",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": 100.00,\n  \"description\": \"Top-up credits\",\n  \"created_by\": \"admin@company.com\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/credits/add",
+              "host": ["{{base_url}}"],
+              "path": ["credits", "add"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Transaction History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "x-company-key",
+                "value": "{{company_key}}",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/credits/transactions?limit=50",
+              "host": ["{{base_url}}"],
+              "path": ["credits", "transactions"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "7. Contacts",
+      "item": [
+        {
+          "name": "Create Contact",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number\": \"+1234567890\",\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"attributes\": {\n    \"city\": \"New York\",\n    \"age\": \"30\"\n  },\n  \"notes\": \"VIP customer\",\n  \"tag_ids\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts",
+              "host": ["{{base_url}}"],
+              "path": ["contacts"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Contacts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["contacts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "is_valid",
+                  "value": "true",
+                  "disabled": true
+                },
+                {
+                  "key": "tag_ids",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "list_ids",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Contact by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Contact",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.updated@example.com\",\n  \"attributes\": {\n    \"city\": \"Los Angeles\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Contact",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Preview XLSX Import",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/import/preview",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "import", "preview"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Import Contacts from XLSX",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                },
+                {
+                  "key": "list_name",
+                  "value": "My Contact List",
+                  "type": "text"
+                },
+                {
+                  "key": "phone_column",
+                  "value": "phone",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "name_column",
+                  "value": "name",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "email_column",
+                  "value": "email",
+                  "type": "text",
+                  "disabled": true
+                },
+                {
+                  "key": "tag_ids",
+                  "value": "",
+                  "type": "text",
+                  "disabled": true
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/import",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "import"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Tags to Contact",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tag_ids\": [\"tag-id-1\", \"tag-id-2\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/:id/tags",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", ":id", "tags"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove Tags from Contact",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tag_ids\": [\"tag-id-1\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/:id/tags",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", ":id", "tags"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create Tag",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"VIP\",\n  \"color\": \"#FF5733\",\n  \"description\": \"VIP customers\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/tags",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "tags"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Tags",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/tags",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "tags"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Tag",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"VIP Updated\",\n  \"color\": \"#00FF00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/tags/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "tags", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Tag",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/tags/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "tags", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Lists",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/lists",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "lists"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get List by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/lists/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "lists", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Contacts in List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/lists/:id/contacts?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "lists", ":id", "contacts"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "is_valid",
+                  "value": "true",
+                  "disabled": true
+                }
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete List",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/contacts/lists/:id",
+              "host": ["{{base_url}}"],
+              "path": ["contacts", "lists", ":id"],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "8. Campaigns",
+      "item": [
+        {
+          "name": "Create Campaign",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('campaign_id', response.data.id);",
+                  "    console.log('✅ Saved: campaign_id');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Welcome Campaign\",\n  \"template_id\": \"{{template_id}}\",\n  \"contact_filters\": {\n    \"tag_ids\": [],\n    \"list_ids\": [],\n    \"is_valid\": true\n  },\n  \"parameter_mapping\": {\n    \"1\": \"name\",\n    \"2\": \"city\"\n  },\n  \"scheduled_type\": \"now\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/campaigns",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Campaigns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns?page=1&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "status",
+                  "value": "draft",
+                  "disabled": true
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Campaign by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Campaign",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Welcome Campaign Updated\",\n  \"scheduled_type\": \"scheduled\",\n  \"scheduled_at\": \"2025-12-20T10:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Start Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}/start",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}", "start"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pause Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}/pause",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}", "pause"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Resume Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}/resume",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}", "resume"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}", "cancel"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Test Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"test_phone_number\": \"+1234567890\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}/test",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}", "test"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Campaign Stats",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}/stats",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}", "stats"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Upload Media for Campaign",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": ""
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/campaigns/media/upload",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "media", "upload"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Campaign",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/{{campaign_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["campaigns", "{{campaign_id}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "9. Health Check",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/../health",
+              "host": ["{{base_url}}"],
+              "path": ["..", "health"]
+            },
+            "description": "Check if the service is healthy"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:3001/v1",
+      "type": "string"
+    }
+  ]
+}

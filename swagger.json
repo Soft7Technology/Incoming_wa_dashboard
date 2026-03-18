@@ -1,0 +1,1004 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Console API - Meta WhatsApp Business",
+    "version": "1.0.0",
+    "description": "Complete API for managing Meta WhatsApp Business services including company onboarding, WABA management, templates, messaging, webhooks, and credits.",
+    "contact": {
+      "name": "Surefy Support",
+      "email": "support@surefy.com"
+    },
+    "license": {
+      "name": "ISC"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001/v1",
+      "description": "Development server"
+    },
+    {
+      "url": "https://api.yourdomain.com/v1",
+      "description": "Production server"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": [],
+      "CompanyKeyAuth": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "API key from company onboarding"
+      },
+      "CompanyKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-company-key",
+        "description": "Secure company key from onboarding (HMAC SHA256 hash)"
+      }
+    },
+    "schemas": {
+      "Company": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "api_key": {
+            "type": "string"
+          },
+          "company_key": {
+            "type": "string",
+            "description": "Only returned during onboarding"
+          },
+          "webhook_url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["active", "inactive", "suspended"]
+          },
+          "credit_balance": {
+            "type": "number"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ApiResponse": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object"
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string"
+          },
+          "error": {
+            "type": "object"
+          },
+          "meta": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/companies": {
+      "post": {
+        "tags": ["Company"],
+        "summary": "Onboard new company",
+        "description": "Create a new company account. Returns API key and company key (save these - won't be shown again!)",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "email"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Test Company"
+                  },
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "contact@company.com"
+                  },
+                  "phone": {
+                    "type": "string",
+                    "example": "+1234567890"
+                  },
+                  "business_id": {
+                    "type": "string",
+                    "example": "meta_business_id"
+                  },
+                  "webhook_url": {
+                    "type": "string",
+                    "example": "https://company.com/webhook"
+                  },
+                  "initial_credit": {
+                    "type": "number",
+                    "example": 100.00
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Company created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": ["Company"],
+        "summary": "Get all companies",
+        "responses": {
+          "200": {
+            "description": "List of companies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/companies/{id}": {
+      "get": {
+        "tags": ["Company"],
+        "summary": "Get company by ID",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Company details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Company not found"
+          }
+        }
+      },
+      "put": {
+        "tags": ["Company"],
+        "summary": "Update company",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "webhook_url": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": ["active", "inactive", "suspended"]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Company updated"
+          }
+        }
+      }
+    },
+    "/messages/send": {
+      "post": {
+        "tags": ["Messages"],
+        "summary": "Send a message",
+        "description": "Send text, template, image, video, document, or audio message",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["phone_number_id", "to", "type"],
+                "properties": {
+                  "phone_number_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "to": {
+                    "type": "string",
+                    "example": "+1234567890"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["text", "template", "image", "video", "document", "audio"]
+                  },
+                  "text": {
+                    "type": "object",
+                    "properties": {
+                      "body": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "template": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "language": {
+                        "type": "string"
+                      },
+                      "components": {
+                        "type": "array"
+                      }
+                    }
+                  }
+                }
+              },
+              "examples": {
+                "text": {
+                  "summary": "Text message",
+                  "value": {
+                    "phone_number_id": "uuid",
+                    "to": "+1234567890",
+                    "type": "text",
+                    "text": {
+                      "body": "Hello!"
+                    }
+                  }
+                },
+                "template": {
+                  "summary": "Template message",
+                  "value": {
+                    "phone_number_id": "uuid",
+                    "to": "+1234567890",
+                    "type": "template",
+                    "template": {
+                      "name": "welcome_message",
+                      "language": "en_US",
+                      "components": []
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Message sent successfully"
+          },
+          "400": {
+            "description": "Insufficient credits or bad request"
+          }
+        }
+      }
+    },
+    "/credits/balance": {
+      "get": {
+        "tags": ["Credits"],
+        "summary": "Get credit balance",
+        "responses": {
+          "200": {
+            "description": "Credit balance",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "company_id": {
+                          "type": "string"
+                        },
+                        "balance": {
+                          "type": "number"
+                        },
+                        "last_transaction": {
+                          "type": "object"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contacts": {
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Create new contact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["phone_number"],
+                "properties": {
+                  "phone_number": { "type": "string", "example": "+1234567890" },
+                  "name": { "type": "string", "example": "John Doe" },
+                  "email": { "type": "string", "example": "john@example.com" },
+                  "attributes": { "type": "object", "example": { "city": "New York", "age": "30" } },
+                  "notes": { "type": "string" },
+                  "tag_ids": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Contact created successfully" }
+        }
+      },
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Get all contacts",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "is_valid", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "tag_ids", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated tag IDs" },
+          { "name": "list_ids", "in": "query", "schema": { "type": "string" }, "description": "Comma-separated list IDs" }
+        ],
+        "responses": {
+          "200": { "description": "Contacts retrieved successfully" }
+        }
+      }
+    },
+    "/contacts/{id}": {
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Get contact by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Contact retrieved successfully" }
+        }
+      },
+      "put": {
+        "tags": ["Contacts"],
+        "summary": "Update contact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "email": { "type": "string" },
+                  "attributes": { "type": "object" },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Contact updated successfully" }
+        }
+      },
+      "delete": {
+        "tags": ["Contacts"],
+        "summary": "Delete contact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Contact deleted successfully" }
+        }
+      }
+    },
+    "/contacts/import/preview": {
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Preview XLSX file before import",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Preview generated successfully" }
+        }
+      }
+    },
+    "/contacts/import": {
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Import contacts from XLSX file",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file", "list_name"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "list_name": { "type": "string", "example": "My Contact List" },
+                  "phone_column": { "type": "string", "example": "phone" },
+                  "name_column": { "type": "string", "example": "name" },
+                  "email_column": { "type": "string", "example": "email" },
+                  "tag_ids": { "type": "string", "description": "Comma-separated tag IDs" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Contacts imported successfully" }
+        }
+      }
+    },
+    "/contacts/{id}/tags": {
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Add tags to contact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tag_ids"],
+                "properties": {
+                  "tag_ids": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Tags added successfully" }
+        }
+      },
+      "delete": {
+        "tags": ["Contacts"],
+        "summary": "Remove tags from contact",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tag_ids"],
+                "properties": {
+                  "tag_ids": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Tags removed successfully" }
+        }
+      }
+    },
+    "/contacts/tags": {
+      "post": {
+        "tags": ["Contacts"],
+        "summary": "Create new tag",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "example": "VIP" },
+                  "color": { "type": "string", "example": "#FF5733" },
+                  "description": { "type": "string", "example": "VIP customers" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Tag created successfully" }
+        }
+      },
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Get all tags",
+        "responses": {
+          "200": { "description": "Tags retrieved successfully" }
+        }
+      }
+    },
+    "/contacts/tags/{id}": {
+      "put": {
+        "tags": ["Contacts"],
+        "summary": "Update tag",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "color": { "type": "string" },
+                  "description": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Tag updated successfully" }
+        }
+      },
+      "delete": {
+        "tags": ["Contacts"],
+        "summary": "Delete tag",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Tag deleted successfully" }
+        }
+      }
+    },
+    "/contacts/lists": {
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Get all contact lists",
+        "responses": {
+          "200": { "description": "Lists retrieved successfully" }
+        }
+      }
+    },
+    "/contacts/lists/{id}": {
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Get contact list by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "List retrieved successfully" }
+        }
+      },
+      "delete": {
+        "tags": ["Contacts"],
+        "summary": "Delete contact list",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "List deleted successfully" }
+        }
+      }
+    },
+    "/contacts/lists/{id}/contacts": {
+      "get": {
+        "tags": ["Contacts"],
+        "summary": "Get contacts in a list",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "is_valid", "in": "query", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": { "description": "Contacts retrieved successfully" }
+        }
+      }
+    },
+    "/campaigns": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Create new campaign",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "template_id", "contact_filters"],
+                "properties": {
+                  "name": { "type": "string", "example": "Welcome Campaign" },
+                  "template_id": { "type": "string" },
+                  "contact_filters": {
+                    "type": "object",
+                    "properties": {
+                      "tag_ids": { "type": "array", "items": { "type": "string" } },
+                      "list_ids": { "type": "array", "items": { "type": "string" } },
+                      "is_valid": { "type": "boolean" },
+                      "attributes": { "type": "object" }
+                    }
+                  },
+                  "parameter_mapping": {
+                    "type": "object",
+                    "example": { "1": "name", "2": "city" }
+                  },
+                  "media_uploads": {
+                    "type": "object",
+                    "properties": {
+                      "header": { "type": "string" }
+                    }
+                  },
+                  "scheduled_type": {
+                    "type": "string",
+                    "enum": ["now", "scheduled"],
+                    "example": "now"
+                  },
+                  "scheduled_at": {
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2025-12-20T10:00:00Z"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Campaign created successfully" }
+        }
+      },
+      "get": {
+        "tags": ["Campaigns"],
+        "summary": "Get all campaigns",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["draft", "scheduled", "running", "completed", "failed", "cancelled"] } }
+        ],
+        "responses": {
+          "200": { "description": "Campaigns retrieved successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}": {
+      "get": {
+        "tags": ["Campaigns"],
+        "summary": "Get campaign by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Campaign retrieved successfully" }
+        }
+      },
+      "put": {
+        "tags": ["Campaigns"],
+        "summary": "Update campaign",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string" },
+                  "scheduled_type": { "type": "string", "enum": ["now", "scheduled"] },
+                  "scheduled_at": { "type": "string", "format": "date-time" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Campaign updated successfully" }
+        }
+      },
+      "delete": {
+        "tags": ["Campaigns"],
+        "summary": "Delete campaign",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Campaign deleted successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}/start": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Start campaign",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Campaign started successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}/pause": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Pause campaign",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Campaign paused successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}/resume": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Resume campaign",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Campaign resumed successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}/cancel": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Cancel campaign",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Campaign cancelled successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}/test": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Test campaign with a test number",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["test_phone_number"],
+                "properties": {
+                  "test_phone_number": { "type": "string", "example": "+1234567890" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Test message sent successfully" }
+        }
+      }
+    },
+    "/campaigns/{id}/stats": {
+      "get": {
+        "tags": ["Campaigns"],
+        "summary": "Get campaign statistics",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Statistics retrieved successfully" }
+        }
+      }
+    },
+    "/campaigns/media/upload": {
+      "post": {
+        "tags": ["Campaigns"],
+        "summary": "Upload media for campaign",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Media uploaded successfully" }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": ["Health"],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Company",
+      "description": "Company management and onboarding"
+    },
+    {
+      "name": "WABA",
+      "description": "WhatsApp Business Account management"
+    },
+    {
+      "name": "Templates",
+      "description": "Message template management"
+    },
+    {
+      "name": "Messages",
+      "description": "Send and manage messages"
+    },
+    {
+      "name": "Webhooks",
+      "description": "Webhook management"
+    },
+    {
+      "name": "Credits",
+      "description": "Credit management"
+    },
+    {
+      "name": "Contacts",
+      "description": "Contact, tag, and list management"
+    },
+    {
+      "name": "Campaigns",
+      "description": "Campaign management and execution"
+    },
+    {
+      "name": "Health",
+      "description": "Health check endpoint"
+    }
+  ]
+}
