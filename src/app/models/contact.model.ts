@@ -5,9 +5,9 @@ class ContactModel extends BaseModel {
     super('contacts');
   }
 
-  async findByPhone(companyId: string, phoneNumber: string) {
+  async findByPhone(companyId: string,userId:string, phoneNumber: string) {
     return this.query()
-      .where({ company_id: companyId, phone_number: phoneNumber })
+      .where({ company_id: companyId,user_id:userId, phone_number: phoneNumber })
       .whereNull('deleted_at')
       .first();
   }
@@ -82,9 +82,9 @@ class ContactModel extends BaseModel {
     return this.query().insert(contacts).returning('*');
   }
 
-  async bulkUpsert(companyId: string, contacts: any[]) {
+  async bulkUpsert(companyId: string,userId:string, contacts: any[]) {
     const promises = contacts.map(async (contact) => {
-      const existing = await this.findByPhone(companyId, contact.phone_number);
+      const existing = await this.findByPhone(companyId,userId, contact.phone_number);
       if (existing) {
         return this.update(existing.id, {
           ...contact,
@@ -96,9 +96,10 @@ class ContactModel extends BaseModel {
     return Promise.all(promises);
   }
 
-  findWithFilters(companyId: string, filters: any) {
+  findWithFilters(companyId: string,userId:string, filters: any) {
     let query = this.query()
       .where({ company_id: companyId })
+      .andWhere({user_id:userId})
       .whereNull('deleted_at');
 
     if (filters.is_valid !== undefined) {

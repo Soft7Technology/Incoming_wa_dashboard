@@ -19,7 +19,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'Phone number is required' });
     }
 
-    const contact = await ContactService.createContact(req.companyId!, {
+    const contact = await ContactService.createContact(req.companyId!,req.userId!, {
       phone_number,
       name,
       email,
@@ -45,7 +45,7 @@ class ContactController {
       limit: req.query.limit,
     };
 
-    const contacts = await ContactService.getContacts(req.companyId!, filters);
+    const contacts = await ContactService.getContacts(req.companyId!,req.userId!, filters);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -116,6 +116,8 @@ class ContactController {
     const file = req.file;
     const { list_name, phone_column, name_column, email_column, tag_ids } = req.body;
 
+    console.log("Request file",req.body)
+
     if (!file) {
       throw new HTTP400Error({ message: 'XLSX file is required' });
     }
@@ -136,7 +138,7 @@ class ContactController {
     fs.renameSync(file.path, filePath);
 
     // Queue the import job instead of processing synchronously
-    const importJob = await ContactService.queueContactImport(req.companyId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(req.companyId!,req.userId!, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,

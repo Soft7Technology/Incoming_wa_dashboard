@@ -9,6 +9,10 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
 import * as fs from 'fs';
+import campaignModel from '../models/campaign.model';
+import { v4 as uuidv4 } from "uuid";
+
+
 
 interface CreateCampaignData {
   name: string;
@@ -30,7 +34,7 @@ class CampaignService {
   /**
    * Create a new campaign
    */
-  async createCampaign(companyId: string, data: CreateCampaignData) {
+  async createCampaign(companyId: string,userId:string, data: CreateCampaignData) {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
     if (!template || template.company_id !== companyId) {
@@ -42,7 +46,7 @@ class CampaignService {
     }
 
     // Get contacts based on filters
-    const contacts = await ContactService.getContactsByFilters(companyId, data.contact_filters || {});
+    const contacts = await ContactService.getContactsByFilters(companyId,userId, data.contact_filters || {});
     const contactList = await contacts;
 
     if (contactList.length === 0) {
@@ -68,6 +72,7 @@ class CampaignService {
     // Create campaign
     const campaign = await CampaignModel.create({
       company_id: companyId,
+      user_id:userId,
       phone_number_id: data.phone_number_id,
       template_id: data.template_id,
       name: data.name,
@@ -171,6 +176,7 @@ class CampaignService {
       `campaign-${campaignId}`,
       {
         campaignId: campaignId,
+        userId: campaign.user_id,
         companyId: campaign.company_id,
       },
       {
@@ -194,10 +200,10 @@ class CampaignService {
     if (!campaign) return;
 
     // Dynamic batch sizing configuration
-    let batchSize = 10; // Initial batch size
+    let batchSize = 200; // Initial batch size
     const minBatchSize = 2; // Minimum batch size
-    const maxBatchSize = 50; // Maximum batch size
-    const delayBetweenBatches = 2000; // Base delay: 2 seconds between batches
+    const maxBatchSize = 500; // Maximum batch size
+    const delayBetweenBatches = 2; // Base delay: 2 seconds between batches
 
     // Resource thresholds
     const cpuThresholdHigh = 80; // % - Reduce batch size if CPU > 80%
@@ -338,9 +344,12 @@ class CampaignService {
         campaignMessage.template_variables,
         campaign.media_uploads
       );
+      const messageUUID = uuidv4();
 
       // // Send message via MessageService
       const message = await MessageService.sendMessage({
+        messageUUID,
+        user_id: campaign.user_id,
         company_id: campaign.company_id,
         campaign_id: campaign.id,
         phone_number_id: campaign.phone_number_id,
@@ -384,7 +393,7 @@ class CampaignService {
    */
   private buildTemplatePayload(template: any, variables: Record<string, any>, mediaUploads: any[] = []) {
     const components = [];
-    console.log('Building template payload with variables:', variables,template,mediaUploads)
+    console.log('Building template payload with variables:', variables, template, mediaUploads)
 
     // Process template components
     if (template.components) {
@@ -542,20 +551,26 @@ class CampaignService {
     }
 
     if (campaign.status !== 'paused') {
+      //campaign status update to running
       throw new HTTP400Error({ message: 'Only paused campaigns can be resumed' });
     }
 
-    // Re-queue campaign execution
-    await campaignExecutionQueue.add(
-      `campaign-${campaignId}`,
-      {
-        campaignId,
-        companyId: campaign.company_id,
-      },
-      {
-        jobId: campaignId,
-      }
-    );
+    await CampaignModel.updateStatus(campaignId, 'running');
+
+    //Execute Campaign
+    this.executeCampaign(campaignId)
+
+    // // Re-queue campaign execution
+    // await campaignExecutionQueue.add(
+    //   `campaign-${campaignId}`,
+    //   {
+    //     campaignId,
+    //     companyId: campaign.company_id,
+    //   },
+    //   {
+    //     jobId: campaignId,
+    //   }
+    // );
 
     return {
       message: 'Campaign queued for resumption successfully',
@@ -592,9 +607,13 @@ class CampaignService {
     // Build template payload
     const templatePayload = this.buildTemplatePayload(template, variables, campaign.media_uploads);
 
+    const messageUUID = uuidv4();
+
     // Send test message
     const message = await MessageService.sendMessage({
+      messageUUID,
       company_id: campaign.company_id,
+      user_id: campaign.user_id,
       campaign_id: campaign.id,
       phone_number_id: campaign.phone_number_id,
       to: testPhoneNumber,
@@ -663,6 +682,41 @@ class CampaignService {
   }
 
   /**
+   * Campaign Button Click Rate
+   */
+  async buttonClickRateInfo(campaignId:string,page?:number,pageSize?:number){
+    const campaign = await CampaignModel.findById(campaignId)
+    if(!campaign){
+      throw new HTTP404Error({ message: 'Campaign not found' });
+    }
+
+    const messageInfo = await CampaignMessageModel.buttonClickRateInfo(campaignId,page,pageSize)
+    return messageInfo
+  }
+
+  /**
+   * Failure Stats
+   */
+  async failureMessageStats(campaignId:string){
+    const campaign = await CampaignModel.findById(campaignId)
+    if(!campaign){
+      throw new HTTP404Error({ message: 'Campaign not found' });
+    }
+    const failureStats = await CampaignMessageModel.failureMessageStats(campaignId)
+    return failureStats
+  }
+
+  async failureMessageInfo(campaignId:string,error:any,page?:number,pageSize?:number){
+    const campaign = await CampaignModel.findById(campaignId)
+    if(!campaign){
+      throw new HTTP404Error({ message: 'Campaign not found' });
+    }
+    const failureStats = await CampaignMessageModel.failureMessageInfo(campaignId,error,page,pageSize)
+    return failureStats
+  }
+
+
+  /**
    * Get campaign statistics
    */
   async getCampaignStats(campaignId: string) {
@@ -683,11 +737,11 @@ class CampaignService {
       read_count: stats.read_count,
       failed_count: stats.failed_count,
       invalid_numbers_count: campaign.invalid_numbers_count,
-      total_cost: campaign.total_cost,
+      total_cost: stats.total_cost,
       scheduled_at: campaign.scheduled_at,
       started_at: campaign.started_at,
       completed_at: campaign.completed_at,
-      // detailed_stats: stats,
+      detailed_stats: stats,
     };
   }
 

@@ -1,13 +1,17 @@
 import Redis from 'ioredis';
 
 const redisConfig = {
-  host: process.env.REDIS_HOST || '13.202.117.242',
+  host: process.env.REDIS_HOST || '127.0.0.1',
   port: parseInt(process.env.REDIS_PORT || '6379'),
-  password: process.env.REDIS_PASSWORD || "tyi+kvWLmuO9x8n4CpJB6TPTQCR5qZ6VnnI3X1PPyoRSXyUxeMgiRVml5Lgyzlr38peHwbySFnZlYMIl",
+  password: process.env.REDIS_PASSWORD || "Soft72026",
   db: parseInt(process.env.REDIS_DB || '0'),
   maxRetriesPerRequest: null, // Required for BullMQ
   enableReadyCheck: false,
 };
+
+
+
+
 
 export const redisConnection = new Redis(redisConfig);
 

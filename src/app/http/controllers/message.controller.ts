@@ -4,6 +4,7 @@ import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 
 class MessageController {
   /**
@@ -11,14 +12,16 @@ class MessageController {
    * Send a message
    */
   sendMessage = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number_id, to, type, text, template, image, video, document, audio, context, campaign_id } = req.body;
+    const { phone_number_id, to, type, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
     }
 
     const message = await MessageService.sendMessage({
+      messageUUID: uuidv4(),
       company_id: req.companyId!,
+      user_id: req.userId!,
       campaign_id: campaign_id || undefined,
       phone_number_id,
       to,
@@ -29,6 +32,11 @@ class MessageController {
       video,
       document,
       audio,
+      interactive,
+      location,
+      contacts,
+      sticker,
+      reaction,
       context,
     });
 
@@ -170,6 +178,9 @@ class MessageController {
    */
   bulkSendMessages = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { messages } = req.body;
+
+
+    console.log("Bulk send messages request received", messages);
 
     if (!messages || !Array.isArray(messages)) {
       throw new HTTP400Error({ message: 'messages array is required' });

@@ -33,7 +33,7 @@ export async function seed(knex: Knex): Promise<void> {
   });
 
   console.log('✅ Superadmin user created successfully!');
-  console.log('Email: accounts@surefy.co');
-  console.log('Password: Surefy@2024');
+  console.log('Email: accounts@soft7.co');
+  console.log('Password: Soft7@2026');
 }
 

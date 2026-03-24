@@ -24,12 +24,14 @@ export interface Message {
   updated_at: Date;
 }
 
-export interface SendMessageDto {
+
+export interface SendBulkMessageDto {
   company_id: string;
+  messageUUID: string;
   campaign_id: string | undefined | null;
   phone_number_id: string;
   to: string;
-  type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio';
+  type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
   text?: {
     body: string;
     preview_url?: boolean;
@@ -58,6 +60,112 @@ export interface SendMessageDto {
   audio?: {
     link?: string;
     id?: string;
+  };
+  interactive?: {
+    type: 'list' | 'button' | 'product' | 'product_list';
+    header?: {
+      type: 'text' | 'video' | 'image' | 'document';
+      text?: string;
+      video?: { id?: string; link?: string };
+      image?: { id?: string; link?: string };
+      document?: { id?: string; link?: string };
+    };
+    body?: {
+      text: string;
+    };
+    footer?: {
+      text: string;
+    };
+    action: any;
+  };
+  location?: {
+    longitude: number;
+    latitude: number;
+    name?: string;
+    address?: string;
+  };
+  contacts?: any[];
+  sticker?: {
+    link?: string;
+    id?: string;
+  };
+  reaction?: {
+    message_id: string;
+    emoji: string;
+  };
+  context?: {
+    message_id: string;
+  };
+}
+
+export interface SendMessageDto {
+  company_id: string;
+  user_id:string;
+  messageUUID: string;
+  campaign_id: string | undefined | null;
+  phone_number_id: string;
+  to: string;
+  type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
+  text?: {
+    body: string;
+    preview_url?: boolean;
+  };
+  template?: {
+    name: string;
+    language: string;
+    components?: any[];
+  };
+  image?: {
+    link?: string;
+    id?: string;
+    caption?: string;
+  };
+  video?: {
+    link?: string;
+    id?: string;
+    caption?: string;
+  };
+  document?: {
+    link?: string;
+    id?: string;
+    caption?: string;
+    filename?: string;
+  };
+  audio?: {
+    link?: string;
+    id?: string;
+  };
+  interactive?: {
+    type: 'list' | 'button' | 'product' | 'product_list';
+    header?: {
+      type: 'text' | 'video' | 'image' | 'document';
+      text?: string;
+      video?: { id?: string; link?: string };
+      image?: { id?: string; link?: string };
+      document?: { id?: string; link?: string };
+    };
+    body?: {
+      text: string;
+    };
+    footer?: {
+      text: string;
+    };
+    action: any;
+  };
+  location?: {
+    longitude: number;
+    latitude: number;
+    name?: string;
+    address?: string;
+  };
+  contacts?: any[];
+  sticker?: {
+    link?: string;
+    id?: string;
+  };
+  reaction?: {
+    message_id: string;
+    emoji: string;
   };
   context?: {
     message_id: string;
@@ -81,9 +189,11 @@ export interface MessageStatusUpdate {
 }
 
 export interface BulkSendMessageDto {
+  company_id: string;
   phone_number_id: string;
+  messageUUID: string;
   to: string;
-  type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio';
+  type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
   text?: {
     body: string;
     preview_url?: boolean;
@@ -112,6 +222,38 @@ export interface BulkSendMessageDto {
   audio?: {
     link?: string;
     id?: string;
+  };
+  interactive?: {
+    type: 'list' | 'button' | 'product' | 'product_list';
+    header?: {
+      type: 'text' | 'video' | 'image' | 'document';
+      text?: string;
+      video?: { id?: string; link?: string };
+      image?: { id?: string; link?: string };
+      document?: { id?: string; link?: string };
+    };
+    body?: {
+      text: string;
+    };
+    footer?: {
+      text: string;
+    };
+    action: any;
+  };
+  location?: {
+    longitude: number;
+    latitude: number;
+    name?: string;
+    address?: string;
+  };
+  contacts?: any[];
+  sticker?: {
+    link?: string;
+    id?: string;
+  };
+  reaction?: {
+    message_id: string;
+    emoji: string;
   };
   context?: {
     message_id: string;

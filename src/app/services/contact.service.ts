@@ -16,15 +16,16 @@ class ContactService {
   /**
    * Create a new contact
    */
-  async createContact(companyId: string, data: any) {
+  async createContact(companyId: string,userId:string, data: any) {
     // Check if contact already exists
-    const existing = await ContactModel.findByPhone(companyId, data.phone_number);
+    const existing = await ContactModel.findByPhone(companyId,userId, data.phone_number);
     if (existing) {
       throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
     }
 
     const contact = await ContactModel.create({
       company_id: companyId,
+      user_id:userId,
       phone_number: data.phone_number,
       name: data.name,
       email: data.email,
@@ -43,8 +44,8 @@ class ContactService {
   /**
    * Get all contacts for a company
    */
-  async getContacts(companyId: string, filters: any = {}) {
-    let query = ContactModel.findWithFilters(companyId, filters);
+  async getContacts(companyId: string,userId:string, filters: any = {}) {
+    let query = ContactModel.findWithFilters(companyId,userId, filters);
 
     // Filter by tags
     if (filters.tag_ids && filters.tag_ids.length > 0) {
@@ -159,6 +160,7 @@ class ContactService {
    */
   async queueContactImport(
     companyId: string,
+    userId:string,
     filePath: string,
     listName: string,
     options: {
@@ -181,6 +183,7 @@ class ContactService {
     // Create import job record in database
     const importJob = await ImportJobModel.create({
       company_id: companyId,
+      user_id:userId,
       job_type: 'contact_import',
       status: 'queued',
       file_name: path.basename(filePath),
@@ -204,6 +207,7 @@ class ContactService {
       {
         jobId: importJob.id,
         companyId,
+        userId,
         filePath,
         listName,
         options,
@@ -262,6 +266,7 @@ class ContactService {
    */
   async importContactsFromXLSX(
     companyId: string,
+    userId:string,
     filePath: string,
     listName: string,
     options: {
@@ -305,7 +310,7 @@ class ContactService {
 
       try {
         // Check if contact exists
-        let contact = await ContactModel.findByPhone(companyId, contactData.phone_number);
+        let contact = await ContactModel.findByPhone(companyId,userId, contactData.phone_number);
 
         if (contact) {
           // Update existing contact attributes
@@ -419,8 +424,8 @@ class ContactService {
   /**
    * Get contacts by filters (for campaign targeting)
    */
-  async getContactsByFilters(companyId: string, filters: any) {
-    let query = ContactModel.findWithFilters(companyId, filters);
+  async getContactsByFilters(companyId: string,userId:string, filters: any) {
+    let query = ContactModel.findWithFilters(companyId,userId, filters);
 
     // Exclude invalid numbers by default
     if (filters.exclude_invalid !== false) {

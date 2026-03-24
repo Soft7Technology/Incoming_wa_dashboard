@@ -1,26 +1,54 @@
 {
   "info": {
+    "_postman_id": "daccf1a6-9e84-4d2d-bd86-6ce802117e0a",
     "name": "Console API - Meta WhatsApp Business",
     "description": "Complete API collection for Console API - WhatsApp Business API management service\n\n**Authentication:**\n- x-api-key: Your API key from onboarding\n- x-company-key: Your company key from onboarding\n\n**Base URL:** {{base_url}}",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_exporter_id": "console-api-v1"
-  },
-  "auth": {
-    "type": "apikey",
-    "apikey": [
-      {
-        "key": "value",
-        "value": "{{api_key}}",
-        "type": "string"
-      },
-      {
-        "key": "key",
-        "value": "x-api-key",
-        "type": "string"
-      }
-    ]
+    "_exporter_id": "37091260",
+    "_collection_link": "https://go.postman.co/collection/37091260-daccf1a6-9e84-4d2d-bd86-6ce802117e0a?source=collection_link"
   },
   "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "logIn",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NzA2MTc2ODAsImV4cCI6MTc3MTIyMjQ4MH0.IshluGRpCbR7DqP5cBtewuJj3aWr5i9JANtaOI2T9JI",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "// {\r\n//     \"identifier\":\"surefy@company.com\",\r\n//     \"password\":\"Surefy@2025\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"solarmirae@company.com\",\r\n//     \"password\": \"mirae@2025\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"surefy@company.com\",\r\n//     \"password\": \"surefy@2025\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"accounts@surefy.co\",\r\n//     \"password\":\"Surefy@2024\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"greenindiaventures1@gmail.com\",\r\n//     \"password\": \"greenindia@2025\"\r\n// }\r\n\r\n\r\n// {\r\n//     \"identifier\": \"vinay@powertraccorporation.com\",\r\n//     \"password\": \"powertrac@2026\"\r\n// }\r\n\r\n\r\n// {\r\n//     \"identifier\":\"bhanuurja@gmail.com\",\r\n//     \"password\":\"bhanuurja@2026\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"accountdigipie@gmail.com\",\r\n//     \"password\": \"digipie@2026\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"youwequest@gmail.com\",\r\n//     \"password\": \"youwequest@2026\"\r\n// }\r\n\r\n// {\r\n//     \"identifier\": \"accounts@mandee.in\",\r\n//     \"password\": \"mandee@2026\"\r\n// }\r\n\r\n\r\n{\r\n    \"identifier\":\"navnit@localekart.com\",\r\n    \"password\": \"navnit@localekart2026\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{prod_Url}}/login",
+              "host": [
+                "{{prod_Url}}"
+              ],
+              "path": [
+                "login"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
     {
       "name": "1. Company Management",
       "item": [
@@ -40,13 +68,22 @@
                   "    console.log('✅ Saved: company_id, api_key, company_key');",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
           "request": {
             "auth": {
-              "type": "noauth"
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{clientAccessToken}}",
+                  "type": "string"
+                }
+              ]
             },
             "method": "POST",
             "header": [
@@ -57,12 +94,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Test Company\",\n  \"email\": \"test@company.com\",\n  \"phone\": \"+1234567890\",\n  \"business_id\": \"meta_business_id\",\n  \"webhook_url\": \"https://webhook.site/unique-url\",\n  \"initial_credit\": 100.00\n}"
+              "raw": "// {\n//   \"name\": \"Solar Mirae\",\n//   \"email\": \"solarmirae@company.com\",\n//   \"phone\": \"+919899222501\",\n//   \"business_id\": \"1372447120916992\",\n//   \"webhook_url\": \"https://webhook.site/unique-url\",\n//   \"initial_credit\": 100.00,\n//    \"user\": {\n//     \"name\": \"Solar Mirae\",\n//     \"email\": \"solarmirae@company.com\",\n//     \"password\": \"mirae@2025\"\n//   }\n// }\n\n\n// {\n//   \"name\": \"Surefy.AI\",\n//   \"email\": \"surefy@company.com\",\n//   \"phone\": \"+919899222545\",\n//   \"business_id\": \"1372447120916992\",\n//   \"webhook_url\": \"https://webhook.site/unique-url\",\n//   \"initial_credit\": 10000.00,\n//    \"user\": {\n//     \"name\": \"Surefy.AI\",\n//     \"email\": \"surefy@company.com\",\n//     \"password\": \"surefy@2025\"\n//   }\n// }\n\n\n// {\n//   \"name\": \"Powertrac Corporation\",\n//   \"email\": \"vinay@powertraccorporation.com\",\n//   \"phone\": \"982318655\",\n//   \"business_id\": \"\",\n//   \"webhook_url\": \"https://webhook.site/unique-url\",\n//   \"initial_credit\": 100.00,\n//    \"user\": {\n//     \"name\": \"BHANU URJA SOLAR GREEN ENERGY\",\n//     \"email\": \"vinay@powertraccorporation.com\",\n//     \"password\": \"powertrac@2026\"\n//   }\n// }\n\n\n\n{\n  \"name\": \"youwequest\",\n  \"email\": \"youwequest@gmail.com\",\n  \"phone\": \"8587065603\",\n  \"business_id\": \"\",\n  \"webhook_url\": \"https://webhook.site/unique-url\",\n  \"initial_credit\": 100.00,\n   \"user\": {\n    \"name\": \"youwequest\",\n    \"email\": \"youwequest@gmail.com\",\n    \"password\": \"youwequest@2026\"\n  }\n}"
             },
             "url": {
-              "raw": "{{base_url}}/companies",
-              "host": ["{{base_url}}"],
-              "path": ["companies"]
+              "raw": "{{prod_url}}/companies/",
+              "host": [
+                "{{prod_url}}"
+              ],
+              "path": [
+                "companies",
+                ""
+              ]
             },
             "description": "Onboard a new company. Returns api_key and company_key - save these!"
           },
@@ -81,8 +123,13 @@
             ],
             "url": {
               "raw": "{{base_url}}/companies/{{company_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["companies", "{{company_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "companies",
+                "{{company_id}}"
+              ]
             }
           },
           "response": []
@@ -90,6 +137,16 @@
         {
           "name": "Get All Companies",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NGQzMzYxYi1mODcyLTQxNDItOGI4OS05MjM3Y2JlMmUxNTciLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiIxOTRmNWI4Yi04ZjJlLTQ4ZmUtYjM3ZS0zNzViM2Y0YTc3OWUiLCJpYXQiOjE3NjY0NzI3NTAsImV4cCI6MTc2NzA3NzU1MH0.zc0lDbbLpk9v9-U722A1Vo1Cu8nPnDw2w3XuuyUrmDk",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [
               {
@@ -100,8 +157,12 @@
             ],
             "url": {
               "raw": "{{base_url}}/companies",
-              "host": ["{{base_url}}"],
-              "path": ["companies"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "companies"
+              ]
             }
           },
           "response": []
@@ -127,8 +188,13 @@
             },
             "url": {
               "raw": "{{base_url}}/companies/{{company_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["companies", "{{company_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "companies",
+                "{{company_id}}"
+              ]
             }
           },
           "response": []
@@ -151,11 +217,23 @@
                   "    console.log('✅ Saved waba_id:', response.data.id);",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MmNlMGNkMS01NzUyLTQ1YTAtYWQzYy1mNTEwYTg1YTNiOWMiLCJlbWFpbCI6InN1cmVmeUBjb21wYW55LmNvbSIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6ImI4OGQ3N2RhLWVlNzQtNGQ1YS1hMWFjLTUxZDRiZjY3N2U0OCIsImlhdCI6MTc2NzA5NzYxMCwiZXhwIjoxNzY3NzAyNDEwfQ.MBFEAicG0iV4lQbJSL4Z0pk0FC4w0PF_xmBTpb4ZBBA",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -170,12 +248,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"waba_id\": \"{{meta_waba_id}}\",\n  \"name\": \"Primary WABA\",\n  \"currency\": \"USD\",\n  \"timezone\": \"America/New_York\"\n}"
+              "raw": "{\n  \"waba_id\": \"3736315066672693\",\n  \"name\": \"Primary WABA\",\n  \"currency\": \"IND\",\n  \"timezone\": \"Asia/Kolkata\"\n}"
             },
             "url": {
-              "raw": "{{base_url}}/waba",
-              "host": ["{{base_url}}"],
-              "path": ["waba"]
+              "raw": "{{prod_url}}/waba/",
+              "host": [
+                "{{prod_url}}"
+              ],
+              "path": [
+                "waba",
+                ""
+              ]
             }
           },
           "response": []
@@ -183,6 +266,16 @@
         {
           "name": "Get All WABA Accounts",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NjgyOTc3NTQsImV4cCI6MTc2ODkwMjU1NH0.e-NpSAC2u61nnFSQRcvy_HpVyO5fKzY_DnGKJTfk1Sw",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [
               {
@@ -193,8 +286,12 @@
             ],
             "url": {
               "raw": "{{base_url}}/waba",
-              "host": ["{{base_url}}"],
-              "path": ["waba"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "waba"
+              ]
             }
           },
           "response": []
@@ -212,11 +309,23 @@
                   "    console.log('✅ Saved phone_number_id:', response.data.id);",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MmNlMGNkMS01NzUyLTQ1YTAtYWQzYy1mNTEwYTg1YTNiOWMiLCJlbWFpbCI6InN1cmVmeUBjb21wYW55LmNvbSIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6ImI4OGQ3N2RhLWVlNzQtNGQ1YS1hMWFjLTUxZDRiZjY3N2U0OCIsImlhdCI6MTc2NzA5NzYxMCwiZXhwIjoxNzY3NzAyNDEwfQ.MBFEAicG0iV4lQbJSL4Z0pk0FC4w0PF_xmBTpb4ZBBA",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -231,12 +340,18 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone_number_id\": \"{{meta_phone_number_id}}\",\n  \"display_phone_number\": \"+1234567890\"\n}"
+              "raw": "{\n  \"phone_number_id\": \"890901410769366\",\n  \"display_phone_number\": \"919899222545\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/waba/{{waba_id}}/phone-numbers",
-              "host": ["{{base_url}}"],
-              "path": ["waba", "{{waba_id}}", "phone-numbers"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "waba",
+                "{{waba_id}}",
+                "phone-numbers"
+              ]
             }
           },
           "response": []
@@ -244,6 +359,16 @@
         {
           "name": "Get All Phone Numbers",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NjczNDYxNzUsImV4cCI6MTc2Nzk1MDk3NX0.Cnk6aymI4MEUeC28cRgDTeTLPI80BR9-1ykhU3-mIbw",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [
               {
@@ -254,8 +379,13 @@
             ],
             "url": {
               "raw": "{{base_url}}/waba/phone-numbers",
-              "host": ["{{base_url}}"],
-              "path": ["waba", "phone-numbers"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "waba",
+                "phone-numbers"
+              ]
             }
           },
           "response": []
@@ -263,6 +393,16 @@
         {
           "name": "Sync Phone Numbers from Meta",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc3MDQxNzksImV4cCI6MTc2ODMwODk3OX0.OLm1QJILzFTk0Pmr9I8oR9CqMfEGQ0TNs1Tnu40YJoY",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -271,10 +411,62 @@
                 "type": "text"
               }
             ],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
             "url": {
               "raw": "{{base_url}}/waba/{{waba_id}}/sync-phone-numbers",
-              "host": ["{{base_url}}"],
-              "path": ["waba", "{{waba_id}}", "sync-phone-numbers"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "waba",
+                "{{waba_id}}",
+                "sync-phone-numbers"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "onboard Client",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3ZmUyYjdlNC0zNjMxLTQ3MWYtOGFhZC00ZmVjNmRiZTZmOTQiLCJlbWFpbCI6InZpbmF5QHBvd2VydHJhY2NvcnBvcmF0aW9uLmNvbSIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6ImM2ZDYxMjJjLTViZWEtNGI0NC1hOWZlLTdlZTAxNjg4NGFiNCIsImlhdCI6MTc3MDAzNzc2NCwiZXhwIjoxNzcwNjQyNTY0fQ.YARq9qQVrUzi1Z8uxhXWv5geQvrDCzpyTLQa6Zu_uMc",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n    \"waba_id\":\"1914505612431099\"\r\n}\r\n\r\n\r\n// https://consoleapinew.surefy.co/\r\n\r\n\r\n// https://consoledevapinew.surefy.co/v1/admin/waba/onboard",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/waba/onboard",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "waba",
+                "onboard"
+              ]
             }
           },
           "response": []
@@ -287,6 +479,16 @@
         {
           "name": "Sync Templates from Meta",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIwMTQ5NTkzNi01MzdiLTRhZGEtOTMyYi04Mzk3N2ZjZTAxMGUiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJiYjY3ZmY4ZC1mMDI4LTQ4OTgtYmE2Zi01OTlmMDFlNzNlYzQiLCJpYXQiOjE3NjY3NDMwMDAsImV4cCI6MTc2NzM0NzgwMH0.ZYVHCETd1xpY6C_yDa-cqeYp32cAFeRHsa7W45AAjXY",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -301,12 +503,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"waba_id\": \"{{waba_id}}\"\n}"
+              "raw": "{\n  \"waba_id\": \"0ad5051f-5b19-4c2e-b155-40e5bd1f5dac\"\n}"
             },
             "url": {
               "raw": "{{base_url}}/templates/sync",
-              "host": ["{{base_url}}"],
-              "path": ["templates", "sync"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "templates",
+                "sync"
+              ]
             }
           },
           "response": []
@@ -332,8 +539,12 @@
             },
             "url": {
               "raw": "{{base_url}}/templates",
-              "host": ["{{base_url}}"],
-              "path": ["templates"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "templates"
+              ]
             }
           },
           "response": []
@@ -341,6 +552,16 @@
         {
           "name": "Get All Templates",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MmNlMGNkMS01NzUyLTQ1YTAtYWQzYy1mNTEwYTg1YTNiOWMiLCJlbWFpbCI6InN1cmVmeUBjb21wYW55LmNvbSIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6ImI4OGQ3N2RhLWVlNzQtNGQ1YS1hMWFjLTUxZDRiZjY3N2U0OCIsImlhdCI6MTc2NzA5NzYxMCwiZXhwIjoxNzY3NzAyNDEwfQ.MBFEAicG0iV4lQbJSL4Z0pk0FC4w0PF_xmBTpb4ZBBA",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [
               {
@@ -351,8 +572,12 @@
             ],
             "url": {
               "raw": "{{base_url}}/templates?status=APPROVED",
-              "host": ["{{base_url}}"],
-              "path": ["templates"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "templates"
+              ],
               "query": [
                 {
                   "key": "status",
@@ -366,6 +591,16 @@
         {
           "name": "Get Template by ID",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NGQzMzYxYi1mODcyLTQxNDItOGI4OS05MjM3Y2JlMmUxNTciLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiIxOTRmNWI4Yi04ZjJlLTQ4ZmUtYjM3ZS0zNzViM2Y0YTc3OWUiLCJpYXQiOjE3NjY0NzI3NTAsImV4cCI6MTc2NzA3NzU1MH0.zc0lDbbLpk9v9-U722A1Vo1Cu8nPnDw2w3XuuyUrmDk",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [
               {
@@ -376,8 +611,13 @@
             ],
             "url": {
               "raw": "{{base_url}}/templates/{{template_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["templates", "{{template_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "templates",
+                "{{template_id}}"
+              ]
             }
           },
           "response": []
@@ -390,6 +630,16 @@
         {
           "name": "Send Text Message",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc2MTg0MDgsImV4cCI6MTc2ODIyMzIwOH0.XcIsNuK1pexCY7LsN-KPWcGRw6ntq9xNLUnUTEJI2_4",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -404,12 +654,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"+1234567890\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Hello! This is a test message from Console API.\"\n  }\n}"
+              "raw": "{\n  \"messaging_product\": \"whatsapp\",\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"919372597458\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"up_install\",\n    \"language\": {\n      \"code\": \"en\"\n    },\n    \"components\": [\n      {\n        \"type\": \"header\",\n        \"parameters\": [\n          {\n            \"type\": \"image\",\n            \"image\": {\n              \"id\": \"867785242513785\"\n            }\n          }\n        ]\n      },\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"Sankar\"\n          },\n          {\n            \"type\": \"text\",\n            \"text\": \"🌞 Special Offer – Go Solar with GST Discount! 💡 Get huge benefits on solar installation now: 🎁 Government subsidy up to ₹1,38,000 ☀️ Save up to ₹4,000 monthly 💰 Low down payment 📉 EMI starting at just ₹2,500 per month 🔋 30 years of free electricity guarantee 🧰 5 years of free maintenance service 🛠️ We handle everything from paperwork to installation!\"\n          }\n        ]\n      }\n    ]\n  }\n}\n"
             },
             "url": {
               "raw": "{{base_url}}/messages/send",
-              "host": ["{{base_url}}"],
-              "path": ["messages", "send"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages",
+                "send"
+              ]
             }
           },
           "response": []
@@ -417,6 +672,16 @@
         {
           "name": "Send Template Message",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyMDgxZGMzZS0zNTkzLTRmY2MtYmI1NS1iNTFiYzMwMWQwMzMiLCJlbWFpbCI6ImFjY291bnRzQG1hbmRlZS5pbiIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6IjMzMjFlMzc2LTAzNGUtNDMyNy1iYTE5LTk1Y2JhY2JkMTc1YiIsImlhdCI6MTc3Mjg3OTIwMiwiZXhwIjoxNzczNDg0MDAyfQ.ZrA-VhAQOLy7wBTs_HmHokz0UMf5HUHb7NMuC-0hwHU",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -431,12 +696,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"+1234567890\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"welcome_message\",\n    \"language\": \"en_US\",\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"John\"\n          },\n          {\n            \"type\": \"text\",\n            \"text\": \"123456\"\n          }\n        ]\n      }\n    ]\n  }\n}"
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"919372597458\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"order_v\",\n    \"language\": \"en\",\n  \"components\": [\n    {\n      \"type\": \"header\",\n      \"parameters\": [\n        {\n          \"type\": \"image\",\n          \"image\": {\n            \"id\": \"902902939403373\"\n          }\n        }\n      ]\n    },\n    {\n      \"type\": \"body\",\n      \"parameters\": [\n        {\n          \"type\": \"text\",\n          \"text\": \"Sankar\"\n        },\n        {\n          \"type\": \"text\",\n          \"text\": \"🌞 Special Offer – Go Solar with GST Discount! 💡 Get huge benefits on solar installation now: 🎁 Government subsidy up to ₹1,08,000 ☀️ Save up to ₹4,000 monthly 💰 Low down payment 📉 EMI starting at just ₹2,500 per month 🔋 30 years of free electricity guarantee 🧰 5 years of free maintenance service 🛠️ We handle everything from paperwork to installation!\"\n        }\n      ]\n    }\n  ]\n}\n\n}\n"
             },
             "url": {
-              "raw": "{{base_url}}/messages/send",
-              "host": ["{{base_url}}"],
-              "path": ["messages", "send"]
+              "raw": "{{prod_url}}/messages/send",
+              "host": [
+                "{{prod_url}}"
+              ],
+              "path": [
+                "messages",
+                "send"
+              ]
             }
           },
           "response": []
@@ -458,12 +728,17 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"+1234567890\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://example.com/image.jpg\",\n    \"caption\": \"Check out this image!\"\n  }\n}"
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"919372597458\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"https://surefy-dev.s3.ap-south-1.amazonaws.com/whatsapp-templates/subsidy.jpeg\",\n    \"caption\": \"Check out this image!\"\n  }\n}"
             },
             "url": {
               "raw": "{{base_url}}/messages/send",
-              "host": ["{{base_url}}"],
-              "path": ["messages", "send"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages",
+                "send"
+              ]
             }
           },
           "response": []
@@ -489,8 +764,13 @@
             },
             "url": {
               "raw": "{{base_url}}/messages/mark-read",
-              "host": ["{{base_url}}"],
-              "path": ["messages", "mark-read"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages",
+                "mark-read"
+              ]
             }
           },
           "response": []
@@ -508,8 +788,12 @@
             ],
             "url": {
               "raw": "{{base_url}}/messages?status=delivered&direction=outbound",
-              "host": ["{{base_url}}"],
-              "path": ["messages"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages"
+              ],
               "query": [
                 {
                   "key": "status",
@@ -527,6 +811,16 @@
         {
           "name": "Get Message Statistics",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NzMxNjA4MzEsImV4cCI6MTc3Mzc2NTYzMX0.t89OxFCdvLQsSEa23UiWAGAlZzyWd53MYpAqkM2Nqaw",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [
               {
@@ -536,9 +830,77 @@
               }
             ],
             "url": {
-              "raw": "{{base_url}}/messages/stats",
-              "host": ["{{base_url}}"],
-              "path": ["messages", "stats"]
+              "raw": "{{base_url}}/messages/stats?from_date=2026-03-10T00:00:00Z&to_date=2026-03-11T00:00:00Z&status=read&templateName=insttallation_video&page=1&pageSize=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages",
+                "stats"
+              ],
+              "query": [
+                {
+                  "key": "from_date",
+                  "value": "2026-03-10T00:00:00Z"
+                },
+                {
+                  "key": "to_date",
+                  "value": "2026-03-11T00:00:00Z"
+                },
+                {
+                  "key": "status",
+                  "value": "read"
+                },
+                {
+                  "key": "templateName",
+                  "value": "insttallation_video"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "bulk messages",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NzMyMjM4NzEsImV4cCI6MTc3MzgyODY3MX0.DVFkYWLvS6zVGaqUOE-SoOqEhNv4-hzhrhvhhuztvzY",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"messages\": [\r\n    {\r\n      \"phone_number_id\": \"977056478820018\",\r\n      \"to\": \"+919372597458\",\r\n      \"type\": \"template\",\r\n      \"messageUUID\": \"5ace80d8-5014-4e9f-b326-cfe1981b9b82\",\r\n      \"template\": {\r\n        \"name\": \"upinstallation\",\r\n        \"language\": {\r\n          \"code\": \"en\"\r\n        },\r\n        \"components\": [\r\n          {\r\n            \"type\": \"header\",\r\n            \"parameters\": [\r\n              {\r\n                \"type\": \"image\",\r\n                \"image\": {\r\n                  \"id\": \"1834599671262295\"\r\n                }\r\n              }\r\n            ]\r\n          }\r\n        ]\r\n      }\r\n    }\r\n  ]\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/messages/bulk-send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "messages",
+                "bulk-send"
+              ]
             }
           },
           "response": []
@@ -561,11 +923,23 @@
                   "    console.log('✅ Saved webhook_id:', response.data.id);",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc0NTYwNzMsImV4cCI6MTc2ODA2MDg3M30.xNvnK9LEzuPvjpQmXRy8D-pi7dBPp_gonUgAA0pXaso",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [
               {
@@ -580,12 +954,16 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"url\": \"https://webhook.site/unique-url\",\n  \"secret\": \"my_webhook_secret\",\n  \"events\": [\n    \"message.sent\",\n    \"message.delivered\",\n    \"message.read\",\n    \"message.failed\",\n    \"message.received\"\n  ],\n  \"max_retries\": 3,\n  \"timeout_ms\": 10000\n}"
+              "raw": "{\n//   \"url\": \"https://socket.surefy.co/v1/webhook/console\",\n  \"url\":\"https://unschematic-mirian-detachedly.ngrok-free.dev\",\n  \"secret\": \"my_webhook_secret\",\n  \"events\": [\n    \"message.sent\",\n    \"message.delivered\",\n    \"message.read\",\n    \"message.failed\",\n    \"message.received\"\n  ],\n  \"max_retries\": 3,\n  \"timeout_ms\": 10000\n}"
             },
             "url": {
               "raw": "{{base_url}}/webhooks",
-              "host": ["{{base_url}}"],
-              "path": ["webhooks"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks"
+              ]
             }
           },
           "response": []
@@ -603,8 +981,12 @@
             ],
             "url": {
               "raw": "{{base_url}}/webhooks",
-              "host": ["{{base_url}}"],
-              "path": ["webhooks"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks"
+              ]
             }
           },
           "response": []
@@ -622,8 +1004,14 @@
             ],
             "url": {
               "raw": "{{base_url}}/webhooks/{{webhook_id}}/logs?limit=100",
-              "host": ["{{base_url}}"],
-              "path": ["webhooks", "{{webhook_id}}", "logs"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}",
+                "logs"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -655,9 +1043,52 @@
             },
             "url": {
               "raw": "{{base_url}}/webhooks/{{webhook_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["webhooks", "{{webhook_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "webhooks",
+                "{{webhook_id}}"
+              ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "handleWebhook",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"entry\": [\r\n    {\r\n      \"id\": \"1914505612431099\",\r\n      \"changes\": [\r\n        {\r\n          \"field\": \"messages\",\r\n          \"value\": {\r\n            \"metadata\": {\r\n              \"phone_number_id\": \"868486993011711\"\r\n            },\r\n            \"messages\": [\r\n              {\r\n                \"context\": {\r\n                  \"from\": \"919899222501\",\r\n                  \"id\": \"wamid.HBgMOTE5MzcyNTk3NDU4FQIAERgSNDk3MjAxNjBBODhCMkM0OEY0AA==\"\r\n                },\r\n                \"from\": \"9372597458\",\r\n                \"id\": \"wamid.HBgMOTE5MzcyNTk3NDU4FQIAEhgWM0VCMDVGMDc2RTU0M0Y1MTkzMDUzQwA=\",\r\n                \"timestamp\": \"1766743957\",\r\n                \"type\": \"interactive\",\r\n                \"interactive\": {\r\n                  \"type\": \"list_reply\",\r\n                  \"list_reply\": {\r\n                    \"id\": \"bill_1000_2000\",\r\n                    \"title\": \"₹1,000 – ₹2,000\"\r\n                  }\r\n                }\r\n              }\r\n            ]\r\n          }\r\n        }\r\n      ]\r\n    }\r\n  ]\r\n}\r\n\r\n\r\n\r\n// // {\r\n// //     \"man\":\"boy\"\r\n// // }\r\n\r\n// {\r\n//     \"entry\":[{\"id\":\"1914505612431099\",\"changes\":[{\"value\":{\"messaging_product\":\"whatsapp\",\"metadata\":{\"display_phone_number\":\"919899222501\",\"phone_number_id\":\"868486993011711\"},\"contacts\":[{\"profile\":{\"name\":\"Parth Vichare\"},\"wa_id\":\"919372597458\"}],\"messages\":[{\"from\":\"919372597458\",\"id\":\"wamid.HBgMOTE5MzcyNTk3NDU4FQIAEhggQUMzNEY3MThFQTFBNjBCMEY2MDk3NTMxRjE0RUQwMEYA\",\"timestamp\":\"1766837367\",\"type\":\"image\",\"image\":{\"mime_type\":\"image/jpeg\",\"sha256\":\"meo74Zpvk5wn1Smf1kplmXaz4psMgBUfqPUTR5L/om4=\",\"id\":\"1248237360490949\",\"url\":\"https://lookaside.fbsbx.com/whatsapp_business/attachments/?mid=1248237360490949&source=webhook&ext=1766837669&hash=ARk1RPxNAMZLMcUc7Qu6KmVhmfbEJxXWhbcE5GbS90mlBw\"}}]},\"field\":\"messages\"}]}]\r\n// }\r\n\r\n\r\n\r\n",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "https://n8n.surefy.ai/webhook/whatsapp-mierae-solar",
+              "protocol": "https",
+              "host": [
+                "n8n",
+                "surefy",
+                "ai"
+              ],
+              "path": [
+                "webhook",
+                "whatsapp-mierae-solar"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "subscribed_apps",
+          "request": {
+            "method": "GET",
+            "header": []
           },
           "response": []
         }
@@ -679,8 +1110,13 @@
             ],
             "url": {
               "raw": "{{base_url}}/credits/balance",
-              "host": ["{{base_url}}"],
-              "path": ["credits", "balance"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "credits",
+                "balance"
+              ]
             }
           },
           "response": []
@@ -706,8 +1142,13 @@
             },
             "url": {
               "raw": "{{base_url}}/credits/add",
-              "host": ["{{base_url}}"],
-              "path": ["credits", "add"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "credits",
+                "add"
+              ]
             }
           },
           "response": []
@@ -725,8 +1166,13 @@
             ],
             "url": {
               "raw": "{{base_url}}/credits/transactions?limit=50",
-              "host": ["{{base_url}}"],
-              "path": ["credits", "transactions"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "credits",
+                "transactions"
+              ],
               "query": [
                 {
                   "key": "limit",
@@ -745,11 +1191,21 @@
         {
           "name": "Create Contact",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NGQzMzYxYi1mODcyLTQxNDItOGI4OS05MjM3Y2JlMmUxNTciLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiIxOTRmNWI4Yi04ZjJlLTQ4ZmUtYjM3ZS0zNzViM2Y0YTc3OWUiLCJpYXQiOjE3NjY0NzI3NTAsImV4cCI6MTc2NzA3NzU1MH0.zc0lDbbLpk9v9-U722A1Vo1Cu8nPnDw2w3XuuyUrmDk",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"phone_number\": \"+1234567890\",\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"attributes\": {\n    \"city\": \"New York\",\n    \"age\": \"30\"\n  },\n  \"notes\": \"VIP customer\",\n  \"tag_ids\": []\n}",
+              "raw": "{\n  \"phone_number\": \"919372597458\",\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"attributes\": {\n    \"city\": \"New York\",\n    \"age\": \"30\"\n  },\n  \"notes\": \"VIP customer\",\n  \"tag_ids\": []\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -758,8 +1214,12 @@
             },
             "url": {
               "raw": "{{base_url}}/contacts",
-              "host": ["{{base_url}}"],
-              "path": ["contacts"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts"
+              ]
             }
           },
           "response": []
@@ -771,8 +1231,12 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts?page=1&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["contacts"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -814,8 +1278,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -842,8 +1311,13 @@
             },
             "url": {
               "raw": "{{base_url}}/contacts/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -861,8 +1335,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -884,14 +1363,20 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": ""
+                  "value": ""
                 }
               ]
             },
             "url": {
               "raw": "{{base_url}}/contacts/import/preview",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "import", "preview"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "import",
+                "preview"
+              ]
             }
           },
           "response": []
@@ -899,6 +1384,16 @@
         {
           "name": "Import Contacts from XLSX",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NGQzMzYxYi1mODcyLTQxNDItOGI4OS05MjM3Y2JlMmUxNTciLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiIxOTRmNWI4Yi04ZjJlLTQ4ZmUtYjM3ZS0zNzViM2Y0YTc3OWUiLCJpYXQiOjE3NjY0NzI3NTAsImV4cCI6MTc2NzA3NzU1MH0.zc0lDbbLpk9v9-U722A1Vo1Cu8nPnDw2w3XuuyUrmDk",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "body": {
@@ -907,7 +1402,7 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": ""
+                  "src": "/C:/Users/sidde/Downloads/akp17.xlsx"
                 },
                 {
                   "key": "list_name",
@@ -917,60 +1412,34 @@
                 {
                   "key": "phone_column",
                   "value": "phone",
-                  "type": "text",
-                  "disabled": true
+                  "type": "text"
                 },
                 {
                   "key": "name_column",
                   "value": "name",
-                  "type": "text",
-                  "disabled": true
-                },
-                {
-                  "key": "email_column",
-                  "value": "email",
-                  "type": "text",
-                  "disabled": true
+                  "type": "text"
                 },
                 {
                   "key": "tag_ids",
                   "value": "",
+                  "type": "text"
+                },
+                {
+                  "key": "email_column",
+                  "value": "email_address",
                   "type": "text",
-                  "disabled": true
+                  "uuid": "ce0e797a-20f6-4c28-aa19-8544a81e165a"
                 }
               ]
             },
             "url": {
               "raw": "{{base_url}}/contacts/import",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "import"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "Add Tags to Contact",
-          "request": {
-            "method": "POST",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"tag_ids\": [\"tag-id-1\", \"tag-id-2\"]\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "{{base_url}}/contacts/:id/tags",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", ":id", "tags"],
-              "variable": [
-                {
-                  "key": "id",
-                  "value": ""
-                }
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "import"
               ]
             }
           },
@@ -992,12 +1461,62 @@
             },
             "url": {
               "raw": "{{base_url}}/contacts/:id/tags",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", ":id", "tags"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                ":id",
+                "tags"
+              ],
               "variable": [
                 {
                   "key": "id",
                   "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add Tags to Contact",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc2MzA4NTcsImV4cCI6MTc2ODIzNTY1N30.0nXnR8vQiWDXRq0SoZ_jCZsyIGUqdaDWDUR5B32C2m8",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tag_ids\": [\"d5b25573-f3ae-4e5b-aa23-89184635503f\"]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/contacts/:id/tags",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                ":id",
+                "tags"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "1eb24193-8f95-425d-808f-0210b81e2127"
                 }
               ]
             }
@@ -1020,8 +1539,13 @@
             },
             "url": {
               "raw": "{{base_url}}/contacts/tags",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "tags"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "tags"
+              ]
             }
           },
           "response": []
@@ -1033,8 +1557,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/tags",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "tags"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "tags"
+              ]
             }
           },
           "response": []
@@ -1055,8 +1584,14 @@
             },
             "url": {
               "raw": "{{base_url}}/contacts/tags/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "tags", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "tags",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1074,8 +1609,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/tags/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "tags", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "tags",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1093,8 +1634,13 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/lists",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "lists"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "lists"
+              ]
             }
           },
           "response": []
@@ -1106,8 +1652,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/lists/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "lists", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "lists",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1121,12 +1673,29 @@
         {
           "name": "Get Contacts in List",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NGQzMzYxYi1mODcyLTQxNDItOGI4OS05MjM3Y2JlMmUxNTciLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiIxOTRmNWI4Yi04ZjJlLTQ4ZmUtYjM3ZS0zNzViM2Y0YTc3OWUiLCJpYXQiOjE3NjY0NzI3NTAsImV4cCI6MTc2NzA3NzU1MH0.zc0lDbbLpk9v9-U722A1Vo1Cu8nPnDw2w3XuuyUrmDk",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/lists/:id/contacts?page=1&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "lists", ":id", "contacts"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "lists",
+                ":id",
+                "contacts"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -1145,7 +1714,7 @@
               "variable": [
                 {
                   "key": "id",
-                  "value": ""
+                  "value": "f9e03e65-4c5e-4cbe-84dd-9244696bce85"
                 }
               ]
             }
@@ -1159,8 +1728,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/contacts/lists/:id",
-              "host": ["{{base_url}}"],
-              "path": ["contacts", "lists", ":id"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "contacts",
+                "lists",
+                ":id"
+              ],
               "variable": [
                 {
                   "key": "id",
@@ -1189,16 +1764,28 @@
                   "    console.log('✅ Saved: campaign_id');",
                   "}"
                 ],
-                "type": "text/javascript"
+                "type": "text/javascript",
+                "packages": {},
+                "requests": {}
               }
             }
           ],
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyMDgxZGMzZS0zNTkzLTRmY2MtYmI1NS1iNTFiYzMwMWQwMzMiLCJlbWFpbCI6ImFjY291bnRzQG1hbmRlZS5pbiIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6IjMzMjFlMzc2LTAzNGUtNDMyNy1iYTE5LTk1Y2JhY2JkMTc1YiIsImlhdCI6MTc3Mjg3ODI2NiwiZXhwIjoxNzczNDgzMDY2fQ.PQm7vpq_gXor54rTVMHptxUqWIDQqvtOxTaU7SwATiM",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"Welcome Campaign\",\n  \"template_id\": \"{{template_id}}\",\n  \"contact_filters\": {\n    \"tag_ids\": [],\n    \"list_ids\": [],\n    \"is_valid\": true\n  },\n  \"parameter_mapping\": {\n    \"1\": \"name\",\n    \"2\": \"city\"\n  },\n  \"scheduled_type\": \"now\"\n}",
+              "raw": "{\n  \"name\": \"March 7 Campaign\",\n  \"description\": \"\",\n  \"template_id\": \"904576af-c8ca-4c6f-927f-fe072f3c2bcd\",\n  \"phone_number_id\": \"1040394205818250\",\n  \"contact_filters\": {\n    \"tag_ids\": [],\n    \"list_ids\": [\n      \"afefb23e-21ac-4b15-8a28-37a089cc5344\"\n    ],\n    \"is_valid\": true\n  },\n  \"parameter_mapping\": {\n    \"1\": \"fullName\",\n    \"2\": \"☀ MANDEE MART – Special Offer 🔌 ZENSOL AC-DC COMBO ⚡ SINGLE PHASE | 1 IN 1 OUT ✅ Havells MCB ✅ Elmex SPD & Fuse ✅ 3 Years Warranty ✅ Heavy Quality Box 💰 Dealer Special Price: ₹1,849/- 📦 Bulk Stock Ready 🚚 Fast Dispatch was delivered successfully.  was delivered successfully.\"\n  },\n  \"media_uploads\": [\n    {\n      \"type\": \"image\",\n      \"media_id\": \"1581674939785978\"\n    }\n  ],\n  \"scheduled_at\": \"\",\n  \"send_immediately\": true\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1206,9 +1793,42 @@
               }
             },
             "url": {
-              "raw": "{{base_url}}/campaigns",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns"]
+              "raw": "{{prod_url}}/campaigns",
+              "host": [
+                "{{prod_url}}"
+              ],
+              "path": [
+                "campaigns"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Campaign Stats",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njg0NzM1MzgsImV4cCI6MTc2OTA3ODMzOH0.5By4FJ0WZ7qkWzdTDECAzF4QsnojEWzE2YzdimQdzGI",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/campaigns/{{id}}/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{id}}",
+                "stats"
+              ]
             }
           },
           "response": []
@@ -1216,12 +1836,26 @@
         {
           "name": "Get All Campaigns",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc2ODY2MTUsImV4cCI6MTc2ODI5MTQxNX0.5LNFA8fgLg-aip50M9Lru_AMK3Qc8ZeGtQSBpvmmV4A",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}/campaigns?page=1&limit=20",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns"],
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns"
+              ],
               "query": [
                 {
                   "key": "page",
@@ -1244,12 +1878,27 @@
         {
           "name": "Get Campaign by ID",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "EAAcIWEdFgMcBPoKiX7P3qR4vAkGHIVeqllOlZC7c2dyiDshJwon8Xct6zCTB7d8XJKUqsk0C0DJoSA9YWCrOLVpleEbI3ZBuW3efaGL07J7lQAwMNHibrygmdjQLfBCUA1euhcZCe269gAsayU7E3xJclkIPf7OTG8Wl3iwmg04Dlc0I7ZCi8xDnMoHH",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "GET",
             "header": [],
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}"
+              ]
             }
           },
           "response": []
@@ -1270,8 +1919,13 @@
             },
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}"
+              ]
             }
           },
           "response": []
@@ -1279,12 +1933,28 @@
         {
           "name": "Start Campaign",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI1NGQzMzYxYi1mODcyLTQxNDItOGI4OS05MjM3Y2JlMmUxNTciLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiIxOTRmNWI4Yi04ZjJlLTQ4ZmUtYjM3ZS0zNzViM2Y0YTc3OWUiLCJpYXQiOjE3NjY0NzI3NTAsImV4cCI6MTc2NzA3NzU1MH0.zc0lDbbLpk9v9-U722A1Vo1Cu8nPnDw2w3XuuyUrmDk",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}/start",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}", "start"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}",
+                "start"
+              ]
             }
           },
           "response": []
@@ -1292,12 +1962,28 @@
         {
           "name": "Pause Campaign",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiIyMDgxZGMzZS0zNTkzLTRmY2MtYmI1NS1iNTFiYzMwMWQwMzMiLCJlbWFpbCI6ImFjY291bnRzQG1hbmRlZS5pbiIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6IjMzMjFlMzc2LTAzNGUtNDMyNy1iYTE5LTk1Y2JhY2JkMTc1YiIsImlhdCI6MTc3Mjg3ODI2NiwiZXhwIjoxNzczNDgzMDY2fQ.PQm7vpq_gXor54rTVMHptxUqWIDQqvtOxTaU7SwATiM",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/campaigns/{{campaign_id}}/pause",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}", "pause"]
+              "raw": "{{prod_url}}/campaigns/{{id}}/pause",
+              "host": [
+                "{{prod_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{id}}",
+                "pause"
+              ]
             }
           },
           "response": []
@@ -1305,12 +1991,28 @@
         {
           "name": "Resume Campaign",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NjkxMDYyODAsImV4cCI6MTc2OTcxMTA4MH0.TDSrfbcHyiUyze00qXAyrMrRiTIrD5wkGTnguvQX6J8",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{base_url}}/campaigns/{{campaign_id}}/resume",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}", "resume"]
+              "raw": "{{base_url}}/campaigns/{{id}}/resume",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{id}}",
+                "resume"
+              ]
             }
           },
           "response": []
@@ -1322,8 +2024,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}/cancel",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}", "cancel"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}",
+                "cancel"
+              ]
             }
           },
           "response": []
@@ -1344,8 +2052,14 @@
             },
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}/test",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}", "test"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}",
+                "test"
+              ]
             }
           },
           "response": []
@@ -1357,8 +2071,14 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}/stats",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}", "stats"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}",
+                "stats"
+              ]
             }
           },
           "response": []
@@ -1366,6 +2086,16 @@
         {
           "name": "Upload Media for Campaign",
           "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3MmNlMGNkMS01NzUyLTQ1YTAtYWQzYy1mNTEwYTg1YTNiOWMiLCJlbWFpbCI6InN1cmVmeUBjb21wYW55LmNvbSIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6ImI4OGQ3N2RhLWVlNzQtNGQ1YS1hMWFjLTUxZDRiZjY3N2U0OCIsImlhdCI6MTc2NzQ5NTIyNCwiZXhwIjoxNzY4MTAwMDI0fQ.MJhAJPG72uKLzJpjnV--1-fVN-U3lpY1Erd_4EpSxrI",
+                  "type": "string"
+                }
+              ]
+            },
             "method": "POST",
             "header": [],
             "body": {
@@ -1374,14 +2104,32 @@
                 {
                   "key": "file",
                   "type": "file",
-                  "src": ""
+                  "uuid": "accaa403-ba3d-4b7b-a722-529b43308814",
+                  "src": "/C:/Users/sidde/Downloads/subsidy mirae-78000.jpeg"
+                },
+                {
+                  "key": "phone_number_id",
+                  "value": "890901410769366",
+                  "type": "text",
+                  "uuid": "076d4a8b-e20b-4f16-bdbb-b4668c9ab512"
+                },
+                {
+                  "key": "type",
+                  "value": "image",
+                  "type": "text",
+                  "uuid": "66bece6c-73b1-4c16-888a-bc41b1621be1"
                 }
               ]
             },
             "url": {
-              "raw": "{{base_url}}/campaigns/media/upload",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "media", "upload"]
+              "raw": "{{base_url}}/campaigns/upload-media",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "upload-media"
+              ]
             }
           },
           "response": []
@@ -1393,9 +2141,120 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/campaigns/{{campaign_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["campaigns", "{{campaign_id}}"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}"
+              ]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "button click rate",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NzA2MTc2ODAsImV4cCI6MTc3MTIyMjQ4MH0.IshluGRpCbR7DqP5cBtewuJj3aWr5i9JANtaOI2T9JI",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{local_url}}/campaigns/{{campaign_id}}/buttonClicks?page=1&pageSize=10",
+              "host": [
+                "{{local_url}}"
+              ],
+              "path": [
+                "campaigns",
+                "{{campaign_id}}",
+                "buttonClicks"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Campaign Message Status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3NjkwNDM2ODksImV4cCI6MTc2OTY0ODQ4OX0.b1PYSTGcEzPPyf682n9hy1GATNWPTLbcJj0mf8OyuNA",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/campaigns/:id/messages",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "campaigns",
+                ":id",
+                "messages"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "6051a7ac-ea26-4296-a051-1bb0a82e3aa3"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "New Request",
+          "request": {
+            "method": "GET",
+            "header": []
+          },
+          "response": []
+        },
+        {
+          "name": "failure Stats",
+          "request": {
+            "method": "GET",
+            "header": []
+          },
+          "response": []
+        },
+        {
+          "name": "failureMessageInfo",
+          "request": {
+            "method": "GET",
+            "header": []
+          },
+          "response": []
+        },
+        {
+          "name": "templateWebhookStatus",
+          "request": {
+            "method": "GET",
+            "header": []
           },
           "response": []
         }
@@ -1414,21 +2273,140 @@
             "header": [],
             "url": {
               "raw": "{{base_url}}/../health",
-              "host": ["{{base_url}}"],
-              "path": ["..", "health"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "..",
+                "health"
+              ]
             },
             "description": "Check if the service is healthy"
           },
           "response": []
         }
       ]
+    },
+    {
+      "name": "Job Status",
+      "item": [
+        {
+          "name": "jobs status",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc2MDMzNDcsImV4cCI6MTc2ODIwODE0N30.o_aZoVKYQtmbuQ8mkOk3Rv9vfs-Mtm8oCzJn618_zrc",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/import/:jobId/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "import",
+                ":jobId",
+                "status"
+              ],
+              "variable": [
+                {
+                  "key": "jobId",
+                  "value": ""
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Jobs",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiJhNjMzM2MzYi1iNzEyLTQzNzktOGM3Yi05YjM5OTUzNDk1YjQiLCJlbWFpbCI6InNvbGFybWlyYWVAY29tcGFueS5jb20iLCJwaG9uZSI6bnVsbCwicm9sZSI6ImNvbXBhbnkiLCJjb21wYW55SWQiOiJhNDZjZDFlMy1lMDY2LTQzNDItYWZmMi04ZWUwMTdlN2IxOTUiLCJpYXQiOjE3Njc2MDMzNDcsImV4cCI6MTc2ODIwODE0N30.o_aZoVKYQtmbuQ8mkOk3Rv9vfs-Mtm8oCzJn618_zrc",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/import/jobs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "import",
+                "jobs"
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "New Request",
+      "request": {
+        "method": "GET",
+        "header": []
+      },
+      "response": []
+    }
+  ],
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "e39aabdbabcda96e5e93785abc9e360b",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "packages": {},
+        "requests": {},
+        "exec": [
+          ""
+        ]
+      }
     }
   ],
   "variable": [
     {
       "key": "base_url",
-      "value": "http://localhost:3001/v1",
-      "type": "string"
+      "value": "http://localhost:3001/v1"
     }
   ]
 }

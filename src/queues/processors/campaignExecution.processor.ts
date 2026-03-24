@@ -1,118 +1,106 @@
 import { Worker, Job } from 'bullmq';
 import redisConfig from '@surefy/config/redis.config';
 import { CampaignExecutionJobData } from '../campaignExecution.queue';
-
 import CampaignModel from '@surefy/console/models/campaign.model';
 import CampaignMessageModel from '@surefy/console/models/campaignMessage.model';
 import ContactModel from '@surefy/console/models/contact.model';
 import TemplateModel from '@surefy/console/models/template.model';
 import MessageService from '@surefy/console/services/message.service';
+import * as os from 'os';
+import { v4 as uuidv4 } from "uuid";
 
-/* ================= CONFIG ================= */
 
-const BATCH_SIZE = 200;
-const DELAY_BETWEEN_BATCHES = 60_000; // 1 minute
-
-const sleep = (ms: number) =>
-  new Promise(resolve => setTimeout(resolve, ms));
+const BATCH_SIZE = 50; // Process 50 messages at a time
+const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds delay between batches
 
 async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
-  const { campaignId, companyId } = job.data;
-
-  console.log(`🚀 Campaign started → ${campaignId}`);
+  const { campaignId,userId, companyId } = job.data;
 
   try {
+    console.log(`[Job ${job.id}] Starting campaign execution: ${campaignId}`);
+
     const campaign = await CampaignModel.findById(campaignId);
-    if (!campaign) throw new Error('Campaign not found');
-    if (campaign.company_id !== companyId) {
-      throw new Error('Campaign-company mismatch');
+    if (!campaign) {
+      throw new Error('Campaign not found');
     }
 
+    if (campaign.company_id !== companyId) {
+      throw new Error('Campaign does not belong to company');
+    }
+
+    // Update campaign status to running
     await CampaignModel.updateStatus(campaignId, 'running', {
       started_at: new Date(),
     });
 
+    // Get template
     const template = await TemplateModel.findById(campaign.template_id);
-    if (!template) throw new Error('Template not found');
+    if (!template) {
+      throw new Error('Template not found');
+    }
 
+    let hasMore = true;
     let processedCount = 0;
 
-    while (true) {
+    while (hasMore) {
+      // Check if campaign should still be running
       const currentCampaign = await CampaignModel.findById(campaignId);
       if (currentCampaign.status !== 'running') {
-        console.log(`⏹ Campaign stopped manually`);
+        console.log(`[Campaign ${campaignId}] Stopped by user, status: ${currentCampaign.status}`);
         break;
       }
 
-      const pendingMessages =
-        await CampaignMessageModel.getPendingMessages(
-          campaignId,
-          BATCH_SIZE
-        );
-        
-      console.log(`📝 Fetched ${pendingMessages.length} pending messages`);
+      // Get pending messages
+      const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, BATCH_SIZE);
 
       if (pendingMessages.length === 0) {
+        hasMore = false;
         await CampaignModel.updateStatus(campaignId, 'completed', {
           completed_at: new Date(),
         });
-        console.log(`✅ Campaign completed`);
+
+        console.log(`[Campaign ${campaignId}] Completed successfully`);
         break;
       }
 
-      console.log(`📦 Sending batch of ${pendingMessages.length}`);
+      // Process messages in batch
+      const results = await Promise.allSettled(
+        pendingMessages.map(async (campaignMessage) => {
+          return await sendCampaignMessage(campaign, campaignMessage, template);
+        })
+      );
 
-      let success = 0;
-      let failed = 0;
-
-      /* ===== SEQUENTIAL MESSAGE SENDING ===== */
-      for (const campaignMessage of pendingMessages) {
-        try {
-          await sendCampaignMessage(
-            campaign,
-            campaignMessage,
-            template
-          );
-          success++;
-        } catch {
-          failed++;
-        }
-      }
+      // Count results
+      const successful = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
 
       processedCount += pendingMessages.length;
 
-      const progress = Math.round(
-        (processedCount / campaign.total_recipients) * 100
-      );
-
+      // Update job progress
+      const progress = Math.round((processedCount / campaign.total_recipients) * 100);
       await job.updateProgress(progress);
 
       console.log(
-        `📊 Batch finished → Success: ${success}, Failed: ${failed}, Progress: ${progress}%`
+        `[Campaign ${campaignId}] Batch processed: ${successful} successful, ${failed} failed. Progress: ${progress}%`
       );
 
-      /* ===== HARD PAUSE AFTER FULL BATCH ===== */
+      // Delay between batches to avoid rate limiting
       if (pendingMessages.length === BATCH_SIZE) {
-        console.log(
-          `⏸ Batch completed at ${new Date().toISOString()}`
-        );
-        console.log('⏳ Waiting 1 minute before next batch...');
-        await sleep(DELAY_BETWEEN_BATCHES);
-        console.log(
-          `▶️ Resuming at ${new Date().toISOString()}`
-        );
+        await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
       }
     }
+
+    console.log(`[Campaign ${campaignId}] Execution completed. Processed ${processedCount} messages`);
 
     return {
       campaign_id: campaignId,
       processed: processedCount,
       status: 'completed',
     };
+  } catch (error: any) {
+    console.error(`[Campaign ${campaignId}] Fatal error:`, error);
 
-  } catch (error) {
-    console.error(`❌ Campaign failed`, error);
-
+    // Mark campaign as failed
     await CampaignModel.updateStatus(campaignId, 'failed', {
       completed_at: new Date(),
     });
@@ -121,102 +109,81 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
   }
 }
 
-/* ================= MESSAGE SENDING ================= */
-
-async function sendCampaignMessage(
-  campaign: any,
-  campaignMessage: any,
-  template: any
-) {
+async function sendCampaignMessage(campaign: any, campaignMessage: any, template: any) {
   try {
-    const contact = await ContactModel.findById(
-      campaignMessage.contact_id
-    );
-
+    // Get contact
+    const contact = await ContactModel.findById(campaignMessage.contact_id);
     if (!contact) {
-      await CampaignMessageModel.updateStatus(
-        campaignMessage.id,
-        'skipped',
-        { error_message: 'Contact not found' }
-      );
+      await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
+        error_message: 'Contact not found',
+      });
       return;
     }
 
+    // Skip invalid numbers
     if (!contact.is_valid) {
-      await CampaignMessageModel.updateStatus(
-        campaignMessage.id,
-        'skipped',
-        { error_message: contact.invalid_reason }
-      );
-      await CampaignModel.incrementCount(
-        campaign.id,
-        'invalid_numbers_count'
-      );
+      await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
+        error_message: `Invalid number: ${contact.invalid_reason}`,
+      });
+      await CampaignModel.incrementCount(campaign.id, 'invalid_numbers_count');
       return;
     }
 
+    // Build template payload
     const templatePayload = buildTemplatePayload(
       template,
       campaignMessage.template_variables,
       campaign.media_uploads
     );
 
+    const messageUUID = uuidv4();
+
+    // Send message via MessageService
     const message = await MessageService.sendMessage({
+      messageUUID,
+      user_id:campaign.user_id,
       company_id: campaign.company_id,
-      campaign_id: campaign.id,
+      campaign_id:campaign.id,
       phone_number_id: campaign.phone_number_id,
       to: contact.phone_number,
       type: 'template',
       template: templatePayload,
     });
 
-    await CampaignMessageModel.updateStatus(
-      campaignMessage.id,
-      'sent',
-      { message_id: message.id }
-    );
-
-    await CampaignModel.incrementCount(
-      campaign.id,
-      'sent_count'
-    );
-
-    await CampaignModel.updateCounts(campaign.id, {
-      total_cost:
-        Number(campaign.total_cost || 0) +
-        Number(message.cost || 0),
+    // Update campaign message status
+    await CampaignMessageModel.updateStatus(campaignMessage.id, 'sent', {
+      message_id: message.id,
     });
 
+    // Update campaign counts
+    await CampaignModel.incrementCount(campaign.id, 'sent_count');
+    await CampaignModel.updateCounts(campaign.id, {
+      total_cost: Number(campaign.total_cost || 0) + Number(message.cost || 0),
+    });
+
+    // Update contact stats
+    await ContactModel.incrementMessageCount(contact.id);
   } catch (error: any) {
-    await CampaignMessageModel.updateStatus(
-      campaignMessage.id,
-      'failed',
-      {
-        error_message: error?.message || 'Unknown error',
-        error_code: error?.code || 'UNKNOWN',
-      }
-    );
+    console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
-    await CampaignModel.incrementCount(
-      campaign.id,
-      'failed_count'
-    );
+    await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
+      error_message: error?.message || 'Unknown error',
+      error_code: error?.code || 'UNKNOWN',
+    });
 
+    await CampaignModel.incrementCount(campaign.id, 'failed_count');
+
+    // Update contact failed count
     if (campaignMessage.contact_id) {
-      await ContactModel.incrementFailedCount(
-        campaignMessage.contact_id
-      );
+      await ContactModel.incrementFailedCount(campaignMessage.contact_id);
     }
 
-    throw error;
+    throw error; // Re-throw to mark as failed in batch results
   }
 }
 
-/* ================= TEMPLATE HELPERS ================= */
-
 function buildTemplatePayload(template: any, variables: Record<string, any>, mediaUploads: any[] = []) {
   const components = [];
-  console.log('Building template payload with variables:', template, variables, mediaUploads,)
 
   // Process template components
   if (template.components) {
@@ -277,7 +244,6 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
       }
     }
   }
-  console.log('Built template payload components:', JSON.stringify(components));
 
   return {
     name: template.name,
@@ -288,29 +254,39 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
 
 function extractTemplateVariables(text: string): string[] {
   const regex = /\{\{(\d+)\}\}/g;
-  const vars: string[] = [];
+  const matches = [];
   let match;
 
   while ((match = regex.exec(text)) !== null) {
-    vars.push(match[1]);
+    matches.push(match[1]);
   }
 
-  return vars;
+  return matches;
 }
 
-/* ================= WORKER ================= */
+// Create and start the worker
+console.log('📦 Initializing Campaign Execution Worker...');
+console.log('📡 Redis config:', {
+  host: redisConfig.host,
+  port: redisConfig.port,
+  db: redisConfig.db,
+});
 
-export const campaignExecutionWorker =
-  new Worker<CampaignExecutionJobData>(
-    'campaign-execution',
-    async job => processCampaignExecution(job),
-    {
-      connection: redisConfig,
-      concurrency: 1, // 🚫 NO limiter — batch logic controls speed
-    }
-  );
-
-console.log('🚀 Campaign Execution Worker ready');
+export const campaignExecutionWorker = new Worker<CampaignExecutionJobData>(
+  'campaign-execution',
+  async (job) => {
+    console.log(`🔄 Processing campaign job ${job.id}...`);
+    return await processCampaignExecution(job);
+  },
+  {
+    connection: redisConfig,
+    concurrency: 1, // Process 1 campaign at a time to avoid rate limits
+    limiter: {
+      max: 1, // Max 1 job
+      duration: 1000, // per second
+    },
+  }
+);
 
 campaignExecutionWorker.on('completed', (job) => {
   console.log(`✅ Campaign job ${job.id} completed successfully`);
