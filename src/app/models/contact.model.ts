@@ -97,9 +97,10 @@ class ContactModel extends BaseModel {
   }
 
   findWithFilters(companyId: string,userId:string, filters: any) {
+    console.log("UserId", userId)
     let query = this.query()
-      .where({ company_id: companyId })
-      .andWhere({user_id:userId})
+      // .where({ company_id: companyId })
+      .where({ user_id: userId })
       .whereNull('deleted_at');
 
     if (filters.is_valid !== undefined) {

@@ -36,7 +36,8 @@ class WabaController {
    */
   onboardingWaba = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const {waba_id} = req.body
-    console.log("Embedded client waba data:",req.companyId)
+    console.log("Onboarding WABA with data:", req.body);  
+    console.log("Onboarding WABA with data:",waba_id);
     if(!waba_id){
       throw new HTTP400Error({ message: 'WABA ID is required' });
     }

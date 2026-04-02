@@ -511,8 +511,8 @@ class ContactService {
   /**
    * List Management
    */
-  async getLists(companyId: string) {
-    return ContactListModel.findByCompany(companyId);
+  async getLists(companyId: string,userId:string) {
+    return ContactListModel.findByCompany(companyId,userId);
   }
 
   async getListById(listId: string) {

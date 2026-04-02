@@ -4,6 +4,7 @@ import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import CompanyService from '@surefy/console/services/company.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
+import { AuthRequest } from '@surefy/middleware/auth.middleware';
 
 class CompanyController {
   /**
@@ -47,6 +48,12 @@ class CompanyController {
     const company = await CompanyService.getCompanyById(id);
     return successResponse(req, res, 'Company retrieved successfully', company);
   });
+
+  getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    console.log("User Id",req.userId!)
+    const userStats = await CompanyService.getUserStats(req.userId!)
+    return successResponse(req,res, 'User Stats retrieved successfully', userStats)
+  })
 
   /**
    * GET /v1/companies

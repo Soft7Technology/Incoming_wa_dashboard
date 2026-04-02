@@ -24,4 +24,5 @@ AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
 
+
 export default AdminRoute;

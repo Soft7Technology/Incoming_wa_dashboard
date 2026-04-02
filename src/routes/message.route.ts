@@ -9,5 +9,7 @@ MessageRoute.post('/bulk-send', MessageController.bulkSendMessages);
 MessageRoute.post('/mark-read', MessageController.markAsRead);
 MessageRoute.get('/', MessageController.getMessages);
 MessageRoute.get('/stats', MessageController.getStats);
+MessageRoute.get('/conversations', MessageController.getMessagesConversations)
+MessageRoute.get('/lead/conversations', MessageController.getLeadConversations);
 
 export default MessageRoute;

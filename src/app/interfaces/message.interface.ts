@@ -104,6 +104,7 @@ export interface SendMessageDto {
   messageUUID: string;
   campaign_id: string | undefined | null;
   phone_number_id: string;
+  profile_name?: string;
   to: string;
   type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
   text?: {

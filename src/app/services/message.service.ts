@@ -29,7 +29,6 @@ class MessageService {
    * Send message
    */
   async sendMessage(data: SendMessageDto) {
-    console.log("Message",JSON.stringify(data))
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber) {
       throw new HTTP404Error({ message: 'Phone number not found' });
@@ -97,6 +96,7 @@ class MessageService {
       company_id: data.company_id,
       campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
+      profile_name: data.profile_name || "",
       direction: 'outbound',
       type: data.type,
       from_phone: phoneNumber.display_phone_number,
@@ -321,6 +321,7 @@ class MessageService {
    * Save incoming message
    */
   async saveIncomingMessage(data: any) {
+    console.log("Saving incoming message", data)
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber) {
       console.warn(`Phone number not found: ${data.phone_number_id}`);
@@ -356,8 +357,8 @@ class MessageService {
   /**
    * Get messages for company
    */
-  async getMessages(companyId: string, filters: any = {}) {
-    return MessageModel.findByCompanyId(companyId, filters);
+  async getMessages(companyId: string,userId:string, filters: any = {}) {
+    return MessageModel.findByUserId(companyId,userId, filters);
   }
 
 
@@ -429,6 +430,14 @@ class MessageService {
    */
   async getMessageStats(companyId: string, fromDate?: Date, toDate?: Date) {
     return MessageModel.getMessageStats(companyId, fromDate, toDate);
+  }
+
+  async getMessagesConversation(userId:string,phone_number_id:any){
+    return MessageModel.getMessagesConversation(userId,phone_number_id)
+  }
+
+  async getLeadConversations(leadNumber:any,phone_number_id:any,userId:string){
+    return MessageModel.getLeadConversations(leadNumber,phone_number_id,userId)
   }
 }
 

@@ -268,7 +268,7 @@ class ContactController {
    * Get all contact lists
    */
   getLists = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const lists = await ContactService.getLists(req.companyId!);
+    const lists = await ContactService.getLists(req.companyId!, req.userId!);
     return successResponse(req, res, 'Lists retrieved successfully', lists);
   });
 

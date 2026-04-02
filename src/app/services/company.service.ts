@@ -61,6 +61,11 @@ class CompanyService {
     return company;
   }
 
+  async getUserStats(userId:any){
+    const userStats = await CompanyRepository.getUserStats(userId)
+    return userStats
+  }
+
   /**
    * Update company
    */

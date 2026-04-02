@@ -55,7 +55,7 @@ class CampaignController {
       limit: req.query.limit,
     };
 
-    const result = await CampaignService.getCampaigns(req.companyId!, filters);
+    const result = await CampaignService.getCampaigns(req.companyId!, req.userId!, filters);
     return successResponse(req, res, 'Campaigns retrieved successfully', result);
   });
 

@@ -53,6 +53,12 @@ class CompanyRepository {
     return CompanyModel.findById(id);
   }
 
+
+  async getUserStats(userId:string){
+    return CompanyModel.getUserStats(userId)
+  }
+
+
   /**
    * Find company by API key
    */

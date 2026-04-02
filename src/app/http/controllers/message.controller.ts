@@ -12,7 +12,7 @@ class MessageController {
    * Send a message
    */
   sendMessage = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number_id, to, type, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
+    const { phone_number_id, to, type,profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
@@ -24,6 +24,7 @@ class MessageController {
       user_id: req.userId!,
       campaign_id: campaign_id || undefined,
       phone_number_id,
+      profile_name,
       to,
       type,
       text,
@@ -82,7 +83,7 @@ class MessageController {
       sort_order
     } = req.query;
 
-    const result = await MessageService.getMessages(req.companyId!, {
+    const result = await MessageService.getMessages(req.companyId!,req.userId!, {
       status,
       direction,
       type,
@@ -121,6 +122,7 @@ class MessageController {
    */
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
+    console.log("Webhook entry received", JSON.stringify(entry));
 
     for (const item of entry || []) {
       for (const change of item.changes || []) {
@@ -139,9 +141,10 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
+            console.log("Processing incoming message", message, value);
             await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
-              profile_name: value.contacts?.[0]?.profile?.name || "",
+              profile_name: value.contacts[0]?.profile?.name,
               message_id: message.id,
               from: message.from,
               type: message.type,
@@ -190,6 +193,20 @@ class MessageController {
 
     return successResponse(req, res, 'Bulk messages queued for sending', result, HttpStatusCode.ACCEPTED);
   });
+
+  getMessagesConversations = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const {phone_number_id} = req.query
+    const userMessages = await MessageService.getMessagesConversation(req.userId!,phone_number_id)
+    return successResponse(req, res, 'Message Retrived succesfully', userMessages);
+  })
+
+  getLeadConversations = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const {phone_number_id,leadNumber} = req.query
+    console.log("Req.uqry", req.query)
+    const userMessages = await MessageService.getLeadConversations(leadNumber,phone_number_id, req.userId!)
+    return successResponse(req,res,"Lead Message Retreived Succesfuly",userMessages)
+  })
+
 }
 
 export default new MessageController();

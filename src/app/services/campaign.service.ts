@@ -69,6 +69,8 @@ class CampaignService {
       }
     }
 
+    console.log("Schedule", scheduledAt);
+
     // Create campaign
     const campaign = await CampaignModel.create({
       company_id: companyId,
@@ -109,7 +111,7 @@ class CampaignService {
     const variables: Record<string, any> = {};
 
     for (const [templateParam, contactAttribute] of Object.entries(mapping)) {
-      if (contactAttribute === 'name') {
+      if (contactAttribute === 'fullName') {
         variables[templateParam] = contact.name || '';
       } else if (contactAttribute === 'phone_number') {
         variables[templateParam] = contact.phone_number || '';
@@ -144,12 +146,12 @@ class CampaignService {
   /**
    * Get all campaigns for a company
    */
-  async getCampaigns(companyId: string, filters: any = {}) {
+  async getCampaigns(companyId: string,userId:string, filters: any = {}) {
     const page = parseInt(filters.page) || 1;
     const limit = parseInt(filters.limit) || 20;
     const offset = (page - 1) * limit;
 
-    let campaigns = await CampaignModel.findByCompany(companyId, filters);
+    let campaigns = await CampaignModel.findByCompany(companyId, userId, filters);
 
     const total = campaigns.length;
     campaigns = campaigns.slice(offset, offset + limit);
@@ -352,6 +354,7 @@ class CampaignService {
         user_id: campaign.user_id,
         company_id: campaign.company_id,
         campaign_id: campaign.id,
+        profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
         to: contact.phone_number,
         type: 'template',
