@@ -32,7 +32,7 @@ export interface PhoneNumber {
 }
 
 export interface CreateWabaDto {
-  company_id: string;
+  user_id: string;
   waba_id: string;
   name?: string;
   currency?: string;

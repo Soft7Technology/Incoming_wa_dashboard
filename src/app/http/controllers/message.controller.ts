@@ -20,7 +20,6 @@ class MessageController {
 
     const message = await MessageService.sendMessage({
       messageUUID: uuidv4(),
-      company_id: req.companyId!,
       user_id: req.userId!,
       campaign_id: campaign_id || undefined,
       phone_number_id,
@@ -182,14 +181,13 @@ class MessageController {
   bulkSendMessages = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { messages } = req.body;
 
-
     console.log("Bulk send messages request received", messages);
 
     if (!messages || !Array.isArray(messages)) {
-      throw new HTTP400Error({ message: 'messages array is required' });
+      throw new HTTP400Error({ message: 'Messages array is required' });
     }
 
-    const result = await MessageService.bulkSendMessages(req.companyId!, messages);
+    const result = await MessageService.bulkSendMessages(req.userId!, messages);
 
     return successResponse(req, res, 'Bulk messages queued for sending', result, HttpStatusCode.ACCEPTED);
   });
@@ -205,6 +203,12 @@ class MessageController {
     console.log("Req.uqry", req.query)
     const userMessages = await MessageService.getLeadConversations(leadNumber,phone_number_id, req.userId!)
     return successResponse(req,res,"Lead Message Retreived Succesfuly",userMessages)
+  })
+
+  getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+      console.log("User Id",req.userId!)
+      const userStats = await MessageService.getUserStats(req.userId!)
+      return successResponse(req,res, 'User Stats retrieved successfully', userStats)
   })
 
 }

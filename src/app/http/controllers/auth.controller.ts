@@ -34,7 +34,7 @@ class AuthController {
    * Register new company user
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, password, company_id } = req.body;
+    const { name, email, phone, password } = req.body;
 
     if (!name || !password) {
       throw new HTTP400Error({ message: 'Name and password are required' });
@@ -48,8 +48,7 @@ class AuthController {
       name,
       email,
       phone,
-      password,
-      company_id,
+      password
     });
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);

@@ -2,7 +2,7 @@ import { BaseModel } from '@surefy/models/base.model';
 
 class CompanyModel extends BaseModel {
   constructor() {
-    super('companies');
+    super('users');
   }
 
   async findByApiKey(apiKey: string) {
@@ -58,8 +58,8 @@ class CompanyModel extends BaseModel {
         this.query()
           .from('templates')
           .count('*')
-          .where('company_id', (qb: any) => {
-            qb.select('company_id').from('users').where('id', userId).limit(1);
+          .where('user_id', (qb: any) => {
+            qb.select('user_id').from('users').where('user_id', userId).limit(1);
           })
           .as('templates_count'),
       )

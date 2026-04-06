@@ -5,11 +5,10 @@ class CampaignModel extends BaseModel {
     super('campaigns');
   }
 
-  async findByCompany(companyId: string,userId:string, filters: any = {}) {
+  async findByCompany(userId:string, filters: any = {}) {
     let query = this.query()
-      .where({ company_id: companyId })
       .whereNull('deleted_at')
-      .andWhere({ user_id: userId });
+      .where({ user_id: userId });
 
     if (filters.status) {
       query = query.where({ status: filters.status });

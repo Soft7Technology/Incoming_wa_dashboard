@@ -1,21 +1,19 @@
 import { Router } from 'express';
 import CompanyController from '@surefy/console/http/controllers/company.controller';
 
-const CompanyRoute = Router();
+const UserRoute = Router();
 
 // All company endpoints - JWT authentication applied at route group level
 // Only admins can create/manage companies
-CompanyRoute.post('/', CompanyController.onboard); // Admin creates new company
-CompanyRoute.get('/', CompanyController.getAll);
-CompanyRoute.get('/:id', CompanyController.getById);
-CompanyRoute.put('/:id', CompanyController.update);
-CompanyRoute.delete('/:id', CompanyController.delete);
-CompanyRoute.post('/:id/regenerate-keys', CompanyController.regenerateKeys);
-CompanyRoute.get('/user/stats', CompanyController.getUserStats)
+UserRoute.post('/', CompanyController.onboard); // Admin creates new company
+UserRoute.get('/', CompanyController.getAll);
+UserRoute.get('/:id', CompanyController.getById);
+UserRoute.put('/:id', CompanyController.update);
+UserRoute.delete('/:id', CompanyController.delete);
+UserRoute.post('/:id/regenerate-keys', CompanyController.regenerateKeys);
+UserRoute.get('/stats', CompanyController.getUserStats)
 
-export default CompanyRoute;
-
-
+export default UserRoute;
 
 
 
@@ -35,7 +33,9 @@ export default CompanyRoute;
 
 
 
-// CompanyRoute.get('/stats', CompanyController.getUserStats)
+
+
+// UserRoute.get('/stats', CompanyController.getUserStats)
 
 //   getUserStats = tryCatchAsync(async(req:Request,res:Response)=>{
 //     const userStats = await CompanyService.getUserStats(req.userId!)

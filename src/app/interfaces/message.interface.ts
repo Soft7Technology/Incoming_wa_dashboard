@@ -99,9 +99,8 @@ export interface SendBulkMessageDto {
 }
 
 export interface SendMessageDto {
-  company_id: string;
   user_id:string;
-  messageUUID: string;
+  messageUUID?: string;
   campaign_id: string | undefined | null;
   phone_number_id: string;
   profile_name?: string;
@@ -190,7 +189,7 @@ export interface MessageStatusUpdate {
 }
 
 export interface BulkSendMessageDto {
-  company_id: string;
+  user_id: string;
   phone_number_id: string;
   messageUUID: string;
   to: string;

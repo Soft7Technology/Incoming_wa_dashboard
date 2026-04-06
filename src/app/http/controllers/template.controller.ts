@@ -17,7 +17,7 @@ class TemplateController {
       throw new HTTP400Error({ message: 'WABA ID is required' });
     }
 
-    const templates = await TemplateService.syncTemplates(req.companyId!, waba_id);
+    const templates = await TemplateService.syncTemplates(req.userId!, waba_id);
     return successResponse(req, res, `${templates.length} templates synced successfully`, templates);
   });
 
@@ -53,7 +53,7 @@ class TemplateController {
   getTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { status, category } = req.query;
 
-    const templates = await TemplateService.getTemplates(req.companyId!, {
+    const templates = await TemplateService.getTemplates(req.userId!, {
       status,
       category,
     });

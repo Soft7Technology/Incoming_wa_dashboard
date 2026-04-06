@@ -9,6 +9,10 @@ class PhoneNumberModel extends BaseModel {
     return this.query().where({ company_id: companyId, deleted_at: null });
   }
 
+  async findByUserId(userId: string) {
+    return this.query().where({ user_id: userId, deleted_at: null });
+  }
+
   async findByPhoneNumberId(phoneNumberId: string) {
     return this.query().where({ phone_number_id: phoneNumberId }).first();
   }

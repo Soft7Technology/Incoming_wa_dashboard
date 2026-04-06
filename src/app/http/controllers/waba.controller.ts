@@ -20,7 +20,7 @@ class WabaController {
     }
 
     const waba = await WabaService.createWaba({
-      company_id: req.companyId!,
+      user_id: req.userId!,
       waba_id,
       name,
       currency,
@@ -43,7 +43,7 @@ class WabaController {
     }
 
     const waba = await wabaService.onboardWaba({
-      company_id: req.companyId!,
+      user_id: req.userId!,
       waba_id
     })
     return successResponse(req, res, 'WABA account created successfully', waba, HttpStatusCode.CREATED);
@@ -54,7 +54,7 @@ class WabaController {
    * Get all WABA accounts for company
    */
   getWabas = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const wabas = await WabaService.getCompanyWabas(req.companyId!);
+    const wabas = await WabaService.getCompanyWabas(req.userId!);
     return successResponse(req, res, 'WABA accounts retrieved successfully', wabas);
   });
 
@@ -86,7 +86,7 @@ class WabaController {
    * Get all phone numbers for company
    */
   getPhoneNumbers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const phoneNumbers = await WabaService.getCompanyPhoneNumbers(req.companyId!);
+    const phoneNumbers = await WabaService.getUserPhoneNumbers(req.userId!);
     return successResponse(req, res, 'Phone numbers retrieved successfully', phoneNumbers);
   });
 

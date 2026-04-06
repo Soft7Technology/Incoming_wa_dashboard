@@ -93,9 +93,8 @@ class AuthService {
     email?: string;
     phone?: string;
     password: string;
-    company_id?: string;
   }) {
-    const { name, email, phone, password, company_id } = data;
+    const { name, email, phone, password } = data;
 
     // Validate at least email or phone is provided
     if (!email && !phone) {
@@ -126,8 +125,7 @@ class AuthService {
       email,
       phone,
       password: hashedPassword,
-      role: 'company',
-      company_id,
+      role: 'user',
       status: 'active',
     });
 

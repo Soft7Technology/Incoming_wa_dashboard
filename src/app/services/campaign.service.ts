@@ -34,10 +34,10 @@ class CampaignService {
   /**
    * Create a new campaign
    */
-  async createCampaign(companyId: string,userId:string, data: CreateCampaignData) {
+  async createCampaign(userId:string, data: CreateCampaignData) {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
-    if (!template || template.company_id !== companyId) {
+    if (!template || template.user_id !== userId) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
@@ -46,7 +46,7 @@ class CampaignService {
     }
 
     // Get contacts based on filters
-    const contacts = await ContactService.getContactsByFilters(companyId,userId, data.contact_filters || {});
+    const contacts = await ContactService.getContactsByFilters(userId, data.contact_filters || {});
     const contactList = await contacts;
 
     if (contactList.length === 0) {
@@ -73,7 +73,6 @@ class CampaignService {
 
     // Create campaign
     const campaign = await CampaignModel.create({
-      company_id: companyId,
       user_id:userId,
       phone_number_id: data.phone_number_id,
       template_id: data.template_id,
@@ -146,12 +145,12 @@ class CampaignService {
   /**
    * Get all campaigns for a company
    */
-  async getCampaigns(companyId: string,userId:string, filters: any = {}) {
+  async getCampaigns(userId:string, filters: any = {}) {
     const page = parseInt(filters.page) || 1;
     const limit = parseInt(filters.limit) || 20;
     const offset = (page - 1) * limit;
 
-    let campaigns = await CampaignModel.findByCompany(companyId, userId, filters);
+    let campaigns = await CampaignModel.findByCompany(userId, filters);
 
     const total = campaigns.length;
     campaigns = campaigns.slice(offset, offset + limit);
@@ -352,7 +351,6 @@ class CampaignService {
       const message = await MessageService.sendMessage({
         messageUUID,
         user_id: campaign.user_id,
-        company_id: campaign.company_id,
         campaign_id: campaign.id,
         profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
@@ -615,7 +613,6 @@ class CampaignService {
     // Send test message
     const message = await MessageService.sendMessage({
       messageUUID,
-      company_id: campaign.company_id,
       user_id: campaign.user_id,
       campaign_id: campaign.id,
       phone_number_id: campaign.phone_number_id,

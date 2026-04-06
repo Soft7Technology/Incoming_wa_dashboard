@@ -13,7 +13,7 @@ import * as path from 'path';
 const BATCH_SIZE = 500; // Process 500 contacts at a time
 
 async function processContactImport(job: Job<ContactImportJobData>) {
-  const { jobId, companyId,userId, filePath, listName, options } = job.data;
+  const { jobId,userId, filePath, listName, options } = job.data;
   console.log(`[Job ${jobId}] Processing contact import from file: ${filePath}`);
 
   try {
@@ -42,7 +42,6 @@ async function processContactImport(job: Job<ContactImportJobData>) {
 
     // Create contact list
     const list = await ContactListModel.create({
-      company_id: companyId,
       user_id:userId,
       name: listName,
       file_name: path.basename(filePath),
@@ -82,7 +81,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       for (const contactData of batch) {
         try {
           // Check if contact exists
-          let contact = await ContactModel.findByPhone(companyId,userId, contactData.phone_number);
+          let contact = await ContactModel.findByPhone(userId, contactData.phone_number);
 
           if (contact) {
             // Update existing contact
@@ -94,7 +93,6 @@ async function processContactImport(job: Job<ContactImportJobData>) {
           } else {
             // Create new contact
             contact = await ContactModel.create({
-              company_id: companyId,
               user_id:userId,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,

@@ -3,7 +3,7 @@ import redisConfig from '@surefy/config/redis.config';
 import { BulkSendMessageDto } from '@surefy/console/interfaces/message.interface';
 
 export interface BulkMessageSendJobData {
-  companyId: string;
+  userId: string;
   messages: BulkSendMessageDto[];
 }
 

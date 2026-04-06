@@ -28,7 +28,7 @@ class CampaignController {
       throw new HTTP400Error({ message: 'Name, phone_number_id, and template_id are required' });
     }
 
-    const campaign = await CampaignService.createCampaign(req.companyId!,req.userId!, {
+    const campaign = await CampaignService.createCampaign(req.userId!, {
       name,
       description,
       phone_number_id,
@@ -55,7 +55,7 @@ class CampaignController {
       limit: req.query.limit,
     };
 
-    const result = await CampaignService.getCampaigns(req.companyId!, req.userId!, filters);
+    const result = await CampaignService.getCampaigns( req.userId!, filters);
     return successResponse(req, res, 'Campaigns retrieved successfully', result);
   });
 

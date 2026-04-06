@@ -19,7 +19,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'Phone number is required' });
     }
 
-    const contact = await ContactService.createContact(req.companyId!,req.userId!, {
+    const contact = await ContactService.createContact(req.userId!, {
       phone_number,
       name,
       email,
@@ -45,7 +45,7 @@ class ContactController {
       limit: req.query.limit,
     };
 
-    const contacts = await ContactService.getContacts(req.companyId!,req.userId!, filters);
+    const contacts = await ContactService.getContacts(req.userId!, filters);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -127,7 +127,7 @@ class ContactController {
     }
 
     // Define upload directory
-    const uploadDir = path.join(process.cwd(), 'uploads', 'contacts', req.companyId!);
+    const uploadDir = path.join(process.cwd(), 'uploads', 'contacts', req.userId!);
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
@@ -138,7 +138,7 @@ class ContactController {
     fs.renameSync(file.path, filePath);
 
     // Queue the import job instead of processing synchronously
-    const importJob = await ContactService.queueContactImport(req.companyId!,req.userId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(req.userId!, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
@@ -268,7 +268,7 @@ class ContactController {
    * Get all contact lists
    */
   getLists = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const lists = await ContactService.getLists(req.companyId!, req.userId!);
+    const lists = await ContactService.getLists(req.userId!);
     return successResponse(req, res, 'Lists retrieved successfully', lists);
   });
 

@@ -35,7 +35,6 @@ class CompanyService {
         email: userData.email,
         phone: userData.phone,
         password: userData.password,
-        company_id: company.id,
       });
     }
 

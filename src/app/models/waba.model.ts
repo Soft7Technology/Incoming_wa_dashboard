@@ -9,6 +9,11 @@ class WabaModel extends BaseModel {
     return this.query().where({ company_id: companyId, deleted_at: null });
   }
 
+  async findByUserId(userId: string) {
+    return this.query().where({ user_id: userId, deleted_at: null });
+  }
+
+
   async findByWabaId(wabaId: string) {
     return this.query().where({ waba_id: wabaId }).first();
   }

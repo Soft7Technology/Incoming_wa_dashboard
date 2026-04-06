@@ -10,6 +10,9 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import webhookService from '@surefy/console/services/webhook.service';
 import { bulkMessageSendQueue } from '../../queues/bulkMessageSend.queue';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
+import messageModel from '@surefy/console/models/message.model';
+import userModel from '../models/user.model';
+
 
 class MessageService {
   /**
@@ -25,6 +28,12 @@ class MessageService {
     return 0.145; // Default for text messages
   }
 
+
+    async getUserStats(userId:any){
+      const userStats = await userModel.getUserStats(userId)
+      return userStats
+    }
+
   /**
    * Send message
    */
@@ -35,15 +44,15 @@ class MessageService {
     }
 
     // Verify company has sufficient credits
-    const company = await CompanyModel.findById(data.company_id);
-    if (!company) {
-      throw new HTTP404Error({ message: 'Company not found' });
-    }
+    // const company = await CompanyModel.findById(data.company_id);
+    // if (!company) {
+    //   throw new HTTP404Error({ message: 'Company not found' });
+    // }
 
-    const messageCost = this.calculateMessageCost(data.type);
-    if (company.credit_balance < messageCost) {
-      throw new HTTP400Error({ message: 'Insufficient credits' });
-    }
+    // const messageCost = this.calculateMessageCost(data.type);
+    // if (company.credit_balance < messageCost) {
+    //   throw new HTTP400Error({ message: 'Insufficient credits' });
+    // }
 
     // Build Meta API payload
     const metaPayload: any = {
@@ -93,7 +102,6 @@ class MessageService {
     const message = await MessageModel.create({
       id: data.messageUUID,
       user_id: data.user_id,
-      company_id: data.company_id,
       campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
       profile_name: data.profile_name || "",
@@ -103,7 +111,7 @@ class MessageService {
       to_phone: data.to,
       status: 'queued',
       content: metaPayload,
-      cost: messageCost,
+      // cost: messageCost,
       queued_at: new Date(),
     });
 
@@ -120,21 +128,21 @@ class MessageService {
       });
 
       // Deduct credits
-      await CreditService.deductCredit({
-        company_id: data.company_id,
-        amount: messageCost,
-        reference_type: 'message',
-        reference_id: message.id,
-        description: `Message sent to ${data.to}`,
-      });
+      // await CreditService.deductCredit({
+      //   company_id: data.company_id,
+      //   amount: messageCost,
+      //   reference_type: 'message',
+      //   reference_id: message.id,
+      //   description: `Message sent to ${data.to}`,
+      // });
 
       // Trigger webhook
-      await WebhookService.triggerWebhook(data.company_id, 'message.sent', {
-        message_id: message.id,
-        wamid: metaResponse.messages[0].id,
-        to: data.to,
-        timestamp: new Date().toISOString(),
-      });
+      // await WebhookService.triggerWebhook(data.company_id, 'message.sent', {
+      //   message_id: message.id,
+      //   wamid: metaResponse.messages[0].id,
+      //   to: data.to,
+      //   timestamp: new Date().toISOString(),
+      // });
 
       return { ...message, wamid: metaResponse.messages[0].id };
     } catch (error: any) {
@@ -157,15 +165,15 @@ class MessageService {
     }
 
     // Verify company has sufficient credits
-    const company = await CompanyModel.findById(data.company_id);
-    if (!company) {
-      throw new HTTP404Error({ message: 'Company not found' });
+    const user = await userModel.findById(data.user_id);
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
     }
 
-    const messageCost = this.calculateMessageCost(data.type);
-    if (company.credit_balance < messageCost) {
-      throw new HTTP400Error({ message: 'Insufficient credits' });
-    }
+    // const messageCost = this.calculateMessageCost(data.type);
+    // if (company.credit_balance < messageCost) {
+    //   throw new HTTP400Error({ message: 'Insufficient credits' });
+    // }
 
     // Build Meta API payload
     const metaPayload: any = {
@@ -214,7 +222,7 @@ class MessageService {
     // Create message record
     const message = await MessageModel.create({
       id: data.messageUUID,
-      company_id: data.company_id,
+      user_id: data.user_id,
       // campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
       direction: 'outbound',
@@ -223,7 +231,7 @@ class MessageService {
       to_phone: data.to,
       status: 'queued',
       content: metaPayload,
-      cost: messageCost,
+      // cost: messageCost,
       queued_at: new Date(),
     });
 
@@ -241,21 +249,21 @@ class MessageService {
       });
 
       // Deduct credits
-      await CreditService.deductCredit({
-        company_id: data.company_id,
-        amount: messageCost,
-        reference_type: 'message',
-        reference_id: message.id,
-        description: `Message sent to ${data.to}`,
-      });
+      // await CreditService.deductCredit({
+      //   company_id: data.company_id,
+      //   amount: messageCost,
+      //   reference_type: 'message',
+      //   reference_id: message.id,
+      //   description: `Message sent to ${data.to}`,
+      // });
 
       // Trigger webhook
-      await WebhookService.triggerWebhook(data.company_id, 'message.sent', {
-        message_id: message.id,
-        wamid: metaResponse.messages[0].id,
-        to: data.to,
-        timestamp: new Date().toISOString(),
-      });
+      // await WebhookService.triggerWebhook(data.company_id, 'message.sent', {
+      //   message_id: message.id,
+      //   wamid: metaResponse.messages[0].id,
+      //   to: data.to,
+      //   timestamp: new Date().toISOString(),
+      // });
 
       return { ...message, wamid: metaResponse.messages[0].id };
     } catch (error: any) {
@@ -329,7 +337,7 @@ class MessageService {
     }
 
     const message = await MessageModel.create({
-      company_id: phoneNumber.company_id,
+      user_id: phoneNumber.user_id,
       profile_name: data.profile_name,
       phone_number_id: phoneNumber.id,
       wamid: data.message_id,
@@ -337,18 +345,18 @@ class MessageService {
       type: data.type,
       from_phone: data.from,
       to_phone: phoneNumber.display_phone_number,
-      status: 'delivered',
+      status: 'received',
       content: data.content,
       context: data.context,
       delivered_at: new Date(),
     });
 
-    const webhookPayload = webhookService.buildIncomingWebhookPayload(message, phoneNumber);
-    await WebhookService.triggerWebhook(
-      phoneNumber.company_id,
-      'message.received',
-      webhookPayload
-    );
+    // const webhookPayload = webhookService.buildIncomingWebhookPayload(message, phoneNumber);
+    // await WebhookService.triggerWebhook(
+    //   phoneNumber.company_id,
+    //   'message.received',
+    //   webhookPayload
+    // );
 
 
     return message;
@@ -362,7 +370,7 @@ class MessageService {
   }
 
 
-  async bulkSendMessages(companyId: string, messages: BulkSendMessageDto[]) {
+  async bulkSendMessages(userId: string, messages: BulkSendMessageDto[]) {
     // Validate messages array length
     if (!messages || messages.length === 0) {
       throw new HTTP400Error({ message: 'Messages array cannot be empty' });
@@ -373,9 +381,9 @@ class MessageService {
     }
 
     // Verify company exists
-    const company = await CompanyModel.findById(companyId);
-    if (!company) {
-      throw new HTTP404Error({ message: 'Company not found' });
+    const user = await userModel.findById(userId);
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
     }
 
     // Validate all messages have required fields
@@ -389,16 +397,16 @@ class MessageService {
     }
 
     // Calculate total estimated cost
-    const totalEstimatedCost = messages.reduce((sum, msg) => {
-      return sum + this.calculateMessageCost(msg.type);
-    }, 0);
+    // const totalEstimatedCost = messages.reduce((sum, msg) => {
+    //   return sum + this.calculateMessageCost(msg.type);
+    // }, 0);
 
     // Check if company has sufficient credits
-    if (company.credit_balance < totalEstimatedCost) {
-      throw new HTTP400Error({
-        message: `Insufficient credits. Required: ${totalEstimatedCost.toFixed(2)}, Available: ${company.credit_balance.toFixed(2)}`,
-      });
-    }
+    // if (company.credit_balance < totalEstimatedCost) {
+    //   throw new HTTP400Error({
+    //     message: `Insufficient credits. Required: ${totalEstimatedCost.toFixed(2)}, Available: ${company.credit_balance.toFixed(2)}`,
+    //   });
+    // }
 
     const normalizedMessages = messages.map((msg) => ({
       ...msg,
@@ -407,14 +415,14 @@ class MessageService {
 
     // Add job to queue
     const job = await bulkMessageSendQueue.add('bulk-send', {
-      companyId,
+      userId,
       messages: normalizedMessages,
     });
 
     return {
       job_id: job.id,
       total_messages: normalizedMessages.length,
-      estimated_cost: totalEstimatedCost,
+      // estimated_cost: totalEstimatedCost,
       status: 'queued',
       message: 'Bulk message send job has been queued for processing',
       messages: normalizedMessages.map((msg) => ({

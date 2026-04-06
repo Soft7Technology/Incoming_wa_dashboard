@@ -10,7 +10,7 @@ export async function up(knex: Knex): Promise<void> {
     table.enum('type', ['text', 'image', 'video', 'document', 'audio', 'template', 'interactive', 'location', 'contacts', 'sticker']).notNullable();
     table.string('from_phone', 50).notNullable();
     table.string('to_phone', 50).notNullable();
-    table.enum('status', ['queued', 'sent', 'delivered', 'read', 'failed', 'deleted']).defaultTo('queued');
+    table.enum('status', ['queued', 'sent', 'delivered', 'read', 'failed', 'deleted','received']).defaultTo('queued');
     table.text('error_message');
     table.string('error_code', 50);
     table.jsonb('content'); // Message content (text, media URLs, etc.)

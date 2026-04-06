@@ -20,7 +20,7 @@ class WabaService {
 
       // Step 2: Fetch phone numbers from Graph API and store
       const clientData = {
-        company_id: data.company_id,
+        user_id: data.user_id,
         waba_id: data.waba_id,
         company_WABAID: clientWabaAccount.id
       }
@@ -79,7 +79,7 @@ class WabaService {
 
 
   async syncCompanyPhoneNumbers(clientData: {
-    company_id: string;
+    user_id: string;
     waba_id: string;
     company_WABAID: string;
   }) {
@@ -99,7 +99,7 @@ class WabaService {
         results.push({ phone_id: phone.id, status: "updated" });
       } else {
         await PhoneNumberModel.create({
-          company_id: clientData.company_id,
+          user_id: clientData.user_id,
           waba_id: clientData.company_WABAID,
           phone_number_id: phone.id,
           display_phone_number: phone.display_phone_number,
@@ -235,8 +235,8 @@ class WabaService {
   /**
    * Get WABA accounts for company
    */
-  async getCompanyWabas(companyId: string) {
-    return WabaModel.findByCompanyId(companyId);
+  async getCompanyWabas(userId: string) {
+    return WabaModel.findByUserId(userId);
   }
 
   /**
@@ -281,8 +281,8 @@ class WabaService {
   /**
    * Get phone numbers for company
    */
-  async getCompanyPhoneNumbers(companyId: string) {
-    return PhoneNumberModel.findByCompanyId(companyId);
+  async getUserPhoneNumbers(userId: string) {
+    return PhoneNumberModel.findByUserId(userId);
   }
 
   /**

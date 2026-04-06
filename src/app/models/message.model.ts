@@ -268,6 +268,8 @@ async getMessagesConversation(userId: string, phone_number_id: string) {
     .orderBy('lm.created_at', 'desc');
 }
 
+
+
 async getLeadConversations(
   contactNumber: string,
   phone_number_id: string,
@@ -310,7 +312,7 @@ async getLeadConversations(
       `),
     ])
     .where('phone_number_id', phone_number_id)
-    .andWhere('user_id', userId)
+    // .andWhere('user_id', userId)
     .andWhere((builder) => {
       builder
         .whereRaw(

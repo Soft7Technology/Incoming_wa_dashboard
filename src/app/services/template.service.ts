@@ -9,7 +9,7 @@ class TemplateService {
   /**
    * Sync templates from Meta
    */
-  async syncTemplates(companyId: string, wabaId: string) {
+  async syncTemplates(userId: string, wabaId: string) {
     const waba = await WabaModel.findById(wabaId);
     if (!waba) {
       throw new HTTP404Error({ message: 'WABA account not found' });
@@ -21,13 +21,13 @@ class TemplateService {
     const synced = [];
     for (const template of metaTemplates.data || []) {
       const existing = await TemplateModel.findByNameAndLanguage(
-        companyId,
+        userId,
         template.name,
         template.language,
       );
 
       const templateData = {
-        company_id: companyId,
+        user_id: userId,
         waba_id: wabaId,
         template_id: template.id,
         name: template.name,
@@ -86,8 +86,8 @@ class TemplateService {
   /**
    * Get templates for company
    */
-  async getTemplates(companyId: string, filters: any = {}) {
-    return TemplateModel.findByCompanyId(companyId, filters);
+  async getTemplates(userId: string, filters: any = {}) {
+    return TemplateModel.findByCompanyId(userId, filters);
   }
 
   /**
