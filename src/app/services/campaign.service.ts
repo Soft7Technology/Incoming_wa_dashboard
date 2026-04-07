@@ -41,6 +41,8 @@ class CampaignService {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
+    console.log("Data",data)
+
     if (template.status !== 'APPROVED') {
       throw new HTTP400Error({ message: 'Template must be approved before use in campaigns' });
     }
@@ -48,6 +50,7 @@ class CampaignService {
     // Get contacts based on filters
     const contacts = await ContactService.getContactsByFilters(userId, data.contact_filters || {});
     const contactList = await contacts;
+    console.log('Found contacts for campaign:', contactList);
 
     if (contactList.length === 0) {
       throw new HTTP400Error({ message: 'No contacts found matching the specified filters' });

@@ -16,29 +16,31 @@ class ContactService {
   /**
    * Create a new contact
    */
-  async createContact(userId:string, data: any) {
-    // Check if contact already exists
-    const existing = await ContactModel.findByPhone(userId, data.phone_number);
-    if (existing) {
-      throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
-    }
+  async createContact(userId: string, data: any) {
+   let phone = data.phone_number?.toString().trim();
 
-    const contact = await ContactModel.create({
-      user_id:userId,
-      phone_number: data.phone_number,
-      name: data.name,
-      email: data.email,
-      attributes: data.attributes || {},
-      notes: data.notes,
-    });
+   // Add + if not present
+   if (phone && !phone.startsWith('+')) {
+    phone = '+' + phone;
+   }
 
-    // Add tags if provided
-    if (data.tag_ids && data.tag_ids.length > 0) {
-      await this.addTagsToContact(contact.id, data.tag_ids);
-    }
+   // Check if contact already exists
+   const existing = await ContactModel.findByPhone(userId, phone);
+   if (existing) {
+    throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
+   }
 
-    return contact;
-  }
+   const contact = await ContactModel.create({
+    user_id: userId,
+    phone_number: phone,
+    name: data.name,
+    email: data.email,
+    attributes: data.attributes || {},
+    notes: data.notes,
+   });
+
+   return contact;
+ }
 
   /**
    * Get all contacts for a company
@@ -432,6 +434,10 @@ class ContactService {
     if (filters.tag_ids && filters.tag_ids.length > 0) {
       const contactIds = await ContactTagRelationModel.getContactIdsByTags(filters.tag_ids);
       query = query.whereIn('contacts.id', contactIds);
+    }
+
+    if (filters.contactNumber && filters.contactNumber.length > 0) {
+      query = query.whereIn('phone_number', filters.contactNumber);
     }
 
     // Filter by lists (OR condition)
