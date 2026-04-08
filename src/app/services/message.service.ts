@@ -370,6 +370,55 @@ class MessageService {
   }
 
 
+    /**
+   * Handle Send ChatBot message
+   */
+  async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
+    {
+      try {
+        let metaPayload: any = {
+          messaging_product: "whatsapp",
+          to: to,
+        };
+
+        // ✅ TEXT MESSAGE
+        if (response.type === "text") {
+          metaPayload.type = "text";
+          metaPayload.text = {
+            body: response.text,
+          };
+        }
+
+        // ✅ INTERACTIVE BUTTON MESSAGE
+        if (response.type === "interactive") {
+          metaPayload.type = "interactive";
+          metaPayload.interactive = {
+            type: "button",
+            body: {
+              text: response.interactive.body.text,
+            },
+            action: {
+              buttons: response.interactive.action.buttons.map((btn: any) => ({
+                type: "reply",
+                reply: {
+                  id: btn.reply.id,
+                  title: btn.reply.title,
+                },
+              })),
+            },
+          };
+        }
+        const metaResponse = await MetaService.sendMessage(phoneNumberId, metaPayload);
+        console.log("✅ Message Sent:", metaResponse.data);
+        return metaResponse.data;
+      } catch (error: any) {
+        console.error("❌ Send Message Error:", error?.response?.data || error.message);
+        return null;
+      }
+    }
+  }
+
+
   async bulkSendMessages(userId: string, messages: BulkSendMessageDto[]) {
     // Validate messages array length
     if (!messages || messages.length === 0) {

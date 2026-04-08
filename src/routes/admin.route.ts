@@ -8,6 +8,7 @@ import ContactRoute from './contact.route';
 import CampaignRoute from './campaign.route';
 import WebhookRoute from './webhook.route';
 import UserRoute from './company.route';
+import chatBotRoute from './chatbot.route';
 
 const AdminRoute = Router();
 
@@ -23,6 +24,7 @@ AdminRoute.use('/credits', CreditRoute);
 AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
+AdminRoute.use('/chatbot',chatBotRoute ); // Import chatbot route
 
 
 export default AdminRoute;

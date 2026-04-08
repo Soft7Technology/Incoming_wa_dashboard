@@ -14,6 +14,7 @@ class PhoneNumberModel extends BaseModel {
   }
 
   async findByPhoneNumberId(phoneNumberId: string) {
+    console.log("Finding phone number with ID:", phoneNumberId); // Debug log
     return this.query().where({ phone_number_id: phoneNumberId }).first();
   }
  

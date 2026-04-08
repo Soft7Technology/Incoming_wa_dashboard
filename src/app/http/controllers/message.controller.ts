@@ -5,6 +5,7 @@ import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
+import { handleIncomingMessageChatBot } from  '../../utils'
 
 class MessageController {
   /**
@@ -121,7 +122,6 @@ class MessageController {
    */
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
-    console.log("Webhook entry received", JSON.stringify(entry));
 
     for (const item of entry || []) {
       for (const change of item.changes || []) {
@@ -140,16 +140,17 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
-            console.log("Processing incoming message", message, value);
             await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
-              profile_name: value.contacts[0]?.profile?.name,
+              profile_name: value.contacts?.[0]?.profile?.name || "",
               message_id: message.id,
               from: message.from,
               type: message.type,
               content: message,
               context: message.context,
             });
+
+            await handleIncomingMessageChatBot(value.metadata.phone_number_id,message)
           }
         }
       }
