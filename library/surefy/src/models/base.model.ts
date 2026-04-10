@@ -54,6 +54,7 @@ export class BaseModel {
   }
 
   async delete(id: string | number) {
+    console.log("Deleting record with id:", id); // Debug log
     return this.query().where({ id }).del();
   }
 

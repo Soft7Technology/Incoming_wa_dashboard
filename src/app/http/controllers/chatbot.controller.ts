@@ -27,10 +27,53 @@ class chatBotController {
         return successResponse(req, res, 'Create ChatBot successfully', result);
     })
 
+    getChatBots = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const chatBots = await chatBotService.getChatBots(req.userId!);
+            return successResponse(req, res, 'ChatBots retrieved successfully', chatBots);
+        }
+    );
+
+    publishedChatBot = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const { chatBotId } = req.params;
+            const {status, published} = req.body
+             
+            const result = await chatBotService.publishedChatBot(req.userId!,chatBotId,status, published);
+            return successResponse(req, res, 'ChatBot published successfully', result);
+        }
+    )
+
+    unpublishedChatBot = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const { chatBotId } = req.params;                       
+            const result = await chatBotService.unpublishedChatBot(req.userId!,chatBotId,'unpublished', false);
+            return successResponse(req, res, 'ChatBot unpublished successfully', result);
+        }       
+    )
+
+    getChatBotById = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const { chatBotId } = req.params;
+            const chatBot = await chatBotService.getChatBotById(chatBotId);
+            return successResponse(req, res, 'ChatBot retrieved successfully', chatBot);
+        }
+    );
+
+    deleteChatBot = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const { chatBotId } = req.params;
+            const result = await chatBotService.deleteChatBot(chatBotId);
+            return successResponse(req, res, 'ChatBot deleted successfully', result);
+        }
+    )
+
     createChatBotFlow = tryCatchAsync(
         async (req: AuthRequest, res: Response) => {
             const { chatBotId } = req.params;
             const { name, nodes, edges } = req.body;
+
+            console.log("Creating chatbot flow:", { chatBotId, name }); // Debug log
 
             const result = await chatBotService.createFlow(req.userId!,{
                 chatBotId,

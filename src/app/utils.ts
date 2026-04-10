@@ -21,6 +21,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     // 1️⃣ Get bot
     const bot: any = await chatBotModel.getPublishedBotByUser(phoneNumberId);
+    console.log("🤖 Found bot:", bot ? bot.name : "No bot");
     if (!bot) return null;
 
     // 2️⃣ Load nodes + edges

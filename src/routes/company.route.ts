@@ -12,6 +12,7 @@ UserRoute.put('/:id', CompanyController.update);
 UserRoute.delete('/:id', CompanyController.delete);
 UserRoute.post('/:id/regenerate-keys', CompanyController.regenerateKeys);
 UserRoute.get('/stats', CompanyController.getUserStats)
+// UserRoute.get('/notifications', CompanyController.getNotifications)
 
 export default UserRoute;
 

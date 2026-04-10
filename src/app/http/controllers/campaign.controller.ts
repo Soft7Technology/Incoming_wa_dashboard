@@ -17,6 +17,7 @@ class CampaignController {
       phone_number_id,
       template_id,
       contact_filters,
+      tags,
       parameter_mapping,
       media_uploads,
       scheduled_at,

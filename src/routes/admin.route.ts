@@ -24,7 +24,7 @@ AdminRoute.use('/credits', CreditRoute);
 AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
-AdminRoute.use('/chatbot',chatBotRoute ); // Import chatbot route
+AdminRoute.use('/chatbot',chatBotRoute ); 
 
 
 export default AdminRoute;

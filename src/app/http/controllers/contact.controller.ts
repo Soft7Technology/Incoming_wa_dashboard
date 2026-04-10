@@ -228,7 +228,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'Tag name is required' });
     }
 
-    const tag = await ContactService.createTag(req.companyId!, { name, color, description });
+    const tag = await ContactService.createTag(req.userId!, { name, color, description });
     return successResponse(req, res, 'Tag created successfully', tag, HttpStatusCode.CREATED);
   });
 
@@ -237,7 +237,7 @@ class ContactController {
    * Get all tags
    */
   getTags = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const tags = await ContactService.getTags(req.companyId!);
+    const tags = await ContactService.getTags(req.userId!);
     return successResponse(req, res, 'Tags retrieved successfully', tags);
   });
 

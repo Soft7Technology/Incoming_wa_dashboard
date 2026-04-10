@@ -476,22 +476,23 @@ class ContactService {
   /**
    * Tag Management
    */
-  async createTag(companyId: string, data: any) {
-    const existing = await ContactTagModel.findByName(companyId, data.name);
+  async createTag(userId: string, data: any) {
+    const existing = await ContactTagModel.findByName(userId, data.name);
     if (existing) {
       throw new HTTP400Error({ message: 'Tag with this name already exists' });
     }
+    console.log(`Creating tag for user ${userId} with data: ${JSON.stringify(data)}`);
 
     return ContactTagModel.create({
-      company_id: companyId,
+      user_id: userId,
       name: data.name,
       color: data.color || '#3B82F6',
       description: data.description,
     });
   }
 
-  async getTags(companyId: string) {
-    return ContactTagModel.findByCompany(companyId);
+  async getTags(userId: string) {
+    return ContactTagModel.findByUser(userId);
   }
 
   async updateTag(tagId: string, data: any) {

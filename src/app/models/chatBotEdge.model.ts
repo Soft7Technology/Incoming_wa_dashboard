@@ -17,6 +17,11 @@ class chatBotEdgeModel extends BaseModel{
     async createEdges(data: any[]) {
       return this.query().insert(data).returning('*'); // ✅
     }
+
+    async deleteChatBotEdge(chatBotId: string | number) {
+      return this.query().where({ chatBotId }).delete();
+    }
+    
 }
 
 export default new chatBotEdgeModel();

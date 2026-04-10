@@ -5,6 +5,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import AuthService from './auth.service';
+import userModel from '../models/user.model';
 
 class CompanyService {
   /**
@@ -48,6 +49,14 @@ class CompanyService {
       companyKey: companyKey,
     };
   }
+
+  /**
+   * Get Notification Stats for User
+   */
+  // async getNotificationStats(userId: string) {
+  //   const stats = await userModel.getNotificationStats(userId);
+  //   return stats;
+  // }
 
   /**
    * Get company details

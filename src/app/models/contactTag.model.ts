@@ -12,9 +12,9 @@ class ContactTagModel extends BaseModel {
       .orderBy('name', 'asc');
   }
 
-  async findByName(companyId: string, name: string) {
+  async findByName(userId: string, name: string) {
     return this.query()
-      .where({ company_id: companyId, name })
+      .where({ user_id: userId, name })
       .whereNull('deleted_at')
       .first();
   }
@@ -43,6 +43,13 @@ class ContactTagModel extends BaseModel {
 
   async findByIds(tagIds: string[]) {
     return this.query().whereIn('id', tagIds);
+  }
+  
+  async findByUser(userId: string) {
+    return this.query()
+      .where({ user_id: userId })
+      .whereNull('deleted_at')
+      .orderBy('name', 'asc');
   }
 }
 

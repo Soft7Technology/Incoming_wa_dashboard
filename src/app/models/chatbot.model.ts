@@ -14,9 +14,14 @@ class chatBotModel extends BaseModel{
         return this.query().where({id}).first()
     }
 
-    async getPublishedBotByUser(phoneNumberId:string){
-        return this.query().where({phoneNumberId,published:true}).first()
+    async findByUserId(userId: string | number): Promise<any> {
+        return this.query().where({user_id: userId})
     }
+
+    async getPublishedBotByUser(userId:string){
+        return this.query().where({user_id: userId, status:'published', published:true}).first()
+    }
+    
 }
 
 export default new chatBotModel();

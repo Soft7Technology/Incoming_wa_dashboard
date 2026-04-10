@@ -12,6 +12,12 @@ class UserModel extends BaseModel {
       .first();
   }
 
+  // async getNotificationStats(userId: string) {
+  //   return this.query()
+  //     .select(
+  //       this.query()
+  // }
+
 
     async getUserStats(userId: string) {
     return this.query()

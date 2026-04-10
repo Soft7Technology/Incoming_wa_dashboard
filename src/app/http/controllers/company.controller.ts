@@ -85,6 +85,14 @@ class CompanyController {
   });
 
   /**
+   * GET /v1/user/notifications
+   */
+  // getNotifications = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  //   const notifications = await CompanyService.getNotifications(req.userId!)
+  //   return successResponse(req,res, 'User notifications retrieved successfully', notifications)
+  // })
+
+  /**
    * POST /v1/companies/:id/regenerate-keys
    * Regenerate company API keys
    */
