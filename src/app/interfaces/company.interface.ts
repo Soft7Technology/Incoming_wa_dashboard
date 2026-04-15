@@ -19,6 +19,8 @@ export interface Company {
 export interface CreateCompanyDto {
   name: string;
   email: string;
+  domain?:string;
+  status?: 'active' | 'inactive' | 'suspended';
   phone?: string;
   business_id?: string;
   webhook_url?: string;

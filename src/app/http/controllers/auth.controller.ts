@@ -3,6 +3,8 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import AuthService from '@surefy/console/services/auth.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import companyController from './company.controller';
+import companyService from '../../services/company.service';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -30,6 +32,39 @@ class AuthController {
   });
 
   /**
+   * POST /v1/companies
+   * Onboard new company
+   */
+  onboard = tryCatchAsync(async (req: Request, res: Response) => {
+    const { name, email, phone, user } = req.body;
+    console.log('Onboarding company with data:', { name, email, phone, user });
+
+    if (!name || !email) {
+      throw new HTTP400Error({ message: 'Name and email are required' });
+    }
+
+    if (!user || !user.name || !user.password || (!user.email && !user.phone)) {
+      throw new HTTP400Error({
+        message: 'User details are required: name, password, and either email or phone',
+      });
+    }
+
+    const result = await companyService.onboardCompany({
+      name,
+      email,
+      phone,
+      user,
+    });
+
+    return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
+  });
+
+  /**
+   * POST /v1/auth/register-company
+   * Register new company along with admin user
+   */
+
+  /**
    * POST /v1/auth/register
    * Register new company user
    */
@@ -48,7 +83,7 @@ class AuthController {
       name,
       email,
       phone,
-      password
+      password,
     });
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
@@ -83,7 +118,7 @@ class AuthController {
         company_id,
       },
       req.userId!,
-      req.userRole!
+      req.userRole!,
     );
 
     return successResponse(req, res, `${role} user created successfully`, user, HttpStatusCode.CREATED);

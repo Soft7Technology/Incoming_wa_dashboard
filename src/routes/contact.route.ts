@@ -35,7 +35,7 @@ ContactRoute.post('/import', uploadXLSXMiddleware, ContactController.importConta
 // Contact tags management
 ContactRoute.post('/:id/tags', ContactController.addTags);
 ContactRoute.delete('/:id/tags', ContactController.removeTags);
-
+// ContactRoute.get()
 
 
 

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware } from '@surefy/middleware/auth.middleware';
-import CompanyRoute from './company.route';
+import CompanyRoute from './user.route';
 import WabaRoute from './waba.route';
 import TemplateRoute from './template.route';
 import MessageRoute from './message.route';

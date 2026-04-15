@@ -19,7 +19,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'Phone number is required' });
     }
 
-    const contact = await ContactService.createContact(req.userId!, {
+    const contact = await ContactService.createContact(req.userId!,req.companyId!, {
       phone_number,
       name,
       email,
@@ -228,7 +228,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'Tag name is required' });
     }
 
-    const tag = await ContactService.createTag(req.userId!, { name, color, description });
+    const tag = await ContactService.createTag(req.userId!,req.companyId!, { name, color, description });
     return successResponse(req, res, 'Tag created successfully', tag, HttpStatusCode.CREATED);
   });
 

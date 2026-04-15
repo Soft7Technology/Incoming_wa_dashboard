@@ -17,7 +17,6 @@ class CampaignController {
       phone_number_id,
       template_id,
       contact_filters,
-      tags,
       parameter_mapping,
       media_uploads,
       scheduled_at,
@@ -29,7 +28,7 @@ class CampaignController {
       throw new HTTP400Error({ message: 'Name, phone_number_id, and template_id are required' });
     }
 
-    const campaign = await CampaignService.createCampaign(req.userId!, {
+    const campaign = await CampaignService.createCampaign(req.userId!,req.companyId!, {
       name,
       description,
       phone_number_id,

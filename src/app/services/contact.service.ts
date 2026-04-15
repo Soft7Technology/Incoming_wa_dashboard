@@ -16,7 +16,7 @@ class ContactService {
   /**
    * Create a new contact
    */
-  async createContact(userId: string, data: any) {
+  async createContact(userId: string,companyId:string, data: any) {
    let phone = data.phone_number?.toString().trim();
 
    // Add + if not present
@@ -32,6 +32,7 @@ class ContactService {
 
    const contact = await ContactModel.create({
     user_id: userId,
+    company_id: companyId,
     phone_number: phone,
     name: data.name,
     email: data.email,
@@ -422,7 +423,7 @@ class ContactService {
   /**
    * Get contacts by filters (for campaign targeting)
    */
-  async getContactsByFilters(userId:string, filters: any) {
+  async getContactsByFilters(userId:string,companyId:string, filters: any) {
     let query = ContactModel.findWithFilters(userId, filters);
 
     // Exclude invalid numbers by default
@@ -476,7 +477,7 @@ class ContactService {
   /**
    * Tag Management
    */
-  async createTag(userId: string, data: any) {
+  async createTag(userId: string,companyId:string, data: any) {
     const existing = await ContactTagModel.findByName(userId, data.name);
     if (existing) {
       throw new HTTP400Error({ message: 'Tag with this name already exists' });
@@ -485,6 +486,7 @@ class ContactService {
 
     return ContactTagModel.create({
       user_id: userId,
+      company_id: companyId,
       name: data.name,
       color: data.color || '#3B82F6',
       description: data.description,

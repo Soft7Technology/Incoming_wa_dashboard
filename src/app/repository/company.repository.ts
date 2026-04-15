@@ -12,6 +12,11 @@ class CompanyRepository {
     return `sk_${crypto.randomBytes(32).toString('hex')}`;
   }
 
+  async getDashboardStats(companyId:string){
+    const stats = await CompanyModel.getDashboardStats(companyId)
+    return stats
+  }
+
   /**
    * Create new company
    */

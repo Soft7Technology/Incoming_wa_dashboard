@@ -21,6 +21,7 @@ class WabaController {
 
     const waba = await WabaService.createWaba({
       user_id: req.userId!,
+      company_id: req.companyId!,
       waba_id,
       name,
       currency,
@@ -44,6 +45,7 @@ class WabaController {
 
     const waba = await wabaService.onboardWaba({
       user_id: req.userId!,
+      company_id: req.companyId!,
       waba_id
     })
     return successResponse(req, res, 'WABA account created successfully', waba, HttpStatusCode.CREATED);

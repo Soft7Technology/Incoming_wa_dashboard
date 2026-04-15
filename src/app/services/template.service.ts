@@ -9,7 +9,7 @@ class TemplateService {
   /**
    * Sync templates from Meta
    */
-  async syncTemplates(userId: string, wabaId: string) {
+  async syncTemplates(userId: string,companyId:string, wabaId: string) {
     const waba = await WabaModel.findById(wabaId);
     if (!waba) {
       throw new HTTP404Error({ message: 'WABA account not found' });
@@ -28,6 +28,7 @@ class TemplateService {
 
       const templateData = {
         user_id: userId,
+        company_id: companyId,
         waba_id: wabaId,
         template_id: template.id,
         name: template.name,

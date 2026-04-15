@@ -34,6 +34,7 @@ export interface PhoneNumber {
 export interface CreateWabaDto {
   user_id: string;
   waba_id: string;
+  company_id: string;
   name?: string;
   currency?: string;
   timezone?: string;

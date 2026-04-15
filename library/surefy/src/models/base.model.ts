@@ -28,7 +28,6 @@ export class BaseModel {
 
   async create(data: any) {
     // Convert arrays and objects to JSON strings for JSONB columns
-    console.log("Creating record with data:", data); // Debug log 
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
       if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {

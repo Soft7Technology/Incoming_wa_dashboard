@@ -4,6 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import * as bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { permission } from 'process';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -83,7 +84,7 @@ class AuthService {
       token,
       expiresIn: this.JWT_EXPIRES_IN,
     };
-  }
+  } 
 
   /**
    * Register new user (company role)
@@ -92,9 +93,13 @@ class AuthService {
     name: string;
     email?: string;
     phone?: string;
+    company_id?: string;
     password: string;
+    role?: string;
+    permissions?: string[];
   }) {
-    const { name, email, phone, password } = data;
+    const { name, email, phone, company_id, password } = data;
+    console.log("Registering user with data:",data);
 
     // Validate at least email or phone is provided
     if (!email && !phone) {
@@ -124,9 +129,11 @@ class AuthService {
       name,
       email,
       phone,
+      company_id,
       password: hashedPassword,
-      role: 'user',
+      role:data.role || 'admin',
       status: 'active',
+      permissions: data.permissions || []
     });
 
     // Remove password from response

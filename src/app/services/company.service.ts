@@ -6,6 +6,7 @@ import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import AuthService from './auth.service';
 import userModel from '../models/user.model';
+import companyModel from '../models/company.model';
 
 class CompanyService {
   /**
@@ -33,9 +34,10 @@ class CompanyService {
     if (userData) {
       createdUser = await AuthService.register({
         name: userData.name,
+        company_id: company.id,
         email: userData.email,
         phone: userData.phone,
-        password: userData.password,
+        password: userData.password
       });
     }
 
@@ -127,6 +129,82 @@ class CompanyService {
       companyKey: companyKey,
     };
   }
+
+  async getDashboardStats(companyId:string){
+    const stats = await companyModel.getDashboardStats(companyId)
+    return stats
+  }
+
+  /**
+   * Create user under company
+   */
+  async createUser(
+    companyId: string, 
+    userData: { name: string; email?: string; phone?: string; password: string; role: string,permissions?: string[] }) {
+    
+    const existingUser = await userModel.findByEmail(userData.email);
+
+    if (existingUser) {
+      throw new HTTP400Error({ message: 'User with this email already exists' });
+    }
+    
+    let createdUser = null;
+    if (userData) {
+      createdUser = await AuthService.register({
+        name: userData.name,
+        company_id: companyId,
+        email: userData.email,
+        phone: userData.phone,
+        password: userData.password,
+        role: userData.role,
+        permissions: userData.permissions
+      });
+    }
+    return createdUser;
+  }
+
+//   async createUser(
+//   companyId: string,
+//   userData: {
+//     name: string;
+//     email?: string;
+//     phone?: string;
+//     password: string;
+//     role: string;
+//     permissions?: string[]; // from frontend slider
+//   }
+// ) {
+//   // 1. Check existing user
+//   const existingUser = await userModel.findByEmail(userData.email);
+
+//   if (existingUser) {
+//     throw new HTTP400Error({ message: 'User with this email already exists' });
+//   }
+
+//   // 2. Create user
+//   const createdUser = await AuthService.register({
+//     name: userData.name,
+//     company_id: companyId,
+//     email: userData.email,
+//     phone: userData.phone,
+//     password: userData.password
+//   });
+
+//   // 3. Assign permissions (if provided)
+//   if (createdUser && userData.permissions?.length) {
+//     const permissionRows = userData.permissions.map((permId) => ({
+//       user_id: createdUser.id,
+//       permission_id: permId
+//     }));
+
+//     await knex('user_permissions')
+//       .insert(permissionRows)
+//       .onConflict(['user_id', 'permission_id'])
+//       .ignore();
+//   }
+
+//   return createdUser;
+// }
 }
 
 export default new CompanyService();

@@ -5,7 +5,7 @@ class UserModel extends BaseModel {
     super('users');
   }
 
-  async findByEmail(email: string) {
+  async findByEmail(email: any) {
     return this.query()
       .where({ email })
       .whereNull('deleted_at')

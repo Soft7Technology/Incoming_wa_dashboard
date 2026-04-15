@@ -7,8 +7,9 @@ import CreditRoute from './credit.route';
 import ContactRoute from './contact.route';
 import CampaignRoute from './campaign.route';
 import WebhookRoute from './webhook.route';
-import UserRoute from './company.route';
+import UserRoute from './user.route';
 import chatBotRoute from './chatbot.route';
+import companyRoute from './company.route';
 
 const AdminRoute = Router();
 
@@ -16,6 +17,7 @@ const AdminRoute = Router();
 AdminRoute.use(jwtAuthMiddleware);
 
 // Mount all admin routes
+AdminRoute.use('/companies', companyRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);
 AdminRoute.use('/templates', TemplateRoute);
@@ -25,6 +27,5 @@ AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
 AdminRoute.use('/chatbot',chatBotRoute ); 
-
 
 export default AdminRoute;

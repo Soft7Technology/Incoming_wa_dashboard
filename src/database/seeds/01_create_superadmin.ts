@@ -9,7 +9,7 @@ import bcrypt from 'bcrypt';
 export async function seed(knex: Knex): Promise<void> {
   // Check if superadmin already exists
   const existingUser = await knex('users')
-    .where({ email: 'accounts@surefy.co' })
+    .where({ email: 'accounts@soft7.co' })
     .first();
 
   if (existingUser) {
@@ -18,13 +18,13 @@ export async function seed(knex: Knex): Promise<void> {
   }         
 
   // Hash the password
-  const hashedPassword = await bcrypt.hash('Surefy@2024', 10);
+  const hashedPassword = await bcrypt.hash('Soft7@2026', 10);
 
   // Insert superadmin user
   await knex('users').insert({
     id: knex.raw('gen_random_uuid()'),
-    name: 'Surefy Admin',
-    email: 'accounts@surefy.co',
+    name: 'Soft7 Admin',
+    email: 'accounts@soft7.co',
     password: hashedPassword,
     role: 'superadmin',
     status: 'active',
@@ -34,6 +34,6 @@ export async function seed(knex: Knex): Promise<void> {
 
   console.log('✅ Superadmin user created successfully!');
   console.log('Email: accounts@soft7.co');
-  console.log('Password: Soft7@2026');
+  console.log('Password: soft7@2026');
 }
 

@@ -34,7 +34,7 @@ class CampaignService {
   /**
    * Create a new campaign
    */
-  async createCampaign(userId:string, data: CreateCampaignData) {
+  async createCampaign(userId:string,companyId:string, data: CreateCampaignData) {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
     if (!template || template.user_id !== userId) {
@@ -48,7 +48,7 @@ class CampaignService {
     }
 
     // Get contacts based on filters
-    const contacts = await ContactService.getContactsByFilters(userId, data.contact_filters || {});
+    const contacts = await ContactService.getContactsByFilters(userId,companyId, data.contact_filters || {});
     const contactList = await contacts;
     console.log('Found contacts for campaign:', contactList);
 
@@ -77,6 +77,7 @@ class CampaignService {
     // Create campaign
     const campaign = await CampaignModel.create({
       user_id:userId,
+      company_id:companyId,
       phone_number_id: data.phone_number_id,
       template_id: data.template_id,
       name: data.name,

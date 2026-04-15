@@ -12,7 +12,7 @@ class CompanyController {
    * Onboard new company
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, business_id, webhook_url, meta_config, settings, initial_credit, user } = req.body;
+    const { name, email, phone,domain,status, business_id, webhook_url, meta_config, settings, initial_credit, user } = req.body;
 
     if (!name || !email) {
       throw new HTTP400Error({ message: 'Name and email are required' });
@@ -28,6 +28,8 @@ class CompanyController {
       name,
       email,
       phone,
+      domain,
+      status,
       business_id,
       webhook_url,
       meta_config,
@@ -85,6 +87,22 @@ class CompanyController {
   });
 
   /**
+   * POST /v1/companies/user
+   * Create user under company
+   */
+  createUser = tryCatchAsync(async(req: AuthRequest,res:Response)=>{
+    const { name, email, phone, password, role,permissions} = req.body;
+    // console.log("Creating user with data:",{name,email,phone,role})
+
+    if (!name || !email || !password) {
+      throw new HTTP400Error({ message: 'Name, email, and password are required' });
+    }
+
+    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,password,role,permissions})
+    return successResponse(req, res, 'User created successfully', createdUser);
+  })
+
+  /**
    * GET /v1/user/notifications
    */
   // getNotifications = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
@@ -107,6 +125,11 @@ class CompanyController {
     const keys = await CompanyService.regenerateKeys(id, user);
     return successResponse(req, res, 'API credentials retrieved successfully', keys);
   });
+
+  getdashboardStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const stats = await CompanyService.getDashboardStats(req.companyId!)
+    return successResponse(req,res, 'Dashboard stats retrieved successfully', stats)
+  })
 }
 
 export default new CompanyController();
