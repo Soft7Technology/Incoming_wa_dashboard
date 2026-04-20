@@ -75,6 +75,7 @@ class CompanyModel extends BaseModel {
   }
 
   async getDashboardStats(companyId: string) {
+    console.log("Fetching dashboard stats for companyId:", companyId); // Debug log
     return this.query()
       .select(
         // campaigns
@@ -88,6 +89,9 @@ class CompanyModel extends BaseModel {
 
         // users
         this.query().from('users').count('*').where('company_id', companyId).as('users_count'),
+
+        // Tags
+        this.query().from('contact_tags').count('*').where('company_id', companyId).as('contact_tags_count'),
 
         // messages - SENT
         this.query()

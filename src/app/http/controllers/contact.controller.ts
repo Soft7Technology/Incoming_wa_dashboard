@@ -6,6 +6,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import * as path from 'path';
 import * as fs from 'fs';
+import userPlansModel from '../../models/userPlans.model';
 
 class ContactController {
   /**
@@ -27,6 +28,8 @@ class ContactController {
       notes,
       tag_ids,
     });
+
+    await userPlansModel.incrementUsage(req.userId!, 'Contact');
 
     return successResponse(req, res, 'Contact created successfully', contact, HttpStatusCode.CREATED);
   });

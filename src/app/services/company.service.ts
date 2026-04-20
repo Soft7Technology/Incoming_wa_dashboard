@@ -7,6 +7,10 @@ import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import AuthService from './auth.service';
 import userModel from '../models/user.model';
 import companyModel from '../models/company.model';
+import subscriptionModel from '../models/subscription.model';
+import userPlansModel from '../models/userPlans.model';
+import { transformFeatures } from '../utils'
+
 
 class CompanyService {
   /**
@@ -37,7 +41,7 @@ class CompanyService {
         company_id: company.id,
         email: userData.email,
         phone: userData.phone,
-        password: userData.password
+        password: userData.password,
       });
     }
 
@@ -71,9 +75,9 @@ class CompanyService {
     return company;
   }
 
-  async getUserStats(userId:any){
-    const userStats = await CompanyRepository.getUserStats(userId)
-    return userStats
+  async getUserStats(userId: any) {
+    const userStats = await CompanyRepository.getUserStats(userId);
+    return userStats;
   }
 
   /**
@@ -130,24 +134,84 @@ class CompanyService {
     };
   }
 
-  async getDashboardStats(companyId:string){
-    const stats = await companyModel.getDashboardStats(companyId)
-    return stats
+  async getDashboardStats(companyId: string) {
+    console.log('Fetching dashboard stats for companyId:', companyId); // Debug log
+    const stats = await companyModel.getDashboardStats(companyId);
+    return stats;
+  }
+
+  async getAllUsers(companyId: string) {
+    const users = await userModel.findAllUserByCompanyId(companyId);
+    return users;
+  }
+
+  async getUserById(userId: string) {
+    const user = await userModel.findById(userId);
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
+    } else {
+      return user;
+    }
+  }
+
+  async updateCompanyUser(userId: string, data: any) {
+    // Check if user belongs to the company
+    const user = await userModel.findById(userId);
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
+    }
+    const updatedUser = await userModel.updateUser(userId, data);
+    return updatedUser;
+  }
+
+  async createUserPlan(userId: string, planData: any) {
+    const { plan_name, price, billing_cycle, features } = planData;
+
+    const { limits, usage } = transformFeatures(features);
+    console.log('Transformed limits:', limits);
+    console.log('Transformed usage:', usage);
+
+    const startDate = new Date();
+
+    const endDate = new Date(startDate);
+
+    if (billing_cycle === 'Monthly') {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else if (billing_cycle === 'Yearly') {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    }
+
+    const newUserPlan = await userPlansModel.create({
+      user_id: userId,
+      plan_name,
+      price,
+      billing_cycle,
+      start_date: startDate,
+      end_date: endDate,
+      limits: JSON.stringify(limits), // JSONB
+      usage: JSON.stringify(usage), // JSONB
+      active: true,
+    });
+    return newUserPlan;
   }
 
   /**
    * Create user under company
    */
   async createUser(
-    companyId: string, 
-    userData: { name: string; email?: string; phone?: string; password: string; role: string,permissions?: string[] }) {
-    
+    companyId: string,
+    userData: { name: string; email?: string; phone?: string; password: string; role: string; permissions?: string[] },
+  ) {
     const existingUser = await userModel.findByEmail(userData.email);
 
     if (existingUser) {
       throw new HTTP400Error({ message: 'User with this email already exists' });
     }
-    
+
+    if (!companyId) {
+      throw new HTTP400Error({ message: 'Company ID is required to create user' });
+    }
+
     let createdUser = null;
     if (userData) {
       createdUser = await AuthService.register({
@@ -157,54 +221,54 @@ class CompanyService {
         phone: userData.phone,
         password: userData.password,
         role: userData.role,
-        permissions: userData.permissions
+        permissions: userData.permissions,
       });
     }
     return createdUser;
   }
 
-//   async createUser(
-//   companyId: string,
-//   userData: {
-//     name: string;
-//     email?: string;
-//     phone?: string;
-//     password: string;
-//     role: string;
-//     permissions?: string[]; // from frontend slider
-//   }
-// ) {
-//   // 1. Check existing user
-//   const existingUser = await userModel.findByEmail(userData.email);
+  //   async createUser(
+  //   companyId: string,
+  //   userData: {
+  //     name: string;
+  //     email?: string;
+  //     phone?: string;
+  //     password: string;
+  //     role: string;
+  //     permissions?: string[]; // from frontend slider
+  //   }
+  // ) {
+  //   // 1. Check existing user
+  //   const existingUser = await userModel.findByEmail(userData.email);
 
-//   if (existingUser) {
-//     throw new HTTP400Error({ message: 'User with this email already exists' });
-//   }
+  //   if (existingUser) {
+  //     throw new HTTP400Error({ message: 'User with this email already exists' });
+  //   }
 
-//   // 2. Create user
-//   const createdUser = await AuthService.register({
-//     name: userData.name,
-//     company_id: companyId,
-//     email: userData.email,
-//     phone: userData.phone,
-//     password: userData.password
-//   });
+  //   // 2. Create user
+  //   const createdUser = await AuthService.register({
+  //     name: userData.name,
+  //     company_id: companyId,
+  //     email: userData.email,
+  //     phone: userData.phone,
+  //     password: userData.password
+  //   });
 
-//   // 3. Assign permissions (if provided)
-//   if (createdUser && userData.permissions?.length) {
-//     const permissionRows = userData.permissions.map((permId) => ({
-//       user_id: createdUser.id,
-//       permission_id: permId
-//     }));
+  //   // 3. Assign permissions (if provided)
+  //   if (createdUser && userData.permissions?.length) {
+  //     const permissionRows = userData.permissions.map((permId) => ({
+  //       user_id: createdUser.id,
+  //       permission_id: permId
+  //     }));
 
-//     await knex('user_permissions')
-//       .insert(permissionRows)
-//       .onConflict(['user_id', 'permission_id'])
-//       .ignore();
-//   }
+  //     await knex('user_permissions')
+  //       .insert(permissionRows)
+  //       .onConflict(['user_id', 'permission_id'])
+  //       .ignore();
+  //   }
 
-//   return createdUser;
-// }
+  //   return createdUser;
+  // }
 }
 
 export default new CompanyService();

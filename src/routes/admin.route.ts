@@ -10,6 +10,7 @@ import WebhookRoute from './webhook.route';
 import UserRoute from './user.route';
 import chatBotRoute from './chatbot.route';
 import companyRoute from './company.route';
+import SubscriptionRoute from './subscription.route';
 
 const AdminRoute = Router();
 
@@ -18,10 +19,11 @@ AdminRoute.use(jwtAuthMiddleware);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
+AdminRoute.use('/subscription', SubscriptionRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);
 AdminRoute.use('/templates', TemplateRoute);
-AdminRoute.use('/messages', MessageRoute);
+AdminRoute.use('/messages', MessageRoute);  
 AdminRoute.use('/credits', CreditRoute);
 AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);

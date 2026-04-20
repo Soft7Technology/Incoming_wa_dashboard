@@ -100,6 +100,7 @@ export interface SendBulkMessageDto {
 
 export interface SendMessageDto {
   user_id:string;
+  company_id?: string;
   messageUUID?: string;
   campaign_id: string | undefined | null;
   phone_number_id: string;

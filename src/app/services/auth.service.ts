@@ -84,7 +84,7 @@ class AuthService {
       token,
       expiresIn: this.JWT_EXPIRES_IN,
     };
-  } 
+  }
 
   /**
    * Register new user (company role)
@@ -99,14 +99,15 @@ class AuthService {
     permissions?: string[];
   }) {
     const { name, email, phone, company_id, password } = data;
-    console.log("Registering user with data:",data);
 
-    // Validate at least email or phone is provided
+    console.log('Registering user with data:', data);
+
+    // Validate
     if (!email && !phone) {
       throw new HTTP400Error({ message: 'Either email or phone is required' });
     }
 
-    // Check if user already exists
+    // Check existing
     if (email) {
       const existingUser = await UserModel.findByEmail(email);
       if (existingUser) {
@@ -121,19 +122,34 @@ class AuthService {
       }
     }
 
+    // Normalize permissions 👇
+    let permissions: string[] = [];
+
+    if (data.permissions) {
+      if (Array.isArray(data.permissions)) {
+        permissions = data.permissions;
+      } else if (typeof data.permissions === 'string') {
+        try {
+          permissions = JSON.parse(data.permissions);
+        } catch {
+          permissions = [data.permissions];
+        }
+      }
+    }
+
     // Hash password
     const hashedPassword = await this.hashPassword(password);
 
     // Create user
-    const user = await UserModel.create({
+    const user = await UserModel.createUser({
       name,
       email,
       phone,
       company_id,
       password: hashedPassword,
-      role:data.role || 'admin',
+      role: data.role || 'admin',
       status: 'active',
-      permissions: data.permissions || []
+      permissions, // ✅ always safe array
     });
 
     // Remove password from response
@@ -155,7 +171,7 @@ class AuthService {
       company_id?: string;
     },
     createdBy: string,
-    creatorRole: string
+    creatorRole: string,
   ) {
     // Only superadmin can create other admins
     if (creatorRole !== 'superadmin') {

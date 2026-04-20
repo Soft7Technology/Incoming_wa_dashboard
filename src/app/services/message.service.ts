@@ -102,6 +102,7 @@ class MessageService {
     const message = await MessageModel.create({
       id: data.messageUUID,
       user_id: data.user_id,
+      company_id: data.company_id,
       campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
       profile_name: data.profile_name || "",

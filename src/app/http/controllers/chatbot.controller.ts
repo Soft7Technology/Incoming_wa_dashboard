@@ -7,6 +7,7 @@ import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
+import userPlansModel from '../../models/userPlans.model';
 
 class chatBotController {
     /**
@@ -24,6 +25,7 @@ class chatBotController {
         }
 
         const result = await chatBotService.createChatBot({user_id:req.userId!,name,description, status:'draft',published:false,phoneNumberId:phoneNumber.phone_number_id})
+        await userPlansModel.incrementUsage(req.userId!, 'Chatbot');
         return successResponse(req, res, 'Create ChatBot successfully', result);
     })
 

@@ -22,6 +22,7 @@ class MessageController {
     const message = await MessageService.sendMessage({
       messageUUID: uuidv4(),
       user_id: req.userId!,
+      company_id: req.companyId!,
       campaign_id: campaign_id || undefined,
       phone_number_id,
       profile_name,

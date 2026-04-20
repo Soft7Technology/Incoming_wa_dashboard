@@ -25,6 +25,7 @@ interface JWTPayload {
 export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers['authorization'];
+    // console.log("JWT Auth Middleware - Authorization header:", authHeader); // Debug log
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new HTTP401Error({ message: 'No token provided. Authorization header required' });
@@ -52,6 +53,8 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
     req.companyId = decoded.companyId;
     req.email = decoded.email;
     req.phone = decoded.phone;
+
+    console.log("Decoded JWT payload:", decoded); // Debug log
 
     next();
   } catch (error) {

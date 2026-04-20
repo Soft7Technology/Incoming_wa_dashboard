@@ -4,6 +4,7 @@ import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import CampaignService from '@surefy/console/services/campaign.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import userPlansModel from '../../models/userPlans.model';
 
 class CampaignController {
   /**
@@ -38,6 +39,8 @@ class CampaignController {
       media_uploads,
       scheduled_at,
     });
+
+    await userPlansModel.incrementUsage(req.userId!, 'Contact');
 
     return successResponse(req, res, 'Campaign created successfully', campaign, HttpStatusCode.CREATED);
   });

@@ -6,10 +6,7 @@ class UserModel extends BaseModel {
   }
 
   async findByEmail(email: any) {
-    return this.query()
-      .where({ email })
-      .whereNull('deleted_at')
-      .first();
+    return this.query().where({ email }).whereNull('deleted_at').first();
   }
 
   // async getNotificationStats(userId: string) {
@@ -18,8 +15,7 @@ class UserModel extends BaseModel {
   //       this.query()
   // }
 
-
-    async getUserStats(userId: string) {
+  async getUserStats(userId: string) {
     return this.query()
       .select(
         // campaigns
@@ -50,11 +46,7 @@ class UserModel extends BaseModel {
           .andWhere('status', 'delivered')
           .as('delivered_count'),
 
-         this.query()
-          .from('messages')
-          .count('*')
-          .where('user_id', userId)
-          .as('total_count'),
+        this.query().from('messages').count('*').where('user_id', userId).as('total_count'),
 
         // messages - RECEIVED
         this.query()
@@ -65,12 +57,7 @@ class UserModel extends BaseModel {
           .as('received_count'),
 
         // messages - DELIVERED
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('user_id', userId)
-          .andWhere('status', 'sent')
-          .as('sent_count'),
+        this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'sent').as('sent_count'),
 
         // messages - SENT
         this.query()
@@ -99,10 +86,7 @@ class UserModel extends BaseModel {
   }
 
   async findByPhone(phone: string) {
-    return this.query()
-      .where({ phone })
-      .whereNull('deleted_at')
-      .first();
+    return this.query().where({ phone }).whereNull('deleted_at').first();
   }
 
   async findByEmailOrPhone(identifier: string) {
@@ -115,9 +99,7 @@ class UserModel extends BaseModel {
   }
 
   async findByRole(role: string, filters: any = {}) {
-    let query = this.query()
-      .where({ role })
-      .whereNull('deleted_at');
+    let query = this.query().where({ role }).whereNull('deleted_at');
 
     if (filters.status) {
       query = query.where({ status: filters.status });
@@ -148,6 +130,79 @@ class UserModel extends BaseModel {
       deleted_at: new Date(),
       status: 'inactive',
     });
+  }
+
+  async findAllUserByCompanyId(companyId: string) {
+    return this.query().where({ company_id: companyId }).whereNull('deleted_at').orderBy('created_at', 'desc');
+  }
+
+  async createUser(data: any) {
+    const { name, email, phone, password, role, company_id } = data;
+
+    let permissions: string[] = [];
+
+    // Normalize input
+    if (data.permissions) {
+      if (Array.isArray(data.permissions)) {
+        permissions = data.permissions;
+      } else if (typeof data.permissions === 'string') {
+        try {
+          permissions = JSON.parse(data.permissions);
+        } catch {
+          permissions = [data.permissions];
+        }
+      }
+    }
+
+    // Convert to Postgres array format
+    const pgArray = `{${permissions.join(',')}}`;
+
+    return this.query()
+      .insert({
+        name,
+        email,
+        phone,
+        password,
+        role,
+        company_id,
+        permissions: pgArray, // ✅ works without knex.raw
+      })
+      .returning('*')
+      .then((res: any) => res[0]);
+  }
+
+  async updateUser(userId: string, data: any) {
+    const updateData: any = {};
+
+    // Basic fields
+    if (data.name) updateData.name = data.name;
+    if (data.email) updateData.email = data.email;
+    if (data.phone) updateData.phone = data.phone;
+    if (data.role) updateData.role = data.role;
+
+    // Handle permissions
+    if (data.permissions) {
+      let permissions: string[] = [];
+
+      if (Array.isArray(data.permissions)) {
+        permissions = data.permissions;
+      } else if (typeof data.permissions === 'string') {
+        try {
+          permissions = JSON.parse(data.permissions);
+        } catch {
+          permissions = [data.permissions];
+        }
+      }
+
+      // Convert to Postgres array format
+      updateData.permissions = `{${permissions.map((p) => `"${p}"`).join(',')}}`;
+    }
+
+    return this.query()
+      .where({ id: userId })
+      .update(updateData)
+      .returning('*')
+      .then((res: any) => res[0]);
   }
 }
 

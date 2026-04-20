@@ -5,6 +5,8 @@ import CompanyService from '@surefy/console/services/company.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import subscriptionModel from '@surefy/console/models/subscription.model'
+import userPlansModel from '../../models/userPlans.model';
 
 class CompanyController {
   /**
@@ -98,7 +100,7 @@ class CompanyController {
       throw new HTTP400Error({ message: 'Name, email, and password are required' });
     }
 
-    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,password,role,permissions})
+    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,phone,password,role,permissions})
     return successResponse(req, res, 'User created successfully', createdUser);
   })
 
@@ -126,10 +128,60 @@ class CompanyController {
     return successResponse(req, res, 'API credentials retrieved successfully', keys);
   });
 
-  getdashboardStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  getdashboardStats = tryCatchAsync(async(req:AuthRequest, res:Response)=>{
+    console.log("Fetching dashboard stats for companyId:", req.companyId!); // Debug log
     const stats = await CompanyService.getDashboardStats(req.companyId!)
     return successResponse(req,res, 'Dashboard stats retrieved successfully', stats)
   })
+
+  getAllUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const users = await CompanyService.getAllUsers(req.companyId!)
+    return successResponse(req,res, 'Users retrieved successfully', users)
+  })
+
+  getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const users = await CompanyService.getAllUsers(req.companyId!)
+    const adminUsers = users.filter((user:any)=> user.role === 'admin')
+    return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
+  })
+
+  getUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const user = await CompanyService.getUserById(req.userId!)
+    return successResponse(req,res, 'User retrieved successfully', user)
+  })
+
+  updateCompanyUser =  tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const { name, email, phone, permissions} = req.body;
+    const {id} = req.params
+    const updatedUser = await CompanyService.updateCompanyUser(id,{name,email,phone,permissions})
+    return successResponse(req,res, 'User updated successfully', updatedUser)
+  })
+
+  subscribePlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const {planId} = req.params
+    console.log("Subscribing to plan with query:", planId) // Debug log
+
+    const userPlan = await userPlansModel.getPlanByUserId(req.userId!)
+    if(userPlan){
+      throw new HTTP400Error({message: 'User Plan already exists'})
+    }
+
+    const planData = await subscriptionModel.findById(planId as string)
+    if(!planData){
+      throw new HTTP400Error({message: 'Subscription Plan not found'})
+    }
+    const subscribePlan = await CompanyService.createUserPlan(req.userId!, planData)
+    return successResponse(req,res, 'Plan subscribed successfully', subscribePlan)
+  })
+
+  async getUserPlan(req:AuthRequest,res:Response){
+    const userPlan = await userPlansModel.getUserPlan(req.userId!)
+    return successResponse(req,res, 'User plan retrieved successfully', userPlan)
+  }
+
+  // async updateCompanyUser(req:AuthRequest,res:Response){
+  //   const 
+  // }
 }
 
 export default new CompanyController();

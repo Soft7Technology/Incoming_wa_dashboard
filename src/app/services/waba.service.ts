@@ -80,6 +80,7 @@ class WabaService {
 
   async syncCompanyPhoneNumbers(clientData: {
     user_id: string;
+    company_id?: string;
     waba_id: string;
     company_WABAID: string;
   }) {
@@ -100,6 +101,7 @@ class WabaService {
       } else {
         await PhoneNumberModel.create({
           user_id: clientData.user_id,
+          company_id: clientData.company_id! || '',
           waba_id: clientData.company_WABAID,
           phone_number_id: phone.id,
           display_phone_number: phone.display_phone_number,

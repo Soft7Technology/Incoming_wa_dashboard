@@ -23,7 +23,7 @@ class chatBotModel extends BaseModel{
     }
 
     async getPublishedBotByPhoneNumberId(phoneNumberId:string){
-        return this.query().where({phoneNumberId: phoneNumberId, status:'published', published:true}).first()
+        return this.query().where({phoneNumberId: phoneNumberId, published:true}).first()
     }
 }
 

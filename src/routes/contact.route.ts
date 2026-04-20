@@ -1,13 +1,15 @@
 import { Router } from 'express';
 import { uploadXLSXMiddleware } from '@surefy/middleware/upload.middleware';
 import ContactController from '@surefy/console/http/controllers/contact.controller';
+import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
+
 
 const ContactRoute = Router();
 
 // All contact endpoints require authentication (applied at route group level)
 
 // Lists management
-ContactRoute.get('/lists', ContactController.getLists);
+ContactRoute.get('/lists',  ContactController.getLists);
 ContactRoute.get('/lists/:id', ContactController.getListById);
 ContactRoute.get('/lists/:id/contacts', ContactController.getListContacts);
 ContactRoute.delete('/lists/:id', ContactController.deleteList);
@@ -19,7 +21,7 @@ ContactRoute.put('/tags/:id', ContactController.updateTag);
 ContactRoute.delete('/tags/:id', ContactController.deleteTag);
 
 // Contact CRUD
-ContactRoute.post('/', ContactController.createContact);
+ContactRoute.post('/', checkPlanLimit('Contact'), ContactController.createContact);
 ContactRoute.get('/', ContactController.getContacts);
 ContactRoute.get('/:id', ContactController.getContactById);
 ContactRoute.put('/:id', ContactController.updateContact);

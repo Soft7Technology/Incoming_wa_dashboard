@@ -158,6 +158,21 @@ async function handleUserFlow(bot: any, session: any, text: string, phone: strin
 }
 
 
+export const transformFeatures = (features: any) => {
+  const limits: any = {};
+  const usage: any = {};
+
+  Object.keys(features).forEach((key) => {
+    limits[key] = {
+      limit: features[key].limit_value
+    };
+
+    usage[key] = 0; // initialize usage
+  });
+
+  return { limits, usage };
+};
+
 async function handleInteractive(bot: any, session: any, text: string) {
   const currentNode = bot.nodes.find(
     (n: any) => n.id === session.last_node_id

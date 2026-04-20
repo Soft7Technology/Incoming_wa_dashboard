@@ -14,7 +14,7 @@ export class BaseModel {
     return this.db(this.tableName);
   }
 
-  async findById(id: string | number) {
+  async findById(id: string) {
     return this.query().where({ id }).first();
   }
 
