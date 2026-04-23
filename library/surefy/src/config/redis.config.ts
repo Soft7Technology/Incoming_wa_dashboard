@@ -10,9 +10,6 @@ const redisConfig = {
 };
 
 
-
-
-
 export const redisConnection = new Redis(redisConfig);
 
 redisConnection.on('connect', () => {

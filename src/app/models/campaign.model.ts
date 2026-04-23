@@ -29,6 +29,11 @@ class CampaignModel extends BaseModel {
     return query.orderBy('created_at', 'desc');
   }
 
+  async getUserCampaigns(userId:string){
+    const userCampaigns = await this.query().where({user_id:userId})
+    return userCampaigns
+  }
+
 
   async updateStatus(campaignId: string, status: string, additionalData: any = {}) {
     const updateData: any = { status, ...additionalData };

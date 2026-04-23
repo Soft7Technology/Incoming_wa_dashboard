@@ -9,8 +9,8 @@ class WabaModel extends BaseModel {
     return this.query().where({ company_id: companyId, deleted_at: null });
   }
 
-  async findByUserId(userId: string) {
-    return this.query().where({ user_id: userId, deleted_at: null });
+  async findByUserId(userId: string,companyId:string) {
+    return this.query().where({ user_id: userId,company_id:companyId,deleted_at: null });
   }
 
 
@@ -20,6 +20,11 @@ class WabaModel extends BaseModel {
 
   async findByIdInternal(id: string) {
     return this.findById(id);
+  }
+
+  async findWABA(id:string){
+    console.log("Id",id)
+    return this.query().where({id}).first()
   }
 }
 

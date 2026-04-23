@@ -72,8 +72,6 @@ class CampaignService {
       }
     }
 
-    console.log("Schedule", scheduledAt);
-
     // Create campaign
     const campaign = await CampaignModel.create({
       user_id:userId,

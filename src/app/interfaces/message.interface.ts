@@ -1,6 +1,6 @@
 export interface Message {
   id: string;
-  company_id: string;
+  company_id?: string;
   phone_number_id: string;
   wamid?: string;
   direction: 'inbound' | 'outbound';

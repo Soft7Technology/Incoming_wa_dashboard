@@ -21,6 +21,7 @@ class WabaService {
       // Step 2: Fetch phone numbers from Graph API and store
       const clientData = {
         user_id: data.user_id,
+        company_id:data.company_id,
         waba_id: data.waba_id,
         company_WABAID: clientWabaAccount.id
       }
@@ -237,8 +238,8 @@ class WabaService {
   /**
    * Get WABA accounts for company
    */
-  async getCompanyWabas(userId: string) {
-    return WabaModel.findByUserId(userId);
+  async getCompanyWabas(userId: string,companyId:string) {
+    return WabaModel.findByUserId(userId,companyId);
   }
 
   /**

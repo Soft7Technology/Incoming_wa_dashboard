@@ -43,6 +43,8 @@ class CompanyController {
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
 
+  // asyn
+
   /**
    * GET /v1/companies/:id
    * Get company details
@@ -58,6 +60,14 @@ class CompanyController {
     const userStats = await CompanyService.getUserStats(req.userId!)
     return successResponse(req,res, 'User Stats retrieved successfully', userStats)
   })
+
+  getUserDetails = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    // console.log("User Id",req.userId!)
+    const{userId} = req.params
+    const userStats = await CompanyService.getUserStats(userId)
+    return successResponse(req,res, 'User Stats retrieved successfully', userStats)
+  })
+
 
   /**
    * GET /v1/companies
@@ -130,12 +140,13 @@ class CompanyController {
 
   getdashboardStats = tryCatchAsync(async(req:AuthRequest, res:Response)=>{
     console.log("Fetching dashboard stats for companyId:", req.companyId!); // Debug log
-    const stats = await CompanyService.getDashboardStats(req.companyId!)
+    const stats = await CompanyService.getDashboardStats(req.companyId!,req.userId!)
     return successResponse(req,res, 'Dashboard stats retrieved successfully', stats)
   })
 
   getAllUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const users = await CompanyService.getAllUsers(req.companyId!)
+    const {role} = req.query
+    const users = await CompanyService.getAllUsers(req.companyId!,role)
     return successResponse(req,res, 'Users retrieved successfully', users)
   })
 
@@ -157,26 +168,51 @@ class CompanyController {
     return successResponse(req,res, 'User updated successfully', updatedUser)
   })
 
-  subscribePlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const {planId} = req.params
-    console.log("Subscribing to plan with query:", planId) // Debug log
+//   razorpayOrderId: "order_SgA55nIqCKdwUs"
+// razorpayPaymentId: "pay_SgA5A5oB9Btmgy"
+// razorpaySignature: "adac4d8719b1813682dfcbc4ade953903f69ab75bf7c09ca47ce9c3bd51ab17b"
+  // subscribePlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  //   const {planId} = req.params
+  //   console.log("Subscribing to plan with query:", planId) // Debug log
 
-    const userPlan = await userPlansModel.getPlanByUserId(req.userId!)
-    if(userPlan){
-      throw new HTTP400Error({message: 'User Plan already exists'})
-    }
+  //   const userPlan = await userPlansModel.getPlanByUserId(req.userId!)
+  //   if(userPlan){
+  //     throw new HTTP400Error({message: 'User Plan already exists'})
+  //   }
 
-    const planData = await subscriptionModel.findById(planId as string)
-    if(!planData){
-      throw new HTTP400Error({message: 'Subscription Plan not found'})
-    }
-    const subscribePlan = await CompanyService.createUserPlan(req.userId!, planData)
-    return successResponse(req,res, 'Plan subscribed successfully', subscribePlan)
-  })
+  //   const planData = await subscriptionModel.findById(planId as string)
+  //   if(!planData){
+  //     throw new HTTP400Error({message: 'Subscription Plan not found'})
+  //   }
+  //   const subscribePlan = await CompanyService.createUserPlan(req.userId!, planData)
+  //   return successResponse(req,res, 'Plan subscribed successfully', subscribePlan)
+  // })
 
   async getUserPlan(req:AuthRequest,res:Response){
-    const userPlan = await userPlansModel.getUserPlan(req.userId!)
+    const{userId} = req.params
+    console.log("UserId",userId)
+    const userPlan = await userPlansModel.getUserPlan(userId)
     return successResponse(req,res, 'User plan retrieved successfully', userPlan)
+  }
+  
+  async getUserById(req:AuthRequest,res:Response){
+    const {userId} = req.params
+    const user = await CompanyService.getUserById(userId)
+    return successResponse(req,res,"User retrieved successfully",user)
+  }
+
+  async deleteCompanyUser(req:AuthRequest,res:Response){
+    const {id} = req.params
+    const deleteUser = await CompanyService.deleteUserById(id)
+    return successResponse(req, res, 'Company User deleted successfully',deleteUser);
+  }
+
+  async companyStats(req:AuthRequest,res:Response){
+    //  const{id} = req
+  }
+
+  async getReminders(req:AuthRequest,res:Response){
+    return successResponse(req,res,"No reminder for now",HttpStatusCode.OK)
   }
 
   // async updateCompanyUser(req:AuthRequest,res:Response){

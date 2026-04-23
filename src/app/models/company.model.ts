@@ -19,6 +19,8 @@ class CompanyModel extends BaseModel {
         // campaigns
         this.query().from('campaigns').count('*').where('user_id', userId).as('campaigns_count'),
 
+        // this.query().from("users").where('user_id' , userId).as("user_details"),
+
         // contact_lists
         this.query().from('contacts').count('*').where('user_id', userId).as('contacts_count'),
 
@@ -70,16 +72,23 @@ class CompanyModel extends BaseModel {
       }));
   }
 
+  async userDetails(userId:string){
+
+  }
+
   async updateCreditBalance(companyId: string, amount: number) {
     return this.query().where({ id: companyId }).increment('credit_balance', amount).returning('*');
   }
 
-  async getDashboardStats(companyId: string) {
+  async getDashboardStats(companyId: string,userId?:string) {
     console.log("Fetching dashboard stats for companyId:", companyId); // Debug log
     return this.query()
       .select(
         // campaigns
         this.query().from('campaigns').count('*').where('company_id', companyId).as('campaigns_count'),
+
+        //chatbots
+        this.query().from("chat_bot").count("*").where("user_id",userId).as("chatbot_count"),
 
         // contacts
         this.query().from('contacts').count('*').where('company_id', companyId).as('contacts_count'),

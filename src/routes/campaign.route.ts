@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
 import CampaignController from '@surefy/console/http/controllers/campaign.controller';
 import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
+import campaignController from '@surefy/console/http/controllers/campaign.controller';
 
 const CampaignRoute = Router();
 
@@ -18,6 +19,7 @@ CampaignRoute.post('/:id/start', CampaignController.startCampaign);
 CampaignRoute.post('/:id/pause', CampaignController.pauseCampaign);
 CampaignRoute.post('/:id/resume', CampaignController.resumeCampaign);
 CampaignRoute.post('/:id/test', CampaignController.testCampaign);
+CampaignRoute.get('/user/:userId',campaignController.getUsersCampaigns)
 
 // Campaign stats
 CampaignRoute.get('/:id/stats', CampaignController.getCampaignStats);

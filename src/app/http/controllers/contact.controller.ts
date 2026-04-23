@@ -141,7 +141,7 @@ class ContactController {
     fs.renameSync(file.path, filePath);
 
     // Queue the import job instead of processing synchronously
-    const importJob = await ContactService.queueContactImport(req.userId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(req.userId!,req.companyId!, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,

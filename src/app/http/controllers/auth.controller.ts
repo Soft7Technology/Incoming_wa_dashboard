@@ -70,7 +70,7 @@ class AuthController {
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
     const { name, email, phone, password } = req.body; 
-    const permissions = ["Dashboard","Contact","Settings","Campaigns","Inbox","Integrations","Manage","Gallery","FAQ Bot","Chatbot","Assistant","Flows","Knowledge Base","Developers","Schedules"]
+    const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
 
     if (!name || !password) {
       throw new HTTP400Error({ message: 'Name and password are required' });

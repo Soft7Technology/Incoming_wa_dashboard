@@ -15,7 +15,9 @@ HealthRoute.get('/', async (req: Request, res: Response) => {
         database: 'Connected',
       },
     });
-  } catch (error) {
+  } catch (error: any) {
+    console.error('DB ERROR 👉', error); // 👈 ADD THIS
+
     res.status(503).json({
       success: false,
       message: 'Service is unhealthy',
@@ -23,9 +25,9 @@ HealthRoute.get('/', async (req: Request, res: Response) => {
         status: 'DOWN',
         timestamp: new Date().toISOString(),
         database: 'Disconnected',
+        error: error?.message, // 👈 ADD THIS
       },
     });
   }
 });
-
 export default HealthRoute;

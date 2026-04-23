@@ -134,14 +134,14 @@ class CompanyService {
     };
   }
 
-  async getDashboardStats(companyId: string) {
+  async getDashboardStats(companyId: string,userId:string) {
     console.log('Fetching dashboard stats for companyId:', companyId); // Debug log
-    const stats = await companyModel.getDashboardStats(companyId);
+    const stats = await companyModel.getDashboardStats(companyId,userId);
     return stats;
   }
 
-  async getAllUsers(companyId: string) {
-    const users = await userModel.findAllUserByCompanyId(companyId);
+  async getAllUsers(companyId: string,role?:any) {
+    const users = await userModel.findAllUserByCompanyId(companyId,role);
     return users;
   }
 
@@ -164,7 +164,7 @@ class CompanyService {
     return updatedUser;
   }
 
-  async createUserPlan(userId: string, planData: any) {
+  async createUserPlan(userId: string, planData: any,razorPayDetails:any) {
     const { plan_name, price, billing_cycle, features } = planData;
 
     const { limits, usage } = transformFeatures(features);
@@ -179,6 +179,8 @@ class CompanyService {
       endDate.setMonth(endDate.getMonth() + 1);
     } else if (billing_cycle === 'Yearly') {
       endDate.setFullYear(endDate.getFullYear() + 1);
+    } else if (billing_cycle === 'Free') {
+      endDate.setDate(endDate.getDate() + 3);
     }
 
     const newUserPlan = await userPlansModel.create({
@@ -186,6 +188,9 @@ class CompanyService {
       plan_name,
       price,
       billing_cycle,
+      razorpayOrderId:razorPayDetails.id,
+      // razorpaymentId,
+      // razorpaySignature,
       start_date: startDate,
       end_date: endDate,
       limits: JSON.stringify(limits), // JSONB
@@ -225,6 +230,12 @@ class CompanyService {
       });
     }
     return createdUser;
+  }
+
+  async deleteUserById(userId:string){
+    const deleteUser = await userModel.delete(userId)
+    return deleteUser
+
   }
 
   //   async createUser(

@@ -142,6 +142,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
     const message = await MessageService.sendMessage({
       messageUUID,
       user_id:campaign.user_id,
+      company_id:campaign.company_id,
       profile_name: contact.name,
       campaign_id:campaign.id,
       phone_number_id: campaign.phone_number_id,

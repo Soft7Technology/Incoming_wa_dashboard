@@ -21,6 +21,9 @@ class UserModel extends BaseModel {
         // campaigns
         this.query().from('campaigns').count('*').where('user_id', userId).as('campaigns_count'),
 
+        //Chatbot
+        this.query().from("chat_bot").count("*").where("user_id",userId).as('chatbot_count'),
+
         // contact_lists
         this.query().from('contacts').count('*').where('user_id', userId).as('contacts_count'),
 
@@ -132,8 +135,8 @@ class UserModel extends BaseModel {
     });
   }
 
-  async findAllUserByCompanyId(companyId: string) {
-    return this.query().where({ company_id: companyId }).whereNull('deleted_at').orderBy('created_at', 'desc');
+  async findAllUserByCompanyId(companyId: string,userRole?:string) {
+    return this.query().where({ company_id: companyId,role:userRole }).whereNull('deleted_at').orderBy('created_at', 'desc');
   }
 
   async createUser(data: any) {

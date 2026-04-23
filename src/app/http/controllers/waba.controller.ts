@@ -56,7 +56,7 @@ class WabaController {
    * Get all WABA accounts for company
    */
   getWabas = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const wabas = await WabaService.getCompanyWabas(req.userId!);
+    const wabas = await WabaService.getCompanyWabas(req.userId!,req.companyId!);
     return successResponse(req, res, 'WABA accounts retrieved successfully', wabas);
   });
 

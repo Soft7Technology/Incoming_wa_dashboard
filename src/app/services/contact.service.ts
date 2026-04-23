@@ -162,6 +162,7 @@ class ContactService {
    */
   async queueContactImport(
     userId:string,
+    companyId:string,
     filePath: string,
     listName: string,
     options: {
@@ -184,6 +185,7 @@ class ContactService {
     // Create import job record in database
     const importJob = await ImportJobModel.create({
       user_id:userId,
+      company_id:companyId,
       job_type: 'contact_import',
       status: 'queued',
       file_name: path.basename(filePath),
@@ -206,6 +208,7 @@ class ContactService {
       `contact-import-${importJob.id}`,
       {
         jobId: importJob.id,
+        companyId,
         userId,
         filePath,
         listName,

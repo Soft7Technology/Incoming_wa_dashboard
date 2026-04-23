@@ -3,7 +3,7 @@ export interface subscriptionPlans {
   company_id?: string;
   user_id?: string;
   price: string;
-  billing_cycle: "Monthly" | "Yearly";
+  billing_cycle: "Monthly" | "Yearly" | "Free";
   description: string;
   active: boolean;
 

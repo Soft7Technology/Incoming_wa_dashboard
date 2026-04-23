@@ -5,6 +5,7 @@ import CampaignService from '@surefy/console/services/campaign.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import userPlansModel from '../../models/userPlans.model';
+import campaignModel from '../../models/campaign.model';
 
 class CampaignController {
   /**
@@ -44,6 +45,17 @@ class CampaignController {
 
     return successResponse(req, res, 'Campaign created successfully', campaign, HttpStatusCode.CREATED);
   });
+
+  /**
+   * GET /v1/user/campiagns
+   * GET users Campaigns
+   */
+  getUsersCampaigns= tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const{userId} = req.params
+    // const userCampaigns = await CampaignService.getUserCampaigns()
+    const userCampaigns = await campaignModel.getUserCampaigns(userId)
+    return successResponse(req, res, 'Campaign created successfully', userCampaigns, HttpStatusCode.CREATED);
+  })
 
   /**
    * GET /v1/campaigns

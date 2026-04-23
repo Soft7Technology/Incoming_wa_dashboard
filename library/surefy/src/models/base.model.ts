@@ -15,6 +15,7 @@ export class BaseModel {
   }
 
   async findById(id: string) {
+    // console.log("Id",id)
     return this.query().where({ id }).first();
   }
 
@@ -53,7 +54,6 @@ export class BaseModel {
   }
 
   async delete(id: string | number) {
-    console.log("Deleting record with id:", id); // Debug log
     return this.query().where({ id }).del();
   }
 
