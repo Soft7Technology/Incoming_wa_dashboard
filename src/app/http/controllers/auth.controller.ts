@@ -5,6 +5,7 @@ import AuthService from '@surefy/console/services/auth.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import companyController from './company.controller';
 import companyService from '../../services/company.service';
+import sendEmail from '../../utils';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -32,6 +33,51 @@ class AuthController {
   });
 
   /**
+   * POST /v1/auth/forgot-password
+   */
+  // forgetPassword = tryCatchAsync(async(req:Request, res:Response) => {
+  //   const{email} = req.body;
+
+  //   if(!email){
+  //     throw new HTTP400Error({message: 'Email is required'})
+  //   }
+
+  //   const 
+  // })
+
+  /**
+   * POST /v1/auth/verify-otp
+   * VERIFY OTP for password Reset
+   */
+  sendOtp = tryCatchAsync(async(req:Request,res:Response)=>{
+    const {email} = req.body;
+    if(!email){
+      throw new HTTP400Error({message: 'Email is required'})  
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    const verifyOtp = await AuthService.sendOtp(email,otp)
+    return successResponse(req,res,`OTP sent successfully to ${email}`, verifyOtp)
+  })
+
+  /**
+   * POST /v1/verify-otp
+   * Verify OTP for password reset
+   */
+  verifyOtp = tryCatchAsync(async(req:Request,res:Response)=>{
+    const {email,otp} = req.body;
+
+    if(!otp && !email){
+      throw new HTTP400Error({message: 'OTP and email are required'})  
+    }
+
+    const verifyOtp = await AuthService.verifyOtp(otp,email)
+    return successResponse(req,res,'OTP verified successfully', verifyOtp)
+  })
+  
+
+  /**
    * POST /v1/companies
    * Onboard new company
    */
@@ -55,6 +101,14 @@ class AuthController {
       phone,
       user,
     });
+
+    if(result){
+      await sendEmail(
+        email,
+       'Welcome to Our Platform',
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+      )
+    }
 
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
@@ -85,8 +139,17 @@ class AuthController {
       email,
       phone,
       password,
-      permissions
+      permissions,
+      role: 'user'
     });
+
+    if(user){
+      await sendEmail(
+        email,
+       'Welcome to Our Platform',
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+      )
+    }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });
@@ -154,6 +217,12 @@ class AuthController {
 
     return successResponse(req, res, result.message);
   });
+
+  async forgotPassword(req:Request,res:Response){
+    const{token, newPassword} = req.body;
+    const result = await AuthService.resetPassword(token,newPassword)
+    return successResponse(req, res, 'Password reset successfully', result);
+  }
 }
 
 export default new AuthController();

@@ -42,6 +42,7 @@ class CompanyService {
         email: userData.email,
         phone: userData.phone,
         password: userData.password,
+        role: 'admin'
       });
     }
 
@@ -164,7 +165,43 @@ class CompanyService {
     return updatedUser;
   }
 
-  async createUserPlan(userId: string, planData: any,razorPayDetails:any) {
+  async createUserPlan(userId: string,companyId:string, planData: any,razorPayDetails:any) {
+    const { plan_name, price, billing_cycle, features } = planData;
+
+    const { limits, usage } = transformFeatures(features);
+    console.log('Transformed limits:', limits);
+    console.log('Transformed usage:', usage);
+
+    const startDate = new Date();
+
+    const endDate = new Date(startDate);
+
+    if (billing_cycle === 'Monthly') {
+      endDate.setMonth(endDate.getMonth() + 1);
+    } else if (billing_cycle === 'Yearly') {
+      endDate.setFullYear(endDate.getFullYear() + 1);
+    } else if (billing_cycle === 'Free') {
+      endDate.setDate(endDate.getDate() + 3);
+    }
+
+    const newUserPlan = await userPlansModel.create({
+      user_id: userId,
+      company_id:companyId,
+      plan_name,
+      price,
+      billing_cycle,
+      razorpayOrderId:razorPayDetails.id,
+      status:"pending",
+      start_date: startDate,
+      end_date: endDate,
+      limits: JSON.stringify(limits), // JSONB
+      usage: JSON.stringify(usage), // JSONB
+      active: false,
+    });
+    return newUserPlan;
+  }
+
+  async activateUserPlan(userId: string, planData: any) {
     const { plan_name, price, billing_cycle, features } = planData;
 
     const { limits, usage } = transformFeatures(features);
@@ -188,16 +225,19 @@ class CompanyService {
       plan_name,
       price,
       billing_cycle,
-      razorpayOrderId:razorPayDetails.id,
-      // razorpaymentId,
-      // razorpaySignature,
+      status:"COMPLETED",
       start_date: startDate,
       end_date: endDate,
+      active: true,
       limits: JSON.stringify(limits), // JSONB
       usage: JSON.stringify(usage), // JSONB
-      active: true,
     });
     return newUserPlan;
+  }
+
+  async getcompanySubscriptions(companyId:string){
+    const companySubscritions = await userPlansModel.findCompanyActiveSubscriptions(companyId)
+    return companySubscritions
   }
 
   /**

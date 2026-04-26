@@ -39,9 +39,9 @@ class chatBotController {
     publishedChatBot = tryCatchAsync(
         async (req: AuthRequest, res: Response) => {
             const { chatBotId } = req.params;
-            const {status, published} = req.body
+            // const {status, published} = req.body
              
-            const result = await chatBotService.publishedChatBot(req.userId!,chatBotId,status, published);
+            const result = await chatBotService.publishedChatBot(req.userId!,chatBotId);
             return successResponse(req, res, 'ChatBot published successfully', result);
         }
     )

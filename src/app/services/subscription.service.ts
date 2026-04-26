@@ -6,6 +6,8 @@ import { RazorpayOrderRequest } from '../interfaces/razorpay.interface';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import CompanyService from './company.service';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
+import userPlansModel from '../models/userPlans.model';
+
 
 class subscriptionService {
   /**
@@ -32,6 +34,7 @@ class subscriptionService {
             'Content-Type': 'application/json',
             Authorization: `Basic ${auth}`,
           },
+          timeout: 10000, // ✅ timeout for better error handling
         },
       );
 
@@ -62,6 +65,8 @@ class subscriptionService {
       };
     }
   }
+
+
   async createSubscriptionPlan(userId: string, companyId: string, data: subscriptionPlans) {
     console.log('Creating subscription plan with data:', data);
     const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
@@ -89,8 +94,32 @@ class subscriptionService {
     });
     return updatedSubscriptionPlan;
   }
+  
 
-  async subscribeUserPlan(planId: string, userId: string) {
+  async activateFreeTrial(userId: string) {
+    // Check if user already has an active subscription or trial
+    const planId = 'f3b5c824-c8d3-4c5a-a6f2-24b6a7851bc3'
+    const planData = await subscriptionModel.findFreeTrial(planId)
+
+    const userActivate = await userPlansModel.getPlanByUserId(userId)
+    if(userActivate){
+      throw new HTTP400Error({ message: 'User already has an active Trial' });
+    }
+
+    if (!planData) {
+      throw new HTTP400Error({ message: 'Free trial already activated' });
+    }
+    const subscribePlan = await CompanyService.activateUserPlan(
+        userId,
+        planData
+    );
+    return subscribePlan;
+
+  }
+
+
+
+  async subscribeUserPlan(userId: string,companyId:string,planId: string) {
     try {
       // 1. Get plan
       const planData = await subscriptionModel.findById(planId);
@@ -103,7 +132,7 @@ class subscriptionService {
       const orderData: RazorpayOrderRequest = {
         amount: planData.price,
         currency: 'INR',
-        receipt: `receipt_${Date.now()}_${userId}`, // ✅ fixed
+        receipt: `rcpt_${Date.now()}`, // ✅ fixed
         notes: {
           userId: userId,
           planId: planData.id,
@@ -125,6 +154,7 @@ class subscriptionService {
       // 4. Store subscription (pending state)
       const subscribePlan = await CompanyService.createUserPlan(
         userId,
+        companyId,
         planData,
         razorPayOrder.order, // ✅ pass actual order
       );
@@ -164,6 +194,33 @@ class subscriptionService {
     const subscriptionPlans = await subscriptionModel.findDefaultPlan();
     return subscriptionPlans;
   }
+
+  async activateUserPlanAfterPayment(userId: string, razorpayOrderId: string, razorpaymentId: string, razorpaySignature: string) {
+    // 🔍 Step 2: Find existing subscription
+    const subscription = await subscriptionModel.findByOrderId(razorpayOrderId);
+    if(!subscription){
+      throw new HTTP400Error({ message: 'Subscription not found for this order' });
+    }
+
+
+    if(subscription.status === 'verified'){
+      throw new HTTP400Error({ message: 'Subscription already activated' });
+    }
+
+    const updateSubscriptionPlan = await subscriptionModel.update(userId, { razorpayOrderId,razorpaymentId,razorpaySignature, status: 'verified', payment_method:"RAZORPAY" });
+    return updateSubscriptionPlan;
+  }
+
+  async activeUserPlan(orderId:string, data: any) {
+    const subscription = await subscriptionModel.findByOrderId(orderId);
+    if (!subscription) {
+      throw new HTTP400Error({ message: 'Subscription not found for this order' });
+    }
+
+    const updateSubscriptionPlan = await subscriptionModel.update(subscription.id, {...data, active: true });
+    return updateSubscriptionPlan;
+  }
+
 }
 
 export default new subscriptionService();

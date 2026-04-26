@@ -11,6 +11,7 @@ import UserRoute from './user.route';
 import chatBotRoute from './chatbot.route';
 import companyRoute from './company.route';
 import SubscriptionRoute from './subscription.route';
+import supportRoute from './support.route';
 
 const AdminRoute = Router();
 
@@ -19,6 +20,7 @@ AdminRoute.use(jwtAuthMiddleware);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
+AdminRoute.use("/support",supportRoute)
 AdminRoute.use('/subscription', SubscriptionRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);

@@ -88,8 +88,8 @@ class TemplateService {
   /**
    * Get templates for company
    */
-  async getTemplates(userId: string, filters: any = {}) {
-    return TemplateModel.findByCompanyId(userId, filters);
+  async getTemplates(userId: string,companyId?:string, filters: any = {}) {
+    return TemplateModel.findByCompanyId(userId, companyId, filters);
   }
 
   /**

@@ -37,7 +37,7 @@ class chatBotService {
     return result;
   }
 
-  async publishedChatBot(userId: string, chatBotId: string, status: string, published: boolean) {
+  async publishedChatBot(userId: string, chatBotId: string) {
     // ✅ 1. Check chatbot exists
     const bot = await chatBotModel.findById(chatBotId);
     if (!bot) {
@@ -49,7 +49,7 @@ class chatBotService {
     if (existingPublishedBot) {
         throw new HTTP400Error({ message: "Another chatbot is already published for this phone number. Unpublish it before publishing a new one." });
     }
-    const publishedChatBot = await chatBotModel.update(chatBotId, { published, status });
+    const publishedChatBot = await chatBotModel.update(chatBotId, { status:"published", published:"true" });
     return publishedChatBot;
   }
 

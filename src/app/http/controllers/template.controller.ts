@@ -53,7 +53,7 @@ class TemplateController {
   getTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { status, category } = req.query;
 
-    const templates = await TemplateService.getTemplates(req.userId!, {
+    const templates = await TemplateService.getTemplates(req.userId!,req.companyId!, {
       status,
       category,
     });

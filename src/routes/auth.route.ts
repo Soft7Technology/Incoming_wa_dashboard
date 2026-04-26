@@ -8,6 +8,10 @@ const AuthRoute = Router();
 AuthRoute.post('/login', AuthController.login);
 AuthRoute.post('/register', AuthController.register); 
 AuthRoute.post('/register-company', AuthController.onboard);
+AuthRoute
+AuthRoute.post('/verify-otp', AuthController.verifyOtp);
+AuthRoute.post('/reset-password', AuthController.forgotPassword);
+AuthRoute.post('/send-otp', AuthController.sendOtp);
 
 // Protected routes (JWT authentication required)
 AuthRoute.get('/profile', jwtAuthMiddleware, AuthController.getProfile);

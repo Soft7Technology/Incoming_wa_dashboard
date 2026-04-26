@@ -3,6 +3,17 @@ import chatBotModel from '../app/models/chatbot.model';
 import chatBotNodeModel from './models/chatBotNode.model';
 import chatBotEdgeModel from './models/chatBotEdge.model';
 import messageService from './services/message.service';
+import nodemailer from "nodemailer";
+
+export const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT),
+  secure: process.env.SMTP_SECURE === "true",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+  },
+});
 
 export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
   try {
@@ -45,6 +56,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     // 3️⃣ Resolve flow WITHOUT session
     const response = resolveFlow(bot, incomingText);
+    console.log("Response",response)
 
     // 4️⃣ Send message
     if (response) {
@@ -64,9 +76,11 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
 function resolveFlow(bot: any, text: string) {
   text = text.toLowerCase().trim();
+  console.log("User Text",text,bot)
 
   // 1️⃣ Check TRIGGER node
   const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
+  console.log("Trigger",triggerNode)
 
   if (triggerNode) {
     const triggerData = safeJSON(triggerNode.data);
@@ -81,6 +95,7 @@ function resolveFlow(bot: any, text: string) {
       return buildResponse(nextNode);
     }
   }
+  
 
   // 2️⃣ Check INTERACTIVE edges (button matching)
   for (const edge of bot.edges) {
@@ -109,6 +124,42 @@ function safeJSON(data: any) {
   } catch {
     return {};
   }
+}
+
+
+// lib/mail.ts
+// import nodemailer from "nodemailer";
+
+// export const transporter = nodemailer.createTransport({
+//   host: process.env.SMTP_HOST,
+//   port: Number(process.env.SMTP_PORT),
+//   secure: process.env.SMTP_SECURE === "true",
+//   auth: {
+//     user: process.env.SMTP_USER,
+//     pass: process.env.SMTP_PASS,
+//   },
+// });
+
+// export async function sendEmail(to: string, subject: string, text: string, html?: string) {
+//   return transporter.sendMail({
+//     from: `"Your App Name" <${process.env.SMTP_USER}>`,
+//     to,
+//     subject,
+//     text,
+//     html,
+//   });
+// }
+
+export default function sendEmail(to: string, subject: string, text: string,html?: string) {
+  console.log(`📧 Sending email to ${to}: ${subject}\n${text}`);
+  return transporter.sendMail({
+    from : `"Your App Name" <${process.env.SMTP_USER}>`,
+    to,
+    subject,
+    text,
+    html,
+  })
+  // Integrate with actual email service here (e.g., SendGrid, SES)
 }
 
 function matchTrigger(data: any, text: string) {

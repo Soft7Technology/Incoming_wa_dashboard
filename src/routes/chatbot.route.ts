@@ -7,10 +7,11 @@ const chatBotRoute = Router()
 chatBotRoute.post('/create', checkPlanLimit('Chatbot'), chatBotController.createChatBot)
 chatBotRoute.post('/flow/:chatBotId', chatBotController.createChatBotFlow)
 chatBotRoute.get('/', chatBotController.getChatBots)
-chatBotRoute.put('/:chatBotId/published', chatBotController.publishedChatBot)
+chatBotRoute.put('/:chatBotId/publish', chatBotController.publishedChatBot)
 chatBotRoute.put('/:chatBotId/unpublish', chatBotController.unpublishedChatBot)
 chatBotRoute.get('/:chatBotId', chatBotController.getChatBotById)
 chatBotRoute.delete('/:chatBotId', chatBotController.deleteChatBot)
+
 
 export default chatBotRoute
 

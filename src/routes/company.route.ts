@@ -14,7 +14,8 @@ companyRoute.get('/', CompanyController.getAll);
 
 companyRoute.post('/user',companyController.createUser);
 companyRoute.get('/user',companyController.getAllUsers);
-companyRoute.put('/:id', CompanyController.updateCompanyUser);
+companyRoute.put('/user/:id', CompanyController.updateCompanyUser);
+companyRoute.get("/subscriptions",CompanyController.getCompaniesSubscription)
 
 companyRoute.get('/:id', CompanyController.getById);
 companyRoute.put('/:id', CompanyController.update);
@@ -24,9 +25,8 @@ companyRoute.get('/user-details/:userId',companyController.getUserDetails)
 
 
 companyRoute.post('/:planId/regenerate-keys', CompanyController.regenerateKeys);
-
 companyRoute.get('/stats', CompanyController.getUserStats)
-// companyRoute.post('/user/:planId/activate-plan', CompanyController.subscribePlan);
+
 companyRoute.get('/user/plan/:userId', companyController.getUserPlan)
 
 // companyRoute.get('/notifications', CompanyController.getNotifications)

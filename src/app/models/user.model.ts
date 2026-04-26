@@ -207,6 +207,17 @@ class UserModel extends BaseModel {
       .returning('*')
       .then((res: any) => res[0]);
   }
+
+  async saveOtp(userId: string, otp: string, expiresAt: Date,email:string) {
+    return this.query()
+      .insert({
+        user_id: userId,
+        otp,
+        expires_at: expiresAt,
+      })
+      .returning('*')
+      .then((res: any) => res[0]);
+  }
 }
 
 export default new UserModel();

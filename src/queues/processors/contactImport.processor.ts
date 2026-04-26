@@ -43,7 +43,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
     // Create contact list
     const list = await ContactListModel.create({
       user_id:userId,
-      companyId:companyId,
+      company_id:companyId,
       name: listName,
       file_name: path.basename(filePath),
       file_path: filePath,
@@ -95,6 +95,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
             // Create new contact
             contact = await ContactModel.create({
               user_id:userId,
+              company_id:companyId,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,
             });

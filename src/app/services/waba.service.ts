@@ -284,8 +284,8 @@ class WabaService {
   /**
    * Get phone numbers for company
    */
-  async getUserPhoneNumbers(userId: string) {
-    return PhoneNumberModel.findByUserId(userId);
+  async getUserPhoneNumbers(userId: string,companyId?:string) {
+    return PhoneNumberModel.findByUserId(userId,companyId);
   }
 
   /**

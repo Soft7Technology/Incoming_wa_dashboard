@@ -7,6 +7,8 @@ import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import subscriptionModel from '@surefy/console/models/subscription.model'
 import userPlansModel from '../../models/userPlans.model';
+import companyService from '@surefy/console/services/company.service';
+import sendEmail from '../../utils';
 
 class CompanyController {
   /**
@@ -39,6 +41,14 @@ class CompanyController {
       initial_credit,
       user,
     });
+
+    if(result){
+      await sendEmail(
+        email,
+       'Welcome to Our Platform',
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+      )
+    }
 
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
@@ -192,7 +202,18 @@ class CompanyController {
     const{userId} = req.params
     console.log("UserId",userId)
     const userPlan = await userPlansModel.getUserPlan(userId)
+    if(!userPlan){
+      return successResponse(req,res, 'No active plan for user', null)
+    }
     return successResponse(req,res, 'User plan retrieved successfully', userPlan)
+  }
+
+  async checkUserPlanStatus(req:AuthRequest,res:Response){
+    const userPlan = await userPlansModel.getUserPlan(req.userId!)
+    if(!userPlan){
+      return successResponse(req,res, 'No active plan for user', null)
+    }
+    return successResponse(req,res, 'User has an active plan', userPlan)
   }
   
   async getUserById(req:AuthRequest,res:Response){
@@ -207,12 +228,13 @@ class CompanyController {
     return successResponse(req, res, 'Company User deleted successfully',deleteUser);
   }
 
-  async companyStats(req:AuthRequest,res:Response){
-    //  const{id} = req
-  }
-
   async getReminders(req:AuthRequest,res:Response){
     return successResponse(req,res,"No reminder for now",HttpStatusCode.OK)
+  }
+
+  async getCompaniesSubscription(req:AuthRequest,res:Response){
+    const companySubscriptions = await companyService.getcompanySubscriptions(req.companyId!)
+    return successResponse(req,res,"Company User Active subscriptions plans",companySubscriptions,HttpStatusCode.OK)
   }
 
   // async updateCompanyUser(req:AuthRequest,res:Response){

@@ -5,7 +5,8 @@ import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import subscriptionService from "../../services/subscription.service"
-import CompanyService from '../../services/company.service';
+import crypto from 'crypto';
+import { update } from 'lodash';
 
     // planName:string;
     // price:string;
@@ -16,103 +17,319 @@ import CompanyService from '../../services/company.service';
     // limitType:string;
     // limitValue:string;
 
-class SubscriptionController{
-    /**
-     * Create Subscription Plans
-     */
-    createSubscription = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const{plan_name,price,billing_cycle,description,active,features} = req.body
-        
-        const newSubscription = await subscriptionService.createSubscriptionPlan(req.userId!,req.companyId!,{plan_name,price,billing_cycle,description,active,features})
-        return successResponse(req, res, 'New Subscription created successfully', newSubscription, HttpStatusCode.CREATED);
-    })
+class SubscriptionController {
+  /**
+   * Create Subscription Plans
+   */
+  createSubscription = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { plan_name, price, billing_cycle, description, active, features } = req.body;
 
-    getDeafultSubscritionPlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const subscriptionPlans = await subscriptionService.getDeafultSubscritionPlan(req.userId!)
-        return successResponse(req, res, 'New Subscription created successfully', subscriptionPlans, HttpStatusCode.CREATED);
-    })
+    const newSubscription = await subscriptionService.createSubscriptionPlan(req.userId!, req.companyId!, {
+      plan_name,
+      price,
+      billing_cycle,
+      description,
+      active,
+      features,
+    });
+    return successResponse(req, res, 'New Subscription created successfully', newSubscription, HttpStatusCode.CREATED);
+  });
 
-    getSubscription = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const{active} = req.query
-        // if(active === 'true'){
-        //     const subscription = await subscriptionService.getActiveSubscriptionPlan(req.companyId!)
-        //     return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
-        // }
-        console.log("Active:", active);
-        const subscription = await subscriptionService.getSubscriptionPlans(req.companyId!,active)
-        return successResponse(req, res, 'Subscription retrieved successfully', subscription, HttpStatusCode.OK);
-    })
+  getDeafultSubscritionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const subscriptionPlans = await subscriptionService.getDeafultSubscritionPlan(req.userId!);
+    return successResponse(
+      req,
+      res,
+      'New Subscription created successfully',
+      subscriptionPlans,
+      HttpStatusCode.CREATED,
+    );
+  });
 
-    getActiveSubscriptionPlans = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const subscription = await subscriptionService.getActiveSubscriptionPlan(req.companyId!)
-        return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
-    })
+  getSubscription = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { active } = req.query;
+    // if(active === 'true'){
+    //     const subscription = await subscriptionService.getActiveSubscriptionPlan(req.companyId!)
+    //     return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
+    // }
+    console.log('Active:', active);
+    const subscription = await subscriptionService.getSubscriptionPlans(req.companyId!, active);
+    return successResponse(req, res, 'Subscription retrieved successfully', subscription, HttpStatusCode.OK);
+  });
 
-    updateSubscriptionPlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const {id} = req.params
-        const {plan_name,price,billing_cycle,description,active,features} = req.body
-        console.log("Body",req.body)
+  getActiveSubscriptionPlans = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const subscription = await subscriptionService.getActiveSubscriptionPlan(req.companyId!);
+    return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
+  });
 
-        const updatedSubscription = await subscriptionService.updateSubscriptionPlan(id,{plan_name,price,billing_cycle,description,active,features})
-        return successResponse(req, res, 'Subscription Plan updated successfully', updatedSubscription, HttpStatusCode.OK);
-    })
+  updateSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const { plan_name, price, billing_cycle, description, active, features } = req.body;
+    console.log('Body', req.body);
 
-    subscribePlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const {planId} = req.params
-        const subscribedUserPlan = await subscriptionService.subscribeUserPlan(planId,req.userId!)
-        console.log("UserPlan",subscribedUserPlan)
-        return successResponse(req,res,"User Plan get Activated",subscribedUserPlan)
-    })
+    const updatedSubscription = await subscriptionService.updateSubscriptionPlan(id, {
+      plan_name,
+      price,
+      billing_cycle,
+      description,
+      active,
+      features,
+    });
+    return successResponse(req, res, 'Subscription Plan updated successfully', updatedSubscription, HttpStatusCode.OK);
+  });
 
-    // subscribePlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    //     const {planId} = req.params
-    //     const{razorpayOrderId,razorpaymentId,razorpaySignature} = req.body
-    
-    //     console.log("Subscribing to plan with query:", planId) // Debug log
+  subscribePlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { planId } = req.params;
+    console.log('Subscription Plan', req.body);
+    const subscribedUserPlan = await subscriptionService.subscribeUserPlan(req.userId!, req.companyId!, planId);
+    console.log('UserPlan', subscribedUserPlan);
+    return successResponse(req, res, 'User Plan get Activated', subscribedUserPlan);
+  });
 
-    //             // Create Razorpay order
-    // const orderData: RazorpayOrderRequest = {
-    //   amount: amountInPaise,
-    //   currency: "INR",
-    //   receipt: `receipt_${Date.now()}_${user?.id}`,
-    //   notes: {
-    //     userId: user?.id?.toString(),
-    //     planId: resolvedPlanId,
-    //     planName: planType,
-    //   },
-    // };
+  //     const generatedSignature = crypto
+  //   .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET!)
+  //   .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+  //   .digest("hex");
 
-    // const response = await fetch("https://api.razorpay.com/v1/orders", {
-    //   method: "POST",
-    //   headers: {
-    //     "Content-Type": "application/json",
-    //     Authorization: `Basic ${Buffer.from(
-    //       `${RAZORPAY_KEY_ID}:${RAZORPAY_KEY_SECRET}`
-    //     ).toString("base64")}`,
-    //   },
-    //   body: JSON.stringify(orderData),
-    // });
-    
-    //     const planData = await subscriptionModel.findById(planId as string)
-    //     if(!planData){
-    //       throw new HTTP400Error({message: 'Subscription Plan not found'})
-    //     }
-    //     const subscribePlan = await CompanyService.createUserPlan(req.userId!, planData,razorpayOrderId,razorpaymentId,razorpaySignature)
-    //     return successResponse(req,res, 'Plan subscribed successfully', subscribePlan)
-    // })
-    
+  // if (generatedSignature !== razorpaySignature) {
+  //   return res.status(400).json({
+  //     success: false,
+  //     message: "Invalid payment signature",
+  //   });
+  // }
 
-    deleteSubscriptionPlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const {id} = req.params 
-        const deleteSubscription = await subscriptionService.deleteSubscriptionPlan(id)
-        return successResponse(req, res, 'Subscription Plan deleted successfully',deleteSubscription, HttpStatusCode.OK);
-    })
+  activateUserPlanAfterPayment = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { razorpayOrderId, razorpaymentId, razorpaySignature } = req.body;
+    console.log('Payment verification data:', req.body); // Debug log
+    const generatedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
+      .update(`${razorpayOrderId}|${razorpaymentId}`)
+      .digest('hex');
 
-    getSubscriptionPlanById = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const {id} = req.params 
-        const subscriptionPlan = await subscriptionService.getSubscriptionPlanById(id)
-        return successResponse(req, res, 'Subscription Plan retrieved successfully', subscriptionPlan, HttpStatusCode.OK);
-    })
+    if (generatedSignature !== razorpaySignature) {
+      console.log('Generated Signature:', generatedSignature); // Debug log
+      console.log('Received Signature:', razorpaySignature);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment signature',
+      });
+    }
+
+    const updateUserSubscriptionPlan = await subscriptionService.activateUserPlanAfterPayment(
+      req.userId!,
+      razorpayOrderId,
+      razorpaymentId,
+      razorpaySignature,
+    );
+    return successResponse(req, res, 'User Plan Activated after payment', updateUserSubscriptionPlan);
+  });
+
+
+  handleRazorWebhook = tryCatchAsync(async (req: Request, res: Response) => {
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET!;
+    const signature = req.headers['x-razorpay-signature'] as string;
+    const body = JSON.stringify(req.body);
+    const hash = crypto.createHmac('sha256', webhookSecret).update(body).digest('hex');
+    if (hash !== signature) {
+      console.log('Invalid signature. Hash:', hash, 'Signature:', signature);
+      return res.status(400).json({ success: false, message: 'Invalid signature' });
+    }
+
+    const payload = JSON.parse(body);
+    console.log('Razorpay Webhook Payload:', payload);
+
+    if (payload.event === 'payment.captured' || payload.event === 'order.paid') {
+      const payment = payload.payload.payment?.entity;
+      if (payment) {
+        const orderId = payment.order_id;
+        const razorpayPaymentId = payment.id;
+        const razorpaySignature = signature;
+        const method = payment.method;
+        const fee = payment.fee ? payment.fee/100 : 0;
+        const tax = payment.tax ? payment.tax/100 : 0;
+        const rrn = payment.acquirer_data?.rrn || payment.acquirer_data?.bank_transaction_id;
+
+        const updateUserPlan = await subscriptionService.activeUserPlan(orderId,{ razorpayPaymentId, razorpaySignature, method, fee, tax, rrn});
+        console.log('User plan updated from webhook:', updateUserPlan);
+
+        if(updateUserPlan.status === 'verified' || updateUserPlan.status === 'completed' && updateUserPlan.active === true){
+            console.log(`Order ${orderId} already processed by Verification API`);
+            return res.status(200).json({ success: true, message: 'Webhook processed successfully' });
+        }
+      }
+    }
+
+  })
+
+//     try {
+//     const body = await request.text();
+//     const signature = request.headers.get("x-razorpay-signature")!;
+
+//     // Verify signature
+//     const hash = crypto
+//       .createHmac("sha256", RAZORPAY_KEY_SECRET)
+//       .update(body)
+//       .digest("hex");
+
+//     if (hash !== signature) {
+//       return NextResponse.json(
+//         { error: "Invalid signature" },
+//         { status: 400 }
+//       );
+//     }
+
+//     const payload = JSON.parse(body);
+
+//     if(payload.event === "payment.captured" || payload.event === "order.paid"){
+//       const payment = payload.payload.payment?.entity;
+//       if (!payment) return NextResponse.json({ received: true }, { status: 200 });
+//       const orderId = payment.order_id;
+
+//       const method = payment.method;
+//       const fee = payment.fee ? payment.fee/100 : 0;
+//       const tax = payment.tax ? payment.tax/100 : 0;
+//       const rrn = payment.acquirer_data?.rrn || payment.acquirer_data?.bank_transaction_id;
+
+//       await prisma.$transaction(async (tx)=>{
+//         const subscription = await tx.subscription.findUnique({
+//           where:{
+//             razorpayOrderId: orderId
+//           },
+//           include: {
+//             user: true
+//           }
+//         })
+
+//         if(!subscription){
+//           throw new Error("Subscription not found");
+//         }
+
+//         if(subscription.status === "completed"){
+//           console.log(`Order ${orderId} already processed by Verification API`);
+//           return;
+//         }
+
+//         const plan = await prisma.subscription_plans.findFirst({
+//           where: { name: subscription.planType },
+//         });
+
+//         if (!plan) {
+//           throw new Error("Subscription plan not found");
+//         }
+
+//         const planDays = plan.billingCycle === "YEARLY" ? 365 : 30;
+
+//         const user = subscription.user;
+
+//         let finalEndDate = new Date();
+//         finalEndDate.setDate(finalEndDate.getDate() + planDays);
+
+//         if(user?.isPremium && user?.subscriptionEnd && new Date(user.subscriptionEnd) > new Date()){
+//         const oldPlan = await prisma.subscription_plans.findFirst({
+//           where: {
+//             name: {
+//               equals: user.subscriptionPlan!,
+//               mode: "insensitive",
+//             },
+//           },
+//         });
+
+//         if(oldPlan){
+//           const oldDays = oldPlan.billingCycle === "YEARLY" ? 365 : 30;
+//           const today = new Date();
+//           const end = new Date(user.subscriptionEnd);
+
+//           const remainingDays = (end.getTime() - today.getTime()) / (24 * 60 * 60 * 1000);
+//           const dailyRateOld = oldPlan.price / oldDays;
+//           const remainingValue = dailyRateOld * remainingDays;
+
+//           const dailyRateNew = plan.price / planDays;
+//           const creditDays = Math.floor(remainingValue/dailyRateNew);
+
+//           finalEndDate.setDate(finalEndDate.getDate() + creditDays);
+//         }
+//       }
+
+//       await tx.subscription.update({
+//         where: {
+//           id: subscription.id
+//         },
+//         data: {
+//           razorpayPaymentId: payment.id,
+//           razorpaySignature: signature,
+//           status: "completed",
+//           paymentMethod: method,
+//           vpa: payment.vpa || null,
+//           bank: payment.bank || null,
+//           wallet: payment.wallet || null,
+//           last4: payment.card?.last4 || null,
+//           rrn: rrn || null,
+//           razorpayFee: fee,
+//           razorpayTax: tax,
+//           endDate: finalEndDate,
+//           startDate: new Date()
+//         }
+//       });
+
+//       const startDate = new Date();
+
+//       await tx.user.update({
+//         where: {
+//           id: subscription.userId,
+//         },
+//         data: {
+//           isPremium: true,
+//           plan: plan.name,
+//           subscriptionPlan: plan.name,
+//           subscriptionStart: startDate,
+//           subscriptionEnd: finalEndDate,
+//           razorpayCustomerId: payment.customer_id,
+//         },
+//       });
+
+//       // Unify with admin/verify flow: create UserSubscription
+//       await tx.userSubscription.deleteMany({ where: { userId: subscription.userId } });
+//       await tx.userSubscription.create({
+//         data: {
+//           userId: subscription.userId,
+//           companyId: plan.companyId,
+//           planId: plan.id,
+//           startDate,
+//           endDate: finalEndDate,
+//           status: "ACTIVE",
+//           autoRenew: true,
+//           updatedAt: startDate,
+//         },
+//       });
+//       });
+//     }
+
+//     return NextResponse.json({ received: true }, { status: 200 });
+//   } catch (error) {
+//     console.error("Webhook error:", error);
+//     return NextResponse.json(
+//       { error: "Webhook processing failed" },
+//       { status: 500 }
+//     );
+//   }
+
+
+  deleteSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const deleteSubscription = await subscriptionService.deleteSubscriptionPlan(id);
+    return successResponse(req, res, 'Subscription Plan deleted successfully', deleteSubscription, HttpStatusCode.OK);
+  });
+
+  getSubscriptionPlanById = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const subscriptionPlan = await subscriptionService.getSubscriptionPlanById(id);
+    return successResponse(req, res, 'Subscription Plan retrieved successfully', subscriptionPlan, HttpStatusCode.OK);
+  });
+
+  activateFreeTrial = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const activatedTrial = await subscriptionService.activateFreeTrial(req.userId!);
+    return successResponse(req, res, 'Free trial activated successfully', activatedTrial, HttpStatusCode.OK);
+  })
 }
 
 export default new SubscriptionController();

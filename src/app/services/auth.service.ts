@@ -4,7 +4,9 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import * as bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { permission } from 'process';
+import sendEmail from '../utils';
+import passwordResetModel from '../models/passwordReset.model';
+import crypto from 'crypto';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -24,7 +26,7 @@ class AuthService {
   private JWT_EXPIRES_IN: string;
 
   constructor() {
-    this.JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+    this.JWT_SECRET = process.env.JWT_SECRET || '1234';
     this.JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
   }
 
@@ -86,6 +88,62 @@ class AuthService {
     };
   }
 
+  async sendOtp(email: string, otp: string) {
+    // Generate OTP
+    const existUser = await UserModel.findByEmail(email);
+    if (!existUser) {
+      throw new HTTP400Error({ message: 'User with this email does not exist' });
+    }
+
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+
+    // Save OTP to database with expiration (e.g., 10 minutes)
+    // await passwordResetModel.create(existUser.id, { otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000), email });
+
+    await passwordResetModel.create({
+      user_id: existUser.id,
+      otp_hash: otpHash,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000),
+      email: email,
+    });
+
+    // Send OTP via email (implement your email service)
+    await sendEmail(email, 'Your Password Reset OTP', `Your OTP is: ${otp}`);
+    return { message: 'OTP sent to email' };
+  }
+
+  async verifyOtp(otp: string,email: string, ) {
+    console.log('Verifying OTP for email:', email);
+    const record = await passwordResetModel.findLatestByEmail(email);
+    console.log('OTP Record:', record);
+
+    if (!record) {
+      throw new HTTP400Error({ message: 'Invalid request' });
+    }
+
+    const otpHash = crypto.createHash('sha256').update(otp).digest('hex');
+
+    if (otpHash !== record.otp_hash) {
+      throw new HTTP400Error({ message: 'Invalid OTP' });
+    }
+
+    if (record.expires_at < new Date()) {
+      throw new HTTP400Error({ message: 'OTP expired' });
+    }
+
+    // ✅ Mark verified
+    await passwordResetModel.update(record.id, { verified: true });
+
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not defined');
+    }
+
+    // ✅ Generate reset token
+    const resetToken = jwt.sign({ userId: record.user_id }, process.env.JWT_SECRET, { expiresIn: '10m' });
+
+    return { resetToken };
+  }
+
   /**
    * Register new user (company role)
    */
@@ -95,7 +153,7 @@ class AuthService {
     phone?: string;
     company_id?: string;
     password: string;
-    role?: string;
+    role: string;
     permissions?: string[];
   }) {
     const { name, email, phone, company_id, password } = data;
@@ -147,7 +205,7 @@ class AuthService {
       phone,
       company_id,
       password: hashedPassword,
-      role: data.role || 'admin',
+      role: data.role,
       status: 'active',
       permissions, // ✅ always safe array
     });
@@ -297,6 +355,30 @@ class AuthService {
       user: userWithoutPassword,
       company,
     };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    let decoded;
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not defined');
+    }
+
+    try {
+      decoded = jwt.verify(token, this.JWT_SECRET);
+    } catch {
+      throw new HTTP400Error({ message: 'Invalid or expired token' });
+    }
+
+    const { userId }:any = decoded;
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    await UserModel.update(userId, { password: hashedPassword });
+
+    // cleanup
+    await passwordResetModel.deleteByUserId(userId);
+
+    return { message: 'Password reset successful' };
   }
 }
 
