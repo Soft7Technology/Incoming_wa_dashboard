@@ -113,14 +113,14 @@ class CompanyController {
    * Create user under company
    */
   createUser = tryCatchAsync(async(req: AuthRequest,res:Response)=>{
-    const { name, email, phone, password, role,permissions} = req.body;
+    const { name, email, phone, password, role,assigned_plan} = req.body;
     // console.log("Creating user with data:",{name,email,phone,role})
 
     if (!name || !email || !password) {
       throw new HTTP400Error({ message: 'Name, email, and password are required' });
     }
 
-    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,phone,password,role,permissions})
+    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,phone,password,role,assigned_plan})
     return successResponse(req, res, 'User created successfully', createdUser);
   })
 
@@ -156,12 +156,13 @@ class CompanyController {
 
   getAllUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const {role} = req.query
-    const users = await CompanyService.getAllUsers(req.companyId!,role)
+    console.log("Fetching users with role filter:", role) // Debug log
+    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!,role)
     return successResponse(req,res, 'Users retrieved successfully', users)
   })
 
   getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const users = await CompanyService.getAllUsers(req.companyId!)
+    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!)
     const adminUsers = users.filter((user:any)=> user.role === 'admin')
     return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
   })
@@ -172,9 +173,11 @@ class CompanyController {
   })
 
   updateCompanyUser =  tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const { name, email, phone, permissions} = req.body;
+    const { name, email, phone, permissions,assigned_plan} = req.body;
     const {id} = req.params
-    const updatedUser = await CompanyService.updateCompanyUser(id,{name,email,phone,permissions})
+    
+    const updatedUser = await CompanyService.updateCompanyUser(id,{name,email,phone,permissions,assigned_plan})
+
     return successResponse(req,res, 'User updated successfully', updatedUser)
   })
 
@@ -208,13 +211,23 @@ class CompanyController {
     return successResponse(req,res, 'User plan retrieved successfully', userPlan)
   }
 
-  async checkUserPlanStatus(req:AuthRequest,res:Response){
+async checkUserPlanStatus(req: AuthRequest, res: Response) {
+  try {
+    console.log("Checking user plan status for userId:", req.userId!)
+
     const userPlan = await userPlansModel.getUserPlan(req.userId!)
     if(!userPlan){
-      return successResponse(req,res, 'No active plan for user', null)
+      return successResponse(req, res, 'No Active Plan found', userPlan)
     }
-    return successResponse(req,res, 'User has an active plan', userPlan)
+    return successResponse(req, res, 'User has an active plan', userPlan)
+
+  } catch (error: any) {
+    return res.status(error.statusCode || 500).json({
+      success: false,
+      message: error.message || 'Something went wrong',
+    });
   }
+}
   
   async getUserById(req:AuthRequest,res:Response){
     const {userId} = req.params
@@ -233,7 +246,7 @@ class CompanyController {
   }
 
   async getCompaniesSubscription(req:AuthRequest,res:Response){
-    const companySubscriptions = await companyService.getcompanySubscriptions(req.companyId!)
+    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!)
     return successResponse(req,res,"Company User Active subscriptions plans",companySubscriptions,HttpStatusCode.OK)
   }
 

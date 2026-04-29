@@ -32,10 +32,10 @@ ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
 ContactRoute.get('/import/jobs', ContactController.getImportJobs);
 ContactRoute.get('/import/:jobId/status', ContactController.getImportStatus);
 ContactRoute.post('/import/preview', uploadXLSXMiddleware, ContactController.previewImport);
-ContactRoute.post('/import', uploadXLSXMiddleware, ContactController.importContacts);
+ContactRoute.post('/import',checkPlanLimit('Contact'), uploadXLSXMiddleware, ContactController.importContacts);
 
 // Contact tags management
-ContactRoute.post('/:id/tags', ContactController.addTags);
+ContactRoute.post('/:id/tags',checkPlanLimit('Contact'), ContactController.addTags);
 ContactRoute.delete('/:id/tags', ContactController.removeTags);
 // ContactRoute.get()
 

@@ -53,7 +53,7 @@ class SubscriptionController {
     //     return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
     // }
     console.log('Active:', active);
-    const subscription = await subscriptionService.getSubscriptionPlans(req.companyId!, active);
+    const subscription = await subscriptionService.getSubscriptionPlans(req.userId!,req.companyId!, active);
     return successResponse(req, res, 'Subscription retrieved successfully', subscription, HttpStatusCode.OK);
   });
 
@@ -327,7 +327,8 @@ class SubscriptionController {
   });
 
   activateFreeTrial = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const activatedTrial = await subscriptionService.activateFreeTrial(req.userId!);
+    const{ planId } = req.params;
+    const activatedTrial = await subscriptionService.activateFreeTrial(req.userId!, planId);
     return successResponse(req, res, 'Free trial activated successfully', activatedTrial, HttpStatusCode.OK);
   })
 }

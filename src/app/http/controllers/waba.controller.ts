@@ -37,6 +37,7 @@ class WabaController {
    */
   onboardingWaba = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const {waba_id} = req.body
+    // const {waba_id} = req.query
     console.log("Onboarding WABA with data:", req.body);  
     console.log("Onboarding WABA with data:",waba_id);
     if(!waba_id){

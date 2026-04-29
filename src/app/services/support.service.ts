@@ -13,7 +13,8 @@ import userModel from '../models/user.model';
 class supportService {
   async createtTicket(userId: string, companyId: string, data: any) {
     const { message } = data;
-    const generateTicket = await supportTicketModel.create({ ...data, user_id: userId, company_id: companyId });
+    const companiesId = companyId || 'e8318a5a-e01c-41db-803b-80347051b00d';
+    const generateTicket = await supportTicketModel.create({ ...data, user_id: userId, company_id: companiesId });
     if (generateTicket) {
       await ticketConversationModel.create({
         message,

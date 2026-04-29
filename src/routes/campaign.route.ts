@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
 import CampaignController from '@surefy/console/http/controllers/campaign.controller';
-import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
+import { checkPlanLimit } from "@surefy/console/app/middleware/plan.middleware"
 import campaignController from '@surefy/console/http/controllers/campaign.controller';
 
 const CampaignRoute = Router();

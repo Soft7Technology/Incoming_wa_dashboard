@@ -154,7 +154,6 @@ class AuthService {
     company_id?: string;
     password: string;
     role: string;
-    permissions?: string[];
   }) {
     const { name, email, phone, company_id, password } = data;
 
@@ -180,34 +179,19 @@ class AuthService {
       }
     }
 
-    // Normalize permissions 👇
-    let permissions: string[] = [];
-
-    if (data.permissions) {
-      if (Array.isArray(data.permissions)) {
-        permissions = data.permissions;
-      } else if (typeof data.permissions === 'string') {
-        try {
-          permissions = JSON.parse(data.permissions);
-        } catch {
-          permissions = [data.permissions];
-        }
-      }
-    }
 
     // Hash password
     const hashedPassword = await this.hashPassword(password);
 
     // Create user
-    const user = await UserModel.createUser({
+    const user = await UserModel.create({
       name,
       email,
       phone,
       company_id,
       password: hashedPassword,
       role: data.role,
-      status: 'active',
-      permissions, // ✅ always safe array
+      status: 'active'
     });
 
     // Remove password from response

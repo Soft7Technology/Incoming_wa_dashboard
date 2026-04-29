@@ -26,6 +26,7 @@ export const checkPlanLimit = (type: 'Contact' | 'Campaign' | 'Chatbot' | 'Messa
 
     // ✅ JSON-based logic
     const limit = plan.limits?.[type]?.limit;
+    console.log("Limit",limit)
     const used = plan.usage?.[type];
     console.log("Plan Limits",plan.limits, type, limit)
 

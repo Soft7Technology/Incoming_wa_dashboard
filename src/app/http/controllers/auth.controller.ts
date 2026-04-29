@@ -124,7 +124,7 @@ class AuthController {
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
     const { name, email, phone, password } = req.body; 
-    const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
+    // const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
 
     if (!name || !password) {
       throw new HTTP400Error({ message: 'Name and password are required' });
@@ -139,17 +139,16 @@ class AuthController {
       email,
       phone,
       password,
-      permissions,
       role: 'user'
     });
 
-    if(user){
-      await sendEmail(
-        email,
-       'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
-      )
-    }
+    // if(user){
+    //   await sendEmail(
+    //     email,
+    //    'Welcome to Our Platform',
+    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+    //   )
+    // }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });

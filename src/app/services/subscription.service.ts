@@ -4,10 +4,11 @@ import { subscriptionPlans } from '../interfaces/subscription.interface';
 import subscriptionModel from '../models/subscription.model';
 import { RazorpayOrderRequest } from '../interfaces/razorpay.interface';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import CompanyService from './company.service';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import userPlansModel from '../models/userPlans.model';
-
+import userModel from '../models/user.model';
 
 class subscriptionService {
   /**
@@ -78,8 +79,12 @@ class subscriptionService {
     return subscription;
   }
 
-  async getSubscriptionPlans(companyId: string, active?: any) {
-    const subscription = await subscriptionModel.findSubscriptionsPlans(companyId, active);
+  async getSubscriptionPlans(userId: string,companyId:string,active?: any) {
+    const user = await userModel.findById(userId);
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
+    }
+    const subscription = await subscriptionModel.findSubscriptionsPlans(userId,companyId, active,user.role);
     return subscription;
   }
 
@@ -96,9 +101,8 @@ class subscriptionService {
   }
   
 
-  async activateFreeTrial(userId: string) {
+  async activateFreeTrial(userId: string,planId:string) {
     // Check if user already has an active subscription or trial
-    const planId = 'f3b5c824-c8d3-4c5a-a6f2-24b6a7851bc3'
     const planData = await subscriptionModel.findFreeTrial(planId)
 
     const userActivate = await userPlansModel.getPlanByUserId(userId)
@@ -109,6 +113,7 @@ class subscriptionService {
     if (!planData) {
       throw new HTTP400Error({ message: 'Free trial already activated' });
     }
+    
     const subscribePlan = await CompanyService.activateUserPlan(
         userId,
         planData
@@ -171,6 +176,10 @@ class subscriptionService {
         message: error.message || 'Failed to subscribe plan',
       });
     }
+  }
+
+  async assignedPlanToUser(userId: string, planId: string) {
+    
   }
 
   async deleteSubscriptionPlan(id: string) {

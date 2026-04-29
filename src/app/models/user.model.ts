@@ -22,7 +22,7 @@ class UserModel extends BaseModel {
         this.query().from('campaigns').count('*').where('user_id', userId).as('campaigns_count'),
 
         //Chatbot
-        this.query().from("chat_bot").count("*").where("user_id",userId).as('chatbot_count'),
+        this.query().from('chat_bot').count('*').where('user_id', userId).as('chatbot_count'),
 
         // contact_lists
         this.query().from('contacts').count('*').where('user_id', userId).as('contacts_count'),
@@ -135,30 +135,37 @@ class UserModel extends BaseModel {
     });
   }
 
-  async findAllUserByCompanyId(companyId: string,userRole?:string) {
-    return this.query().where({ company_id: companyId,role:userRole }).whereNull('deleted_at').orderBy('created_at', 'desc');
+  async findAllUserByCompanyId(companyId?: string, role?: string, filterRole?: string) {
+    const isSuperAdmin = role === 'superadmin';
+
+    const query = this.query()
+      .from('users as u')
+      .leftJoin(
+        // 🔥 subquery: get ONLY latest active plan per user
+        this.query().from('user_plans').select('*').where('active', true).orderBy('created_at', 'desc').as('up'),
+        function () {
+          this.on('up.id', '=', 'u.assigned_plan');
+        },
+      )
+      .select('u.*', 'up.plan_name', 'up.start_date', 'up.end_date', 'up.active as plan_active')
+      .whereNull('u.deleted_at');
+
+    // ✅ Restrict company for non-superadmin
+    if (!isSuperAdmin) {
+      query.where('u.company_id', companyId);
+    }
+
+    // ✅ Optional role filter
+    if (filterRole) {
+      query.where('u.role', filterRole);
+    }
+
+    return await query;
   }
+
 
   async createUser(data: any) {
     const { name, email, phone, password, role, company_id } = data;
-
-    let permissions: string[] = [];
-
-    // Normalize input
-    if (data.permissions) {
-      if (Array.isArray(data.permissions)) {
-        permissions = data.permissions;
-      } else if (typeof data.permissions === 'string') {
-        try {
-          permissions = JSON.parse(data.permissions);
-        } catch {
-          permissions = [data.permissions];
-        }
-      }
-    }
-
-    // Convert to Postgres array format
-    const pgArray = `{${permissions.join(',')}}`;
 
     return this.query()
       .insert({
@@ -168,7 +175,6 @@ class UserModel extends BaseModel {
         password,
         role,
         company_id,
-        permissions: pgArray, // ✅ works without knex.raw
       })
       .returning('*')
       .then((res: any) => res[0]);
@@ -176,30 +182,13 @@ class UserModel extends BaseModel {
 
   async updateUser(userId: string, data: any) {
     const updateData: any = {};
+    console.log('Updating user with data:', data);
 
     // Basic fields
     if (data.name) updateData.name = data.name;
     if (data.email) updateData.email = data.email;
     if (data.phone) updateData.phone = data.phone;
     if (data.role) updateData.role = data.role;
-
-    // Handle permissions
-    if (data.permissions) {
-      let permissions: string[] = [];
-
-      if (Array.isArray(data.permissions)) {
-        permissions = data.permissions;
-      } else if (typeof data.permissions === 'string') {
-        try {
-          permissions = JSON.parse(data.permissions);
-        } catch {
-          permissions = [data.permissions];
-        }
-      }
-
-      // Convert to Postgres array format
-      updateData.permissions = `{${permissions.map((p) => `"${p}"`).join(',')}}`;
-    }
 
     return this.query()
       .where({ id: userId })
@@ -208,7 +197,7 @@ class UserModel extends BaseModel {
       .then((res: any) => res[0]);
   }
 
-  async saveOtp(userId: string, otp: string, expiresAt: Date,email:string) {
+  async saveOtp(userId: string, otp: string, expiresAt: Date, email: string) {
     return this.query()
       .insert({
         user_id: userId,

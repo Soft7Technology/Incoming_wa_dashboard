@@ -80,76 +80,170 @@ class CompanyModel extends BaseModel {
     return this.query().where({ id: companyId }).increment('credit_balance', amount).returning('*');
   }
 
-  async getDashboardStats(companyId: string,userId?:string) {
-    console.log("Fetching dashboard stats for companyId:", companyId); // Debug log
-    return this.query()
-      .select(
-        // campaigns
-        this.query().from('campaigns').count('*').where('company_id', companyId).as('campaigns_count'),
+  // async getDashboardStats(companyId: string,userId?:string,role?:string) {
+  //   console.log("Fetching dashboard stats for companyId:", companyId); // Debug log
+  //   return this.query()
+  //     .select(
+  //       // campaigns
+  //       this.query().from('campaigns').count('*').where('company_id', companyId).as('campaigns_count'),
 
-        //chatbots
-        this.query().from("chat_bot").count("*").where("user_id",userId).as("chatbot_count"),
+  //       //chatbots
+  //       this.query().from("chat_bot").count("*").where("user_id",userId).as("chatbot_count"),
 
-        // contacts
-        this.query().from('contacts').count('*').where('company_id', companyId).as('contacts_count'),
+  //       // contacts
+  //       this.query().from('contacts').count('*').where('company_id', companyId).as('contacts_count'),
 
-        // contact_lists
-        this.query().from('contact_lists').count('*').where('company_id', companyId).as('contact_lists_count'),
+  //       // contact_lists
+  //       this.query().from('contact_lists').count('*').where('company_id', companyId).as('contact_lists_count'),
 
-        // users
-        this.query().from('users').count('*').where('company_id', companyId).as('users_count'),
+  //       // users
+  //       this.query().from('users').count('*').where('company_id', companyId).as('users_count'),
 
-        // Tags
-        this.query().from('contact_tags').count('*').where('company_id', companyId).as('contact_tags_count'),
+  //       // Tags
+  //       this.query().from('contact_tags').count('*').where('company_id', companyId).as('contact_tags_count'),
 
-        // messages - SENT
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('company_id', companyId)
-          .andWhere('status', 'sent')
-          .as('sent_count'),
+  //       // messages - SENT
+  //       this.query()
+  //         .from('messages')
+  //         .count('*')
+  //         .where('company_id', companyId)
+  //         .andWhere('status', 'sent')
+  //         .as('sent_count'),
 
-        // messages - FAILED
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('company_id', companyId)
-          .andWhere('status', 'failed')
-          .as('failed_count'),
+  //       // messages - FAILED
+  //       this.query()
+  //         .from('messages')
+  //         .count('*')
+  //         .where('company_id', companyId)
+  //         .andWhere('status', 'failed')
+  //         .as('failed_count'),
 
-        // messages - DELIVERED
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('company_id', companyId)
-          .andWhere('status', 'delivered')
-          .as('delivered_count'),
+  //       // messages - DELIVERED
+  //       this.query()
+  //         .from('messages')
+  //         .count('*')
+  //         .where('company_id', companyId)
+  //         .andWhere('status', 'delivered')
+  //         .as('delivered_count'),
 
-        // template messages
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('company_id', companyId)
-          .andWhere('type', 'template')
-          .as('message_template_count'),
+  //       // template messages
+  //       this.query()
+  //         .from('messages')
+  //         .count('*')
+  //         .where('company_id', companyId)
+  //         .andWhere('type', 'template')
+  //         .as('message_template_count'),
 
-        // unique contacts (distinct phone)
-        this.query()
-          .from('messages')
-          .countDistinct('to_phone')
-          .where('company_id', companyId)
-          .as('unique_contacts_count'),
+  //       // unique contacts (distinct phone)
+  //       this.query()
+  //         .from('messages')
+  //         .countDistinct('to_phone')
+  //         .where('company_id', companyId)
+  //         .as('unique_contacts_count'),
 
-        // templates
-        this.query().from('templates').count('*').where('company_id', companyId).as('templates_count'),
-      )
-      .first()
-      .then((res: any) => ({
-        ...res,
-        total_messages: Number(res.sent_count) + Number(res.failed_count) + Number(res.delivered_count),
-      }));
+  //       // templates
+  //       this.query().from('templates').count('*').where('company_id', companyId).as('templates_count'),
+  //     )
+  //     .first()
+  //     .then((res: any) => ({
+  //       ...res,
+  //       total_messages: Number(res.sent_count) + Number(res.failed_count) + Number(res.delivered_count),
+  //     }));
+  // }
+
+  async getDashboardStats(companyId?: string, userId?: string, role?: string) {
+  const isSuperAdmin = role === 'superadmin';
+
+  // 🔐 Safety: if NOT superadmin, companyId must exist
+  if (!isSuperAdmin && !companyId) {
+    throw new Error("company_id is required for non-superadmin users");
   }
+
+  const applyCompanyFilter = (query: any) => {
+    if (!isSuperAdmin) {
+      query.where('company_id', companyId);
+    }
+    return query;
+  };
+
+  return this.query()
+    .select(
+      // campaigns
+      applyCompanyFilter(
+        this.query().from('campaigns').count('*')
+      ).as('campaigns_count'),
+
+      // chatbots
+      this.query()
+        .from("chat_bot")
+        .modify((q: any) => {
+          if (!isSuperAdmin) {
+            q.where("user_id", userId); // or company आधारित भी कर सकते हो
+          }
+        })
+        .count("*")
+        .as("chatbot_count"),
+
+      // contacts
+      applyCompanyFilter(
+        this.query().from('contacts').count('*')
+      ).as('contacts_count'),
+
+      // contact_lists
+      applyCompanyFilter(
+        this.query().from('contact_lists').count('*')
+      ).as('contact_lists_count'),
+
+      // users
+      applyCompanyFilter(
+        this.query().from('users').count('*')
+      ).as('users_count'),
+
+      // tags
+      applyCompanyFilter(
+        this.query().from('contact_tags').count('*')
+      ).as('contact_tags_count'),
+
+      // sent
+      applyCompanyFilter(
+        this.query().from('messages').count('*').where('status', 'sent')
+      ).as('sent_count'),
+
+      // failed
+      applyCompanyFilter(
+        this.query().from('messages').count('*').where('status', 'failed')
+      ).as('failed_count'),
+
+      // delivered
+      applyCompanyFilter(
+        this.query().from('messages').count('*').where('status', 'delivered')
+      ).as('delivered_count'),
+
+      // template messages
+      applyCompanyFilter(
+        this.query().from('messages').count('*').where('type', 'template')
+      ).as('message_template_count'),
+
+      // unique contacts
+      applyCompanyFilter(
+        this.query().from('messages').countDistinct('to_phone')
+      ).as('unique_contacts_count'),
+
+      // templates
+      applyCompanyFilter(
+        this.query().from('templates').count('*')
+      ).as('templates_count'),
+    )
+    .first()
+    .then((res: any) => ({
+      ...res,
+      total_messages:
+        Number(res.sent_count) +
+        Number(res.failed_count) +
+        Number(res.delivered_count),
+    }));
+}
+  
 }
 
 export default new CompanyModel();
