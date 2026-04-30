@@ -24,6 +24,7 @@ CampaignRoute.get('/user/:userId',campaignController.getUsersCampaigns)
 // Campaign stats
 CampaignRoute.get('/:id/stats', CampaignController.getCampaignStats);
 CampaignRoute.get("/:id/messages", CampaignController.getCampaignMessagesInfo)
+CampaignRoute.get('/:id/buttonOnClicks',CampaignController.getCampaignButtonClicks)
 CampaignRoute.get('/:id/progress', CampaignController.getCampaignProgress);
 
 // Media upload

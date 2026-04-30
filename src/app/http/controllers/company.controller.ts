@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { raw, Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import CompanyService from '@surefy/console/services/company.service';
@@ -53,7 +53,10 @@ class CompanyController {
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
 
-  // asyn
+  getCompanyDetails = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const companyDetails = await companyService.getCompanyDetails(req.companyId!)
+    return successResponse(req,res,"Company Retrived successfully",companyDetails,HttpStatusCode.ACCEPTED)
+  })
 
   /**
    * GET /v1/companies/:id
@@ -92,9 +95,8 @@ class CompanyController {
    * PUT /v1/companies/:id
    * Update company
    */
-  update = tryCatchAsync(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    const company = await CompanyService.updateCompany(id, req.body);
+  updateCompany = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const company = await CompanyService.updateCompany(req.companyId!, req.body);
     return successResponse(req, res, 'Company updated successfully', company);
   });
 
@@ -102,9 +104,8 @@ class CompanyController {
    * DELETE /v1/companies/:id
    * Delete company
    */
-  delete = tryCatchAsync(async (req: Request, res: Response) => {
-    const { id } = req.params;
-    await CompanyService.deleteCompany(id);
+  deleteCompany = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    await CompanyService.deleteCompany(req.companyId!);
     return successResponse(req, res, 'Company deleted successfully');
   });
 
@@ -249,6 +250,13 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
     const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!)
     return successResponse(req,res,"Company User Active subscriptions plans",companySubscriptions,HttpStatusCode.OK)
   }
+
+  async updateUser(req: Request, res: Response) {
+    const { id } = req.params;
+    const company = await CompanyService.updateUser(id, req.body);
+    return successResponse(req, res, 'Company updated successfully', company);
+  };
+
 
   // async updateCompanyUser(req:AuthRequest,res:Response){
   //   const 

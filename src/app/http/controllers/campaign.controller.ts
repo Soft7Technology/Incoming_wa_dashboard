@@ -168,6 +168,24 @@ class CampaignController {
      return successResponse(req,res,'Campaign messages info retrieved successfully',messagesInfo);
   })
 
+
+    /**
+   * GET /v1/campaigns/:id/messages
+   * Get campaign messages info
+   */
+  getCampaignButtonClicks = tryCatchAsync(async (req:Request, res:Response) => {
+     const {id} = req.params;
+     const page = Number(req.query.page) || 1;
+     const pageSize = Number(req.query.pageSize) || 10;
+     const messagesInfo = await CampaignService.buttonClickRateInfo(
+        id,
+        page,
+        pageSize
+    );
+     return successResponse(req,res,'Campaign messages info retrieved successfully',messagesInfo);
+  })
+
+
   /**
    * DELETE /v1/campaigns/:id
    * Delete campaign

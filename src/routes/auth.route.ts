@@ -8,7 +8,8 @@ const AuthRoute = Router();
 AuthRoute.post('/login', AuthController.login);
 AuthRoute.post('/register', AuthController.register); 
 AuthRoute.post('/register-company', AuthController.onboard);
-AuthRoute
+
+//Reset-password
 AuthRoute.post('/verify-otp', AuthController.verifyOtp);
 AuthRoute.post('/reset-password', AuthController.forgotPassword);
 AuthRoute.post('/send-otp', AuthController.sendOtp);

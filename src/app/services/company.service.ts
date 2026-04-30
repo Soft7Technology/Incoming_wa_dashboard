@@ -61,6 +61,11 @@ class CompanyService {
     };
   }
 
+  async getCompanyDetails(companyId:string){
+    const companyDetails = await companyModel.findById(companyId)
+    return companyDetails
+  }
+
   /**
    * Get Notification Stats for User
    */
@@ -88,26 +93,19 @@ class CompanyService {
   /**
    * Update company
    */
-  async updateCompany(id: string, data: UpdateCompanyDto) {
-    const company = await this.getCompanyById(id);
-
-    // If email is being updated, check uniqueness
-    if (data.email && data.email !== company.email) {
-      const existingCompany = await CompanyRepository.findByEmail(data.email);
-      if (existingCompany) {
-        throw new HTTP400Error({ message: 'Company with this email already exists' });
-      }
+  async updateCompany(companyId:string, data: UpdateCompanyDto) {
+    const company = await this.getCompanyById(companyId);
+    if(company){
+      return CompanyRepository.update(companyId, data);
     }
-
-    return CompanyRepository.update(id, data);
   }
 
   /**
    * Delete company
    */
-  async deleteCompany(id: string) {
-    await this.getCompanyById(id);
-    return CompanyRepository.delete(id);
+  async deleteCompany(companyId: string) {
+    await this.getCompanyById(companyId);
+    return CompanyRepository.delete(companyId);
   }
 
   /**
@@ -554,6 +552,11 @@ class CompanyService {
   async deleteUserById(userId: string) {
     const deleteUser = await userModel.delete(userId);
     return deleteUser;
+  }
+
+  async updateUser(userId:string,data:string){
+    const updateUser = await userModel.update(userId,data)
+    return updateUser
   }
 
   //   async createUser(

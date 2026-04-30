@@ -17,21 +17,54 @@ class supporController {
    * Create Chatbot support
    */
   async createTicket(req: AuthRequest, res: Response) {
-    const { name, email, phone, message } = req.body;
-    const createTicket = await supportService.createtTicket(req.userId!, req.companyId!, {
-      name,
-      email,
-      message,
-      phone,
-    });
-    if(createTicket){
-      await sendEmail(
-        email,
-       'Support Ticket Created',
-       `Your support ticket has been created successfully. Our team will get back to you shortly.\n\nTicket Details:\nName: ${name}\nEmail: ${email}\nPhone: ${phone}\nMessage: ${message}`,
-      )
+    try {
+      const { name, email, phone, message } = req.body;
+
+      // Basic validation (avoid undefined crashes)
+      if (!name || !email || !message) {
+        return res.status(400).json({
+          success: false,
+          message: 'Name, email and message are required',
+        });
+      }
+
+      // Create ticket
+      const ticket = await supportService.createtTicket(req.userId!, req.companyId!, { name, email, message, phone });
+
+      if (!ticket) {
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to create ticket',
+        });
+      }
+
+      // Send email (DO NOT break flow if email fails)
+      try {
+        await sendEmail(
+          email,
+          'Support Ticket Created',
+          `Your support ticket has been created successfully. Our team will get back to you shortly.
+
+Ticket Details:
+Name: ${name}
+Email: ${email}
+Phone: ${phone}
+Message: ${message}`,
+        );
+      } catch (emailError) {
+        console.error('Email sending failed:', emailError);
+        // Don't throw — ticket is already created
+      }
+
+      return successResponse(req, res, 'Ticket Raised Successfully', ticket, HttpStatusCode.OK);
+    } catch (error: any) {
+      console.error('Create Ticket Error:', error);
+
+      return res.status(500).json({
+        success: false,
+        message: error?.message || 'Internal Server Error',
+      });
     }
-    successResponse(req, res, 'Ticket Raised Sucesfully', createTicket, HttpStatusCode.OK);
   }
 
   /**
@@ -50,7 +83,7 @@ class supporController {
   async replyToConversation(req: AuthRequest, res: Response) {
     try {
       const { ticketId } = req.params;
-      const { message,email,phone } = req.body;
+      const { message, email, phone } = req.body;
 
       if (!ticketId) {
         throw new HTTP400Error({ message: 'Ticket Id is required' });
@@ -60,15 +93,18 @@ class supporController {
         throw new HTTP400Error({ message: 'Message is required' });
       }
 
-      const reply = await supportService.replyToConversation(ticketId, req.userId!, req.companyId!, message,email,phone);
+      const reply = await supportService.replyToConversation(
+        ticketId,
+        req.userId!,
+        req.companyId!,
+        message,
+        email,
+        phone,
+      );
       console.log('Reply:', reply);
 
-      if(reply){
-        sendEmail(
-          email,
-         'Support Ticket Update',
-         `${message}`,
-        )
+      if (reply) {
+        sendEmail(email, 'Support Ticket Update', `${message}`);
       }
 
       return successResponse(req, res, 'Reply sent successfully', reply, HttpStatusCode.OK);

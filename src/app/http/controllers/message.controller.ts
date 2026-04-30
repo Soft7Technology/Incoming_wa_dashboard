@@ -141,6 +141,7 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
+            console.log("Value",message)
             await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
               profile_name: value.contacts?.[0]?.profile?.name || "",
@@ -148,7 +149,7 @@ class MessageController {
               from: message.from,
               type: message.type,
               content: message,
-              context: message.context,
+              context: message.context.id,
             });
 
             await handleIncomingMessageChatBot(value.metadata.phone_number_id,message)
