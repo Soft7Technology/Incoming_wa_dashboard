@@ -16,7 +16,7 @@ class conversationTicketModel extends BaseModel {
   }
 
   async forwardTicketConversations(ticketId:string,superAdminId:string){
-    return await this.query().where({ticket_id:ticketId,forward_superadmin:superAdminId})
+    return await this.query().where({ticket_id:ticketId,forward_superadmin:superAdminId}).returning("*")
   }
 }
 

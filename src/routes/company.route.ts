@@ -1,19 +1,22 @@
 import { Router } from 'express';
 import CompanyController from '@surefy/console/http/controllers/company.controller';
 import companyController from '@surefy/console/http/controllers/company.controller';
+import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
 
 const companyRoute = Router();
 
 // All company endpoints - JWT authentication applied at route group level
 // Only admins can create/manage companies
 
-companyRoute.post('/', CompanyController.onboard); 
-companyRoute.put('/', CompanyController.updateCompany);
+companyRoute.post('/',uploadMediaMiddleware, CompanyController.onboard); 
+companyRoute.put('/',uploadMediaMiddleware, CompanyController.updateCompany);
 companyRoute.delete('/', CompanyController.deleteCompany);
 companyRoute.get('/dashboard', CompanyController.getdashboardStats)
-companyRoute.get('/',companyController.getCompanyDetails)
-// companyRoute.get('/admin', companyController.getAdminUsers);
+companyRoute.get('/details',companyController.getCompanyDetails)
 
+/**
+ * Get All Companies
+ */
 companyRoute.get('/', CompanyController.getAll);
 
 companyRoute.post('/user',companyController.createUser);

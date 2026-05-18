@@ -7,7 +7,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 // Configure storage for file uploads
 const storage = multer.diskStorage({
   destination: (req: Request, file: any, cb: any) => {
-    const uploadDir = path.join(process.cwd(), 'uploads', 'temp');
+    const uploadDir = path.join(process.cwd(), 'uploads');
 
     // Create directory if it doesn't exist
     if (!fs.existsSync(uploadDir)) {
@@ -16,7 +16,7 @@ const storage = multer.diskStorage({
 
     cb(null, uploadDir);
   },
-  filename: (req: Request, file: any, cb: any) => {
+  filename: (req: Request, file: Express.Multer.File, cb: any) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     cb(null, uniqueSuffix + path.extname(file.originalname));
   },
@@ -46,6 +46,7 @@ const mediaFileFilter = (req: Request, file: any, cb: any) => {
   const allowedMimes = [
     // Images
     'image/jpeg',
+    'image/jpg',
     'image/png',
     'image/webp',
     // Videos
@@ -84,6 +85,13 @@ const uploadMedia = multer({
     fileSize: 50 * 1024 * 1024, // 50MB limit for media files
   },
 });
+
+console.log("Media File", uploadMedia)
+
+const ROOT_DIR = process.cwd();
+console.log("Root DIR",ROOT_DIR)
+
+export const UPLOADS_DIR = path.join(ROOT_DIR, 'uploads');
 
 // Export middleware
 export const uploadXLSXMiddleware = uploadXLSX.single('file');

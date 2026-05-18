@@ -85,10 +85,45 @@ class supportService {
      const forwardTicket = await supportTicketModel.update(ticketId,{forward_by:userId,forward_superadmin:"5a66df74-92d4-4bcd-814b-13d6318d4116"})
      const ticketConversation = await ticketConversationModel.findByTicketId(ticketId)
      for (const ticket of ticketConversation){
-       await ticketConversationModel.update(ticket.id,{foward_by:userId,forward_superadmin:"5a66df74-92d4-4bcd-814b-13d6318d4116"})
+       console.log("Ticket",ticket)
+       await ticketConversationModel.update(ticket.id,{forward_by:userId,forward_superadmin:"5a66df74-92d4-4bcd-814b-13d6318d4116"})
      }
      return forwardTicket
    }
+
+
+  async replyToForwardTicket(ticketId: string, userId: string, companyId: string, message: string,email:string,phone:string) {
+    console.log('Ticket Id', ticketId);
+    const ticket = await ticketConversationModel.findConversationByTicketId(ticketId);
+    console.log('Conversation Ticket', ticket);
+    if (!ticket) {
+      throw new HTTP400Error({ message: 'Ticket Conversation not found' });
+    }
+    const user = await userModel.findById(userId);
+    console.log('User Name', user);
+    const reply = await ticketConversationModel.create({
+      message, 
+      ticket_id: ticket.ticket_id,
+      user_name: user.name,
+      user_email: email,
+      user_phone: phone,
+      user_id: ticket.user_id,
+      company_id: companyId,
+      forward_by:ticket.user_id,
+      forward_superadmin:userId
+    });
+    return reply;
+  }
+
+  async getAllforwardTickets(userId:string){
+    return await supportTicketModel.findForwardTicket(userId)
+  }
+
+  async deleteSupportTicket(ticketId:string){
+    return await supportTicketModel.delete(ticketId)
+  }
+
+
 }
 
 

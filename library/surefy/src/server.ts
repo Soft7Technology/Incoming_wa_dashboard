@@ -9,6 +9,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { errorHandler } from './middleware/errorHandler';
 import HealthRoute from './routes/health.route';
+import { UPLOADS_DIR } from './middleware/upload.middleware';
 
 interface RouteConfig {
   basePath: string;
@@ -30,6 +31,10 @@ const createBaseApp = (routes: RouteConfig[] = []): Application => {
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(morgan('dev'));
   app.use(express.json());
+
+  // Serve uploaded files
+  app.use('/uploads', express.static(UPLOADS_DIR));
+
 
   // Swagger Documentation
   try {

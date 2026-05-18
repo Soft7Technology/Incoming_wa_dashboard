@@ -16,7 +16,17 @@ class CompanyController {
    * Onboard new company
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone,domain,status, business_id, webhook_url, meta_config, settings, initial_credit, user } = req.body;
+
+    const { name, email, phone,domain,status, business_id, webhook_url, meta_config, settings, initial_credit} = req.body;
+    const user = typeof req.body.user === 'string'? JSON.parse(req.body.user): req.body.user;
+
+    const file = req.file
+
+    let logo = null
+
+    if(file){
+      logo = file.filename
+    }
 
     if (!name || !email) {
       throw new HTTP400Error({ message: 'Name and email are required' });
@@ -40,6 +50,7 @@ class CompanyController {
       settings,
       initial_credit,
       user,
+      logo
     });
 
     if(result){
@@ -96,7 +107,12 @@ class CompanyController {
    * Update company
    */
   updateCompany = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const company = await CompanyService.updateCompany(req.companyId!, req.body);
+    let data = req.body
+    const file = req.file
+    if(file){
+      data.logo = file.filename
+    }
+    const company = await CompanyService.updateCompany(req.companyId!, data);
     return successResponse(req, res, 'Company updated successfully', company);
   });
 
