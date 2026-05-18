@@ -14,6 +14,10 @@ class conversationTicketModel extends BaseModel {
     const conversation = await this.query().where({ticket_id:conversationId}).first()
     return conversation
   }
+
+  async forwardTicketConversations(ticketId:string,superAdminId:string){
+    return await this.query().where({ticket_id:ticketId,forward_superadmin:superAdminId}).returning("*")
+  }
 }
 
 export default new conversationTicketModel()

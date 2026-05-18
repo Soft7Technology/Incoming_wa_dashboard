@@ -9,7 +9,8 @@ import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
 import supportService from '../../services/support.service';
 import sendEmail from '../../utils';
-
+import supportTicketModel from '../../models/supportTicket.model';
+import ticketConversation from '../../models/ticketConversation';
 
 class supporController {
   /**
@@ -103,9 +104,25 @@ Message: ${message}`,
       );
       console.log('Reply:', reply);
 
-      if (reply) {
-        sendEmail(email, 'Support Ticket Update', `${message}`);
+    // Email should NEVER crash API
+    if (reply && email) {
+      try {
+        await sendEmail(
+          email,
+          'Support Ticket Update',
+          `${message}`
+        );
+
+        console.log('Email sent successfully');
+
+      } catch (emailError: any) {
+        console.error('Email Sending Failed:', emailError.message);
+
+        // Optional: store failed email logs in DB
+        // Optional: retry queue
       }
+    }
+
 
       return successResponse(req, res, 'Reply sent successfully', reply, HttpStatusCode.OK);
     } catch (error: any) {
@@ -158,6 +175,105 @@ Message: ${message}`,
     const closedTicket = await supportService.closeTicket(ticketId);
     successResponse(req, res, 'Ticket closed successfully', closedTicket, HttpStatusCode.OK);
   }
+
+  async forwardTicketToSuperAdmin(req:AuthRequest,res:Response){
+    const {ticketId} = req.params
+    if(!ticketId){
+      throw new HTTP400Error({ message: 'Ticket Id is required' });
+    }
+
+    const forwardTicket = await supportService.fowardTicketToSuperAdmin(req.userId!,ticketId)
+    successResponse(req,res,"Ticket forward to superadmin successfully",forwardTicket,HttpStatusCode.OK)
+  }
+
+  async superAdminForwardTickets(req:AuthRequest,res:Response){
+    const superAdminId =  '5a66df74-92d4-4bcd-814b-13d6318d4116'
+    const forwardedTickets = await supportTicketModel.findAllForwardTickets(superAdminId)
+    successResponse(req,res,"SuperAdmin Ticket Forward",forwardedTickets,HttpStatusCode.OK)
+  }
+
+  async forwardTicketConversations(req:AuthRequest,res:Response){
+    const {ticketId} = req.params
+    const superAdminId =  '5a66df74-92d4-4bcd-814b-13d6318d4116'
+    const forwardTicketConversations = await ticketConversation.forwardTicketConversations(ticketId,superAdminId)
+    successResponse(req,res,"Forward Ticket Conversation",forwardTicketConversations,HttpStatusCode.OK)
+  }
+
+  async forwardTicketReply(req: AuthRequest, res: Response) {
+    try {
+      const { ticketId } = req.params;
+      const { message, email, phone } = req.body;
+
+      if (!ticketId) {
+        throw new HTTP400Error({ message: 'Ticket Id is required' });
+      }
+
+      if (!message) {
+        throw new HTTP400Error({ message: 'Message is required' });
+      }
+
+      const reply = await supportService.replyToForwardTicket(
+        ticketId,
+        req.userId!,
+        req.companyId!,
+        message,
+        email,
+        phone,
+      );
+      console.log('Reply:', reply);
+
+      if (reply) {
+        sendEmail(email, 'Support Ticket Update', `${message}`);
+      }
+
+      return successResponse(req, res, 'Reply sent successfully', reply, HttpStatusCode.OK);
+    } catch (error: any) {
+      console.error('Reply Error:', error);
+
+      // If it's your custom error
+      if (error instanceof HTTP400Error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
+      // fallback error
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Something went wrong',
+      });
+    }
+  }
+
+  async getAllforwardTickets(req:AuthRequest,res:Response){
+    try{
+      const tickets = await supportService.getAllforwardTickets(req.userId!);
+      successResponse(req, res, 'Tickets retrieved successfully', tickets, HttpStatusCode.OK);
+    }catch(error:any){
+            console.error('Reply Error:', error);
+
+      // If it's your custom error
+      if (error instanceof HTTP400Error) {
+        return res.status(400).json({
+          success: false,
+          message: error.message,
+        });
+      }
+
+      // fallback error
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Something went wrong',
+      });
+    }
+  }
+
+  // async deleteSupportTicket(req:AuthRequest,res:Response){
+  //       // await CompanyService.deleteCompany(req.companyId!);
+  //       // return successResponse(req, res, 'Company deleted successfully');
+  //   await support
+  // }
 }
 
 export default new supporController()

@@ -9,6 +9,14 @@ class suppportTicketModel extends BaseModel {
     return this.query().where({company_id:companyId}).orderBy('created_at', 'desc')
   }
 
+  async findAllForwardTickets(id:string){
+    return this.query().where({forward_superadmin:id}).returning("*")
+  }
+
+  async findForwardTicket(userId:string){
+    return this.query().where({forward_superadmin:userId}).returning("*");
+  }
+
 //   async createSupportTicket(userId:string,companyId:stri)
 }
 
