@@ -35,7 +35,7 @@ ContactRoute.post('/import/preview', uploadXLSXMiddleware, ContactController.pre
 ContactRoute.post('/import',checkPlanLimit('Contact'), uploadXLSXMiddleware, ContactController.importContacts);
 
 // Contact tags management
-ContactRoute.post('/:id/tags',checkPlanLimit('Contact'), ContactController.addTags);
+ContactRoute.post('/:id/tags',checkPlanLimit('Tag'), ContactController.addTags);
 ContactRoute.delete('/:id/tags', ContactController.removeTags);
 // ContactRoute.get()
 

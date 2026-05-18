@@ -157,16 +157,20 @@ class CompanyController {
 
   getAllUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const {role} = req.query
+    const filters={
+      page: req.query.page,
+      limit: req.query.limit,
+    }
     console.log("Fetching users with role filter:", role) // Debug log
-    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!,role)
+    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!,role,filters)
     return successResponse(req,res, 'Users retrieved successfully', users)
   })
 
-  getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!)
-    const adminUsers = users.filter((user:any)=> user.role === 'admin')
-    return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
-  })
+  // getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  //   const users = await CompanyService.getAllUsers(req.userId!,req.companyId!)
+  //   const adminUsers = users.filter((user:any)=> user.role === 'admin')
+  //   return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
+  // })
 
   getUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const user = await CompanyService.getUserById(req.userId!)
@@ -247,7 +251,11 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
   }
 
   async getCompaniesSubscription(req:AuthRequest,res:Response){
-    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!)
+    const filters={
+      page: req.query.page,
+      limit: req.query.limit,
+    }
+    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!,filters)
     return successResponse(req,res,"Company User Active subscriptions plans",companySubscriptions,HttpStatusCode.OK)
   }
 

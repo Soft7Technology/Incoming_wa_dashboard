@@ -7,26 +7,48 @@ class SubscriptionModel extends BaseModel {
     super('subscription_plans');
   }
 
-async findSubscriptionsPlans(userId:string,companyId?: string, active?: string, role?: string) {
-  const isSuperAdmin = role === 'superadmin';
+  async findSubscriptionsPlans(userId: string, companyId?: string, active?: string, role?: string, filters?: any) {
+    const isSuperAdmin = role === 'superadmin';
 
-  const query = this.query();
+    const page = parseInt(filters?.page) || 1;
+    const limit = parseInt(filters?.limit) || 10;
 
-  // apply company filter only for non-superadmin
-  if (!isSuperAdmin) {
-    if (!companyId) {
-      throw new Error("company_id is required for non-superadmin");
+    const offset = (page - 1) * limit;
+
+    const baseQuery = this.query();
+
+    // ✅ Apply company filter only for non-superadmin
+    if (!isSuperAdmin) {
+      if (!companyId) {
+        throw new Error('company_id is required for non-superadmin');
+      }
+
+      baseQuery.where('company_id', companyId);
     }
-    query.where('company_id', companyId);
-  }
 
-  // optional active filter
-  if (active !== undefined) {
-    query.andWhere('active', active);
-  }
+    // ✅ Optional active filter
+    if (active !== undefined) {
+      baseQuery.andWhere('active', active);
+    }
 
-  return query;
-}
+    // ✅ Total count
+    const totalResult = await baseQuery.clone().count('* as total').first();
+
+    const total = Number(totalResult?.total || 0);
+
+    // ✅ Paginated data
+    const data = await baseQuery.clone().offset(offset).limit(limit).orderBy('created_at', 'desc');
+
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 
   async findCompanyActiveSubscriptions(companyId: string) {
     return this.query()
@@ -42,7 +64,7 @@ async findSubscriptionsPlans(userId:string,companyId?: string, active?: string, 
   }
 
   async findDefaultPlan() {
-    return this.query().where({ user_id: '6691cc2c-faa0-4151-92be-d220320958b0' });
+    return this.query().where({ user_id: '63bb70a0-5fe2-4cbf-940e-88e68d974e62' });
   }
 
   async findByOrderId(razorpayOrderId: string) {
@@ -81,12 +103,9 @@ async findSubscriptionsPlans(userId:string,companyId?: string, active?: string, 
     return newUserPlan;
   }
 
-  async findPlans(id: string,active: boolean): Promise<any> {
+  async findPlans(id: string, active: boolean): Promise<any> {
     return this.query().where({ id, active }).first();
   }
 }
 
-
 export default new SubscriptionModel();
-
-

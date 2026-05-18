@@ -61,9 +61,9 @@ class CompanyService {
     };
   }
 
-  async getCompanyDetails(companyId:string){
-    const companyDetails = await companyModel.findById(companyId)
-    return companyDetails
+  async getCompanyDetails(companyId: string) {
+    const companyDetails = await companyModel.findById(companyId);
+    return companyDetails;
   }
 
   /**
@@ -93,9 +93,9 @@ class CompanyService {
   /**
    * Update company
    */
-  async updateCompany(companyId:string, data: UpdateCompanyDto) {
+  async updateCompany(companyId: string, data: UpdateCompanyDto) {
     const company = await this.getCompanyById(companyId);
-    if(company){
+    if (company) {
       return CompanyRepository.update(companyId, data);
     }
   }
@@ -147,15 +147,19 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string, role?: any) {
-    console.log('Fetching users for companyId:', companyId, 'with role filter:', role); // Debug log
+  async getAllUsers(userId: string, companyId: string, role?: any, filters?: any) {
+    console.log('Fetching users for companyId:', companyId, 'with role filter:', role);
+
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 20;
+
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId, user.role,role);
-    return users;
+
+    return await userModel.findAllUserByCompanyId(companyId, user.role, role, page, limit);
   }
 
   async getUserById(userId: string) {
@@ -373,7 +377,7 @@ class CompanyService {
       usage: JSON.stringify(usage), // JSONB
       duration_days: durationDays,
     });
-    await userModel.update(userId,{assigned_plan:newUserPlan.id})
+    await userModel.update(userId, { assigned_plan: newUserPlan.id });
     return newUserPlan;
   }
 
@@ -483,13 +487,30 @@ class CompanyService {
     return newUserPlan;
   }
 
-  async getcompanySubscriptions(userId: string, companyId: string) {
-    const user = await userModel.findById(userId);
+  async getSubscriptionPlans(userId: string, companyId: string, active?: any, filters?: any) {
+    const page = parseInt(filters.page) || 1;
+    const limit = parseInt(filters.limit) || 20;
+    const offset = (page - 1) * limit;
+
+    let user = await userModel.findById(userId);
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const companySubscritions = await userPlansModel.findCompanyActiveSubscriptions(userId, companyId, user.role);
-    return companySubscritions;
+    const total = user.length;
+    user = user.slice(offset, offset + limit);
+
+    const subscription = await subscriptionModel.findSubscriptionsPlans(userId, companyId, active, user.role, filters);
+    return { subscription, total, page, limit };
+  }
+
+  async getcompanySubscriptions(userId: string, companyId: string, filters?: any) {
+    const user = await userModel.findById(userId);
+
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
+    }
+
+    return await userPlansModel.findCompanyActiveSubscriptions(userId, companyId, user.role, filters);
   }
 
   /**
@@ -554,9 +575,9 @@ class CompanyService {
     return deleteUser;
   }
 
-  async updateUser(userId:string,data:string){
-    const updateUser = await userModel.update(userId,data)
-    return updateUser
+  async updateUser(userId: string, data: string) {
+    const updateUser = await userModel.update(userId, data);
+    return updateUser;
   }
 
   //   async createUser(

@@ -9,11 +9,12 @@ import ContactTagRelationModel from '@surefy/console/models/contactTagRelation.m
 import ContactTagModel from '@surefy/console/models/contactTag.model';
 import XLSXParserService from '@surefy/console/services/xlsxParser.service';
 import * as path from 'path';
+import { normalizePhoneNumber } from "@surefy/console/utils"
 
 const BATCH_SIZE = 500; // Process 500 contacts at a time
 
 async function processContactImport(job: Job<ContactImportJobData>) {
-  const { jobId,userId,companyId, filePath, listName, options } = job.data;
+  const { jobId, userId, companyId, filePath, listName, options } = job.data;
   console.log(`[Job ${jobId}] Processing contact import from file: ${filePath}`);
 
   try {
@@ -33,7 +34,8 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       filePath,
       options.phoneColumn,
       options.nameColumn,
-      options.emailColumn
+      options.emailColumn,
+      options.countryCodeColumn
     );
 
     console.log(`Contacts Results ${JSON.stringify(parseResult)}`);
@@ -42,8 +44,8 @@ async function processContactImport(job: Job<ContactImportJobData>) {
 
     // Create contact list
     const list = await ContactListModel.create({
-      user_id:userId,
-      company_id:companyId,
+      user_id: userId,
+      company_id: companyId,
       name: listName,
       file_name: path.basename(filePath),
       file_path: filePath,
@@ -81,43 +83,158 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       // Process each contact in the batch
       for (const contactData of batch) {
         try {
-          // Check if contact exists
-          let contact = await ContactModel.findByPhone(userId, contactData.phone_number);
 
-          if (contact) {
-            // Update existing contact
-            contact = await ContactModel.update(contact.id, {
-              attributes: { ...contact.attributes, ...contactData.attributes },
-              name: contactData.name || contact.name,
-              email: contactData.email || contact.email,
+          /**
+           * Normalize phone number
+           * Example:
+           * 9876543210 + IN => +919876543210
+           */
+          const normalizedPhone = normalizePhoneNumber(
+            contactData.phone_number,
+            contactData.country_code || "IN"
+          );
+
+          // Invalid phone number
+          if (!normalizedPhone) {
+
+            failedCount++;
+
+            allErrors.push({
+              phone_number: contactData.phone_number,
+              error: "Invalid phone number",
+              row: start + batch.indexOf(contactData) + 1,
             });
-          } else {
-            // Create new contact
+
+            continue;
+          }
+
+          /**
+           * Replace original phone with normalized phone
+           */
+          const formattedPhone = normalizedPhone.number;
+
+          /**
+           * Check existing contact
+           */
+          let contact = await ContactModel.findByPhone(
+            userId,
+            formattedPhone
+          );
+
+          /**
+           * UPDATE EXISTING CONTACT
+           */
+          if (contact) {
+
+            contact = await ContactModel.update(contact.id, {
+
+              name:
+                contactData.attributes?.name ||
+                contactData.name ||
+                contact.name,
+
+              email:
+                contactData.email ||
+                contact.email,
+
+              phone_number: formattedPhone,
+
+              country_code:
+                normalizedPhone.countryCode,
+
+              attributes: {
+                ...contact.attributes,
+                ...contactData.attributes,
+
+                imported_country:
+                  normalizedPhone.country,
+
+                imported_phone:
+                  formattedPhone,
+              },
+            });
+
+          }
+
+          /**
+           * CREATE NEW CONTACT
+           */
+          else {
+
             contact = await ContactModel.create({
-              user_id:userId,
-              company_id:companyId,
-              name: contactData.attributes?.name || contactData.name || '',
-              ...contactData,
+
+              user_id: userId,
+
+              company_id: companyId,
+
+              name:
+                contactData.attributes?.name ||
+                contactData.name ||
+                "",
+
+              email:
+                contactData.email || null,
+
+              phone_number: formattedPhone,
+
+              country_code:
+                normalizedPhone.countryCode,
+
+              attributes: {
+                ...contactData.attributes,
+
+                imported_country:
+                  normalizedPhone.country,
+
+                imported_phone:
+                  formattedPhone,
+              },
             });
           }
 
-          // Add to list
-          await ContactListRelationModel.addContactToList(contact.id, list.id);
+          /**
+           * Add contact to imported list
+           */
+          await ContactListRelationModel.addContactToList(
+            contact.id,
+            list.id
+          );
 
-          // Add tags if specified
-          if (options.tagIds && options.tagIds.length > 0) {
-            await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
+          /**
+           * Add tags
+           */
+          if (
+            options.tagIds &&
+            options.tagIds.length > 0
+          ) {
 
-            // Update tag counts
+            await ContactTagRelationModel.bulkAddTags(
+              contact.id,
+              options.tagIds
+            );
+
+            /**
+             * Increment tag counts
+             */
             for (const tagId of options.tagIds) {
-              await ContactTagModel.incrementContactCount(tagId);
+
+              await ContactTagModel.incrementContactCount(
+                tagId
+              );
             }
           }
 
           successfulCount++;
+
         } catch (error: any) {
-          console.error(`[Job ${jobId}] Error processing contact ${contactData.phone_number}:`, error);
+
+          console.error(
+            `[Job ${jobId}] Error processing contact ${contactData.phone_number}:`,
+            error
+          );
+
           failedCount++;
+
           allErrors.push({
             phone_number: contactData.phone_number,
             error: error.message,

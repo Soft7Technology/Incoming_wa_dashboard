@@ -47,13 +47,17 @@ class SubscriptionController {
   });
 
   getSubscription = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const filters = {
+      page: req.query.page,
+      limit: req.query.limit,
+    };
     const { active } = req.query;
     // if(active === 'true'){
     //     const subscription = await subscriptionService.getActiveSubscriptionPlan(req.companyId!)
     //     return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
     // }
     console.log('Active:', active);
-    const subscription = await subscriptionService.getSubscriptionPlans(req.userId!,req.companyId!, active);
+    const subscription = await subscriptionService.getSubscriptionPlans(req.userId!,req.companyId!, active,filters);
     return successResponse(req, res, 'Subscription retrieved successfully', subscription, HttpStatusCode.OK);
   });
 
@@ -330,6 +334,12 @@ class SubscriptionController {
     const{ planId } = req.params;
     const activatedTrial = await subscriptionService.activateFreeTrial(req.userId!, planId);
     return successResponse(req, res, 'Free trial activated successfully', activatedTrial, HttpStatusCode.OK);
+  })
+
+  cancelUserSubscriptionPlan = tryCatchAsync(async(req:Request,res:Response)=>{
+    const {planId} = req.params
+    const cancelSubscriptionPlan = await subscriptionService.cancelSubscriptionPlan(planId)
+    return successResponse(req,res,"Cancel Subscription Plan",cancelSubscriptionPlan,HttpStatusCode.OK)
   })
 }
 

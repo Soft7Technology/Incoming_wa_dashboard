@@ -135,34 +135,60 @@ class UserModel extends BaseModel {
     });
   }
 
-  async findAllUserByCompanyId(companyId?: string, role?: string, filterRole?: string) {
+  async findAllUserByCompanyId(
+  companyId?: string,
+  role?: string,
+  filterRole?: string,
+  page: number = 1,
+  limit: number = 10,
+  ) {
     const isSuperAdmin = role === 'superadmin';
 
-    const query = this.query()
+    const offset = (page - 1) * limit;
+
+    const baseQuery = this.query()
       .from('users as u')
       .leftJoin(
-        // 🔥 subquery: get ONLY latest active plan per user
         this.query().from('user_plans').select('*').where('active', true).orderBy('created_at', 'desc').as('up'),
         function () {
           this.on('up.id', '=', 'u.assigned_plan');
         },
       )
-      .select('u.*', 'up.plan_name', 'up.start_date', 'up.end_date', 'up.active as plan_active')
       .whereNull('u.deleted_at');
 
     // ✅ Restrict company for non-superadmin
     if (!isSuperAdmin) {
-      query.where('u.company_id', companyId);
+      baseQuery.where('u.company_id', companyId);
     }
 
     // ✅ Optional role filter
     if (filterRole) {
-      query.where('u.role', filterRole);
+      baseQuery.where('u.role', filterRole);
     }
 
-    return await query;
-  }
+    // ✅ Total Count
+    const totalResult = await baseQuery.clone().count('u.id as total').first();
 
+    const total = Number(totalResult?.total || 0);
+
+    // ✅ Paginated Data
+    const data = await baseQuery
+      .clone()
+      .select('u.*', 'up.plan_name', 'up.start_date', 'up.end_date', 'up.active as plan_active')
+      .offset(offset)
+      .limit(limit)
+      .orderBy('u.created_at', 'desc');
+
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 
   async createUser(data: any) {
     const { name, email, phone, password, role, company_id } = data;

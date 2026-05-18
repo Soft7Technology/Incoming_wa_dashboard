@@ -9,7 +9,8 @@ import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
 import supportService from '../../services/support.service';
 import sendEmail from '../../utils';
-
+import supportTicketModel from '../../models/supportTicket.model';
+import ticketConversation from '../../models/ticketConversation';
 
 class supporController {
   /**
@@ -158,6 +159,35 @@ Message: ${message}`,
     const closedTicket = await supportService.closeTicket(ticketId);
     successResponse(req, res, 'Ticket closed successfully', closedTicket, HttpStatusCode.OK);
   }
+
+  async forwardTicketToSuperAdmin(req:AuthRequest,res:Response){
+    const {ticketId} = req.params
+    if(!ticketId){
+      throw new HTTP400Error({ message: 'Ticket Id is required' });
+    }
+
+    const forwardTicket = await supportService.fowardTicketToSuperAdmin(req.userId!,ticketId)
+    successResponse(req,res,"Ticket forward to superadmin successfully",forwardTicket,HttpStatusCode.OK)
+  }
+
+  async superAdminForwardTickets(req:AuthRequest,res:Response){
+    const superAdminId =  '5a66df74-92d4-4bcd-814b-13d6318d4116'
+    const forwardedTickets = await supportTicketModel.findAllForwardTickets(superAdminId)
+    successResponse(req,res,"SuperAdmin Ticket Forward",forwardedTickets,HttpStatusCode.OK)
+  }
+
+  async forwardTicketConversations(req:Request,res:Response){
+    const {ticketId} = req.params
+    const superAdminId =  '5a66df74-92d4-4bcd-814b-13d6318d4116'
+    const forwardTicketConversations = await ticketConversation.forwardTicketConversations(ticketId,superAdminId)
+    successResponse(req,res,"SuperAdmin ")
+  }
+
+  // async deleteSupportTicket(req:AuthRequest,res:Response){
+  //       // await CompanyService.deleteCompany(req.companyId!);
+  //       // return successResponse(req, res, 'Company deleted successfully');
+  //   await support
+  // }
 }
 
 export default new supporController()

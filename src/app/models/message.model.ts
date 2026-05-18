@@ -386,6 +386,14 @@ class MessageModel extends BaseModel {
           ELSE NULL
         END AS "templateComponents"
       `),
+
+      this.db.raw(`
+        CASE 
+          WHEN type = 'interactive' 
+          THEN content->'interactive'
+          ELSE NULL
+        END AS "interactiveComponents"
+      `),
       ])
       .where('phone_number_id', phone_number_id)
       .andWhere((builder) => {

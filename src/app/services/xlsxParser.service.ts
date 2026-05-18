@@ -5,6 +5,7 @@ interface ParsedContact {
   phone_number: string;
   name?: string;
   email?: string;
+  country_code?:string;
   attributes: Record<string, any>;
 }
 
@@ -23,12 +24,14 @@ class XLSXParserService {
    * @param phoneColumn Name of column containing phone numbers (default: 'phone' or 'phone_number')
    * @param nameColumn Name of column containing names (optional)
    * @param emailColumn Name of column containing emails (optional)
+   * @param countryCodeColumn Name of column containing emails (optional)
    */
   async parseContactsFromFile(
     filePath: string,
     phoneColumn?: string,
     nameColumn?: string,
-    emailColumn?: string
+    emailColumn?: string,
+    countryCodeColumn?:string
   ): Promise<ParseResult> {
     try {
       // Read file

@@ -45,7 +45,7 @@ const jwtAuthMiddleware = (req, res, next) => __awaiter(void 0, void 0, void 0, 
         req.companyId = decoded.companyId;
         req.email = decoded.email;
         req.phone = decoded.phone;
-        console.log("Decoded JWT payload:", decoded); // Debug log
+        // console.log("Decoded JWT payload:", decoded); // Debug log
         next();
     }
     catch (error) {

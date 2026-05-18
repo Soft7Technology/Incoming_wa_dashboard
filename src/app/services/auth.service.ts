@@ -4,7 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import * as bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import sendEmail from '../utils';
+import sendEmail  from '../utils';
 import passwordResetModel from '../models/passwordReset.model';
 import crypto from 'crypto';
 
@@ -200,6 +200,9 @@ class AuthService {
     return userWithoutPassword;
   }
 
+
+  
+
   /**
    * Create admin or superadmin user (restricted)
    */
@@ -365,5 +368,7 @@ class AuthService {
     return { message: 'Password reset successful' };
   }
 }
+
+
 
 export default new AuthService();

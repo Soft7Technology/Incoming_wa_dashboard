@@ -80,6 +80,15 @@ class supportService {
     const closedTicket = await supportTicketModel.update(ticketId, { status: 'closed' });
     return closedTicket;
   }
+
+  async fowardTicketToSuperAdmin(userId:string,ticketId:string){
+     const forwardTicket = await supportTicketModel.update(ticketId,{forward_by:userId,forward_superadmin:"5a66df74-92d4-4bcd-814b-13d6318d4116"})
+     const ticketConversation = await ticketConversationModel.findByTicketId(ticketId)
+     for (const ticket of ticketConversation){
+       await ticketConversationModel.update(ticket.id,{foward_by:userId,forward_superadmin:"5a66df74-92d4-4bcd-814b-13d6318d4116"})
+     }
+     return forwardTicket
+   }
 }
 
 

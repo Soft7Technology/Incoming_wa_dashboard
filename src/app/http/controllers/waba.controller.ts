@@ -13,7 +13,7 @@ class WabaController {
    */
   createWaba = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { waba_id, name, currency, timezone, meta_data } = req.body;
-    console.log("Creating WABA with data:", req.companyId);
+    console.log('Creating WABA with data:', req.companyId);
 
     if (!waba_id) {
       throw new HTTP400Error({ message: 'WABA ID is required' });
@@ -33,31 +33,55 @@ class WabaController {
   });
 
   /**
-   * 
+   *
    */
-  onboardingWaba = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const {waba_id} = req.body
-    // const {waba_id} = req.query
-    console.log("Onboarding WABA with data:", req.body);  
-    console.log("Onboarding WABA with data:",waba_id);
-    if(!waba_id){
-      throw new HTTP400Error({ message: 'WABA ID is required' });
+  onboardingWaba = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    try {
+      const { waba_id } = req.body;
+
+      if (!waba_id) {
+        throw new HTTP400Error({
+          message: 'WABA ID is required',
+        });
+      }
+
+      const waba = await wabaService.onboardWaba({
+        user_id: req.userId!,
+        company_id: req.companyId!,
+        waba_id,
+      });
+
+      return successResponse(req, res, 'WABA account created successfully', waba, HttpStatusCode.CREATED);
+    } catch (error: any) {
+      console.error('❌ Meta API Verification Error:', error?.response?.data || error);
+
+      // If Meta returned proper error
+      if (error?.response?.data?.error) {
+        const metaError = error.response.data.error;
+
+        throw new HTTP400Error({
+          message: metaError.message,
+          details: {
+            type: metaError.type,
+            code: metaError.code,
+            subcode: metaError.error_subcode,
+            fbtrace_id: metaError.fbtrace_id,
+          },
+        });
+      }
+
+      // Fallback generic error
+      throw new HTTP400Error({
+        message: error.message || 'Meta verification failed',
+      });
     }
-
-    const waba = await wabaService.onboardWaba({
-      user_id: req.userId!,
-      company_id: req.companyId!,
-      waba_id
-    })
-    return successResponse(req, res, 'WABA account created successfully', waba, HttpStatusCode.CREATED);
-  })
-
+  });
   /**
    * GET /v1/waba
    * Get all WABA accounts for company
    */
   getWabas = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const wabas = await WabaService.getCompanyWabas(req.userId!,req.companyId!);
+    const wabas = await WabaService.getCompanyWabas(req.userId!, req.companyId!);
     return successResponse(req, res, 'WABA accounts retrieved successfully', wabas);
   });
 
@@ -89,8 +113,8 @@ class WabaController {
    * Get all phone numbers for company
    */
   getPhoneNumbers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    console.log("Getting phone numbers for user:", req.userId, "company:", req.companyId);
-    const phoneNumbers = await WabaService.getUserPhoneNumbers(req.userId!,req.companyId!);
+    console.log('Getting phone numbers for user:', req.userId, 'company:', req.companyId);
+    const phoneNumbers = await WabaService.getUserPhoneNumbers(req.userId!, req.companyId!);
     return successResponse(req, res, 'Phone numbers retrieved successfully', phoneNumbers);
   });
 

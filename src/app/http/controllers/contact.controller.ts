@@ -111,15 +111,17 @@ class ContactController {
     return successResponse(req, res, 'File preview generated successfully', preview);
   });
 
+
   /**
    * POST /v1/contacts/import
    * Queue contact import from XLSX (async processing)
    */
+
   importContacts = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column, name_column, email_column, tag_ids } = req.body;
+    const { list_name, phone_column, name_column, email_column, tag_ids, country_code } = req.body;
 
-    console.log("Request file",req.body)
+    console.log("Request file", req.body)
 
     if (!file) {
       throw new HTTP400Error({ message: 'XLSX file is required' });
@@ -130,21 +132,33 @@ class ContactController {
     }
 
     // Define upload directory
-    const uploadDir = path.join(process.cwd(), 'uploads', 'contacts', req.userId!);
+    // Define upload directory
+    const uploadDir = path.join(
+      process.cwd(),
+      'uploads',
+      'contacts',
+      req.userId!
+    );
+
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    // Move file to permanent location
+    // Permanent file path
     const fileName = `${Date.now()}_${file.originalname}`;
     const filePath = path.join(uploadDir, fileName);
-    fs.renameSync(file.path, filePath);
 
+    // Copy file
+    fs.copyFileSync(file.path, filePath);
+
+    // Remove temp file
+    fs.unlinkSync(file.path);
     // Queue the import job instead of processing synchronously
-    const importJob = await ContactService.queueContactImport(req.userId!,req.companyId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(req.userId!, req.companyId!, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
+      countryCodeColumn: country_code,
       tagIds: tag_ids ? tag_ids.split(',') : undefined,
     });
 

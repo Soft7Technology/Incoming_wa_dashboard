@@ -4,6 +4,7 @@ import chatBotNodeModel from './models/chatBotNode.model';
 import chatBotEdgeModel from './models/chatBotEdge.model';
 import messageService from './services/message.service';
 import nodemailer from "nodemailer";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -95,6 +96,8 @@ function resolveFlow(bot: any, text: string) {
       return buildResponse(nextNode);
     }
   }
+
+  
   
 
   // 2️⃣ Check INTERACTIVE edges (button matching)
@@ -161,6 +164,58 @@ export default function sendEmail(to: string, subject: string, text: string,html
   })
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
+
+
+
+export const normalizePhoneNumber = (
+  phone: string,
+  countryCode?: string
+) => {
+
+  if (!phone) return null;
+
+  let cleaned = String(phone)
+    .replace(/[^\d+]/g, "")
+    .trim();
+
+  // Remove leading zero
+  if (cleaned.startsWith("0")) {
+    cleaned = cleaned.slice(1);
+  }
+
+  let parsed;
+
+  // Already international
+  if (cleaned.startsWith("+")) {
+
+    parsed = parsePhoneNumberFromString(cleaned);
+
+  } else {
+
+    // Example: 919876543210
+    if (cleaned.startsWith("91") && cleaned.length === 12) {
+      cleaned = "+" + cleaned;
+      parsed = parsePhoneNumberFromString(cleaned);
+    } else {
+
+      // Use provided country
+      parsed = parsePhoneNumberFromString(
+        cleaned,
+        countryCode as any || "IN"
+      );
+    }
+  }
+
+  if (!parsed || !parsed.isValid()) {
+    return null;
+  }
+
+  return {
+    number: parsed.number,
+    country: parsed.country,
+    countryCode: parsed.countryCallingCode,
+  };
+};
 
 function matchTrigger(data: any, text: string) {
   const keywords = data?.keywords || [];

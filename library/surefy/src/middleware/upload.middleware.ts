@@ -23,10 +23,15 @@ const storage = multer.diskStorage({
 });
 
 // File filter for XLSX files
-const xlsxFileFilter = (req: Request, file: any, cb: any) => {
+const xlsx_csvFileFilter = (req: Request, file: any, cb: any) => {
   const allowedMimes = [
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
     'application/vnd.ms-excel', // .xls
+
+    // CSV
+    'text/csv',
+    'application/csv',
+    'text/plain',
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
@@ -66,7 +71,7 @@ const mediaFileFilter = (req: Request, file: any, cb: any) => {
 // Multer configurations
 const uploadXLSX = multer({
   storage,
-  fileFilter: xlsxFileFilter,
+  fileFilter: xlsx_csvFileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB limit for XLSX
   },
