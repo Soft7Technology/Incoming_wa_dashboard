@@ -11,3 +11,5 @@ coverage/
 .idea/
 docker-compose.yml
 deploy.yml
+
+/uploads

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { jwtAuthMiddleware, requireRole } from '@surefy/middleware/jwtAuth.middleware';
 import AuthController from '@surefy/console/http/controllers/auth.controller';
 
+
 const AuthRoute = Router();
   
 // Public routes (no authentication required)

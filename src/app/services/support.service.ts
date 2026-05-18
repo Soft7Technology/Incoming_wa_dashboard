@@ -119,6 +119,10 @@ class supportService {
     return await supportTicketModel.findForwardTicket(userId)
   }
 
+  async deleteSupportTicket(ticketId:string){
+    return await supportTicketModel.delete(ticketId)
+  }
+
 
 }
 

@@ -186,11 +186,7 @@ Message: ${message}`,
     successResponse(req,res,"Ticket forward to superadmin successfully",forwardTicket,HttpStatusCode.OK)
   }
 
-  async superAdminForwardTickets(req:AuthRequest,res:Response){
-    const superAdminId =  '5a66df74-92d4-4bcd-814b-13d6318d4116'
-    const forwardedTickets = await supportTicketModel.findAllForwardTickets(superAdminId)
-    successResponse(req,res,"SuperAdmin Ticket Forward",forwardedTickets,HttpStatusCode.OK)
-  }
+
 
   async forwardTicketConversations(req:AuthRequest,res:Response){
     const {ticketId} = req.params
@@ -269,11 +265,11 @@ Message: ${message}`,
     }
   }
 
-  // async deleteSupportTicket(req:AuthRequest,res:Response){
-  //       // await CompanyService.deleteCompany(req.companyId!);
-  //       // return successResponse(req, res, 'Company deleted successfully');
-  //   await support
-  // }
+  async deleteSupportTicket(req:AuthRequest,res:Response){
+        const {ticketId} = req.params
+        await supportService.deleteSupportTicket(ticketId);
+        return successResponse(req, res, 'Ticket deleted successfully');
+  }
 }
 
 export default new supporController()

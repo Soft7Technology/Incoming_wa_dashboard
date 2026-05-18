@@ -11,7 +11,7 @@ supportRoute.post('/ticket',supportController.createTicket)
 supportRoute.post('/:ticketId/reply',supportController.replyToConversation) // This will be used to create a new conversation in the ticket conversation table with the same ticket id and user id and company id
 supportRoute.put('/:ticketId/resolve',supportController.resolveTicket)
 supportRoute.put('/:ticketId/close',supportController.closeTicket) // This will be used to close a ticket by changing the status of the ticket to closed in the support ticket table by ticket id and user id and company id
-// supportRoute.delete('/:ticketId',supportController.deleteSupportTicket)
+supportRoute.delete('/:ticketId',supportController.deleteSupportTicket)
 
 
 /**
@@ -23,7 +23,7 @@ supportRoute.get('/:ticketId/forward',supportController.forwardTicketConversatio
 supportRoute.post('/:ticketId/forward/reply',supportController.forwardTicketReply)
 
 
-supportRoute.get('/forward', supportController.superAdminForwardTickets)
+
 // supportRoute.get()
 
 export default supportRoute

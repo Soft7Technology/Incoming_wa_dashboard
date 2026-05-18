@@ -27,6 +27,7 @@ export interface CreateCompanyDto {
   meta_config?: any;
   settings?: any;
   initial_credit?: number;
+  logo?:any;
   user?: {
     name: string;
     email?: string;
