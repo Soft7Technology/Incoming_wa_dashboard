@@ -4,6 +4,7 @@ export async function up(knex: Knex): Promise<void> {
   return knex.schema.createTable('contacts', (table) => {
     table.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     table.uuid('company_id').notNullable().references('id').inTable('companies').onDelete('CASCADE');
+    table.uuid('user_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
     table.string('phone_number', 50).notNullable();
     table.string('name', 255);
     table.string('email', 255);
