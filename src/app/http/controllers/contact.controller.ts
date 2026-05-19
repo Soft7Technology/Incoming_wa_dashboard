@@ -70,10 +70,11 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids } = req.body;
+    const { name, email, attributes, notes, tag_ids,phone_number } = req.body;
 
     const contact = await ContactService.updateContact(id, {
       name,
+      phone_number,
       email,
       attributes,
       notes,
