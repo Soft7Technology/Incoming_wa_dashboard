@@ -135,6 +135,7 @@ class ContactService {
     const updated = await ContactModel.update(contactId, {
       name: data.name,
       email: data.email,
+      phone_number:data.phone_number,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
     });
