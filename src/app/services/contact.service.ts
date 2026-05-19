@@ -70,8 +70,10 @@ class ContactService {
     const page = parseInt(filters.page) || 1;
     const limit = parseInt(filters.limit) || 20;
     const offset = (page - 1) * limit;
+    const sortBy = filters.sortBy
+    const sortOrder = filters.sortOrder
 
-    const contacts = await query.limit(limit).offset(offset);
+    const contacts = await query.orderBy(sortBy,sortOrder).limit(limit).offset(offset)
 
     // Get tags for each contact
     if (contacts.length > 0) {
