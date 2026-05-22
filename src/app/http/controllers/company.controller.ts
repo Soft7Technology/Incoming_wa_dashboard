@@ -273,6 +273,12 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
     return successResponse(req, res, 'Company updated successfully', company);
   };
 
+  async suspendUser(req:Request,res:Response){
+    const {id} = req.params
+    const suspendUser = await CompanyService.suspendUser(id)
+    successResponse(req,res,'User Suspend Successfully',suspendUser,HttpStatusCode.CREATED)
+   }
+
 
   // async updateCompanyUser(req:AuthRequest,res:Response){
   //   const 

@@ -7,6 +7,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import axios from "axios"
 import wabaModel from '@surefy/console/models/waba.model';
 import phoneNumberModel from '@surefy/console/models/phoneNumber.model';
+import metaService from '@surefy/console/services/meta.service';
 
 class WabaService {
   /**
@@ -345,6 +346,11 @@ class WabaService {
     }
 
     return PhoneNumberModel.update(id, { deleted_at: new Date() });
+  }
+
+  async verifyNumber(phoneNumberId:string){
+    const verifyNumber = await metaService.verifiedPhoneNumbers(phoneNumberId)
+    return verifyNumber
   }
 }
 

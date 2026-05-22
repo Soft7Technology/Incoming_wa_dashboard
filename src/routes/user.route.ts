@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import CompanyController from '@surefy/console/http/controllers/company.controller';
+import companyController from '@surefy/console/http/controllers/company.controller';
 
 const UserRoute = Router();
 
@@ -14,6 +15,7 @@ UserRoute.get('/reminder',CompanyController.getReminders)
 
 UserRoute.get('/all', CompanyController.getAll);
 UserRoute.get('/:id', CompanyController.getById);
+UserRoute.post('/:id/suspend',companyController.suspendUser)
 UserRoute.put('/:id', CompanyController.updateUser);
 UserRoute.delete('/:id', CompanyController.deleteCompanyUser);
 UserRoute.post('/:id/regenerate-keys', CompanyController.regenerateKeys);

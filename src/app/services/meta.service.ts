@@ -241,6 +241,26 @@ class MetaService {
       });
     }
   }
+
+/**
+   * Veriified Phone Numbers
+   */
+  async verifiedPhoneNumbers(phoneNumberId:string):Promise<any>{
+    try{
+      const response = await this.client.post(`/${phoneNumberId}/register`,{
+          "messaging_product": "whatsapp",
+          "pin": "123456"
+      });
+      console.log("Response Verified Data data",response.data)
+      return response.data
+    }catch(error:any){
+      console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
+      throw new HTTP500Error({
+        message:'Failed to fetch phone numbers from Meta API',
+        details: error.response?.data || error.message
+      });
+    }
+  }
 }
 
 export default new MetaService();

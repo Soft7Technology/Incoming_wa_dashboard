@@ -133,6 +133,15 @@ class WabaController {
     await WabaService.deletePhoneNumber(id);
     return successResponse(req, res, 'Phone number deleted successfully');
   });
+
+  /**
+   * Verify Number 
+   */
+  verifiedPhoneNumber = tryCatchAsync(async(req:Request,res:Response)=>{
+    const{phoneNumberId} = req.params
+    const response = await WabaService.verifyNumber(phoneNumberId)
+    successResponse(req,res,'Phone Number Verify successfully',response,HttpStatusCode.OK)
+  })
 }
 
 export default new WabaController();
