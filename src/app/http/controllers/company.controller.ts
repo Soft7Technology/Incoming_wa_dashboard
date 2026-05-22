@@ -9,6 +9,7 @@ import subscriptionModel from '@surefy/console/models/subscription.model'
 import userPlansModel from '../../models/userPlans.model';
 import companyService from '@surefy/console/services/company.service';
 import sendEmail from '../../utils';
+import MessageService from '../../services/message.service';
 
 class CompanyController {
   /**
@@ -80,9 +81,10 @@ class CompanyController {
   });
 
   getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    console.log("User Id",req.userId!)
-    const userStats = await CompanyService.getUserStats(req.userId!)
-    return successResponse(req,res, 'User Stats retrieved successfully', userStats)
+      console.log("User Id",req.userId!)
+      const{time_frame} = req.query
+      const userStats = await MessageService.getUserStats(req.userId!,time_frame)
+      return successResponse(req,res, 'User Stats retrieved successfully', userStats)
   })
 
   getUserDetails = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
