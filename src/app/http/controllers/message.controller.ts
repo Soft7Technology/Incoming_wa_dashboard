@@ -209,7 +209,8 @@ class MessageController {
 
   getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
       console.log("User Id",req.userId!)
-      const userStats = await MessageService.getUserStats(req.userId!)
+      const{time_frame} = req.query
+      const userStats = await MessageService.getUserStats(req.userId!,time_frame)
       return successResponse(req,res, 'User Stats retrieved successfully', userStats)
   })
 

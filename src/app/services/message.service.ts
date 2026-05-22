@@ -29,8 +29,8 @@ class MessageService {
   }
 
 
-    async getUserStats(userId:any){
-      const userStats = await userModel.getUserStats(userId)
+    async getUserStats(userId:any,time_frame:any){
+      const userStats = await userModel.getUserStats(userId,time_frame)
       return userStats
     }
 

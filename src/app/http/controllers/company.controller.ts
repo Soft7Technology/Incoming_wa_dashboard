@@ -285,7 +285,7 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
     const {id} = req.params
     const suspendUser = await CompanyService.suspendUser(id)
     successResponse(req,res,'User Suspend Successfully',suspendUser,HttpStatusCode.CREATED)
-  }
+   }
 
 
   // async updateCompanyUser(req:AuthRequest,res:Response){

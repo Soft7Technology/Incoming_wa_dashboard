@@ -15,76 +15,153 @@ class UserModel extends BaseModel {
   //       this.query()
   // }
 
-  async getUserStats(userId: string) {
+  async getUserStats(
+    userId: string,
+    time_frame: '7days' | '1month' | '6months' | '1year' | 'all' = 'all'
+  ) {
+    const now = new Date();
+
+    let startDate: Date | null = null;
+
+    switch (time_frame) {
+      case '7days':
+        startDate = new Date(now.setDate(now.getDate() - 7));
+        break;
+
+      case '1month':
+        startDate = new Date(now.setMonth(now.getMonth() - 1));
+        break;
+
+      case '6months':
+        startDate = new Date(now.setMonth(now.getMonth() - 6));
+        break;
+
+      case '1year':
+        startDate = new Date(now.setFullYear(now.getFullYear() - 1));
+        break;
+
+      default:
+        startDate = null;
+    }
+
+    const applyDateFilter = (query: any) => {
+      if (startDate) {
+        query.andWhere('created_at', '>=', startDate);
+      }
+
+      return query;
+    };
+
     return this.query()
       .select(
         // campaigns
-        this.query().from('campaigns').count('*').where('user_id', userId).as('campaigns_count'),
+        applyDateFilter(
+          this.query()
+            .from('campaigns')
+            .count('*')
+            .where('user_id', userId)
+        ).as('campaigns_count'),
 
-        //Chatbot
-        this.query().from('chat_bot').count('*').where('user_id', userId).as('chatbot_count'),
+        // chatbot
+        applyDateFilter(
+          this.query()
+            .from('chat_bot')
+            .count('*')
+            .where('user_id', userId)
+        ).as('chatbot_count'),
 
-        // contact_lists
-        this.query().from('contacts').count('*').where('user_id', userId).as('contacts_count'),
+        // contacts
+        applyDateFilter(
+          this.query()
+            .from('contacts')
+            .count('*')
+            .where('user_id', userId)
+        ).as('contacts_count'),
 
-        // contact_lists
-        this.query().from('contact_lists').count('*').where('user_id', userId).as('contact_lists_count'),
+        // contact lists
+        applyDateFilter(
+          this.query()
+            .from('contact_lists')
+            .count('*')
+            .where('user_id', userId)
+        ).as('contact_lists_count'),
 
-        // messages - SENT
-        this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'sent').as('sent_count'),
+        // sent messages
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .count('*')
+            .where('user_id', userId)
+            .andWhere('status', 'sent')
+        ).as('sent_count'),
 
-        // messages - FAILED
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('user_id', userId)
-          .andWhere('status', 'failed')
-          .as('failed_count'),
+        // failed messages
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .count('*')
+            .where('user_id', userId)
+            .andWhere('status', 'failed')
+        ).as('failed_count'),
 
-        // messages - DELIVERED
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('user_id', userId)
-          .andWhere('status', 'delivered')
-          .as('delivered_count'),
+        // delivered messages
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .count('*')
+            .where('user_id', userId)
+            .andWhere('status', 'delivered')
+        ).as('delivered_count'),
 
-        this.query().from('messages').count('*').where('user_id', userId).as('total_count'),
+        // received messages
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .count('*')
+            .where('user_id', userId)
+            .andWhere('status', 'received')
+        ).as('received_count'),
 
-        // messages - RECEIVED
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('user_id', userId)
-          .andWhere('status', 'received')
-          .as('received_count'),
+        // total messages
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .count('*')
+            .where('user_id', userId)
+        ).as('total_count'),
 
-        // messages - DELIVERED
-        this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'sent').as('sent_count'),
+        // template messages
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .count('*')
+            .where('user_id', userId)
+            .andWhere('type', 'template')
+        ).as('message_template_count'),
 
-        // messages - SENT
-        this.query()
-          .from('messages')
-          .count('*')
-          .where('user_id', userId)
-          .andWhere('type', 'template')
-          .as('message_template_count'),
-
-        this.query().from('messages').countDistinct('to_phone').where('user_id', userId).as('unique_contacts_count'),
+        // unique contacts
+        applyDateFilter(
+          this.query()
+            .from('messages')
+            .countDistinct('to_phone')
+            .where('user_id', userId)
+        ).as('unique_contacts_count'),
 
         // templates
-        this.query()
-          .from('templates')
-          .count('*')
-          .where('user_id', (qb: any) => {
-            qb.select('user_id').from('users').where('user_id', userId).limit(1);
-          })
-          .as('templates_count'),
+        applyDateFilter(
+          this.query()
+            .from('templates')
+            .count('*')
+            .where('user_id', userId)
+        ).as('templates_count'),
       )
       .first()
       .then((res: any) => ({
         ...res,
-        total_messages: Number(res.sent_count) + Number(res.failed_count) + Number(res.delivered_count),
+        total_messages:
+          Number(res.sent_count) +
+          Number(res.failed_count) +
+          Number(res.delivered_count),
       }));
   }
 
