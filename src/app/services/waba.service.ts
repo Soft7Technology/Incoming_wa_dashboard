@@ -4,9 +4,10 @@ import { CreateWabaDto, CreatePhoneNumberDto } from '@surefy/console/interfaces/
 import MetaService from '@surefy/console/services/meta.service';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
-import axios from 'axios';
+import axios from "axios"
 import wabaModel from '@surefy/console/models/waba.model';
 import phoneNumberModel from '@surefy/console/models/phoneNumber.model';
+import metaService from '@surefy/console/services/meta.service';
 
 class WabaService {
   /**
@@ -14,37 +15,41 @@ class WabaService {
    */
   async onboardWaba(data: CreateWabaDto) {
     try {
+      // Step 1: Register WABA account in database
       const clientWabaAccount = await this.upsertWaba(data)
+      console.log("✅ WABA Account registered with ID:", clientWabaAccount.id);
 
+      // Step 2: Fetch phone numbers from Graph API and store
       const clientData = {
         user_id: data.user_id,
-        company_id: data.company_id,
+        company_id:data.company_id,
         waba_id: data.waba_id,
         company_WABAID: clientWabaAccount.id
       }
 
-      const clientPhoneNumbers =
-        await this.syncCompanyPhoneNumbers(clientData)
+      const clientPhoneNumbers = await this.syncCompanyPhoneNumbers(clientData)
+      console.log("✅ Phone numbers registered:", clientPhoneNumbers);
 
-      const registeredWebhook =
-        await MetaService.subscribeToWebhooks(clientData.waba_id)
+      // Step 3: Subscribe to webhooks
+      const registeredWebhook = await MetaService.subscribeToWebhooks(clientData.waba_id)
+      console.log("✅ Webhook subscription registered with ID:", registeredWebhook);
 
       return {
-        clientAccountStatusMessage:
-          "Client WABA account setup successfully",
+        clientAccountStatusMessage: "Client WABA account setup successfully",
         data: {
           clientWabaAccount,
           phoneNumbers: clientPhoneNumbers,
           webhook: registeredWebhook
         }
-      }
-
+      };
     } catch (error: any) {
-      console.error("❌ WABA Onboarding Error:", error?.response?.data || error)
-
-      throw error
+      throw new HTTP400Error({
+        message: 'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
+        details: error.message,
+      });
     }
   }
+
 
   async upsertWaba(data: CreateWabaDto) {
     const existing = await WabaModel.findByWabaId(data.waba_id);
@@ -74,6 +79,7 @@ class WabaService {
     });
   }
 
+
   async syncCompanyPhoneNumbers(clientData: {
     user_id: string;
     company_id?: string;
@@ -84,7 +90,6 @@ class WabaService {
     const results = [];
 
     for (const phone of response.data || []) {
-      // const verifiedPhoneNumber = await MetaService.verifiedPhoneNumbers(phone.id);
       const existing = await PhoneNumberModel.findByPhoneNumberId(phone.id);
 
       if (existing) {
@@ -94,11 +99,11 @@ class WabaService {
           meta_data: phone,
           updated_at: new Date(),
         });
-        results.push({ phone_id: phone.id, status: 'updated' });
+        results.push({ phone_id: phone.id, status: "updated" });
       } else {
         await PhoneNumberModel.create({
           user_id: clientData.user_id,
-          company_id: clientData.company_id,
+          company_id: clientData.company_id! || '',
           waba_id: clientData.company_WABAID,
           phone_number_id: phone.id,
           display_phone_number: phone.display_phone_number,
@@ -106,14 +111,20 @@ class WabaService {
           quality_rating: phone.quality_rating,
           meta_data: phone,
         });
-        results.push({ phone_id: phone.id, status: 'created' });
+        results.push({ phone_id: phone.id, status: "created" });
       }
     }
 
     return results;
   }
 
-  async registerPhoneNumber(clientData: { company_id: string; waba_id: string; company_WABAID: string }) {
+
+
+  async registerPhoneNumber(clientData: {
+    company_id: string;
+    waba_id: string;
+    company_WABAID: string;
+  }) {
     try {
       // 1️⃣ Fetch phone numbers from Meta
       const response = await MetaService.getPhoneNumbers(clientData.waba_id);
@@ -136,7 +147,7 @@ class WabaService {
           verified_name: phone.verified_name || '',
           quality_rating: phone.quality_rating,
           status: phone.code_verification_status,
-          meta_data: phone,
+          meta_data: phone
         };
 
         try {
@@ -152,6 +163,7 @@ class WabaService {
       }
 
       return registeredPhoneNumbers;
+
     } catch (error: any) {
       throw new HTTP400Error({
         message: 'Failed to register phone numbers',
@@ -187,47 +199,48 @@ class WabaService {
       });
     } catch (error: any) {
       throw new HTTP400Error({
-        message:
-          'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
+        message: 'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
         details: error.message,
       });
     }
   }
 
   private async _subscribeToWebhooks(waba_id: any) {
-    console.log('Subscribing to webhooks for WABA ID:', waba_id);
+    console.log("Subscribing to webhooks for WABA ID:", waba_id);
 
-    const token = process.env.META_ACCESS_TOKEN;
+    const token = process.env.META_ACCESS_TOKEN
 
     const headers = {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    };
+      "Content-Type": "application/json"
+    }
 
-    const fields = 'messages,message_deliveries,message_reads';
+    const fields = "messages,message_deliveries,message_reads"
     const url = `https://graph.facebook.com/${process.env.API_VERSION}/${waba_id}/subscribed_apps?subscribed_fields=${fields}`;
-    console.log('Webhook Subscription URL:', url, token);
+    console.log("Webhook Subscription URL:", url, token);
 
     try {
-      const response = await axios.post(url, null, { headers });
+      const response = await axios.post(url, null, { headers })
       if (!response) {
-        throw new Error('Failed to subscribe to webhooks');
+        throw new Error("Failed to subscribe to webhooks");
       }
 
-      console.log('Successfully subscribed to webhooks:', response.data);
+      console.log("Successfully subscribed to webhooks:", response.data);
 
       return response.data;
     } catch (error: any) {
-      console.error('Error subscribing to webhooks:', error.message);
+      console.error("Error subscribing to webhooks:", error.message);
       throw error;
     }
   }
 
+
+
   /**
    * Get WABA accounts for company
    */
-  async getCompanyWabas(userId: string, companyId: string) {
-    return WabaModel.findByUserId(userId, companyId);
+  async getCompanyWabas(userId: string,companyId:string) {
+    return WabaModel.findByUserId(userId,companyId);
   }
 
   /**
@@ -272,8 +285,8 @@ class WabaService {
   /**
    * Get phone numbers for company
    */
-  async getUserPhoneNumbers(userId: string, companyId?: string) {
-    return PhoneNumberModel.findByUserId(userId, companyId);
+  async getUserPhoneNumbers(userId: string,companyId?:string) {
+    return PhoneNumberModel.findByUserId(userId,companyId);
   }
 
   /**
@@ -333,6 +346,11 @@ class WabaService {
     }
 
     return PhoneNumberModel.update(id, { deleted_at: new Date() });
+  }
+
+  async verifyNumber(phoneNumberId:string){
+    const verifyNumber = await metaService.verifiedPhoneNumbers(phoneNumberId)
+    return verifyNumber
   }
 }
 

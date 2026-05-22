@@ -18,5 +18,6 @@ WabaRoute.get('/:wabaId/phone-numbers', WabaController.getWabaPhoneNumbers);
 WabaRoute.post('/:wabaId/sync-phone-numbers', WabaController.syncPhoneNumbers);
 WabaRoute.put('/phone-numbers/:id', WabaController.updatePhoneNumber);
 WabaRoute.delete('/phone-numbers/:id', WabaController.deletePhoneNumber);
+WabaRoute.post('/:phoneNumberId/verify-number',WabaController.verifiedPhoneNumber)
 
 export default WabaRoute;

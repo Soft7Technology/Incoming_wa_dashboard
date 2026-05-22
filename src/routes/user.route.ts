@@ -7,10 +7,13 @@ const UserRoute = Router();
 // Only admins can create/manage companies
 UserRoute.post('/', CompanyController.onboard); // Admin creates new company
 UserRoute.post('/create', CompanyController.createUser); // Admin creates new user under company
+UserRoute.get('/', CompanyController.getUser);
 UserRoute.get('/reminder',CompanyController.getReminders)
 
 
+
 UserRoute.get('/:userId',CompanyController.getUserById)
+UserRoute.post('/:id/suspend',CompanyController.suspendUser)
 UserRoute.put('/:id', CompanyController.updateUser);
 UserRoute.delete('/:id', CompanyController.deleteCompanyUser);
 

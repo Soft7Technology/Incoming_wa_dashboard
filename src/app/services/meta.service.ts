@@ -20,27 +20,6 @@ class MetaService {
     });
   }
 
-
-  /**
-   * Veriified Phone Numbers
-   */
-  async verifiedPhoneNumbers(phoneNumberId:string):Promise<any>{
-    try{
-      const response = await this.client.post(`/${phoneNumberId}/register`,{
-          "messaging_product": "whatsapp",
-          "pin": "123456"
-      });
-      console.log("Response Verified Data data",response.data)
-      return response.data
-    }catch(error:any){
-      console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
-      throw new HTTP500Error({
-        message:'Failed to fetch phone numbers from Meta API',
-        details: error.response?.data || error.message
-      });
-    }
-  }
-
   /**
    * Send a message via WhatsApp Business API
    */
@@ -243,7 +222,7 @@ class MetaService {
     }
   }
 
-/**
+  /**
    * Get WABA account details to verify it exists
    */
   async getWabaDetails(wabaId: string): Promise<any> {
@@ -255,30 +234,31 @@ class MetaService {
       });
       return response.data;
     } catch (error: any) {
-
-  console.error(
-    "❌ Raw Meta Error:",
-    error?.response?.data || error
-  )
-
-  // Preserve Meta API error
-  if (error?.response?.data?.error) {
-
-    const metaError = error.response.data.error
-
-    throw new HTTP500Error({
-      message: metaError.message,
-      details: {
-        type: metaError.type,
-        code: metaError.code,
-        subcode: metaError.error_subcode,
-        fbtrace_id: metaError.fbtrace_id
-      }
-    })
+      console.error('Meta API Error - Get WABA Details:', error.response?.data || error.message);
+      throw new HTTP500Error({
+        message: 'Failed to verify WABA account with Meta API. Please check the WABA ID and access token.',
+        details: error.response?.data || error.message,
+      });
+    }
   }
 
-  // fallback
-  throw error
+/**
+   * Veriified Phone Numbers
+   */
+  async verifiedPhoneNumbers(phoneNumberId:string):Promise<any>{
+    try{
+      const response = await this.client.post(`/${phoneNumberId}/register`,{
+          "messaging_product": "whatsapp",
+          "pin": "123456"
+      });
+      console.log("Response Verified Data data",response.data)
+      return response.data
+    }catch(error:any){
+      console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
+      throw new HTTP500Error({
+        message:'Failed to fetch phone numbers from Meta API',
+        details: error.response?.data || error.message
+      });
     }
   }
 }

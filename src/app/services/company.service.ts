@@ -580,6 +580,11 @@ class CompanyService {
     return updateUser;
   }
 
+  async suspendUser(userId:string){
+    const updateUser = await userModel.update(userId,{status:'suspended'})
+    return updateUser
+  }
+
   //   async createUser(
   //   companyId: string,
   //   userData: {
