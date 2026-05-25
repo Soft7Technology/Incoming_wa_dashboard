@@ -15,6 +15,74 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
+export const generateInviteTemplate = ({
+    email,
+    role,
+    inviteUrl
+}: {
+    email: string;
+    role: string;
+    inviteUrl: string;
+}) => {
+    return `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
+
+        <h2 style="color: #111;">
+            You're Invited to Join Soft 7
+        </h2>
+
+        <p>Hello,</p>
+
+        <p>
+            You have been invited to join the platform as 
+            <strong>${role}</strong>.
+        </p>
+
+        <p>
+            Click the button below to set your password and activate your account.
+        </p>
+
+        <div style="margin: 30px 0;">
+            <a 
+                href="${inviteUrl}"
+                style="
+                    background-color: #000;
+                    color: #fff;
+                    padding: 14px 24px;
+                    text-decoration: none;
+                    border-radius: 8px;
+                    display: inline-block;
+                    font-weight: bold;
+                "
+            >
+                Set Password & Join Team
+            </a>
+        </div>
+
+        <p>
+            If the button does not work, copy and paste this link:
+        </p>
+
+        <p>
+            <a href="${inviteUrl}">
+                ${inviteUrl}
+            </a>
+        </p>
+
+        <hr style="margin: 30px 0;" />
+
+        <p style="font-size: 13px; color: #777;">
+            This invitation link will expire in 24 hours.
+        </p>
+
+        <p style="font-size: 13px; color: #777;">
+            Soft 7 Team
+        </p>
+
+    </div>
+    `;
+};
+
 export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
   try {
     console.log("📥 Incoming:", phoneNumberId, message);
