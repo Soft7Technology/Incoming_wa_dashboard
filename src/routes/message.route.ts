@@ -13,6 +13,4 @@ MessageRoute.get('/', MessageController.getMessages);
 MessageRoute.get('/conversations', MessageController.getMessagesConversations)
 MessageRoute.get('/lead/conversations', MessageController.getLeadConversations);
 
-
-
 export default MessageRoute;

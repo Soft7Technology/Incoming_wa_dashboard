@@ -12,6 +12,7 @@ import chatBotRoute from './chatbot.route';
 import companyRoute from './company.route';
 import SubscriptionRoute from './subscription.route';
 import supportRoute from './support.route';
+import teamInviteRoute from './team.route';
 
 const AdminRoute = Router();
 
@@ -31,5 +32,6 @@ AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
 AdminRoute.use('/chatbot',chatBotRoute ); 
+AdminRoute.use('/team',teamInviteRoute)
 
 export default AdminRoute;
