@@ -20,7 +20,8 @@ class teamController{
             const invite_sent_by  = req.userId!
             const company_id = req.companyId!
 
-            const existingEmail = await userModel.findByEmail(email)
+            const existingEmail = await userModel.findByEmailPhone(email,phone_number)
+            console.log("EXISTING",existingEmail)
             if(existingEmail){
                 return res.status(400).json({
                     success:false,
@@ -63,6 +64,15 @@ class teamController{
     userTeamInvites = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
         const teamInvites = await teamService.userInvites(req.userId!)
         successResponse(req,res,"All User Invites",teamInvites)
+    })
+
+    /**
+     * DELETE /v1/team/:id/invite
+     */
+    deleteTeamInvite = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+        const{id}=req.params
+        const deleteInvite = await teamService.deleteInvite(id)
+        successResponse(req,res,"Delete team invite successfully",deleteInvite,HttpStatusCode.ACCEPTED)
     })
 }
 

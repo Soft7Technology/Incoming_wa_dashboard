@@ -143,6 +143,10 @@ class teamService{
     async userInvites(userId:string){
         return await userTeamModel.findAll({invite_sent_by:userId})
     }
+
+    async deleteInvite(inviteId:string){
+        return await userTeamModel.delete(inviteId)
+    }
 }
 
 

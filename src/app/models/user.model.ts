@@ -9,6 +9,10 @@ class UserModel extends BaseModel {
     return this.query().where({ email }).whereNull('deleted_at').first();
   }
 
+  async findByEmailPhone(email:string,phone_number:string){
+      return this.query().where('email', email).orWhere('phone', phone_number).first();
+  }
+
   // async getNotificationStats(userId: string) {
   //   return this.query()
   //     .select(
