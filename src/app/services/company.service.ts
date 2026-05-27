@@ -12,6 +12,7 @@ import userPlansModel from '../models/userPlans.model';
 import { transformFeatures } from '../utils';
 import subscriptionService from './subscription.service';
 import { sub } from 'date-fns';
+import {uploadImage} from '@surefy/config/firebase.config'
 
 class CompanyService {
   /**
@@ -19,6 +20,7 @@ class CompanyService {
    */
   async onboardCompany(data: CreateCompanyDto) {
     // Check if email already exists
+    console.log("Data",data)
     const existingCompany = await CompanyRepository.findByEmail(data.email);
     if (existingCompany) {
       throw new HTTP400Error({ message: 'Company with this email already exists' });
