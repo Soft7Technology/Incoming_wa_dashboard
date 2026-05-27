@@ -10,6 +10,7 @@ import userPlansModel from '../../models/userPlans.model';
 import companyService from '@surefy/console/services/company.service';
 import sendEmail from '../../utils';
 import MessageService from '../../services/message.service';
+import { uploadImage } from '@surefy/config/firebase.config';
 
 class CompanyController {
   /**
@@ -21,12 +22,15 @@ class CompanyController {
     const { name, email, phone,domain,status, business_id, webhook_url, meta_config, settings, initial_credit} = req.body;
     const user = typeof req.body.user === 'string'? JSON.parse(req.body.user): req.body.user;
 
-    const file = req.file
+    const file:Express.Multer.File | undefined = req.file
+
+
+    console.log("File",file)
 
     let logo = null
 
     if(file){
-      logo = file.filename
+      logo = await uploadImage(file)
     }
 
     if (!name || !email) {
