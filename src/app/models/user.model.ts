@@ -221,13 +221,6 @@ class UserModel extends BaseModel {
     });
   }
 
-  async softDelete(userId: string) {
-    return this.update(userId, {
-      deleted_at: new Date(),
-      status: 'inactive',
-    });
-  }
-
   async findAllUserByCompanyId(companyId?: string, role?: string, filterRole?: string) {
     const isSuperAdmin = role === 'superadmin';
 

@@ -230,7 +230,7 @@ export default function sendEmail(to: string, subject: string, text: string,html
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
 
-function matchTrigger(data: any, text: string) {
+export function matchTrigger(data: any, text: string) {
   const keywords = data?.keywords || [];
   const logic = data?.matchingLogic || "contains";
 
@@ -475,7 +475,7 @@ function parseJSON(data: any) {
   }
 }
 
-function buildResponse(node: any) {
+export function buildResponse(node: any) {
   const data = safeJSON(node.data);
 
   if (node.type === "message") {

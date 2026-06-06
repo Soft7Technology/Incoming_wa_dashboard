@@ -12,6 +12,8 @@ import sendEmail from '../../utils';
 import MessageService from '../../services/message.service';
 import { uploadImage } from '@surefy/config/firebase.config';
 
+
+
 class CompanyController {
   /**
    * POST /v1/companies
@@ -283,6 +285,18 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
     const {id} = req.params
     const suspendUser = await CompanyService.suspendUser(id)
     successResponse(req,res,'User Suspend Successfully',suspendUser,HttpStatusCode.CREATED)
+   }
+
+   async suspendUserPlan(req:AuthRequest,res:Response){
+    const {id} = req.query
+    const userActivePlan = await userPlansModel.findPlanByUserId(id)
+    if(!userActivePlan){
+      throw new HTTP400Error({
+        message: "User have no active plan",
+      });
+    }
+    const suspendUserPlan = await userPlansModel.update(userActivePlan.id,{status:"EXPIRED",active:true})
+    successResponse(req, res, "User Plan suspended successfully", suspendUserPlan);
    }
 
 
