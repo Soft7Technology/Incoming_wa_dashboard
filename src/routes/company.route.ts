@@ -19,14 +19,19 @@ companyRoute.get('/details',companyController.getCompanyDetails)
  */
 companyRoute.get('/', CompanyController.getAll);
 
+
+/**
+ * Companies user route
+ */
 companyRoute.post('/user',companyController.createUser);
 companyRoute.get('/user',companyController.getAllUsers);
 companyRoute.put('/user/:id', CompanyController.updateCompanyUser);
+
+
 companyRoute.get("/subscriptions",CompanyController.getCompaniesSubscription)
 
-// companyRoute.get('/:id', CompanyController.getById);
+companyRoute.get('/:id', CompanyController.getById);
 companyRoute.get('/user-details/:userId',companyController.getUserDetails)
-// companyRoute.get("/user/:userId/",CompanyController.getUserById)
 
 companyRoute.post('/:planId/regenerate-keys', CompanyController.regenerateKeys);
 companyRoute.get('/stats', CompanyController.getUserStats)

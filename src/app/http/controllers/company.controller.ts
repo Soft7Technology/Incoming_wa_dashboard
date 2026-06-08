@@ -10,6 +10,9 @@ import userPlansModel from '../../models/userPlans.model';
 import companyService from '@surefy/console/services/company.service';
 import sendEmail from '../../utils';
 import MessageService from '../../services/message.service';
+import { uploadImage } from '@surefy/config/firebase.config';
+
+
 
 class CompanyController {
   /**
@@ -21,12 +24,15 @@ class CompanyController {
     const { name, email, phone,domain,status, business_id, webhook_url, meta_config, settings, initial_credit} = req.body;
     const user = typeof req.body.user === 'string'? JSON.parse(req.body.user): req.body.user;
 
-    const file = req.file
+    const file:Express.Multer.File | undefined = req.file
+
+
+    console.log("File",file)
 
     let logo = null
 
     if(file){
-      logo = file.filename
+      logo = await uploadImage(file)
     }
 
     if (!name || !email) {
@@ -279,6 +285,18 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
     const {id} = req.params
     const suspendUser = await CompanyService.suspendUser(id)
     successResponse(req,res,'User Suspend Successfully',suspendUser,HttpStatusCode.CREATED)
+   }
+
+   async suspendUserPlan(req:AuthRequest,res:Response){
+    const {id} = req.query
+    const userActivePlan = await userPlansModel.findPlanByUserId(id)
+    if(!userActivePlan){
+      throw new HTTP400Error({
+        message: "User have no active plan",
+      });
+    }
+    const suspendUserPlan = await userPlansModel.update(userActivePlan.id,{status:"EXPIRED",active:true})
+    successResponse(req, res, "User Plan suspended successfully", suspendUserPlan);
    }
 
 

@@ -2,7 +2,7 @@ import { BaseModel } from '@surefy/models/base.model';
 
 class chatSessionModel extends BaseModel{
     constructor(){
-        super("chat_session")
+        super("chat_sessions")
     }  
 
     async createChatBot(data:any){
@@ -13,8 +13,8 @@ class chatSessionModel extends BaseModel{
         return this.query().where({id}).first()
     }
 
-    async findByUserKey(phoneNumber:string){
-        return this.query().where({phone_number:phoneNumber})
+    async findByPhoneandBot(phoneNumber:string,botId:any){
+        return this.query().where({phone_number:phoneNumber,chatbot_id:botId}).first()
     }
 }
 

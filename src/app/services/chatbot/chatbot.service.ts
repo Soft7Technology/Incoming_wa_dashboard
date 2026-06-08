@@ -1,9 +1,10 @@
-import chatSessionModel from '../app/models/chatSession.model';
-import chatBotModel from '../app/models/chatbot.model';
-import chatBotNodeModel from './models/chatBotNode.model';
-import chatBotEdgeModel from './models/chatBotEdge.model';
-import messageService from './services/message.service';
+import chatSessionModel from '@surefy/console/app/models/chatSession.model';
+import chatBotModel from '@surefy/console/models/chatbot.model';
+import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
+import chatBotEdgeModel from '@surefy/console/models/chatBotEdge.model';
+import messageService from "@surefy/console/services/message.service"
 import nodemailer from "nodemailer";
+import { flowRouter } from './flow.route'
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -15,79 +16,16 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
-export const generateInviteTemplate = ({
-    email,
-    role,
-    inviteUrl
-}: {
-    email: string;
-    role: string;
-    inviteUrl: string;
-}) => {
-    return `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
-
-        <h2 style="color: #111;">
-            You're Invited to Join Soft 7
-        </h2>
-
-        <p>Hello,</p>
-
-        <p>
-            You have been invited to join the platform as 
-            <strong>${role}</strong>.
-        </p>
-
-        <p>
-            Click the button below to set your password and activate your account.
-        </p>
-
-        <div style="margin: 30px 0;">
-            <a 
-                href="${inviteUrl}"
-                style="
-                    background-color: #000;
-                    color: #fff;
-                    padding: 14px 24px;
-                    text-decoration: none;
-                    border-radius: 8px;
-                    display: inline-block;
-                    font-weight: bold;
-                "
-            >
-                Set Password & Join Team
-            </a>
-        </div>
-
-        <p>
-            If the button does not work, copy and paste this link:
-        </p>
-
-        <p>
-            <a href="${inviteUrl}">
-                ${inviteUrl}
-            </a>
-        </p>
-
-        <hr style="margin: 30px 0;" />
-
-        <p style="font-size: 13px; color: #777;">
-            This invitation link will expire in 24 hours.
-        </p>
-
-        <p style="font-size: 13px; color: #777;">
-            Soft 7 Team
-        </p>
-
-    </div>
-    `;
-};
-
 export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
   try {
     console.log("📥 Incoming:", phoneNumberId, message);
 
     const phone = message.from;
+
+    const incomingId =
+      message?.interactive?.button_reply?.id ||
+      message?.interactive?.list_reply?.id ||
+      null;
 
     const incomingText = (
       message?.text?.body ||
@@ -97,6 +35,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     ).toLowerCase().trim();
 
     console.log("📩 Parsed:", { phone, incomingText });
+    console.log("Incoming Id",incomingId)
 
     // 1️⃣ Get bot
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
@@ -122,9 +61,20 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     console.log("📦 Nodes:", bot.nodes.length);
     console.log("🔗 Edges:", bot.edges.length);
 
-    // 3️⃣ Resolve flow WITHOUT session
-    const response = resolveFlow(bot, incomingText);
-    console.log("Response",response)
+    // console.log("Nodes", JSON.stringify(bot.nodes))
+    // console.log("Edges", JSON.stringify(bot.edges))
+
+    const response = await flowRouter({
+      bot,
+      phone,
+      incomingText,
+      incomingId
+    })
+
+
+    // // 3️⃣ Resolve flow WITHOUT session
+    // const response = resolveFlow(bot, incomingText,incomingId);
+    // console.log("Response", JSON.stringify(response))
 
     // 4️⃣ Send message
     if (response) {
@@ -142,18 +92,16 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 }
 
 
-function resolveFlow(bot: any, text: string) {
-  text = text.toLowerCase().trim();
-  console.log("User Text",text,bot)
+function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
+  incomingText = incomingText.toLowerCase().trim();
+  console.log("Incoming Id", incomingId, bot)
 
-  // 1️⃣ Check TRIGGER node
+  // 1️⃣ Trigger
   const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
-  console.log("Trigger",triggerNode)
 
   if (triggerNode) {
     const triggerData = safeJSON(triggerNode.data);
-
-    const isMatch = matchTrigger(triggerData, text);
+    const isMatch = matchTrigger(triggerData, incomingText);
 
     if (isMatch) {
       const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
@@ -163,23 +111,54 @@ function resolveFlow(bot: any, text: string) {
       return buildResponse(nextNode);
     }
   }
-  
 
-  // 2️⃣ Check INTERACTIVE edges (button matching)
-  for (const edge of bot.edges) {
-    const label = (edge.label || "").toLowerCase().trim();
+  // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
+  if (incomingText) {
+    const edge = bot.edges.find((e: any) => {
+      const label = (e.label || "").toLowerCase().trim();
+      const text = incomingText.toLowerCase().trim();
 
-    if (label === text) {
+      console.log("🔍 Matching:", { label, text });
+
+      return label === text;
+    });
+
+    if (edge) {
+      console.log("✅ Matched Edge:", edge);
+
       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
       return buildResponse(nextNode);
     }
   }
 
-  // 3️⃣ Optional fallback (first message node)
-  const firstMessageNode = bot.nodes.find((n: any) => n.type === "message");
+  // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
+  if (incomingId) {
+    const edge = bot.edges.find((e: any) => {
+      const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
+      const label = (e.label || "").toLowerCase();
 
-  if (firstMessageNode) {
-    return buildResponse(firstMessageNode);
+      console.log("BOT", handle, label)
+
+      return (
+        handle === incomingId ||             // preferred
+        label === incomingId.toLowerCase()   // fallback
+      );
+    });
+
+    if (edge) {
+      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+      return buildResponse(nextNode);
+    }
+  }
+
+  // 3️⃣ LAST fallback → text (not recommended but okay)
+  for (const edge of bot.edges) {
+    const label = (edge.label || "").toLowerCase().trim();
+
+    if (label === incomingText) {
+      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+      return buildResponse(nextNode);
+    }
   }
 
   return null;
@@ -194,30 +173,6 @@ function safeJSON(data: any) {
   }
 }
 
-
-// lib/mail.ts
-// import nodemailer from "nodemailer";
-
-// export const transporter = nodemailer.createTransport({
-//   host: process.env.SMTP_HOST,
-//   port: Number(process.env.SMTP_PORT),
-//   secure: process.env.SMTP_SECURE === "true",
-//   auth: {
-//     user: process.env.SMTP_USER,
-//     pass: process.env.SMTP_PASS,
-//   },
-// });
-
-// export async function sendEmail(to: string, subject: string, text: string, html?: string) {
-//   return transporter.sendMail({
-//     from: `"Your App Name" <${process.env.SMTP_USER}>`,
-//     to,
-//     subject,
-//     text,
-//     html,
-//   });
-// }
-
 export default function sendEmail(to: string, subject: string, text: string,html?: string) {
   console.log(`📧 Sending email to ${to}: ${subject}\n${text}`);
   return transporter.sendMail({
@@ -230,7 +185,7 @@ export default function sendEmail(to: string, subject: string, text: string,html
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
 
-export function matchTrigger(data: any, text: string) {
+function matchTrigger(data: any, text: string) {
   const keywords = data?.keywords || [];
   const logic = data?.matchingLogic || "contains";
 
@@ -240,6 +195,23 @@ export function matchTrigger(data: any, text: string) {
 
   return keywords.some((k: string) => text.includes(k.toLowerCase()));
 }
+
+
+
+export const transformFeatures = (features: any) => {
+  const limits: any = {};
+  const usage: any = {};
+
+  Object.keys(features).forEach((key) => {
+    limits[key] = {
+      limit: features[key].limit_value
+    };
+
+    usage[key] = 0; // initialize usage
+  });
+
+  return { limits, usage };
+};
 
 
 async function handleUserFlow(bot: any, session: any, text: string, phone: string) {
@@ -276,21 +248,6 @@ async function handleUserFlow(bot: any, session: any, text: string, phone: strin
   return await goToNextNode(bot, session, normalized);
 }
 
-
-export const transformFeatures = (features: any) => {
-  const limits: any = {};
-  const usage: any = {};
-
-  Object.keys(features).forEach((key) => {
-    limits[key] = {
-      limit: features[key].limit_value
-    };
-
-    usage[key] = 0; // initialize usage
-  });
-
-  return { limits, usage };
-};
 
 async function handleInteractive(bot: any, session: any, text: string) {
   const currentNode = bot.nodes.find(
@@ -378,94 +335,6 @@ async function startNewFlow(bot: any, phone: string, text: string) {
   return buildResponse(nextNode);
 }
 
-async function handleInteractiveReply(bot: any, session: any, buttonText: string, phone: string) {
-  console.log("🔍 Finding current node:", session.last_node_id);
-
-  // 1️⃣ current node
-  const currentNode = bot.nodes.find(
-    (n: any) => n.id === session.last_node_id
-  );
-  if (!currentNode) return null;
-
-  // 2️⃣ outgoing edges
-  const edges = bot.edges.filter(
-    (e: any) => e.source === currentNode.id
-  );
-
-  console.log("👉 Available edges:", edges);
-
-  // 3️⃣ MATCH USING BUTTON TITLE
-  const matchedEdge = edges.find((e: any) => {
-    const label = (e.label || "").toLowerCase().trim();
-    return label === buttonText.toLowerCase().trim();
-  });
-
-  if (!matchedEdge) {
-    console.log("❌ No match for:", buttonText);
-    return null;
-  }
-
-  console.log("✅ Matched edge:", matchedEdge);
-
-  // 4️⃣ next node
-  const nextNode = bot.nodes.find(
-    (n: any) => n.id === matchedEdge.target
-  );
-  if (!nextNode) return null;
-
-  // 5️⃣ update session
-  await chatSessionModel.update(session.id, {
-    last_node_id: nextNode.id,
-    last_message: buttonText,
-  });
-
-  // 6️⃣ return response
-  return buildResponse(nextNode);
-}
-
-async function handleTextMessage(bot: any, session: any, text: string, phone: string) {
-  const normalized = text.toLowerCase().trim();
-
-  // 1. Check trigger AGAIN (restart flow)
-  const triggerNode = bot.nodes.find((n: any) => n.type === 'trigger');
-
-  if (triggerNode) {
-    const triggerData = parseJSON(triggerNode.data);
-
-    const isMatch = matchTrigger(triggerData, normalized);
-
-    if (isMatch) {
-      console.log('🔄 Re-triggering flow');
-      return await startNewFlow(bot, phone, text);
-    }
-  }
-
-  // 2. Continue current node
-  const currentNode = bot.nodes.find((n: any) => n.id === session.lastNodeId);
-
-  if (!currentNode) return null;
-
-  // 3. If current node is interactive → resend it
-  if (currentNode.type === 'interactive') {
-    return buildResponse(currentNode);
-  }
-
-  // 4. Otherwise go to next node
-  const nextEdge = bot.edges.find((e: any) => e.source === currentNode.id);
-
-  if (!nextEdge) return null;
-
-  const nextNode = bot.nodes.find((n: any) => n.id === nextEdge.target);
-
-  if (!nextNode) return null;
-
-  // 5. Update session
-  await chatSessionModel.update(session.id, {
-    lastNodeId: nextNode.id,
-  });
-
-  return buildResponse(nextNode);
-}
 
 function parseJSON(data: any) {
   try {
@@ -475,7 +344,8 @@ function parseJSON(data: any) {
   }
 }
 
-export function buildResponse(node: any) {
+function buildResponse(node: any) {
+  console.log('NextNode', JSON.stringify(node))
   const data = safeJSON(node.data);
 
   if (node.type === "message") {
@@ -485,7 +355,10 @@ export function buildResponse(node: any) {
     };
   }
 
-  if (node.type === "interactive") {
+  const type = data.interactiveType
+
+  // Button Interactive  
+  if (type === "buttons") {
     return {
       type: "interactive",
       interactive: {
@@ -493,17 +366,134 @@ export function buildResponse(node: any) {
         body: {
           text: data.text || "Choose an option",
         },
+        footer: data.footer || undefined,
         action: {
-          buttons: (data.buttons || []).map((btn: string, i: number) => ({
+          buttons: (data.buttons || []).map((btn: any, i: number) => ({
             type: "reply",
             reply: {
-              id: `btn_${i}`,
-              title: btn,
+              id: btn.id || `btn_${i}`,
+              title: btn.title || btn,
             },
           })),
         },
       },
     };
+  }
+
+  // 📋 LIST MESSAGE BUILDER
+  if (type === "list") {
+    const rows = (data.listItems || []).map((item: any, i: number) => ({
+      id: item.id || `row_${i}`,
+      title: item.title || 'Option',
+      description: item.description || ""
+    }))
+
+    const interactive: any = {
+      type: "list",
+
+      // ✅ HEADER (optional)
+      header: data.header
+        ? (typeof data.header === "string"
+          ? { type: "text", text: data.header }
+          : data.header)
+        : undefined,
+
+      // ✅ BODY (required)
+      body: typeof data.body === "string"
+        ? { text: data.body }
+        : data.body || { text: "Choose an option" },
+
+      // ✅ FOOTER (optional)
+      footer: data.footer
+        ? (typeof data.footer === "string"
+          ? { text: data.footer }
+          : data.footer)
+        : undefined,
+
+      // ✅ ACTION (required)
+      action: {
+        button: data.listButtonText || "Select Option",
+        sections: [
+          {
+            title: data.listSectionTitle || "Options",
+            rows
+          }
+        ],
+      }
+    };
+
+    return {
+      type: "interactive",
+      interactive
+    };
+  }
+
+  // 🔗 CTA URL BUTTON
+  if (type === "cta_url") {
+    const interactive: any = {
+      type: "cta_url",
+      body: {
+        text: data.text || ""
+      },
+      footer: data.footer || undefined,
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: data.ctaDisplayText || "Open",
+          url: data.ctaUrl
+        }
+      }
+    };
+
+    // Optional Header
+    if (data.headerType === 'image' && data.headerMedia) {
+      interactive.header = {
+        type: "image",
+        image: {
+          link: data.headerMedia
+        }
+      };
+    } else if (data.headerType === 'text' && data.header) {
+      interactive.header = {
+        type: "text",
+        text: data.header
+      };
+    }
+    return {
+      type: "interactive",
+      interactive
+    }
+  }
+
+  // 🎞️ CAROUSEL (Meta = "product" or "generic template")
+  if (type === "carousel") {
+    return {
+      type: "interactive",
+      interactive: {
+        type: "carousel", // or "catalog_message" depending on API
+        body: {
+          text: data.text || "Browse items"
+        },
+        action: {
+          cards: data.carouselCards || []
+        }
+      }
+    };
+  }
+
+  // 🖼️ MEDIA MESSAGE (image header)
+  if (type === "media") {
+    return {
+      type: "image",
+      image: {
+        link: data.mediaUrl,
+        caption: data.text || ""
+      }
+    };
+  }
+
+  // Interactive Handling
+  if (node.type === "buttons") {
   }
 
   return null;
