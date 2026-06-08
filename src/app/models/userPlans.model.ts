@@ -10,7 +10,7 @@ class userPlansModel extends BaseModel {
     return this.query().where({ user_id: userId, status: 'COMPLETED' }).first();
   }
 
-  async findPlanByUserId(userId: string | number): Promise<any> {
+  async findPlanByUserId(userId: any): Promise<any> {
     return this.query().where({ user_id: userId }).first();
   }
 

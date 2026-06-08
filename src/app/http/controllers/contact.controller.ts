@@ -46,8 +46,8 @@ class ContactController {
       list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
       page: req.query.page,
       limit: req.query.limit,
-      sortBy: req.query.sortBy,
-      sortOrder: req.query.sortOrder
+      sortBy: req.query.sortBy ? String(req.query.sortBy) : undefined,
+      sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined
     };
 
     const contacts = await ContactService.getContacts(req.userId!, filters);
