@@ -5,6 +5,7 @@ import TemplateModel from '../models/template.model';
 import MessageService from './message.service';
 import MetaService from './meta.service';
 import ContactModel from '../models/contact.model';
+import ContactTagModel from '../models/contactTag.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
@@ -21,50 +22,111 @@ interface CreateCampaignData {
   template_id: string;
   contact_filters?: {
     tag_ids?: string[];
+    tags?: string[];            // tag names sent by frontend
     list_ids?: string[];
+    contactNumber?: string[];   // direct phone numbers sent by frontend
     exclude_invalid?: boolean;
     attributes?: Record<string, any>;
   };
   parameter_mapping?: Record<string, string>; // template_param -> contact_attribute
   media_uploads?: Array<{ type: string; media_id: string; url?: string }>;
   scheduled_at?: Date | 'now';
+  send_immediately?: boolean;   // frontend sends this flag
 }
 
 class CampaignService {
   /**
    * Create a new campaign
    */
-  async createCampaign(userId:string,companyId:string, data: CreateCampaignData) {
+  async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
     if (!template || template.user_id !== userId) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
-    console.log("Data",data)
+    console.log('Creating campaign with data:', data);
 
     if (template.status !== 'APPROVED') {
       throw new HTTP400Error({ message: 'Template must be approved before use in campaigns' });
     }
 
+    // ── Resolve tag names → tag IDs ──────────────────────────────────────
+    // Frontend sends contact_filters.tags as an array of tag NAMES.
+    // The contact filter query expects tag_ids (UUIDs). Resolve here.
+    const filters = { ...(data.contact_filters || {}) };
+
+    if (filters.tags && filters.tags.length > 0 && (!filters.tag_ids || filters.tag_ids.length === 0)) {
+      const resolvedTagIds: string[] = [];
+      for (const tagName of filters.tags) {
+        const tag = await ContactTagModel.findByName(userId, tagName);
+        if (tag) {
+          resolvedTagIds.push(tag.id);
+        } else {
+          console.warn(`[Campaign] Tag name "${tagName}" not found for user ${userId}, skipping.`);
+        }
+      }
+      if (resolvedTagIds.length > 0) {
+        filters.tag_ids = resolvedTagIds;
+      }
+      console.log(`[Campaign] Resolved tag names ${JSON.stringify(filters.tags)} → IDs ${JSON.stringify(resolvedTagIds)}`);
+    }
+
+    // ── Auto-create external contact numbers ─────────────────────────────
+    // If the frontend passed specific phone numbers, ensure they exist in the DB
+    if (filters.contactNumber && filters.contactNumber.length > 0) {
+      // 1. Format numbers to ensure they start with '+' (matching ContactService.createContact logic)
+      filters.contactNumber = filters.contactNumber.map((num: string) => {
+        let phone = num.toString().trim();
+        return phone.startsWith('+') ? phone : '+' + phone;
+      });
+
+      // 2. Find existing numbers in the DB
+      const existingContacts = await ContactModel.findWithFilters(userId, {})
+        .whereIn('phone_number', filters.contactNumber);
+
+      const existingNumbers = new Set(existingContacts.map((c: any) => c.phone_number));
+
+      // 3. Filter missing numbers
+      const missingNumbers = filters.contactNumber.filter(
+        (num: string) => !existingNumbers.has(num)
+      );
+
+      // 4. Bulk create missing numbers as new contacts
+      if (missingNumbers.length > 0) {
+        console.log(`[Campaign] Auto-creating ${missingNumbers.length} external contacts`);
+        const newContacts = missingNumbers.map((num: string) => ({
+          user_id: userId,
+          company_id: companyId,
+          phone_number: num,
+          name: num, // Fallback to phone number as name
+          is_valid: true,
+          attributes: {},
+        }));
+        await ContactModel.bulkCreate(newContacts);
+      }
+    }
+
     // Get contacts based on filters
-    const contacts = await ContactService.getContactsByFilters(userId,companyId, data.contact_filters || {});
+    const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
     const contactList = await contacts;
-    console.log('Found contacts for campaign:', contactList);
+    console.log('Found contacts for campaign:', contactList.length);
 
     if (contactList.length === 0) {
       throw new HTTP400Error({ message: 'No contacts found matching the specified filters' });
     }
 
-    // Determine scheduled time
+    // ── Determine scheduled time ─────────────────────────────────────────
     let scheduledAt: Date | null = null;
     let status = 'draft';
 
-    if (data.scheduled_at) {
+    // send_immediately === true  →  schedule 1 minute from now
+    if (data.send_immediately) {
+      scheduledAt = new Date();
+      status = 'scheduled';
+    } else if (data.scheduled_at) {
       if (data.scheduled_at === 'now') {
-        // Schedule 5 minutes from now
-        // scheduledAt = new Date(Date.now() + 5 * 60 * 1000);
-        scheduledAt = new Date(Date.now() + 1 * 60 * 1000);
+        scheduledAt = new Date();
         status = 'scheduled';
       } else {
         scheduledAt = new Date(data.scheduled_at);
@@ -85,7 +147,7 @@ class CampaignService {
       template_params: template.components,
       parameter_mapping: data.parameter_mapping || {},
       media_uploads: data.media_uploads || [],
-      contact_filters: data.contact_filters || {},
+      contact_filters: filters,
       scheduled_at: scheduledAt,
     });
 
@@ -101,6 +163,28 @@ class CampaignService {
     }));
 
     await CampaignMessageModel.bulkCreate(campaignMessages);
+
+    // ── AUTO-QUEUE: If send_immediately is true, push the campaign into the
+    // BullMQ execution queue right now so it runs without needing a separate
+    // POST /start call. This is a server-side safety net on top of the
+    // frontend's /start call.
+    if (data.send_immediately || data.scheduled_at === 'now') {
+      console.log(`[Campaign] Auto-queueing campaign ${campaign.id} for immediate execution`);
+      await campaignExecutionQueue.add(
+        `campaign-${campaign.id}`,
+        {
+          campaignId: campaign.id,
+          userId,
+          companyId,
+        },
+        {
+          jobId: campaign.id,
+          delay: 3000, // 3-second delay so the DB write fully commits first
+        }
+      );
+      // Update status to 'running' so the worker can start processing
+      await CampaignModel.updateStatus(campaign.id, 'scheduled');
+    }
 
     return campaign;
   }
@@ -174,6 +258,23 @@ class CampaignService {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
+    // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
+    // If so, skip adding a duplicate to avoid BullMQ errors.
+    try {
+      const existingJob = await campaignExecutionQueue.getJob(campaignId);
+      if (existingJob) {
+        const state = await existingJob.getState();
+        console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
+        return {
+          message: 'Campaign is already queued for execution',
+          campaign_id: campaignId,
+          status: state,
+        };
+      }
+    } catch (_) {
+      // If we can't check the job state, proceed with adding a new job
+    }
+
     // Queue campaign execution in background worker
     await campaignExecutionQueue.add(
       `campaign-${campaignId}`,
@@ -188,7 +289,7 @@ class CampaignService {
     );
 
     return {
-      message: 'Campaign queued for execution successf',
+      message: 'Campaign queued for execution successfully',
       campaign_id: campaignId,
       status: 'queued'
     };
@@ -554,26 +655,24 @@ class CampaignService {
     }
 
     if (campaign.status !== 'paused') {
-      //campaign status update to running
       throw new HTTP400Error({ message: 'Only paused campaigns can be resumed' });
     }
 
+    // Update status before queueing so the worker sees 'running'
     await CampaignModel.updateStatus(campaignId, 'running');
 
-    //Execute Campaign
-    this.executeCampaign(campaignId)
-
-    // // Re-queue campaign execution
-    // await campaignExecutionQueue.add(
-    //   `campaign-${campaignId}`,
-    //   {
-    //     campaignId,
-    //     companyId: campaign.company_id,
-    //   },
-    //   {
-    //     jobId: campaignId,
-    //   }
-    // );
+    // Re-queue campaign execution through BullMQ (not fire-and-forget)
+    await campaignExecutionQueue.add(
+      `campaign-${campaignId}`,
+      {
+        campaignId,
+        userId: campaign.user_id,
+        companyId: campaign.company_id,
+      },
+      {
+        jobId: `${campaignId}-resume-${Date.now()}`, // unique job ID for resume
+      }
+    );
 
     return {
       message: 'Campaign queued for resumption successfully',

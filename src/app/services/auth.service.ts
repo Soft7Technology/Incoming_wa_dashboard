@@ -4,8 +4,9 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import * as bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import sendEmail  from '../utils';
+import sendEmail from '../utils';
 import passwordResetModel from '../models/passwordReset.model';
+import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
 
 interface LoginCredentials {
@@ -65,6 +66,9 @@ class AuthService {
       company = await CompanyModel.findById(user.company_id);
     }
 
+    // Get active plan status from user_plans table
+    const activePlan = await userPlansModel.getUserPlan(user.id);
+
     // Update last login
     await UserModel.updateLastLogin(user.id, ipAddress);
 
@@ -81,7 +85,13 @@ class AuthService {
     const { password: _, ...userWithoutPassword } = user;
 
     return {
-      user: userWithoutPassword,
+      user: {
+        ...userWithoutPassword,
+        plan_active: activePlan ? activePlan.active : false,
+        plan_name: activePlan ? activePlan.plan_name : null,
+        plan_start_date: activePlan ? activePlan.start_date : null,
+        plan_end_date: activePlan ? activePlan.end_date : null,
+      },
       company,
       token,
       expiresIn: this.JWT_EXPIRES_IN,
@@ -199,9 +209,6 @@ class AuthService {
 
     return userWithoutPassword;
   }
-
-
-  
 
   /**
    * Create admin or superadmin user (restricted)
@@ -368,7 +375,5 @@ class AuthService {
     return { message: 'Password reset successful' };
   }
 }
-
-
 
 export default new AuthService();

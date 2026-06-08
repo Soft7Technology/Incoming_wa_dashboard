@@ -9,8 +9,8 @@ class UserModel extends BaseModel {
     return this.query().where({ email }).whereNull('deleted_at').first();
   }
 
-  async findByEmailPhone(email:string,phone_number:string){
-      return this.query().where('email', email).orWhere('phone', phone_number).first();
+  async findByEmailPhone(email: string, phone_number: string) {
+    return this.query().where('email', email).orWhere('phone', phone_number).first();
   }
 
   // async getNotificationStats(userId: string) {
@@ -19,10 +19,7 @@ class UserModel extends BaseModel {
   //       this.query()
   // }
 
-  async getUserStats(
-    userId: string,
-    time_frame: '7days' | '1month' | '6months' | '1year' | 'all' = 'all'
-  ) {
+  async getUserStats(userId: string, time_frame: '7days' | '1month' | '6months' | '1year' | 'all' = 'all') {
     const now = new Date();
 
     let startDate: Date | null = null;
@@ -59,113 +56,59 @@ class UserModel extends BaseModel {
     return this.query()
       .select(
         // campaigns
-        applyDateFilter(
-          this.query()
-            .from('campaigns')
-            .count('*')
-            .where('user_id', userId)
-        ).as('campaigns_count'),
+        applyDateFilter(this.query().from('campaigns').count('*').where('user_id', userId)).as('campaigns_count'),
 
         // chatbot
-        applyDateFilter(
-          this.query()
-            .from('chat_bot')
-            .count('*')
-            .where('user_id', userId)
-        ).as('chatbot_count'),
+        applyDateFilter(this.query().from('chat_bot').count('*').where('user_id', userId)).as('chatbot_count'),
 
         // contacts
-        applyDateFilter(
-          this.query()
-            .from('contacts')
-            .count('*')
-            .where('user_id', userId)
-        ).as('contacts_count'),
+        applyDateFilter(this.query().from('contacts').count('*').where('user_id', userId)).as('contacts_count'),
 
         // contact lists
-        applyDateFilter(
-          this.query()
-            .from('contact_lists')
-            .count('*')
-            .where('user_id', userId)
-        ).as('contact_lists_count'),
+        applyDateFilter(this.query().from('contact_lists').count('*').where('user_id', userId)).as(
+          'contact_lists_count',
+        ),
 
         // sent messages
         applyDateFilter(
-          this.query()
-            .from('messages')
-            .count('*')
-            .where('user_id', userId)
-            .andWhere('status', 'sent')
+          this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'sent'),
         ).as('sent_count'),
 
         // failed messages
         applyDateFilter(
-          this.query()
-            .from('messages')
-            .count('*')
-            .where('user_id', userId)
-            .andWhere('status', 'failed')
+          this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'failed'),
         ).as('failed_count'),
 
         // delivered messages
         applyDateFilter(
-          this.query()
-            .from('messages')
-            .count('*')
-            .where('user_id', userId)
-            .andWhere('status', 'delivered')
+          this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'delivered'),
         ).as('delivered_count'),
 
         // received messages
         applyDateFilter(
-          this.query()
-            .from('messages')
-            .count('*')
-            .where('user_id', userId)
-            .andWhere('status', 'received')
+          this.query().from('messages').count('*').where('user_id', userId).andWhere('status', 'received'),
         ).as('received_count'),
 
         // total messages
-        applyDateFilter(
-          this.query()
-            .from('messages')
-            .count('*')
-            .where('user_id', userId)
-        ).as('total_count'),
+        applyDateFilter(this.query().from('messages').count('*').where('user_id', userId)).as('total_count'),
 
         // template messages
         applyDateFilter(
-          this.query()
-            .from('messages')
-            .count('*')
-            .where('user_id', userId)
-            .andWhere('type', 'template')
+          this.query().from('messages').count('*').where('user_id', userId).andWhere('type', 'template'),
         ).as('message_template_count'),
 
         // unique contacts
-        applyDateFilter(
-          this.query()
-            .from('messages')
-            .countDistinct('to_phone')
-            .where('user_id', userId)
-        ).as('unique_contacts_count'),
+        applyDateFilter(this.query().from('messages').countDistinct('to_phone').where('user_id', userId)).as(
+          'unique_contacts_count',
+        ),
 
         // templates
-        applyDateFilter(
-          this.query()
-            .from('templates')
-            .count('*')
-            .where('user_id', userId)
-        ).as('templates_count'),
+        applyDateFilter(this.query().from('templates').count('*').where('user_id', userId)).as('templates_count'),
       )
       .first()
       .then((res: any) => ({
         ...res,
-        total_messages:
-          Number(res.sent_count) +
-          Number(res.failed_count) +
-          Number(res.delivered_count),
+        total_messages: Number(res.sent_count) + Number(res.failed_count) + Number(res.delivered_count),
       }));
   }
 
@@ -175,13 +118,14 @@ class UserModel extends BaseModel {
 
   async findByEmailOrPhone(identifier: string) {
     return this.query()
+      .select('users.*', 'user_plans.active as plan_active', 'user_plans.status as plan_status')
+      .leftJoin('user_plans', 'users.assigned_plan', 'user_plans.id')
       .where((builder) => {
-        builder.where({ email: identifier }).orWhere({ phone: identifier });
+        builder.where({ 'users.email': identifier }).orWhere({ 'users.phone': identifier });
       })
-      .whereNull('deleted_at')
+      .whereNull('users.deleted_at')
       .first();
   }
-
   async findByRole(role: string, filters: any = {}) {
     let query = this.query().where({ role }).whereNull('deleted_at');
 
@@ -217,11 +161,11 @@ class UserModel extends BaseModel {
   }
 
   async findAllUserByCompanyId(
-  companyId?: string,
-  role?: string,
-  filterRole?: string,
-  page: number = 1,
-  limit: number = 10,
+    companyId?: string,
+    role?: string,
+    filterRole?: string,
+    page: number = 1,
+    limit: number = 10,
   ) {
     const isSuperAdmin = role === 'superadmin';
 

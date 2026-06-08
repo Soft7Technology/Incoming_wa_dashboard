@@ -1,6 +1,8 @@
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import CompanyModel from '@surefy/console/models/company.model';
+import TemplateModel from '@surefy/console/models/template.model';
+import WabaModel from '@surefy/console/models/waba.model';
 import { SendMessageDto, SendBulkMessageDto, MarkAsReadDto, MessageStatusUpdate, BulkSendMessageDto } from '@surefy/console/interfaces/message.interface';
 import MetaService from '@surefy/console/services/meta.service';
 import CreditService from '@surefy/console/services/credit.service';
@@ -98,6 +100,66 @@ class MessageService {
 
     // const messageId = data?.messageUUID && uuidValidate(data.messageUUID) ? data.messageUUID : uuidv4();
 
+    let templateRecordId: string | null = null;
+    // Resolve template language at the wider scope so it's available for Meta API fallback
+    const templateLanguage = data.type === 'template' && data.template
+      ? (typeof data.template.language === 'string'
+        ? data.template.language
+        : (data.template.language as any)?.code)
+      : undefined;
+
+    // Store template definition components (BODY/HEADER/FOOTER with text) for frontend display
+    let templateDefinitionComponents: any[] | null = null;
+
+    if (data.type === 'template' && data.template?.name && templateLanguage) {
+      const template = await TemplateModel.findByNameAndLanguage(
+        data.user_id,
+        data.template.name,
+        templateLanguage,
+      );
+      if (template) {
+        templateRecordId = template.id;
+        // Save template definition components for display (BODY, HEADER, FOOTER with text)
+        if (Array.isArray(template.components) && template.components.length > 0) {
+          templateDefinitionComponents = template.components;
+        }
+      }
+    }
+
+    // If template not found in DB, try to fetch from Meta API using the phone number
+    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents) {
+      try {
+        // Get phone number details to access waba_id for Meta API call
+        const pn = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+        if (pn) {
+          const waba = await WabaModel.findById(pn.waba_id);
+          if (waba) {
+            // Fetch all templates from Meta API and find the one we need
+            const metaTemplates = await MetaService.getTemplates(waba.waba_id);
+            const matchedTemplate = metaTemplates.data?.find(
+              (t: any) => t.name === data.template?.name && t.language === templateLanguage
+            );
+            if (matchedTemplate && Array.isArray(matchedTemplate.components) && matchedTemplate.components.length > 0) {
+              templateDefinitionComponents = matchedTemplate.components;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch template from Meta API:', error);
+      }
+    }
+
+    // Build the content to store in DB — include template definition components for frontend display
+    // The metaPayload keeps the parameter components for the Meta API call
+    const contentToStore = { ...metaPayload };
+    if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
+      // Store definition components alongside the template data for frontend rendering
+      contentToStore.template = {
+        ...contentToStore.template,
+        components: templateDefinitionComponents,
+      };
+    }
+
     // Create message record
     const message = await MessageModel.create({
       id: data.messageUUID,
@@ -111,7 +173,8 @@ class MessageService {
       from_phone: phoneNumber.display_phone_number,
       to_phone: data.to,
       status: 'queued',
-      content: metaPayload,
+      content: contentToStore,
+      template_id: templateRecordId,
       // cost: messageCost,
       queued_at: new Date(),
     });
@@ -220,6 +283,24 @@ class MessageService {
 
     // const messageId = data?.messageUUID && uuidValidate(data.messageUUID) ? data.messageUUID : uuidv4();
 
+    let templateRecordId: string | null = null;
+    if (data.type === 'template' && data.template?.name) {
+      const templateLanguage = typeof data.template.language === 'string'
+        ? data.template.language
+        : (data.template.language as any)?.code;
+
+      if (templateLanguage) {
+        const template = await TemplateModel.findByNameAndLanguage(
+          data.user_id,
+          data.template.name,
+          templateLanguage,
+        );
+        if (template) {
+          templateRecordId = template.id;
+        }
+      }
+    }
+
     // Create message record
     const message = await MessageModel.create({
       id: data.messageUUID,
@@ -232,6 +313,7 @@ class MessageService {
       to_phone: data.to,
       status: 'queued',
       content: metaPayload,
+      template_id: templateRecordId,
       // cost: messageCost,
       queued_at: new Date(),
     });
