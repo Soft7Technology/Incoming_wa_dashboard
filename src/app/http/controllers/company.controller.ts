@@ -139,7 +139,7 @@ class CompanyController {
    */
   createUser = tryCatchAsync(async(req: AuthRequest,res:Response)=>{
     const { name, email, phone, password, role,assigned_plan} = req.body;
-    // console.log("Creating user with data:",{name,email,phone,role})
+    console.log("Creating user with data:",{name,email,phone,role})
 
     if (!name || !email || !password) {
       throw new HTTP400Error({ message: 'Name, email, and password are required' });
@@ -181,20 +181,16 @@ class CompanyController {
 
   getAllUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const {role} = req.query
-    const filters={
-      page: req.query.page,
-      limit: req.query.limit,
-    }
     console.log("Fetching users with role filter:", role) // Debug log
-    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!,role,filters)
+    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!,role)
     return successResponse(req,res, 'Users retrieved successfully', users)
   })
 
-  // getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-  //   const users = await CompanyService.getAllUsers(req.userId!,req.companyId!)
-  //   const adminUsers = users.filter((user:any)=> user.role === 'admin')
-  //   return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
-  // })
+  getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!)
+    const adminUsers = users.filter((user:any)=> user.role === 'admin')
+    return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
+  })
 
   getUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const user = await CompanyService.getUserById(req.userId!)
@@ -203,9 +199,9 @@ class CompanyController {
 
   updateCompanyUser =  tryCatchAsync(async(req:AuthRequest,res:Response)=>{
     const { name, email, phone, permissions,assigned_plan} = req.body;
-    const {id} = req.params
+    const {companyId} = req.params
     
-    const updatedUser = await CompanyService.updateCompanyUser(id,{name,email,phone,permissions,assigned_plan})
+    const updatedUser = await CompanyService.updateCompanyUser(companyId,{name,email,phone,permissions,assigned_plan})
 
     return successResponse(req,res, 'User updated successfully', updatedUser)
   })
@@ -275,11 +271,8 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
   }
 
   async getCompaniesSubscription(req:AuthRequest,res:Response){
-    const filters={
-      page: req.query.page,
-      limit: req.query.limit,
-    }
-    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!,filters)
+    const {active} = req.query
+    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!,active)
     return successResponse(req,res,"Company User Active subscriptions plans",companySubscriptions,HttpStatusCode.OK)
   }
 

@@ -13,8 +13,6 @@ class UserTeamModel extends BaseModel {
     return this.query().where('email',email).andWhere('invite_sent_by',userId).first()
   }
 
-//   async createSupportTicket(userId:string,companyId:stri)
-
 }
 
 export default new UserTeamModel()

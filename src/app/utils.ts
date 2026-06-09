@@ -4,7 +4,6 @@ import chatBotNodeModel from './models/chatBotNode.model';
 import chatBotEdgeModel from './models/chatBotEdge.model';
 import messageService from './services/message.service';
 import nodemailer from "nodemailer";
-import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -164,8 +163,6 @@ function resolveFlow(bot: any, text: string) {
       return buildResponse(nextNode);
     }
   }
-
-  
   
 
   // 2️⃣ Check INTERACTIVE edges (button matching)

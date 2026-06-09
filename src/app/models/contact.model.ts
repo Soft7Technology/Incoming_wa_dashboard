@@ -125,6 +125,13 @@ class ContactModel extends BaseModel {
 
     return query;
   }
+
+  async findByUserId(userId:string) {
+    return this.query()
+      .where({ user_id: userId })
+      .whereNull('deleted_at')
+      .orderBy('created_at', 'desc');
+  }
 }
 
 export default new ContactModel();

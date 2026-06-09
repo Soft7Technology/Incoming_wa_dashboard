@@ -63,9 +63,9 @@ class CompanyService {
     };
   }
 
-  async getCompanyDetails(companyId: string) {
-    const companyDetails = await companyModel.findById(companyId);
-    return companyDetails;
+  async getCompanyDetails(companyId:string){
+    const companyDetails = await companyModel.findById(companyId)
+    return companyDetails
   }
 
   /**
@@ -95,9 +95,9 @@ class CompanyService {
   /**
    * Update company
    */
-  async updateCompany(companyId: string, data: UpdateCompanyDto) {
+  async updateCompany(companyId:string, data: UpdateCompanyDto) {
     const company = await this.getCompanyById(companyId);
-    if (company) {
+    if(company){
       return CompanyRepository.update(companyId, data);
     }
   }
@@ -149,19 +149,15 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string, role?: any, filters?: any) {
-    console.log('Fetching users for companyId:', companyId, 'with role filter:', role);
-
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 20;
-
+  async getAllUsers(userId: string, companyId: string, role?: any) {
+    console.log('Fetching users for companyId:', companyId, 'with role filter:', role); // Debug log
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-
-    return await userModel.findAllUserByCompanyId(companyId, user.role, role, page, limit);
+    const users = await userModel.findAllUserByCompanyId(companyId, user.role,role);
+    return users;
   }
 
   async getUserById(userId: string) {
@@ -335,6 +331,7 @@ class CompanyService {
 
   async activateUserPlan(userId: string, planData?: any, existingUserPlan?: any, companyId?: string) {
     console.log('Activing Plan', userId, planData);
+    console.log('Existing User Plan:', existingUserPlan);
     if (!planData) {
       console.error('planData is undefined ❌');
       throw new Error('planData is required');
@@ -343,7 +340,7 @@ class CompanyService {
     const { plan_name, price, billing_cycle, features } = planData;
 
     if (existingUserPlan) {
-      await userPlansModel.update(existingUserPlan.id, { active: false });
+      await userPlansModel.update(existingUserPlan, { active: false });
     }
 
     const durationDays = billing_cycle === 'Monthly' ? 30 : billing_cycle === 'Yearly' ? 365 : 3;
@@ -379,7 +376,8 @@ class CompanyService {
       usage: JSON.stringify(usage), // JSONB
       duration_days: durationDays,
     });
-    await userModel.update(userId, { assigned_plan: newUserPlan.id });
+
+    await userModel.update(userId,{assigned_plan:newUserPlan.id})
     return newUserPlan;
   }
 
@@ -489,30 +487,13 @@ class CompanyService {
     return newUserPlan;
   }
 
-  async getSubscriptionPlans(userId: string, companyId: string, active?: any, filters?: any) {
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 20;
-    const offset = (page - 1) * limit;
-
-    let user = await userModel.findById(userId);
-    if (!user) {
-      throw new HTTP404Error({ message: 'User not found' });
-    }
-    const total = user.length;
-    user = user.slice(offset, offset + limit);
-
-    const subscription = await subscriptionModel.findSubscriptionsPlans(userId, companyId, active, user.role, filters);
-    return { subscription, total, page, limit };
-  }
-
-  async getcompanySubscriptions(userId: string, companyId: string, filters?: any) {
+  async getcompanySubscriptions(userId: string, companyId: string,active:any) {
     const user = await userModel.findById(userId);
-
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-
-    return await userPlansModel.findCompanyActiveSubscriptions(userId, companyId, user.role, filters);
+    const companySubscritions = await userPlansModel.findCompanyActiveSubscriptions(userId, companyId, user.role, active);
+    return companySubscritions;
   }
 
   /**
@@ -547,19 +528,21 @@ class CompanyService {
     }
 
     //Company Subscription Plan
-    if (userData.assigned_plan) {
-      const subscriptionPlanDetails = userData.assigned_plan
-        ? await subscriptionModel.findPlans(userData.assigned_plan, true)
-        : null;
-      if (!subscriptionPlanDetails) {
-        throw new HTTP400Error({ message: 'Assigned subscription plan not found' });
-      }
-      const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
-      if (!activatedUserPlan) {
-        throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
-      }
-      await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
-    }
+    // if (userData.assigned_plan) {
+    //   const subscriptionPlanDetails = userData.assigned_plan
+    //     ? await subscriptionModel.findPlans(userData.assigned_plan, true)
+    //     : null;
+
+    //   console.log('Subscription Plan Details:', subscriptionPlanDetails);
+    //   if (!subscriptionPlanDetails) {
+    //     throw new HTTP400Error({ message: 'Assigned subscription plan not found' });
+    //   }
+    //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
+    //   if (!activatedUserPlan) {
+    //     throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
+    //   }
+    //   await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
+    // }
 
     // if (subscriptionPlanDetails) {
     //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
@@ -577,9 +560,9 @@ class CompanyService {
     return deleteUser;
   }
 
-  async updateUser(userId: string, data: string) {
-    const updateUser = await userModel.update(userId, data);
-    return updateUser;
+  async updateUser(userId:string,data:string){
+    const updateUser = await userModel.update(userId,data)
+    return updateUser
   }
 
   async suspendUser(userId:string){

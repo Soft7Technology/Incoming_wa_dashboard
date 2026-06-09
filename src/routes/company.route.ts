@@ -25,16 +25,15 @@ companyRoute.get('/', CompanyController.getAll);
  */
 companyRoute.post('/user',companyController.createUser);
 companyRoute.get('/user',companyController.getAllUsers);
-companyRoute.put('/user/:id', CompanyController.updateCompanyUser);
-
-
 companyRoute.get("/subscriptions",CompanyController.getCompaniesSubscription)
-
-companyRoute.get('/:id', CompanyController.getById);
-companyRoute.get('/user-details/:userId',companyController.getUserDetails)
-
-companyRoute.post('/:planId/regenerate-keys', CompanyController.regenerateKeys);
 companyRoute.get('/stats', CompanyController.getUserStats)
 companyRoute.get('/user/plan/:userId', companyController.getUserPlan)
+
+
+companyRoute.get('/user/:userId', CompanyController.getUserById);
+companyRoute.get('/user-details/:userId',companyController.getUserDetails)
+companyRoute.put('/user/:companyId', CompanyController.updateCompanyUser);
+
+companyRoute.post('/:planId/regenerate-keys', CompanyController.regenerateKeys);
 
 export default companyRoute;
