@@ -4,6 +4,7 @@ import chatBotNodeModel from './models/chatBotNode.model';
 import chatBotEdgeModel from './models/chatBotEdge.model';
 import messageService from './services/message.service';
 import nodemailer from "nodemailer";
+import metaService from './services/meta.service';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -229,6 +230,22 @@ export default function sendEmail(to: string, subject: string, text: string,html
   })
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
+
+export const downloadImage = async (mediaId: string) => {
+    console.log("MediaId:", mediaId);
+    try {
+      const mediaUrl = metaService.handleMedia(mediaId)
+      console.log("Media Url",mediaUrl)
+      return mediaUrl
+    } catch (error: any) {
+        console.error(
+            '❌ Error downloading image:',
+            error.response?.status,
+            error.response?.data || error.message
+        );
+        throw error;
+    }
+};
 
 export function matchTrigger(data: any, text: string) {
   const keywords = data?.keywords || [];
