@@ -36,6 +36,7 @@ class ContactService {
     phone_number: phone,
     name: data.name,
     email: data.email,
+    status: data.status ,
     attributes: data.attributes || {},
     notes: data.notes,
    });
@@ -136,6 +137,7 @@ class ContactService {
       name: data.name,
       email: data.email,
       phone_number:data.phone_number,
+      status: data.status,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
     });
@@ -172,12 +174,14 @@ class ContactService {
       phoneColumn?: string;
       nameColumn?: string;
       emailColumn?: string;
+      countryCodeColumn?:string;
       tagIds?: string[];
     } = {}
   ) {
     // Quick validation of file before queuing
     const validation = await XLSXParserService.validateFile(filePath);
     if (!validation.valid) {
+      console.log("Invalid File",validation)
       throw new HTTP400Error({ message: `Invalid XLSX file: ${validation.errors.join(', ')}` });
     }
 
@@ -200,6 +204,7 @@ class ContactService {
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
+        country_code:options.countryCodeColumn,
         tag_ids: options.tagIds,
       },
     });
@@ -597,6 +602,10 @@ class ContactService {
     // Generate buffer
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     return buffer;
+  }
+
+  async getContactsByUserId(userId:string){
+    return ContactModel.findByUserId(userId);
   }
 }
 

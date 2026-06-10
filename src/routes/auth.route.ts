@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { jwtAuthMiddleware, requireRole } from '@surefy/middleware/jwtAuth.middleware';
 import AuthController from '@surefy/console/http/controllers/auth.controller';
-
+import teamController from '../app/http/controllers/team.controller';
 
 const AuthRoute = Router();
   
@@ -9,6 +9,7 @@ const AuthRoute = Router();
 AuthRoute.post('/login', AuthController.login);
 AuthRoute.post('/register', AuthController.register); 
 AuthRoute.post('/register-company', AuthController.onboard);
+AuthRoute.post('/setup-password', teamController.setUpPassword )
 
 //Reset-password
 AuthRoute.post('/verify-otp', AuthController.verifyOtp);

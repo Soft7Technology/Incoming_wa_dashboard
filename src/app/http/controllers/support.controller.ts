@@ -278,7 +278,6 @@ export default new supporController()
 
 
 
-
 // -- CREATE TABLE support_tickets (
 // --     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 

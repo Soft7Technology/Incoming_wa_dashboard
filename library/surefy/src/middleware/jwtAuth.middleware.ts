@@ -54,7 +54,7 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
     req.email = decoded.email;
     req.phone = decoded.phone;
 
-    console.log("Decoded JWT payload:", decoded); // Debug log
+    // console.log("Decoded JWT payload:", decoded); // Debug log
 
     next();
   } catch (error) {

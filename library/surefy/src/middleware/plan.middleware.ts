@@ -6,7 +6,7 @@ import userPlansModel from '@surefy/console/app/models/userPlans.model';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 
-export const checkPlanLimit = (type: 'Contact' | 'Campaign' | 'Chatbot' | 'Message') => {
+export const checkPlanLimit = (type: 'Contact' | 'Campaign' | 'Chatbot' | 'Message' | 'Tag') => {
   return async (req: AuthRequest, res: Response, next: NextFunction) => {
     const userId = req.userId!;
     const plan = await userPlansModel.getPlanByUserId(userId);

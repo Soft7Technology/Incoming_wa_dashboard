@@ -9,8 +9,8 @@ class UserModel extends BaseModel {
     return this.query().where({ email }).whereNull('deleted_at').first();
   }
 
-  async findByEmailPhone(email:string,phone_number:string){
-      return this.query().where('email', email).orWhere('phone', phone_number).first();
+  async findByEmailPhone(email: string, phone_number: string) {
+    return this.query().where('email', email).orWhere('phone', phone_number).first();
   }
 
   // async getNotificationStats(userId: string) {
@@ -175,10 +175,22 @@ class UserModel extends BaseModel {
 
   async findByEmailOrPhone(identifier: string) {
     return this.query()
+      .select(
+        'users.*',
+        'user_plans.active as plan_active',
+        'user_plans.status as plan_status'
+      )
+      .leftJoin(
+        'user_plans',
+        'users.assigned_plan',
+        'user_plans.id'
+      )
       .where((builder) => {
-        builder.where({ email: identifier }).orWhere({ phone: identifier });
+        builder
+          .where({ 'users.email': identifier })
+          .orWhere({ 'users.phone': identifier });
       })
-      .whereNull('deleted_at')
+      .whereNull('users.deleted_at')
       .first();
   }
 
@@ -206,13 +218,6 @@ class UserModel extends BaseModel {
   async changePassword(userId: string, hashedPassword: string) {
     return this.update(userId, {
       password: hashedPassword,
-    });
-  }
-
-  async softDelete(userId: string) {
-    return this.update(userId, {
-      deleted_at: new Date(),
-      status: 'inactive',
     });
   }
 

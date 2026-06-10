@@ -67,7 +67,6 @@ class subscriptionService {
     }
   }
 
-
   async createSubscriptionPlan(userId: string, companyId: string, data: subscriptionPlans) {
     console.log('Creating subscription plan with data:', data);
     const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
@@ -79,13 +78,14 @@ class subscriptionService {
     return subscription;
   }
 
-  async getSubscriptionPlans(userId: string,companyId:string,active?: any) {
+  async getSubscriptionPlans(userId: string, companyId: string, active?: any, filters?: any) {
     const user = await userModel.findById(userId);
+
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const subscription = await subscriptionModel.findSubscriptionsPlans(userId,companyId, active,user.role);
-    return subscription;
+
+    return await subscriptionModel.findSubscriptionsPlans(userId, companyId, active, user.role, filters);
   }
 
   async updateSubscriptionPlan(id: string, data: subscriptionPlans) {
@@ -99,32 +99,25 @@ class subscriptionService {
     });
     return updatedSubscriptionPlan;
   }
-  
 
-  async activateFreeTrial(userId: string,planId:string) {
+  async activateFreeTrial(userId: string, planId: string) {
     // Check if user already has an active subscription or trial
-    const planData = await subscriptionModel.findFreeTrial(planId)
+    const planData = await subscriptionModel.findFreeTrial(planId);
 
-    const userActivate = await userPlansModel.getPlanByUserId(userId)
-    if(userActivate){
+    const userActivate = await userPlansModel.getPlanByUserId(userId);
+    if (userActivate) {
       throw new HTTP400Error({ message: 'User already has an active Trial' });
     }
 
     if (!planData) {
       throw new HTTP400Error({ message: 'Free trial already activated' });
     }
-    
-    const subscribePlan = await CompanyService.activateUserPlan(
-        userId,
-        planData
-    );
-    return subscribePlan;
 
+    const subscribePlan = await CompanyService.activateUserPlan(userId, planData);
+    return subscribePlan;
   }
 
-
-
-  async subscribeUserPlan(userId: string,companyId:string,planId: string) {
+  async subscribeUserPlan(userId: string, companyId: string, planId: string) {
     try {
       // 1. Get plan
       const planData = await subscriptionModel.findById(planId);
@@ -178,9 +171,7 @@ class subscriptionService {
     }
   }
 
-  async assignedPlanToUser(userId: string, planId: string) {
-    
-  }
+  async assignedPlanToUser(userId: string, planId: string) {}
 
   async deleteSubscriptionPlan(id: string) {
     const subcription = await subscriptionModel.findById(id);
@@ -204,32 +195,50 @@ class subscriptionService {
     return subscriptionPlans;
   }
 
-  async activateUserPlanAfterPayment(userId: string, razorpayOrderId: string, razorpaymentId: string, razorpaySignature: string) {
+  async activateUserPlanAfterPayment(
+    userId: string,
+    razorpayOrderId: string,
+    razorpaymentId: string,
+    razorpaySignature: string,
+  ) {
     // 🔍 Step 2: Find existing subscription
     const subscription = await subscriptionModel.findByOrderId(razorpayOrderId);
-    if(!subscription){
+    if (!subscription) {
       throw new HTTP400Error({ message: 'Subscription not found for this order' });
     }
 
-
-    if(subscription.status === 'verified'){
+    if (subscription.status === 'verified') {
       throw new HTTP400Error({ message: 'Subscription already activated' });
     }
 
-    const updateSubscriptionPlan = await subscriptionModel.update(userId, { razorpayOrderId,razorpaymentId,razorpaySignature, status: 'verified', payment_method:"RAZORPAY" });
+    const updateSubscriptionPlan = await subscriptionModel.update(userId, {
+      razorpayOrderId,
+      razorpaymentId,
+      razorpaySignature,
+      status: 'verified',
+      payment_method: 'RAZORPAY',
+    });
     return updateSubscriptionPlan;
   }
 
-  async activeUserPlan(orderId:string, data: any) {
+  async activeUserPlan(orderId: string, data: any) {
     const subscription = await subscriptionModel.findByOrderId(orderId);
     if (!subscription) {
       throw new HTTP400Error({ message: 'Subscription not found for this order' });
     }
 
-    const updateSubscriptionPlan = await subscriptionModel.update(subscription.id, {...data, active: true });
+    const updateSubscriptionPlan = await subscriptionModel.update(subscription.id, { ...data, active: true });
     return updateSubscriptionPlan;
   }
 
+  async cancelSubscriptionPlan(planId: string) {
+    const subscriptionPlan = await userPlansModel.findUserSubscriptionPlan(planId);
+    if (!subscriptionPlan) {
+      throw new HTTP400Error({ message: 'Subscription Plan not found for this order' });
+    }
+    const cancelSubscriptionPlan = await userPlansModel.update(planId, { active: false, status: 'CANCELLED' });
+    return cancelSubscriptionPlan;
+  }
 }
 
 export default new subscriptionService();

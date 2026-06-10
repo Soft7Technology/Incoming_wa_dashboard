@@ -14,7 +14,7 @@ class ContactController {
    * Create new contact
    */
   createContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number, name, email, attributes, notes, tag_ids } = req.body;
+    const { phone_number, name, email, attributes, notes, tag_ids,status } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
@@ -27,6 +27,7 @@ class ContactController {
       attributes,
       notes,
       tag_ids,
+      status
     });
 
     await userPlansModel.incrementUsage(req.userId!, 'Contact');
@@ -46,8 +47,8 @@ class ContactController {
       list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
       page: req.query.page,
       limit: req.query.limit,
-      sortBy: req.query.sortBy,
-      sortOrder: req.query.sortOrder
+      sortBy: req.query.sortBy ? String(req.query.sortBy) : undefined,
+      sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined
     };
 
     const contacts = await ContactService.getContacts(req.userId!, filters);
@@ -70,7 +71,7 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids,phone_number } = req.body;
+    const { name, email, attributes, notes, tag_ids,status,phone_number } = req.body;
 
     const contact = await ContactService.updateContact(id, {
       name,
@@ -78,6 +79,7 @@ class ContactController {
       email,
       attributes,
       notes,
+      status,
       tag_ids,
     });
 
@@ -114,15 +116,17 @@ class ContactController {
     return successResponse(req, res, 'File preview generated successfully', preview);
   });
 
+
   /**
    * POST /v1/contacts/import
    * Queue contact import from XLSX (async processing)
    */
+
   importContacts = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column, name_column, email_column, tag_ids } = req.body;
+    const { list_name, phone_column, name_column, email_column, tag_ids, country_code } = req.body;
 
-    console.log("Request file",req.body)
+    console.log("Request file", req.body)
 
     if (!file) {
       throw new HTTP400Error({ message: 'XLSX file is required' });
@@ -133,21 +137,33 @@ class ContactController {
     }
 
     // Define upload directory
-    const uploadDir = path.join(process.cwd(), 'uploads', 'contacts', req.userId!);
+    // Define upload directory
+    const uploadDir = path.join(
+      process.cwd(),
+      'uploads',
+      'contacts',
+      req.userId!
+    );
+
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    // Move file to permanent location
+    // Permanent file path
     const fileName = `${Date.now()}_${file.originalname}`;
     const filePath = path.join(uploadDir, fileName);
-    fs.renameSync(file.path, filePath);
 
+    // Copy file
+    fs.copyFileSync(file.path, filePath);
+
+    // Remove temp file
+    fs.unlinkSync(file.path);
     // Queue the import job instead of processing synchronously
-    const importJob = await ContactService.queueContactImport(req.userId!,req.companyId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(req.userId!, req.companyId!, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
+      countryCodeColumn: country_code,
       tagIds: tag_ids ? tag_ids.split(',') : undefined,
     });
 
@@ -325,6 +341,21 @@ class ContactController {
     res.setHeader('Content-Disposition', 'attachment; filename=contacts_import_sample.xlsx');
     res.send(buffer);
   });
+
+  /**
+   * GET /v1/contacts/user/:userId
+   * Get contacts created by a specific user
+    */
+  async getUsersContacts(req: Request, res: Response) {
+    const { userId } = req.params;
+    try {
+      const contacts = await ContactService.getContactsByUserId(userId);
+      return successResponse(req, res, 'User contacts retrieved successfully', contacts);
+    } catch (error) {
+      console.error('Error fetching user contacts:', error);
+      throw new HTTP400Error({ message: 'Failed to retrieve user contacts' });
+    }
+  }
 }
 
 export default new ContactController();

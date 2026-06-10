@@ -22,6 +22,7 @@ class CampaignController {
       parameter_mapping,
       media_uploads,
       scheduled_at,
+      send_immediately,
     } = req.body;
 
     console.log('Creating campaign with data:', req.body);
@@ -30,7 +31,7 @@ class CampaignController {
       throw new HTTP400Error({ message: 'Name, phone_number_id, and template_id are required' });
     }
 
-    const campaign = await CampaignService.createCampaign(req.userId!,req.companyId!, {
+    const campaign = await CampaignService.createCampaign(req.userId!, req.companyId!, {
       name,
       description,
       phone_number_id,
@@ -39,9 +40,10 @@ class CampaignController {
       parameter_mapping,
       media_uploads,
       scheduled_at,
+      send_immediately,
     });
 
-    await userPlansModel.incrementUsage(req.userId!, 'Contact');
+    await userPlansModel.incrementUsage(req.userId!, 'Campaign');
 
     return successResponse(req, res, 'Campaign created successfully', campaign, HttpStatusCode.CREATED);
   });

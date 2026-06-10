@@ -5,6 +5,7 @@ import { generateCompanyKey, validateCompanyKey } from '../services/auth.service
 export interface AuthRequest extends Request {
   companyId?: string;
   userId?: string;
+  role?:string;
   apiKey?: string;
 }
 

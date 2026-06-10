@@ -12,6 +12,7 @@ import userPlansModel from '../models/userPlans.model';
 import { transformFeatures } from '../utils';
 import subscriptionService from './subscription.service';
 import { sub } from 'date-fns';
+import {uploadImage} from '@surefy/config/firebase.config'
 
 class CompanyService {
   /**
@@ -19,6 +20,7 @@ class CompanyService {
    */
   async onboardCompany(data: CreateCompanyDto) {
     // Check if email already exists
+    console.log("Data",data)
     const existingCompany = await CompanyRepository.findByEmail(data.email);
     if (existingCompany) {
       throw new HTTP400Error({ message: 'Company with this email already exists' });
@@ -329,6 +331,7 @@ class CompanyService {
 
   async activateUserPlan(userId: string, planData?: any, existingUserPlan?: any, companyId?: string) {
     console.log('Activing Plan', userId, planData);
+    console.log('Existing User Plan:', existingUserPlan);
     if (!planData) {
       console.error('planData is undefined ❌');
       throw new Error('planData is required');
@@ -337,7 +340,7 @@ class CompanyService {
     const { plan_name, price, billing_cycle, features } = planData;
 
     if (existingUserPlan) {
-      await userPlansModel.update(existingUserPlan.id, { active: false });
+      await userPlansModel.update(existingUserPlan, { active: false });
     }
 
     const durationDays = billing_cycle === 'Monthly' ? 30 : billing_cycle === 'Yearly' ? 365 : 3;
@@ -373,6 +376,7 @@ class CompanyService {
       usage: JSON.stringify(usage), // JSONB
       duration_days: durationDays,
     });
+
     await userModel.update(userId,{assigned_plan:newUserPlan.id})
     return newUserPlan;
   }
@@ -483,12 +487,12 @@ class CompanyService {
     return newUserPlan;
   }
 
-  async getcompanySubscriptions(userId: string, companyId: string) {
+  async getcompanySubscriptions(userId: string, companyId: string,active:any) {
     const user = await userModel.findById(userId);
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const companySubscritions = await userPlansModel.findCompanyActiveSubscriptions(userId, companyId, user.role);
+    const companySubscritions = await userPlansModel.findCompanyActiveSubscriptions(userId, companyId, user.role, active);
     return companySubscritions;
   }
 
@@ -524,19 +528,21 @@ class CompanyService {
     }
 
     //Company Subscription Plan
-    if (userData.assigned_plan) {
-      const subscriptionPlanDetails = userData.assigned_plan
-        ? await subscriptionModel.findPlans(userData.assigned_plan, true)
-        : null;
-      if (!subscriptionPlanDetails) {
-        throw new HTTP400Error({ message: 'Assigned subscription plan not found' });
-      }
-      const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
-      if (!activatedUserPlan) {
-        throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
-      }
-      await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
-    }
+    // if (userData.assigned_plan) {
+    //   const subscriptionPlanDetails = userData.assigned_plan
+    //     ? await subscriptionModel.findPlans(userData.assigned_plan, true)
+    //     : null;
+
+    //   console.log('Subscription Plan Details:', subscriptionPlanDetails);
+    //   if (!subscriptionPlanDetails) {
+    //     throw new HTTP400Error({ message: 'Assigned subscription plan not found' });
+    //   }
+    //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
+    //   if (!activatedUserPlan) {
+    //     throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
+    //   }
+    //   await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
+    // }
 
     // if (subscriptionPlanDetails) {
     //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
