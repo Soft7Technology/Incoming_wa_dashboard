@@ -5,7 +5,7 @@ import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
-import { handleIncomingMessageChatBot } from  '../../utils'
+import { handleIncomingMessageChatBot } from '../../utils'
 
 class MessageController {
   /**
@@ -13,7 +13,7 @@ class MessageController {
    * Send a message
    */
   sendMessage = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number_id, to, type,profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
+    const { phone_number_id, to, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
@@ -84,7 +84,7 @@ class MessageController {
       sort_order
     } = req.query;
 
-    const result = await MessageService.getMessages(req.companyId!,req.userId!, {
+    const result = await MessageService.getMessages(req.companyId!, req.userId!, {
       status,
       direction,
       type,
@@ -122,6 +122,11 @@ class MessageController {
    * Handle Meta webhook callbacks
    */
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
+    console.log(
+      "🔥 META WEBHOOK RECEIVED",
+      JSON.stringify(req.body, null, 2)
+    );
+
     const { entry } = req.body;
 
     for (const item of entry || []) {
@@ -141,7 +146,7 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
-            console.log("Value",message)
+            console.log("📩 INCOMING MESSAGE:", message)
             await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
               profile_name: value.contacts?.[0]?.profile?.name || "",
@@ -149,10 +154,10 @@ class MessageController {
               from: message.from,
               type: message.type,
               content: message,
-              context: message.context.id,
+              context: message.context ? message.context.id : null,
             });
 
-            await handleIncomingMessageChatBot(value.metadata.phone_number_id,message)
+            await handleIncomingMessageChatBot(value.metadata.phone_number_id, message)
           }
         }
       }
@@ -195,23 +200,23 @@ class MessageController {
     return successResponse(req, res, 'Bulk messages queued for sending', result, HttpStatusCode.ACCEPTED);
   });
 
-  getMessagesConversations = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const {phone_number_id} = req.query
-    const userMessages = await MessageService.getMessagesConversation(req.userId!,phone_number_id)
+  getMessagesConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { phone_number_id } = req.query
+    const userMessages = await MessageService.getMessagesConversation(req.userId!, phone_number_id)
     return successResponse(req, res, 'Message Retrived succesfully', userMessages);
   })
 
-  getLeadConversations = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const {phone_number_id,leadNumber} = req.query
-    const userMessages = await MessageService.getLeadConversations(leadNumber,phone_number_id, req.userId!)
-    return successResponse(req,res,"Lead Message Retreived Succesfuly",userMessages)
+  getLeadConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { phone_number_id, leadNumber } = req.query
+    const userMessages = await MessageService.getLeadConversations(leadNumber, phone_number_id, req.userId!)
+    return successResponse(req, res, "Lead Message Retreived Succesfuly", userMessages)
   })
 
-  getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-      console.log("User Id",req.userId!)
-      const{time_frame} = req.query
-      const userStats = await MessageService.getUserStats(req.userId!,time_frame)
-      return successResponse(req,res, 'User Stats retrieved successfully', userStats)
+  getUserStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    console.log("User Id", req.userId!)
+    const { time_frame } = req.query
+    const userStats = await MessageService.getUserStats(req.userId!, time_frame)
+    return successResponse(req, res, 'User Stats retrieved successfully', userStats)
   })
 
 }

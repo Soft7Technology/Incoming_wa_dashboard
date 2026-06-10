@@ -355,37 +355,43 @@ class MessageModel extends BaseModel {
   // }
 
   async getLeadConversations(contactNumber: string, phone_number_id: string, userId: string) {
+    const db = this.db;
     const query = this.query();
 
     const normalizedNumber = contactNumber.slice(-10);
 
     const result = await query
+      .leftJoin('templates as t', function () {
+        this.on('t.id', '=', 'messages.template_id')
+          .orOn((join) => {
+            join.on('t.name', '=', db.raw(`content->'template'->>'name'`))
+              .andOn('t.language', '=', db.raw(`content->'template'->'language'->>'code'`));
+          });
+      })
       .select([
-        'id',
-        'phone_number_id',
-        'direction',
-        'type',
+        'messages.id',
+        'messages.phone_number_id',
+        'messages.direction',
+        'messages.type',
 
-        this.db.raw(`REPLACE(from_phone, '+', '') AS from_phone`),
-        this.db.raw(`REPLACE(to_phone, '+', '') AS to_phone`),
+        this.db.raw(`REPLACE(messages.from_phone, '+', '') AS from_phone`),
+        this.db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
 
-        'status',
-        'created_at',
-
-        this.db.raw(`
-        CASE 
-          WHEN type = 'text' 
-          THEN content->'text'->>'body'
-        END AS "content"
-      `),
+        'messages.status',
+        'messages.created_at',
+        'messages.content',
 
         this.db.raw(`
-        CASE 
-          WHEN type = 'template' 
-          THEN content->'template'->'components'
-          ELSE NULL
-        END AS "templateComponents"
-      `),
+          CASE
+            WHEN messages.type = 'template'
+              THEN COALESCE(
+                NULLIF(messages.content->'template'->'components', '[]'::jsonb),
+                t.components,
+                '[]'::jsonb
+              )
+            ELSE NULL
+          END AS "templateComponents"
+        `),
       ])
       .where('phone_number_id', phone_number_id)
       .andWhere((builder) => {

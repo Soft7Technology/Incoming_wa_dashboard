@@ -8,7 +8,13 @@
 
 // export default db;
 import knex, { Knex } from 'knex';
+import pg from 'pg';
 import knexConfig from '../config/knex.config';
+
+// Ensure all timestamps without timezone are parsed as UTC Date objects
+pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (val: string) => {
+  return new Date(val + 'Z');
+});
 
 const environment = process.env.NODE_ENV || 'development';
 const config = knexConfig[environment];
@@ -25,7 +31,12 @@ if (!(global as any).db) {
       min: 2,
       max: 5,
       acquireTimeoutMillis: 30000,
-      idleTimeoutMillis: 10000
+      idleTimeoutMillis: 10000,
+      afterCreate: (conn: any, done: any) => {
+        conn.query("SET timezone='UTC';", (err: any) => {
+          done(err, conn);
+        });
+      }
     }
   });
 }
