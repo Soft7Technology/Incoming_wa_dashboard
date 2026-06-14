@@ -288,6 +288,12 @@ async checkUserPlanStatus(req: AuthRequest, res: Response) {
     successResponse(req,res,'User Suspend Successfully',suspendUser,HttpStatusCode.CREATED)
    }
 
+  async activateUser(req:Request,res:Response){
+    const {id} = req.params
+    const activateUser = await CompanyService.activateUser(id)
+    successResponse(req,res,'User Activated Successfully',activateUser,HttpStatusCode.CREATED)
+   }
+
    async suspendUserPlan(req:AuthRequest,res:Response){
     const {id} = req.query
     const userActivePlan = await userPlansModel.findPlanByUserId(id)

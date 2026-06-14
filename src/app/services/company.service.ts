@@ -570,6 +570,11 @@ class CompanyService {
     return suspendUser
   }
 
+  async activateUser(userId:string){
+    const activateUser = await userModel.update(userId,{status:'active'})
+    return activateUser
+  }
+
   //   async createUser(
   //   companyId: string,
   //   userData: {

@@ -516,7 +516,7 @@ class MessageService {
         profile_name: "",
         phone_number_id: phoneNumber.id,
         wamid: metaResponse.messages[0].id,
-        direction: 'inbound',
+        direction: 'outbound',
         type: metaPayload.type,
         from_phone: phoneNumber.display_phone_number,
         to_phone: to,
