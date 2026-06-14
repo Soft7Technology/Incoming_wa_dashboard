@@ -11,6 +11,7 @@ import companyService from '@surefy/console/services/company.service';
 import sendEmail from '../../utils';
 import MessageService from '../../services/message.service';
 import { uploadImage } from '@surefy/config/firebase.config';
+import activityLogsModel from '../../models/activityLogs.model';
 
 
 
@@ -137,15 +138,45 @@ class CompanyController {
    * POST /v1/companies/user
    * Create user under company
    */
-  createUser = tryCatchAsync(async(req: AuthRequest,res:Response)=>{
-    const { name, email, phone, password, role,assigned_plan} = req.body;
-    console.log("Creating user with data:",{name,email,phone,role})
+  createUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { name, email, phone, password, role, assigned_plan } = req.body;
+    console.log("Creating user with data:", { name, email, phone, role })
 
     if (!name || !email || !password) {
       throw new HTTP400Error({ message: 'Name, email, and password are required' });
     }
 
-    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,phone,password,role,assigned_plan})
+    const createdUser = await CompanyService.createUser(req.companyId!, { name, email, phone, password, role, assigned_plan })
+    const { data }: any = createdUser
+    await activityLogsModel.create({
+      user_id: data?.id, // User who performed the action
+
+      action: 'CREATE',
+      entity_type: 'USER',
+      entity_id: data.id,
+
+      description: `Created user ${data.name} (${data.email})`,
+
+      new_data: {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        assigned_plan: data.assigned_plan
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
     return successResponse(req, res, 'User created successfully', createdUser);
   })
 
@@ -197,13 +228,43 @@ class CompanyController {
     return successResponse(req,res, 'User retrieved successfully', user)
   })
 
-  updateCompanyUser =  tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const { name, email, phone, permissions,assigned_plan} = req.body;
-    const {companyId} = req.params
-    
-    const updatedUser = await CompanyService.updateCompanyUser(companyId,{name,email,phone,permissions,assigned_plan})
+  updateCompanyUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { name, email, phone, permissions, assigned_plan } = req.body;
+    const { companyId } = req.params
 
-    return successResponse(req,res, 'User updated successfully', updatedUser)
+    const updatedUser = await CompanyService.updateCompanyUser(companyId, { name, email, phone, permissions, assigned_plan })
+    const { data } = updatedUser
+    await activityLogsModel.create({
+      user_id: data.id, // user performing the update
+
+      action: 'UPDATE',
+      entity_type: 'USER',
+      entity_id: companyId,
+
+      description: `Updated user ${updatedUser.data.name}`,
+
+      new_data: {
+        name: updatedUser.data.name,
+        email: updatedUser.data.email,
+        phone: updatedUser.data.phone,
+        permissions: updatedUser.data.permissions,
+        assigned_plan: updatedUser.data.assigned_plan
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
+    return successResponse(req, res, 'User updated successfully', updatedUser)
   })
 
 //   razorpayOrderId: "order_SgA55nIqCKdwUs"
