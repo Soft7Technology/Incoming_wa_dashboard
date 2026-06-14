@@ -6,6 +6,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import { handleIncomingMessageChatBot } from '../../utils'
+import activityLogsModel from '../../models/activityLogs.model';
 
 class MessageController {
   /**
@@ -41,6 +42,61 @@ class MessageController {
       reaction,
       context,
     });
+
+    const { data } = message
+
+    let description = '';
+
+    switch (type) {
+      case 'text':
+        description = `Sent text message to ${to}`;
+        break;
+      case 'template':
+        description = `Sent template "${template?.name}" to ${to}`;
+        break;
+      case 'image':
+        description = `Sent image message to ${to}`;
+        break;
+      case 'video':
+        description = `Sent video message to ${to}`;
+        break;
+      case 'document':
+        description = `Sent document message to ${to}`;
+        break;
+      default:
+        description = `Sent ${type} message to ${to}`;
+    }
+
+    await activityLogsModel.create({
+      user_id: req.userId,
+
+      action: 'SEND',
+      entity_type: 'MESSAGE',
+      entity_id: data?.id,
+
+      description: `Sent ${type} message to ${to}`,
+
+      new_data: {
+        recipient: to,
+        message_type: type,
+        campaign_id: campaign_id || null,
+        phone_number_id,
+        whatsapp_message_id: data?.whatsapp_message_id
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
 
     return successResponse(req, res, 'Message sent successfully', message, HttpStatusCode.CREATED);
   });

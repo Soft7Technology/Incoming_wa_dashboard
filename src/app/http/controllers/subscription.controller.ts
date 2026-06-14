@@ -6,7 +6,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import subscriptionService from "../../services/subscription.service"
 import crypto from 'crypto';
-import { update } from 'lodash';
+import activityLogsModel from '../../models/activityLogs.model';
 
     // planName:string;
     // price:string;
@@ -32,6 +32,37 @@ class SubscriptionController {
       active,
       features,
     });
+    const { data }: any = newSubscription
+    await activityLogsModel.create({
+      user_id: req.userId,
+
+      action: 'CREATE',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: data.id,
+
+      description: `Created subscription plan "${data.plan_name}"`,
+
+      new_data: {
+        id: data.id,
+        plan_name: data.plan_name,
+        price: data.price,
+        billing_cycle: data.billing_cycle,
+        active: data.active
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
     return successResponse(req, res, 'New Subscription created successfully', newSubscription, HttpStatusCode.CREATED);
   });
 

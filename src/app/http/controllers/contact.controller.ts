@@ -7,6 +7,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import * as path from 'path';
 import * as fs from 'fs';
 import userPlansModel from '../../models/userPlans.model';
+import activityLogsModel from '../../models/activityLogs.model';
 
 class ContactController {
   /**
@@ -14,13 +15,13 @@ class ContactController {
    * Create new contact
    */
   createContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number, name, email, attributes, notes, tag_ids,status } = req.body;
+    const { phone_number, name, email, attributes, notes, tag_ids, status } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
     }
 
-    const contact = await ContactService.createContact(req.userId!,req.companyId!, {
+    const contact = await ContactService.createContact(req.userId!, req.companyId!, {
       phone_number,
       name,
       email,
@@ -28,6 +29,40 @@ class ContactController {
       notes,
       tag_ids,
       status
+    });
+
+    const { data }: any = contact
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'CREATE',
+      entity_type: 'CONTACT',
+      entity_id: data.id,
+
+      description: `Created contact ${data.name || data.phone_number}`,
+
+      new_data: {
+        id: data.id,
+        name: data.name,
+        phone_number: data.phone_number,
+        email: data.email,
+        status: data.status,
+        tags_count: data.tag_ids?.length || 0
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
     });
 
     await userPlansModel.incrementUsage(req.userId!, 'Contact');
@@ -69,9 +104,9 @@ class ContactController {
    * PUT /v1/contacts/:id
    * Update contact
    */
-  updateContact = tryCatchAsync(async (req: Request, res: Response) => {
+  updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids,status,phone_number } = req.body;
+    const { name, email, attributes, notes, tag_ids, status, phone_number } = req.body;
 
     const contact = await ContactService.updateContact(id, {
       name,
@@ -81,6 +116,39 @@ class ContactController {
       notes,
       status,
       tag_ids,
+    });
+
+    const { data }: any = contact
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'UPDATE',
+      entity_type: 'CONTACT',
+      entity_id: id,
+
+      description: `Updated contact ${data.name || data.phone_number}`,
+
+      new_data: {
+        name: data.name,
+        phone_number: data.phone_number,
+        email: data.email,
+        status: data.status,
+        tag_ids: data.tag_ids,
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS',
     });
 
     return successResponse(req, res, 'Contact updated successfully', contact);
@@ -211,7 +279,7 @@ class ContactController {
    * POST /v1/contacts/:id/tags
    * Add tags to contact
    */
-  addTags = tryCatchAsync(async (req: Request, res: Response) => {
+  addTags = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { tag_ids } = req.body;
 
@@ -219,7 +287,8 @@ class ContactController {
       throw new HTTP400Error({ message: 'tag_ids array is required' });
     }
 
-    await ContactService.addTagsToContact(id, tag_ids);
+    const tags = await ContactService.addTagsToContact(id, tag_ids);
+    const{data}:any = tags
     return successResponse(req, res, 'Tags added successfully');
   });
 
@@ -251,6 +320,28 @@ class ContactController {
     }
 
     const tag = await ContactService.createTag(req.userId!,req.companyId!, { name, color, description });
+    const{data}:any = tag
+        await activityLogsModel.create({
+    company_id: req.companyId,
+    user_id: req.userId,
+
+    action: 'TAG_ADD',
+    entity_type: 'TAGS',
+    entity_id: data.id,
+
+    description: `Added tag(s) to ${data.name}`,
+    ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+    user_agent: req.headers['user-agent'] || '',
+
+    request_method: req.method,
+    api_endpoint: req.originalUrl,
+
+    status: 'SUCCESS'
+});
     return successResponse(req, res, 'Tag created successfully', tag, HttpStatusCode.CREATED);
   });
 
