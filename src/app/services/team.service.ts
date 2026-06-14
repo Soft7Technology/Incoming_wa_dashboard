@@ -24,7 +24,7 @@ class teamService{
             const token = crypto.randomBytes(32).toString("hex");
 
             //Frontend setup password URL
-            const inviteUrl = `https://plow-mutation-crewman.ngrok-free.dev/team/setup-password?token=${token}`;
+            const inviteUrl = `https://app.soft7.in/team/setup-password?token=${token}`;
 
             const html = generateInviteTemplate({
                     email,
