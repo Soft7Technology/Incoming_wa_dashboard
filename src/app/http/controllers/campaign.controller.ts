@@ -47,8 +47,8 @@ class CampaignController {
     const { data }: any = campaign
 
     await activityLogsModel.create({
-      company_id: req.companyId!,
-      user_id: req.userId!,
+      company_id: data.companyId!,
+      user_id: data.userId!,
 
       action: 'CREATE',
       entity_type: 'CAMPAIGN',

@@ -30,22 +30,22 @@ class chatBotController {
 
         const { data }: any = result
         await activityLogsModel.create({
-            company_id: req.companyId!,
-            user_id: req.userId!,
+            company_id: data?.companyId!,
+            user_id:data?.userId!,
 
             action: 'CREATE',
             entity_type: 'CHATBOT',
-            entity_id: data.id,
+            entity_id: data?.id,
 
-            description: `Created chatbot "${data.name}"`,
+            description: `Created chatbot "${data?.name}"`,
 
             new_data: {
-                id: data.id,
-                name: data.name,
-                description: data.description,
-                status: data.status,
-                published: data.published,
-                phone_number_id: data.phoneNumberId
+                id: data?.id,
+                name: data?.name,
+                description: data?.description,
+                status: data?.status,
+                published: data?.published,
+                phone_number_id: data?.phoneNumberId
             },
 
             ip_address:
@@ -78,19 +78,19 @@ class chatBotController {
             const result = await chatBotService.publishedChatBot(req.userId!, chatBotId);
             const { data }: any = result
             await activityLogsModel.create({
-                company_id: req.companyId,
-                user_id: req.userId,
+                company_id: data?.companyId,
+                user_id: data?.userId,
 
                 action: 'PUBLISH',
                 entity_type: 'CHATBOT',
                 entity_id: chatBotId,
 
-                description: `Published chatbot "${data.name}"`,
+                description: `Published chatbot "${data?.name}"`,
 
                 new_data: {
-                    chatbot_name: data.name,
-                    status: data.status,
-                    published: data.published
+                    chatbot_name: data?.name,
+                    status: data?.status,
+                    published: data?.published
                 },
 
                 ip_address:

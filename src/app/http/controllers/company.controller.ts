@@ -152,16 +152,16 @@ class CompanyController {
 
       action: 'CREATE',
       entity_type: 'USER',
-      entity_id: data.id,
+      entity_id: data?.id,
 
-      description: `Created user ${data.name} (${data.email})`,
+      description: `Created user ${data?.name} (${data?.email})`,
 
       new_data: {
-        id: data.id,
-        name: data.name,
-        email: data.email,
-        role: data.role,
-        assigned_plan: data.assigned_plan
+        id: data?.id,
+        name: data?.name,
+        email: data?.email,
+        role: data?.role,
+        assigned_plan: data?.assigned_plan
       },
 
       ip_address:
@@ -234,20 +234,20 @@ class CompanyController {
     const updatedUser = await CompanyService.updateCompanyUser(companyId, { name, email, phone, permissions, assigned_plan })
     const { data } = updatedUser
     await activityLogsModel.create({
-      user_id: data.id, // user performing the update
+      user_id: data?.id, // user performing the update
 
       action: 'UPDATE',
       entity_type: 'USER',
       entity_id: companyId,
 
-      description: `Updated user ${updatedUser.data.name}`,
+      description: `Updated user ${data?.name}`,
 
       new_data: {
-        name: updatedUser.data.name,
-        email: updatedUser.data.email,
-        phone: updatedUser.data.phone,
-        permissions: updatedUser.data.permissions,
-        assigned_plan: updatedUser.data.assigned_plan
+        name: data?.name,
+        email: data?.email,
+        phone: data?.phone,
+        permissions: data?.permissions,
+        assigned_plan: data?.assigned_plan
       },
 
       ip_address:
