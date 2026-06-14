@@ -6,6 +6,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import userPlansModel from '../../models/userPlans.model';
 import campaignModel from '../../models/campaign.model';
+import activityLogsModel from '../../models/activityLogs.model';
 
 class CampaignController {
   /**
@@ -41,6 +42,40 @@ class CampaignController {
       media_uploads,
       scheduled_at,
       send_immediately,
+    });
+
+    const { data }: any = campaign
+
+    await activityLogsModel.create({
+      company_id: data.companyId!,
+      user_id: data.userId!,
+
+      action: 'CREATE',
+      entity_type: 'CAMPAIGN',
+      entity_id: data.id,
+
+      description: `Created campaign "${data.name}"`,
+
+      new_data: {
+        id: data.id,
+        name: data.name,
+        template_id: data.template_id,
+        phone_number_id: data.phone_number_id,
+        scheduled_at: data.scheduled_at,
+        send_immediately: data.send_immediately,
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
     });
 
     await userPlansModel.incrementUsage(req.userId!, 'Campaign');
@@ -192,9 +227,43 @@ class CampaignController {
    * DELETE /v1/campaigns/:id
    * Delete campaign
    */
-  deleteCampaign = tryCatchAsync(async (req: Request, res: Response) => {
+  deleteCampaign = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    await CampaignService.deleteCampaign(id);
+    const deleteCampaign = await CampaignService.deleteCampaign(id);
+    const { data }: any = deleteCampaign
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'DELETE',
+      entity_type: 'CAMPAIGN',
+      entity_id: id,
+
+      description: `Delete campaign "${data.name}"`,
+
+      new_data: {
+        id: data.id,
+        name: data.name,
+        template_id: data.template_id,
+        phone_number_id: data.phone_number_id,
+        scheduled_at: data.scheduled_at,
+        send_immediately: data.send_immediately,
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
     return successResponse(req, res, 'Campaign deleted successfully');
   });
 

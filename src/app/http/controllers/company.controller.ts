@@ -11,7 +11,7 @@ import companyService from '@surefy/console/services/company.service';
 import sendEmail from '../../utils';
 import MessageService from '../../services/message.service';
 import { uploadImage } from '@surefy/config/firebase.config';
-
+import activityLogsModel from '../../models/activityLogs.model';
 
 
 class CompanyController {
@@ -21,17 +21,17 @@ class CompanyController {
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
 
-    const { name, email, phone,domain,status, business_id, webhook_url, meta_config, settings, initial_credit} = req.body;
-    const user = typeof req.body.user === 'string'? JSON.parse(req.body.user): req.body.user;
+    const { name, email, phone, domain, status, business_id, webhook_url, meta_config, settings, initial_credit } = req.body;
+    const user = typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user;
 
-    const file:Express.Multer.File | undefined = req.file
+    const file: Express.Multer.File | undefined = req.file
 
 
-    console.log("File",file)
+    console.log("File", file)
 
     let logo = null
 
-    if(file){
+    if (file) {
       logo = await uploadImage(file)
     }
 
@@ -60,20 +60,20 @@ class CompanyController {
       logo
     });
 
-    if(result){
+    if (result) {
       await sendEmail(
         email,
-       'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+        'Welcome to Our Platform',
+        `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
       )
     }
 
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
 
-  getCompanyDetails = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  getCompanyDetails = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const companyDetails = await companyService.getCompanyDetails(req.companyId!)
-    return successResponse(req,res,"Company Retrived successfully",companyDetails,HttpStatusCode.ACCEPTED)
+    return successResponse(req, res, "Company Retrived successfully", companyDetails, HttpStatusCode.ACCEPTED)
   })
 
   /**
@@ -86,18 +86,18 @@ class CompanyController {
     return successResponse(req, res, 'Company retrieved successfully', company);
   });
 
-  getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-      console.log("User Id",req.userId!)
-      const{time_frame} = req.query
-      const userStats = await MessageService.getUserStats(req.userId!,time_frame)
-      return successResponse(req,res, 'User Stats retrieved successfully', userStats)
+  getUserStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    console.log("User Id", req.userId!)
+    const { time_frame } = req.query
+    const userStats = await MessageService.getUserStats(req.userId!, time_frame)
+    return successResponse(req, res, 'User Stats retrieved successfully', userStats)
   })
 
-  getUserDetails = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  getUserDetails = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     // console.log("User Id",req.userId!)
-    const{userId} = req.params
+    const { userId } = req.params
     const userStats = await CompanyService.getUserStats(userId)
-    return successResponse(req,res, 'User Stats retrieved successfully', userStats)
+    return successResponse(req, res, 'User Stats retrieved successfully', userStats)
   })
 
 
@@ -117,7 +117,7 @@ class CompanyController {
   updateCompany = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     let data = req.body
     const file = req.file
-    if(file){
+    if (file) {
       data.logo = file.filename
     }
     // Use route param if present (super admin updating any company), fall back to JWT companyId
@@ -140,15 +140,45 @@ class CompanyController {
    * POST /v1/companies/user
    * Create user under company
    */
-  createUser = tryCatchAsync(async(req: AuthRequest,res:Response)=>{
-    const { name, email, phone, password, role,assigned_plan} = req.body;
-    console.log("Creating user with data:",{name,email,phone,role})
+  createUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { name, email, phone, password, role, assigned_plan } = req.body;
+    console.log("Creating user with data:", { name, email, phone, role })
 
     if (!name || !email || !password) {
       throw new HTTP400Error({ message: 'Name, email, and password are required' });
     }
 
-    const createdUser = await CompanyService.createUser(req.companyId!,{name,email,phone,password,role,assigned_plan})
+    const createdUser = await CompanyService.createUser(req.companyId!, { name, email, phone, password, role, assigned_plan })
+    const { data }: any = createdUser
+    await activityLogsModel.create({
+      user_id: data?.id, // User who performed the action
+
+      action: 'CREATE',
+      entity_type: 'USER',
+      entity_id: data?.id,
+
+      description: `Created user ${data?.name} (${data?.email})`,
+
+      new_data: {
+        id: data?.id,
+        name: data?.name,
+        email: data?.email,
+        role: data?.role,
+        assigned_plan: data?.assigned_plan
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
     return successResponse(req, res, 'User created successfully', createdUser);
   })
 
@@ -176,42 +206,72 @@ class CompanyController {
     return successResponse(req, res, 'API credentials retrieved successfully', keys);
   });
 
-  getdashboardStats = tryCatchAsync(async(req:AuthRequest, res:Response)=>{
+  getdashboardStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     console.log("Fetching dashboard stats for companyId:", req.companyId!); // Debug log
-    const stats = await CompanyService.getDashboardStats(req.companyId!,req.userId!)
-    return successResponse(req,res, 'Dashboard stats retrieved successfully', stats)
+    const stats = await CompanyService.getDashboardStats(req.companyId!, req.userId!)
+    return successResponse(req, res, 'Dashboard stats retrieved successfully', stats)
   })
 
-  getAllUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const {role} = req.query
+  getAllUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { role } = req.query
     console.log("Fetching users with role filter:", role) // Debug log
-    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!,role)
-    return successResponse(req,res, 'Users retrieved successfully', users)
+    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!, role)
+    return successResponse(req, res, 'Users retrieved successfully', users)
   })
 
-  getAdminUsers = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const users = await CompanyService.getAllUsers(req.userId!,req.companyId!)
-    const adminUsers = users.filter((user:any)=> user.role === 'admin')
-    return successResponse(req,res, 'Admin users retrieved successfully', adminUsers)
+  getAdminUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!)
+    const adminUsers = users.filter((user: any) => user.role === 'admin')
+    return successResponse(req, res, 'Admin users retrieved successfully', adminUsers)
   })
 
-  getUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+  getUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const user = await CompanyService.getUserById(req.userId!)
-    return successResponse(req,res, 'User retrieved successfully', user)
+    return successResponse(req, res, 'User retrieved successfully', user)
   })
 
-  updateCompanyUser =  tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const { name, email, phone, permissions,assigned_plan} = req.body;
-    const {companyId} = req.params
-    
-    const updatedUser = await CompanyService.updateCompanyUser(companyId,{name,email,phone,permissions,assigned_plan})
+  updateCompanyUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { name, email, phone, permissions, assigned_plan } = req.body;
+    const { companyId } = req.params
 
-    return successResponse(req,res, 'User updated successfully', updatedUser)
+    const updatedUser = await CompanyService.updateCompanyUser(companyId, { name, email, phone, permissions, assigned_plan })
+    const { data } = updatedUser
+    await activityLogsModel.create({
+      user_id: data?.id, // user performing the update
+
+      action: 'UPDATE',
+      entity_type: 'USER',
+      entity_id: companyId,
+
+      description: `Updated user ${data?.name}`,
+
+      new_data: {
+        name: data?.name,
+        email: data?.email,
+        phone: data?.phone,
+        permissions: data?.permissions,
+        assigned_plan: data?.assigned_plan
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
+    return successResponse(req, res, 'User updated successfully', updatedUser)
   })
 
-//   razorpayOrderId: "order_SgA55nIqCKdwUs"
-// razorpayPaymentId: "pay_SgA5A5oB9Btmgy"
-// razorpaySignature: "adac4d8719b1813682dfcbc4ade953903f69ab75bf7c09ca47ce9c3bd51ab17b"
+  //   razorpayOrderId: "order_SgA55nIqCKdwUs"
+  // razorpayPaymentId: "pay_SgA5A5oB9Btmgy"
+  // razorpaySignature: "adac4d8719b1813682dfcbc4ade953903f69ab75bf7c09ca47ce9c3bd51ab17b"
   // subscribePlan = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
   //   const {planId} = req.params
   //   console.log("Subscribing to plan with query:", planId) // Debug log
@@ -229,79 +289,232 @@ class CompanyController {
   //   return successResponse(req,res, 'Plan subscribed successfully', subscribePlan)
   // })
 
-  async getUserPlan(req:AuthRequest,res:Response){
-    const{userId} = req.params
-    console.log("UserId",userId)
+  async getUserPlan(req: AuthRequest, res: Response) {
+    const { userId } = req.params
+    console.log("UserId", userId)
     const userPlan = await userPlansModel.getUserPlan(userId)
-    if(!userPlan){
-      return successResponse(req,res, 'No active plan for user', null)
+    if (!userPlan) {
+      return successResponse(req, res, 'No active plan for user', null)
     }
-    return successResponse(req,res, 'User plan retrieved successfully', userPlan)
+    return successResponse(req, res, 'User plan retrieved successfully', userPlan)
   }
 
-async checkUserPlanStatus(req: AuthRequest, res: Response) {
-  try {
-    console.log("Checking user plan status for userId:", req.userId!)
+  async checkUserPlanStatus(req: AuthRequest, res: Response) {
+    try {
+      console.log("Checking user plan status for userId:", req.userId!)
 
-    const userPlan = await userPlansModel.getUserPlan(req.userId!)
-    if(!userPlan){
-      return successResponse(req, res, 'No Active Plan found', userPlan)
+      const userPlan = await userPlansModel.getUserPlan(req.userId!)
+      if (!userPlan) {
+        return successResponse(req, res, 'No Active Plan found', userPlan)
+      }
+      return successResponse(req, res, 'User has an active plan', userPlan)
+
+    } catch (error: any) {
+      return res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || 'Something went wrong',
+      });
     }
-    return successResponse(req, res, 'User has an active plan', userPlan)
-
-  } catch (error: any) {
-    return res.status(error.statusCode || 500).json({
-      success: false,
-      message: error.message || 'Something went wrong',
-    });
   }
-}
-  
-  async getUserById(req:AuthRequest,res:Response){
-    const {userId} = req.params
+
+  async getUserById(req: AuthRequest, res: Response) {
+    const { userId } = req.params
     const user = await CompanyService.getUserById(userId)
-    return successResponse(req,res,"User retrieved successfully",user)
+    return successResponse(req, res, "User retrieved successfully", user)
   }
 
-  async deleteCompanyUser(req:AuthRequest,res:Response){
-    const {id} = req.params
+  async deleteCompanyUser(req: AuthRequest, res: Response) {
+    const { id } = req.params
     const deleteUser = await CompanyService.deleteUserById(id)
-    return successResponse(req, res, 'Company User deleted successfully',deleteUser);
+    return successResponse(req, res, 'Company User deleted successfully', deleteUser);
   }
 
-  async getReminders(req:AuthRequest,res:Response){
-    return successResponse(req,res,"No reminder for now",HttpStatusCode.OK)
+  async getReminders(req: AuthRequest, res: Response) {
+    return successResponse(req, res, "No reminder for now", HttpStatusCode.OK)
   }
 
-  async getCompaniesSubscription(req:AuthRequest,res:Response){
-    const {active} = req.query
-    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!,req.companyId!,active)
-    return successResponse(req,res,"Company User Active subscriptions plans",companySubscriptions,HttpStatusCode.OK)
+  async getCompaniesSubscription(req: AuthRequest, res: Response) {
+    const { active } = req.query
+    const companySubscriptions = await companyService.getcompanySubscriptions(req.userId!, req.companyId!, active)
+    return successResponse(req, res, "Company User Active subscriptions plans", companySubscriptions, HttpStatusCode.OK)
   }
 
-  async updateUser(req: Request, res: Response) {
+  async updateUser(req: AuthRequest, res: Response) {
     const { id } = req.params;
+
     const company = await CompanyService.updateUser(id, req.body);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'UPDATE',
+      entity_type: 'USER',
+      entity_id: id,
+
+      description: `Updated user ${id}`,
+
+      new_data: req.body,
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
     return successResponse(req, res, 'Company updated successfully', company);
-  };
+  }
 
-  async suspendUser(req:Request,res:Response){
-    const {id} = req.params
-    const suspendUser = await CompanyService.suspendUser(id)
-    successResponse(req,res,'User Suspend Successfully',suspendUser,HttpStatusCode.CREATED)
-   }
+  async suspendUser(req: AuthRequest, res: Response) {
+    const { id } = req.params;
 
-   async suspendUserPlan(req:AuthRequest,res:Response){
-    const {id} = req.query
-    const userActivePlan = await userPlansModel.findPlanByUserId(id)
-    if(!userActivePlan){
+    const suspendUser = await CompanyService.suspendUser(id);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'SUSPEND',
+      entity_type: 'USER',
+      entity_id: id,
+
+      description: `Suspended user account`,
+
+      new_data: {
+        suspended_user_id: id
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
+    successResponse(
+      req,
+      res,
+      'User Suspend Successfully',
+      suspendUser,
+      HttpStatusCode.CREATED
+    );
+  }
+
+  async suspendUserPlan(req: AuthRequest, res: Response) {
+    const { id } = req.query;
+
+    const userActivePlan = await userPlansModel.findPlanByUserId(id);
+
+    if (!userActivePlan) {
       throw new HTTP400Error({
         message: "User have no active plan",
       });
     }
-    const suspendUserPlan = await userPlansModel.update(userActivePlan.id,{status:"EXPIRED",active:true})
-    successResponse(req, res, "User Plan suspended successfully", suspendUserPlan);
-   }
+
+    const suspendUserPlan = await userPlansModel.update(
+      userActivePlan.id,
+      {
+        status: "EXPIRED",
+        active: false
+      }
+    );
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'SUSPEND',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: userActivePlan.id,
+
+      description: `Suspended user subscription plan`,
+
+      old_data: {
+        status: userActivePlan.status,
+        active: userActivePlan.active
+      },
+
+      new_data: {
+        status: 'EXPIRED',
+        active: false
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
+    successResponse(
+      req,
+      res,
+      "User Plan suspended successfully",
+      suspendUserPlan
+    );
+  }
+
+  async activateUser(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+
+    const activateUser = await CompanyService.activateUser(id);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'ACTIVATE',
+      entity_type: 'USER',
+      entity_id: id,
+
+      description: `Activated user account`,
+
+      new_data: {
+        user_id: id,
+        status: 'ACTIVE'
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
+    successResponse(
+      req,
+      res,
+      'User Activated Successfully',
+      activateUser,
+      HttpStatusCode.CREATED
+    );
+  }
+
 
 
   // async updateCompanyUser(req:AuthRequest,res:Response){

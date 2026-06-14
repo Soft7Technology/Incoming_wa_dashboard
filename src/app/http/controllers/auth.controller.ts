@@ -6,6 +6,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import companyController from './company.controller';
 import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
+import activityLogsModel from '../../models/activityLogs.model';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -28,6 +29,19 @@ class AuthController {
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
 
     const result = await AuthService.login({ identifier, password }, ipAddress);
+    const{data}:any = result
+    
+    await activityLogsModel.create({
+      user_id: data?.user.id,
+      company_id:data?.company_id,
+      action: 'LOGIN',
+      entity_type: 'AUTH',
+      description: 'User logged in successfully',
+      ip_address: ipAddress,
+      request_method: 'POST',
+      api_endpoint: '/auth/login',
+      status: 'SUCCESS'
+    })
 
     return successResponse(req, res, 'Login successful', result);
   });

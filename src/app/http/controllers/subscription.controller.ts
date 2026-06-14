@@ -6,7 +6,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import subscriptionService from "../../services/subscription.service"
 import crypto from 'crypto';
-import { update } from 'lodash';
+import activityLogsModel from '../../models/activityLogs.model';
 
     // planName:string;
     // price:string;
@@ -32,6 +32,38 @@ class SubscriptionController {
       active,
       features,
     });
+    const { data }: any = newSubscription
+    await activityLogsModel.create({
+      user_id: data?.userId,
+      company_id: data?.companyId,
+
+      action: 'CREATE',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: data?.id,
+
+      description: `Created subscription plan "${data?.plan_name}"`,
+
+      new_data: {
+        id: data?.id,
+        plan_name: data?.plan_name,
+        price: data?.price,
+        billing_cycle: data?.billing_cycle,
+        active: data?.active
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
     return successResponse(req, res, 'New Subscription created successfully', newSubscription, HttpStatusCode.CREATED);
   });
 
@@ -66,21 +98,60 @@ class SubscriptionController {
     return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
   });
 
-  updateSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+updateSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const { plan_name, price, billing_cycle, description, active, features } = req.body;
-    console.log('Body', req.body);
 
     const updatedSubscription = await subscriptionService.updateSubscriptionPlan(id, {
-      plan_name,
-      price,
-      billing_cycle,
-      description,
-      active,
-      features,
+        plan_name,
+        price,
+        billing_cycle,
+        description,
+        active,
+        features,
     });
-    return successResponse(req, res, 'Subscription Plan updated successfully', updatedSubscription, HttpStatusCode.OK);
-  });
+
+    const { data }: any = updatedSubscription;
+
+    await activityLogsModel.create({
+        company_id: data?.companyId,
+        user_id: data?.userId,
+
+        action: 'UPDATE',
+        entity_type: 'SUBSCRIPTION',
+        entity_id: id,
+
+        description: `Updated subscription plan "${data?.plan_name}"`,
+
+        new_data: {
+            plan_name: data?.plan_name,
+            price: data?.price,
+            billing_cycle: data?.billing_cycle,
+            active: data?.active,
+            features: data?.features
+        },
+
+        ip_address:
+            (req.headers['x-forwarded-for'] as string) ||
+            req.socket.remoteAddress ||
+            '',
+
+        user_agent: req.headers['user-agent'] || '',
+
+        request_method: req.method,
+        api_endpoint: req.originalUrl,
+
+        status: 'SUCCESS'
+    });
+
+    return successResponse(
+        req,
+        res,
+        'Subscription Plan updated successfully',
+        updatedSubscription,
+        HttpStatusCode.OK
+    );
+});
 
   subscribePlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { planId } = req.params;
