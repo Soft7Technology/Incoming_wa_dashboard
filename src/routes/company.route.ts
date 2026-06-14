@@ -9,7 +9,9 @@ const companyRoute = Router();
 // Only admins can create/manage companies
 
 companyRoute.post('/',uploadMediaMiddleware, CompanyController.onboard); 
+companyRoute.put('/:companyId', uploadMediaMiddleware, CompanyController.updateCompany);
 companyRoute.put('/',uploadMediaMiddleware, CompanyController.updateCompany);
+companyRoute.delete('/:companyId', CompanyController.deleteCompany);
 companyRoute.delete('/', CompanyController.deleteCompany);
 companyRoute.get('/dashboard', CompanyController.getdashboardStats)
 companyRoute.get('/details',companyController.getCompanyDetails)
