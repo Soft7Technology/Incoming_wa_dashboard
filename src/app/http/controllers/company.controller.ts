@@ -14,7 +14,6 @@ import { uploadImage } from '@surefy/config/firebase.config';
 import activityLogsModel from '../../models/activityLogs.model';
 
 
-
 class CompanyController {
   /**
    * POST /v1/companies
@@ -337,11 +336,38 @@ class CompanyController {
     return successResponse(req, res, "Company User Active subscriptions plans", companySubscriptions, HttpStatusCode.OK)
   }
 
-  async updateUser(req: Request, res: Response) {
+  async updateUser(req: AuthRequest, res: Response) {
     const { id } = req.params;
+
     const company = await CompanyService.updateUser(id, req.body);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'UPDATE',
+      entity_type: 'USER',
+      entity_id: id,
+
+      description: `Updated user ${id}`,
+
+      new_data: req.body,
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
     return successResponse(req, res, 'Company updated successfully', company);
-  };
+  }
 
   async suspendUser(req: AuthRequest, res: Response) {
     const { id } = req.params;
@@ -443,6 +469,49 @@ class CompanyController {
       suspendUserPlan
     );
   }
+
+  async activateUser(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+
+    const activateUser = await CompanyService.activateUser(id);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+
+      action: 'ACTIVATE',
+      entity_type: 'USER',
+      entity_id: id,
+
+      description: `Activated user account`,
+
+      new_data: {
+        user_id: id,
+        status: 'ACTIVE'
+      },
+
+      ip_address:
+        (req.headers['x-forwarded-for'] as string) ||
+        req.socket.remoteAddress ||
+        '',
+
+      user_agent: req.headers['user-agent'] || '',
+
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+
+      status: 'SUCCESS'
+    });
+
+    successResponse(
+      req,
+      res,
+      'User Activated Successfully',
+      activateUser,
+      HttpStatusCode.CREATED
+    );
+  }
+
 
 
   // async updateCompanyUser(req:AuthRequest,res:Response){
