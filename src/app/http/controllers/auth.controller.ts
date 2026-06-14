@@ -33,7 +33,7 @@ class AuthController {
     
     await activityLogsModel.create({
       user_id: data?.user.id,
-      company_id:data.company_id,
+      company_id:data?.company_id,
       action: 'LOGIN',
       entity_type: 'AUTH',
       description: 'User logged in successfully',

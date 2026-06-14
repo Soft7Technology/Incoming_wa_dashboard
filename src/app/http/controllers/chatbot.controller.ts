@@ -30,8 +30,8 @@ class chatBotController {
 
         const { data }: any = result
         await activityLogsModel.create({
-            company_id: req.companyId,
-            user_id: req.userId,
+            company_id: req.companyId!,
+            user_id: req.userId!,
 
             action: 'CREATE',
             entity_type: 'CHATBOT',
