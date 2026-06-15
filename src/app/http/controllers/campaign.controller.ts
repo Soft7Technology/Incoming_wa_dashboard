@@ -44,25 +44,23 @@ class CampaignController {
       send_immediately,
     });
 
-    const { data }: any = campaign
-
     await activityLogsModel.create({
-      company_id: data.companyId!,
-      user_id: data.userId!,
+      company_id: req.companyId!,
+      user_id: req.userId!,
 
       action: 'CREATE',
       entity_type: 'CAMPAIGN',
-      entity_id: data.id,
+      entity_id: campaign.id,
 
-      description: `Created campaign "${data.name}"`,
+      description: `Created campaign "${campaign.name}"`,
 
       new_data: {
-        id: data.id,
-        name: data.name,
-        template_id: data.template_id,
-        phone_number_id: data.phone_number_id,
-        scheduled_at: data.scheduled_at,
-        send_immediately: data.send_immediately,
+        id: campaign.id,
+        name: campaign.name,
+        template_id: campaign.template_id,
+        phone_number_id: campaign.phone_number_id,
+        scheduled_at: campaign.scheduled_at,
+        send_immediately: campaign.send_immediately,
       },
 
       ip_address:
@@ -230,41 +228,40 @@ class CampaignController {
   deleteCampaign = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const deleteCampaign = await CampaignService.deleteCampaign(id);
-    const { data }: any = deleteCampaign
 
-    await activityLogsModel.create({
-      company_id: req.companyId,
-      user_id: req.userId,
+    // await activityLogsModel.create({
+    //   company_id: req.companyId,
+    //   user_id: req.userId,
 
-      action: 'DELETE',
-      entity_type: 'CAMPAIGN',
-      entity_id: id,
+    //   action: 'DELETE',
+    //   entity_type: 'CAMPAIGN',
+    //   entity_id: id,
 
-      description: `Delete campaign "${data.name}"`,
+    //   description: `Delete campaign "${deleteCampaign}"`,
 
-      new_data: {
-        id: data.id,
-        name: data.name,
-        template_id: data.template_id,
-        phone_number_id: data.phone_number_id,
-        scheduled_at: data.scheduled_at,
-        send_immediately: data.send_immediately,
-      },
+    //   // new_data: {
+    //   //   id: data.id,
+    //   //   name: data.name,
+    //   //   template_id: data.template_id,
+    //   //   phone_number_id: data.phone_number_id,
+    //   //   scheduled_at: data.scheduled_at,
+    //   //   send_immediately: data.send_immediately,
+    //   // },
 
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
+    //   ip_address:
+    //     (req.headers['x-forwarded-for'] as string) ||
+    //     req.socket.remoteAddress ||
+    //     '',
 
-      user_agent: req.headers['user-agent'] || '',
+    //   user_agent: req.headers['user-agent'] || '',
 
-      request_method: req.method,
-      api_endpoint: req.originalUrl,
+    //   request_method: req.method,
+    //   api_endpoint: req.originalUrl,
 
-      status: 'SUCCESS'
-    });
+    //   status: 'SUCCESS'
+    // });
 
-    return successResponse(req, res, 'Campaign deleted successfully');
+    return successResponse(req, res, 'Campaign deleted successfully',deleteCampaign);
   });
 
   /**

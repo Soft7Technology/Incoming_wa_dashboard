@@ -31,25 +31,23 @@ class ContactController {
       status
     });
 
-    const { data }: any = contact
-
     await activityLogsModel.create({
-      company_id: req.companyId,
-      user_id: req.userId,
+      company_id: req.companyId!,
+      user_id: req.userId!,
 
       action: 'CREATE',
       entity_type: 'CONTACT',
-      entity_id: data.id,
+      entity_id:  contact?.id,
 
-      description: `Created contact ${data.name || data.phone_number}`,
+      description: `Created contact ${ contact?.name ||  contact?.phone_number}`,
 
       new_data: {
-        id: data.id,
-        name: data.name,
-        phone_number: data.phone_number,
-        email: data.email,
-        status: data.status,
-        tags_count: data.tag_ids?.length || 0
+        id:  contact?.id,
+        name:  contact?.name,
+        phone_number:  contact?.phone_number,
+        email:  contact?.email,
+        status:  contact?.status,
+        tags_count:  contact?.tag_ids?.length || 0
       },
 
       ip_address:
@@ -118,7 +116,7 @@ class ContactController {
       tag_ids,
     });
 
-    const { data }: any = contact
+    console.log("Contact",contact)
 
     await activityLogsModel.create({
       company_id: req.companyId,
@@ -128,14 +126,14 @@ class ContactController {
       entity_type: 'CONTACT',
       entity_id: id,
 
-      description: `Updated contact ${data.name || data.phone_number}`,
+      description: `Updated contact ${contact?.name || contact?.phone_number}`,
 
       new_data: {
-        name: data.name,
-        phone_number: data.phone_number,
-        email: data.email,
-        status: data.status,
-        tag_ids: data.tag_ids,
+        name: contact?.name,
+        phone_number: contact?.phone_number,
+        email: contact?.email,
+        status: contact?.status,
+        tag_ids: contact?.tag_ids,
       },
 
       ip_address:

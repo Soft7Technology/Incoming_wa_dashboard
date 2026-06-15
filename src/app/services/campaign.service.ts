@@ -860,8 +860,8 @@ class CampaignService {
       throw new HTTP400Error({ message: 'Cannot delete a running campaign. Please pause it first.' });
     }
 
-    await CampaignModel.delete(campaignId);
-    return { message: 'Campaign deleted successfully' };
+    const deleteCampaign:any = await CampaignModel.delete(campaignId);
+    return { message: 'Campaign deleted successfully', deleteCampaign};
   }
 
   /**
@@ -871,7 +871,7 @@ class CampaignService {
     // Upload to Meta
     const metaResponse = await MetaService.uploadMedia(phoneNumberId, file, type);
     const media_url = await uploadImage(file)
-    
+
     console.log("Media Url",media_url)
 
     return {
