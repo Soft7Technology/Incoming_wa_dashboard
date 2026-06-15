@@ -261,7 +261,7 @@ class CampaignController {
     //   status: 'SUCCESS'
     // });
 
-    return successResponse(req, res, 'Campaign deleted successfully',deleteCampaign);
+    return successResponse(req, res, 'Campaign deleted successfully',deleteCampaign );
   });
 
   /**

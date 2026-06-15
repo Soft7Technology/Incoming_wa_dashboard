@@ -68,7 +68,8 @@ class MessageController {
     }
 
     await activityLogsModel.create({
-      user_id: req.userId,
+      user_id: req.userId!,
+      company_id:req.companyId!,
 
       action: 'SEND',
       entity_type: 'MESSAGE',

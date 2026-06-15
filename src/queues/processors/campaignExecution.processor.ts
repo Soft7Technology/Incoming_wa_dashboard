@@ -214,12 +214,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { id: media.media_id } }],
+            parameters: [{ type: 'image', image: { link: media.link} }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'image', image: { link: media.link } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'VIDEO') {
@@ -227,12 +227,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { id: media.media_id } }],
+            parameters: [{ type: 'video', video: { link:  media.link } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'video', video: { link:  media.link } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
@@ -240,12 +240,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { id: media.media_id } }],
+            parameters: [{ type: 'document', document: { link:  media.link } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'document', document: { link: media.link } }],
           });
         }
       } else if (component.type === 'BODY' && component.text) {
