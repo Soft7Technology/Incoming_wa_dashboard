@@ -153,10 +153,46 @@ class MessageService {
     // The metaPayload keeps the parameter components for the Meta API call
     const contentToStore = { ...metaPayload };
     if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
+      // Merge parameters from sent payload into definition components
+      const mergedComponents = templateDefinitionComponents.map((defComp: any) => {
+        const type = String(defComp.type || "").toLowerCase();
+        let paramComp;
+
+        if (type === 'buttons' || type === 'button') {
+          const buttonParams = metaPayload.template.components?.filter(
+            (pc: any) => String(pc.type || "").toLowerCase() === 'button'
+          );
+          if (buttonParams && buttonParams.length > 0) {
+            const mergedButtons = defComp.buttons?.map((btn: any, btnIdx: number) => {
+              const matchingParam = buttonParams.find(
+                (bp: any) => bp.index === btnIdx.toString()
+              );
+              return {
+                ...btn,
+                parameters: matchingParam?.parameters || [],
+              };
+            });
+            return {
+              ...defComp,
+              buttons: mergedButtons,
+            };
+          }
+        } else {
+          paramComp = metaPayload.template.components?.find(
+            (pc: any) => String(pc.type || "").toLowerCase() === type
+          );
+        }
+
+        return {
+          ...defComp,
+          parameters: paramComp?.parameters || [],
+        };
+      });
+
       // Store definition components alongside the template data for frontend rendering
       contentToStore.template = {
         ...contentToStore.template,
-        components: templateDefinitionComponents,
+        components: mergedComponents,
       };
     }
 
@@ -284,21 +320,89 @@ class MessageService {
     // const messageId = data?.messageUUID && uuidValidate(data.messageUUID) ? data.messageUUID : uuidv4();
 
     let templateRecordId: string | null = null;
-    if (data.type === 'template' && data.template?.name) {
-      const templateLanguage = typeof data.template.language === 'string'
+    const templateLanguage = data.type === 'template' && data.template
+      ? (typeof data.template.language === 'string'
         ? data.template.language
-        : (data.template.language as any)?.code;
+        : (data.template.language as any)?.code)
+      : undefined;
 
-      if (templateLanguage) {
-        const template = await TemplateModel.findByNameAndLanguage(
-          data.user_id,
-          data.template.name,
-          templateLanguage,
-        );
-        if (template) {
-          templateRecordId = template.id;
+    let templateDefinitionComponents: any[] | null = null;
+
+    if (data.type === 'template' && data.template?.name && templateLanguage) {
+      const template = await TemplateModel.findByNameAndLanguage(
+        data.user_id,
+        data.template.name,
+        templateLanguage,
+      );
+      if (template) {
+        templateRecordId = template.id;
+        if (Array.isArray(template.components) && template.components.length > 0) {
+          templateDefinitionComponents = template.components;
         }
       }
+    }
+
+    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents) {
+      try {
+        const pn = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+        if (pn) {
+          const waba = await WabaModel.findById(pn.waba_id);
+          if (waba) {
+            const metaTemplates = await MetaService.getTemplates(waba.waba_id);
+            const matchedTemplate = metaTemplates.data?.find(
+              (t: any) => t.name === data.template?.name && t.language === templateLanguage
+            );
+            if (matchedTemplate && Array.isArray(matchedTemplate.components) && matchedTemplate.components.length > 0) {
+              templateDefinitionComponents = matchedTemplate.components;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch template from Meta API in bulkSendMessage:', error);
+      }
+    }
+
+    const contentToStore = { ...metaPayload };
+    if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
+      const mergedComponents = templateDefinitionComponents.map((defComp: any) => {
+        const type = String(defComp.type || "").toLowerCase();
+        let paramComp;
+
+        if (type === 'buttons' || type === 'button') {
+          const buttonParams = metaPayload.template.components?.filter(
+            (pc: any) => String(pc.type || "").toLowerCase() === 'button'
+          );
+          if (buttonParams && buttonParams.length > 0) {
+            const mergedButtons = defComp.buttons?.map((btn: any, btnIdx: number) => {
+              const matchingParam = buttonParams.find(
+                (bp: any) => bp.index === btnIdx.toString()
+              );
+              return {
+                ...btn,
+                parameters: matchingParam?.parameters || [],
+              };
+            });
+            return {
+              ...defComp,
+              buttons: mergedButtons,
+            };
+          }
+        } else {
+          paramComp = metaPayload.template.components?.find(
+            (pc: any) => String(pc.type || "").toLowerCase() === type
+          );
+        }
+
+        return {
+          ...defComp,
+          parameters: paramComp?.parameters || [],
+        };
+      });
+
+      contentToStore.template = {
+        ...contentToStore.template,
+        components: mergedComponents,
+      };
     }
 
     // Create message record
@@ -312,7 +416,7 @@ class MessageService {
       from_phone: phoneNumber.display_phone_number,
       to_phone: data.to,
       status: 'queued',
-      content: metaPayload,
+      content: contentToStore,
       template_id: templateRecordId,
       // cost: messageCost,
       queued_at: new Date(),
