@@ -30,9 +30,11 @@ class AuthController {
 
     const result = await AuthService.login({ identifier, password }, ipAddress);
     const{data}:any = result
+
+    console.log("data",data)
     
     await activityLogsModel.create({
-      user_id: data?.user.id,
+      user_id: data?.id,
       company_id:data?.company_id,
       action: 'LOGIN',
       entity_type: 'AUTH',

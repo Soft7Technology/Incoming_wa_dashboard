@@ -85,7 +85,7 @@ class AuthService {
     const { password: _, ...userWithoutPassword } = user;
 
     return {
-      user: {
+      data: {
         ...userWithoutPassword,
         plan_active: activePlan ? activePlan.active : false,
         plan_name: activePlan ? activePlan.plan_name : null,

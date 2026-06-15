@@ -40,3 +40,5 @@ ContactRoute.post('/:id/tags',checkPlanLimit('Tag'), ContactController.addTags);
 ContactRoute.delete('/:id/tags', ContactController.removeTags);
 
 export default ContactRoute;
+
+

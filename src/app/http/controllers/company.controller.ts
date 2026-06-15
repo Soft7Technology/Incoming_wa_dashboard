@@ -120,7 +120,10 @@ class CompanyController {
     if (file) {
       data.logo = file.filename
     }
-    const company = await CompanyService.updateCompany(req.companyId!, data);
+    
+    // Use route param if present (super admin updating any company), fall back to JWT companyId
+    const targetCompanyId =  req.companyId!;
+    const company = await CompanyService.updateCompany(targetCompanyId, data);
     return successResponse(req, res, 'Company updated successfully', company);
   });
 
@@ -129,7 +132,8 @@ class CompanyController {
    * Delete company
    */
   deleteCompany = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    await CompanyService.deleteCompany(req.companyId!);
+    const { companyId } = req.params;
+    await CompanyService.deleteCompany(companyId);
     return successResponse(req, res, 'Company deleted successfully');
   });
 
