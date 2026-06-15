@@ -13,6 +13,7 @@ import companyRoute from './company.route';
 import SubscriptionRoute from './subscription.route';
 import supportRoute from './support.route';
 import teamInviteRoute from './team.route';
+import ColumnRoute from './column.route';
 
 const AdminRoute = Router();
 
@@ -33,5 +34,6 @@ AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
 AdminRoute.use('/chatbot',chatBotRoute ); 
 AdminRoute.use('/team',teamInviteRoute)
+AdminRoute.use('/columns',ColumnRoute)
 
 export default AdminRoute;

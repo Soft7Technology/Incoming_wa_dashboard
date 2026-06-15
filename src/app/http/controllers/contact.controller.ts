@@ -34,22 +34,22 @@ class ContactController {
     const { data }: any = contact
 
     await activityLogsModel.create({
-      company_id: data?.companyId,
-      user_id: data?.userId,
+      company_id: req.companyId,
+      user_id: req.userId,
 
       action: 'CREATE',
       entity_type: 'CONTACT',
-      entity_id: data?.id,
+      entity_id: data.id,
 
-      description: `Created contact ${data?.name || data?.phone_number}`,
+      description: `Created contact ${data.name || data.phone_number}`,
 
       new_data: {
-        id: data?.id,
-        name: data?.name,
-        phone_number: data?.phone_number,
-        email: data?.email,
-        status: data?.status,
-        tags_count: data?.tag_ids?.length || 0
+        id: data.id,
+        name: data.name,
+        phone_number: data.phone_number,
+        email: data.email,
+        status: data.status,
+        tags_count: data.tag_ids?.length || 0
       },
 
       ip_address:
@@ -121,21 +121,21 @@ class ContactController {
     const { data }: any = contact
 
     await activityLogsModel.create({
-      company_id: data?.companyId,
-      user_id: data?.userId,
+      company_id: req.companyId,
+      user_id: req.userId,
 
       action: 'UPDATE',
       entity_type: 'CONTACT',
       entity_id: id,
 
-      description: `Updated contact ${data?.name || data?.phone_number}`,
+      description: `Updated contact ${data.name || data.phone_number}`,
 
       new_data: {
-        name: data?.name,
-        phone_number: data?.phone_number,
-        email: data?.email,
-        status: data?.status,
-        tag_ids: data?.tag_ids,
+        name: data.name,
+        phone_number: data.phone_number,
+        email: data.email,
+        status: data.status,
+        tag_ids: data.tag_ids,
       },
 
       ip_address:
@@ -158,37 +158,11 @@ class ContactController {
    * DELETE /v1/contacts/:id
    * Delete contact
    */
-deleteContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  deleteContact = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
-
-    const contact = await ContactService.deleteContact(id);
-    const{ data }: any = contact
-
-    await activityLogsModel.create({
-        company_id: data?.companyId,
-        user_id: data?.userId,
-
-        action: 'DELETE',
-        entity_type: 'CONTACT',
-        entity_id: id,
-
-        description: `Deleted contact ${id}`,
-
-        ip_address:
-            (req.headers['x-forwarded-for'] as string) ||
-            req.socket.remoteAddress ||
-            '',
-
-        user_agent: req.headers['user-agent'] || '',
-
-        request_method: req.method,
-        api_endpoint: req.originalUrl,
-
-        status: 'SUCCESS'
-    });
-
+    await ContactService.deleteContact(id);
     return successResponse(req, res, 'Contact deleted successfully');
-});
+  });
 
   /**
    * POST /v1/contacts/import/preview
@@ -345,29 +319,29 @@ deleteContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
       throw new HTTP400Error({ message: 'Tag name is required' });
     }
 
-    const tag = await ContactService.createTag(req.userId!,req.companyId!, { name, color, description });
-    const{data}:any = tag
-        await activityLogsModel.create({
-    company_id: req.companyId,
-    user_id: req.userId,
+    const tag = await ContactService.createTag(req.userId!, req.companyId!, { name, color, description });
+    const { data }: any = tag
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
 
-    action: 'TAG_ADD',
-    entity_type: 'TAGS',
-    entity_id: data.id,
+      action: 'TAG_ADD',
+      entity_type: 'TAGS',
+      entity_id: data.id,
 
-    description: `Added tag(s) to ${data.name}`,
-    ip_address:
+      description: `Added tag(s) to ${data.name}`,
+      ip_address:
         (req.headers['x-forwarded-for'] as string) ||
         req.socket.remoteAddress ||
         '',
 
-    user_agent: req.headers['user-agent'] || '',
+      user_agent: req.headers['user-agent'] || '',
 
-    request_method: req.method,
-    api_endpoint: req.originalUrl,
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
 
-    status: 'SUCCESS'
-});
+      status: 'SUCCESS'
+    });
     return successResponse(req, res, 'Tag created successfully', tag, HttpStatusCode.CREATED);
   });
 

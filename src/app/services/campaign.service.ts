@@ -12,6 +12,7 @@ import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
 import * as fs from 'fs';
 import campaignModel from '../models/campaign.model';
 import { v4 as uuidv4 } from "uuid";
+import { uploadImage } from '@surefy/config/firebase.config';
 
 
 
@@ -869,9 +870,13 @@ class CampaignService {
   async uploadMedia(companyId: string, phoneNumberId: string, file: any, type: string) {
     // Upload to Meta
     const metaResponse = await MetaService.uploadMedia(phoneNumberId, file, type);
+    const media_url = await uploadImage(file)
+    
+    console.log("Media Url",media_url)
 
     return {
       media_id: metaResponse.id,
+      media_url:media_url,
       type,
     };
   }
