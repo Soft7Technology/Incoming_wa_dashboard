@@ -8,14 +8,6 @@ import subscriptionService from "../../services/subscription.service"
 import crypto from 'crypto';
 import activityLogsModel from '../../models/activityLogs.model';
 
-    // planName:string;
-    // price:string;
-    // billingCycle: "Monthly" | "Yearly";
-    // description:string;
-    // active: boolean;
-    // featureLabel:string;
-    // limitType:string;
-    // limitValue:string;
 
 class SubscriptionController {
   /**
