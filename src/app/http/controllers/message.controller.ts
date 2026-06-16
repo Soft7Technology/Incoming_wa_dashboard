@@ -74,6 +74,7 @@ class MessageController {
       action: 'SEND',
       entity_type: 'MESSAGE',
       entity_id: data?.id,
+      seen:false,
 
       description: `Sent ${type} message to ${to}`,
 

@@ -32,6 +32,7 @@ class SubscriptionController {
       action: 'CREATE',
       entity_type: 'SUBSCRIPTION',
       entity_id: data?.id,
+      seen:false,
 
       description: `Created subscription plan "${data?.plan_name}"`,
 
@@ -112,6 +113,7 @@ updateSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) =
         action: 'UPDATE',
         entity_type: 'SUBSCRIPTION',
         entity_id: id,
+        seen:false,
 
         description: `Updated subscription plan "${data?.plan_name}"`,
 

@@ -42,7 +42,8 @@ class AuthController {
       ip_address: ipAddress,
       request_method: 'POST',
       api_endpoint: '/auth/login',
-      status: 'SUCCESS'
+      status: 'SUCCESS',
+      seen:false
     })
 
     return successResponse(req, res, 'Login successful', result);
