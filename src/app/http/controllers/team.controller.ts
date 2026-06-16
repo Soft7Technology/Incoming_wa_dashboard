@@ -13,7 +13,7 @@ class teamController{
      */
     teamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         try {
-            const { name,email, phone_number, role,permission } = req.body
+            const { name, email, phone_number, role, permission } = req.body
             if (!email || !phone_number || !role || !permission) {
                 throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
             }
@@ -29,7 +29,7 @@ class teamController{
                 })
             }
 
-            const inviteTeam = await teamService.inviteTeam({invite_sent_by ,company_id,email, phone_number, role,permission})
+            const inviteTeam = await teamService.inviteTeam({ name, invite_sent_by, company_id, email, phone_number, role, permission })
             successResponse(req, res, `Invite send ${email} successfully`, inviteTeam)
         } catch (error: any) {
             console.error('Create Ticket Error:', error);

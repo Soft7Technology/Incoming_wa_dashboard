@@ -17,10 +17,12 @@ export const transporter = nodemailer.createTransport({
 });
 
 export const generateInviteTemplate = ({
+    name,
     email,
     role,
     inviteUrl
 }: {
+    name?: string;
     email: string;
     role: string;
     inviteUrl: string;
@@ -32,7 +34,7 @@ export const generateInviteTemplate = ({
             You're Invited to Join Soft 7
         </h2>
 
-        <p>Hello,</p>
+        <p>Hello${name ? ` ${name}` : ''},</p>
 
         <p>
             You have been invited to join the platform as 

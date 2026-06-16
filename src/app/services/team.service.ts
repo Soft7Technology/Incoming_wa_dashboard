@@ -8,7 +8,7 @@ import userModel from '../models/user.model';
 class teamService{
     async inviteTeam(data: any) {
         try {
-            const { email, role,invite_sent_by } = data
+            const { name, email, role, invite_sent_by } = data
 
             const existingInvite = await userTeamModel.findInvite(email,invite_sent_by)
             console.log("Existing Value",existingInvite)
@@ -27,6 +27,7 @@ class teamService{
             const inviteUrl = `https://app.soft7.in/team/setup-password?token=${token}`;
 
             const html = generateInviteTemplate({
+                    name,
                     email,
                     role,
                     inviteUrl
@@ -54,8 +55,9 @@ class teamService{
             //Store invite only after successful email
             const createInvite = await userTeamModel.create({
                 ...data,
+                role: role.toLowerCase(),
                 invite_token: token,
-                invite_status:"sent",
+                invite_status: "sent",
             })
 
             return{
@@ -140,8 +142,14 @@ class teamService{
         }
     }
 
-    async userInvites(userId:string){
-        return await userTeamModel.findAll({invite_sent_by:userId})
+    async userInvites(userId: string) {
+        const invites = await userTeamModel.findAll({ invite_sent_by: userId })
+        // Normalize each record: lowercase role, ensure name is present
+        return invites.map((invite: any) => ({
+            ...invite,
+            name: invite.name ?? null,
+            role: invite.role ? invite.role.toLowerCase() : invite.role,
+        }))
     }
 
     async deleteInvite(inviteId:string){
