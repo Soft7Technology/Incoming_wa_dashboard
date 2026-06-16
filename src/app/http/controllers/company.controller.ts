@@ -118,11 +118,11 @@ class CompanyController {
     let data = req.body
     const file = req.file
     if (file) {
-      data.logo = file.filename
+      data.logo = await uploadImage(file)
     }
     
     // Use route param if present (super admin updating any company), fall back to JWT companyId
-    const targetCompanyId =  req.companyId!;
+    const targetCompanyId = (req.params as any).companyId || req.companyId!;
     const company = await CompanyService.updateCompany(targetCompanyId, data);
     return successResponse(req, res, 'Company updated successfully', company);
   });
