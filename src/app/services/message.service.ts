@@ -14,6 +14,7 @@ import { bulkMessageSendQueue } from '../../queues/bulkMessageSend.queue';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import messageModel from '@surefy/console/models/message.model';
 import userModel from '../models/user.model';
+import { downloadImage } from '../utils';
 
 
 class MessageService {
@@ -516,11 +517,50 @@ class MessageService {
    * Save incoming message
    */
   async saveIncomingMessage(data: any) {
-    console.log("Saving incoming message", data)
-    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+    console.log("Saving incoming message", data);
+
+    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(
+      data.phone_number_id
+    );
+
     if (!phoneNumber) {
       console.warn(`Phone number not found: ${data.phone_number_id}`);
       return;
+    }
+
+    let content = data.content;
+
+    const type = content?.type;
+
+    if (["image", "video", "audio", "document"].includes(type)) {
+      let mediaId: string | undefined;
+
+      switch (type) {
+        case "image":
+          mediaId = content.image?.id;
+          break;
+
+        case "video":
+          mediaId = content.video?.id;
+          break;
+
+        case "audio":
+          mediaId = content.audio?.id;
+          break;
+
+        case "document":
+          mediaId = content.document?.id;
+          break;
+      }
+
+      if (mediaId) {
+        const mediaUrl = await downloadImage(mediaId);
+
+        content = {
+          type: type,
+          media_url: mediaUrl.firebaseUrl,
+        };
+      }
     }
 
     const message = await MessageModel.create({
@@ -529,23 +569,17 @@ class MessageService {
       profile_name: data.profile_name,
       phone_number_id: phoneNumber.id,
       wamid: data.message_id,
-      direction: 'inbound',
+      direction: "inbound",
       type: data.type,
       from_phone: data.from,
       to_phone: phoneNumber.display_phone_number,
-      status: 'received',
-      content: data.content,
+      status: "received",
+      content,
       context: data.context,
       delivered_at: new Date(),
     });
 
-    // const webhookPayload = webhookService.buildIncomingWebhookPayload(message, phoneNumber);
-    // await WebhookService.triggerWebhook(
-    //   phoneNumber.company_id,
-    //   'message.received',
-    //   webhookPayload
-    // );
-
+    console.log("Incoming Message stored", message)
 
     return message;
   }
