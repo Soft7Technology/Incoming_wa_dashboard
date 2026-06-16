@@ -74,7 +74,7 @@ class CampaignController {
       api_endpoint: req.originalUrl,
 
       status: 'SUCCESS',
-      seen:false
+      read:false
     });
 
     await userPlansModel.incrementUsage(req.userId!, 'Campaign');

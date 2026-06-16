@@ -38,12 +38,12 @@ class AuthController {
       company_id:data?.company_id,
       action: 'LOGIN',
       entity_type: 'AUTH',
-      description: 'User logged in successfully',
+      description: `User logged in successfully ${data.name}`,
       ip_address: ipAddress,
       request_method: 'POST',
       api_endpoint: '/auth/login',
       status: 'SUCCESS',
-      seen:false
+      read:false
     })
 
     return successResponse(req, res, 'Login successful', result);

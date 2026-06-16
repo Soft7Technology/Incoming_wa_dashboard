@@ -9,19 +9,31 @@ import userModel from '../models/user.model';
 import activityLogsModel from '../models/activityLogs.model';
 
 class ActivityService {
-    async getAcitvityLogs(company_id:string,user_id:string,role:any,filter:any){
-        const activities = await activityLogsModel.getAllActivities(user_id,company_id,role,filter)
+    async getAcitvityLogs(company_id: string, user_id: string, role: any, filter: any) {
+        const activities = await activityLogsModel.getAllActivities(user_id, company_id, role, filter)
         return activities
     }
 
-    async getActivityNotifications(user_id:string,company_id:string,role:any,filters:any){
-        const activityNotification = await activityLogsModel.getActivityNotifications(user_id,company_id,role,filters)
+    async getActivityNotifications(user_id: string, company_id: string, role: any, filters: any) {
+        const activityNotification = await activityLogsModel.getActivityNotifications(user_id, company_id, role, filters)
         return activityNotification
     }
 
-    async getCompanyNotifications(user_id:string,company_id:string,role:any,filters:any){
-        const activityNotification = await activityLogsModel.getCompanyNotifications(user_id,company_id,role,filters)
+    async getCompanyNotifications(user_id: string, company_id: string, role: any, filters: any) {
+        const activityNotification = await activityLogsModel.getCompanyNotifications(user_id, company_id, role, filters)
         return activityNotification
+    }
+
+    async readUserNotification(user_id: string, company_id: string, data: any[]) {
+        try {
+            for (const notificationId of data) {
+                await activityLogsModel.update(notificationId.id, { read: true })
+            }
+            return true
+        } catch (error: any) {
+            console.log("Error", error)
+            throw error
+        }
     }
 }
 

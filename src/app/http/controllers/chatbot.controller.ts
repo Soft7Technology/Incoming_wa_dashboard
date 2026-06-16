@@ -59,7 +59,7 @@ class chatBotController {
             api_endpoint: req.originalUrl,
 
             status: 'SUCCESS',
-            seen:false
+            read:false
         });
         return successResponse(req, res, 'Create ChatBot successfully', result);
     })
@@ -105,7 +105,7 @@ class chatBotController {
                 api_endpoint: req.originalUrl,
 
                 status: 'SUCCESS',
-                seen:false
+                read:false
             });
 
             return successResponse(req, res, 'ChatBot published successfully', result);
@@ -128,7 +128,7 @@ class chatBotController {
             await activityLogsModel.create({
                 company_id: req.companyId,
                 user_id: req.userId,
-                seen:false,
+                read:false,
                 action: 'UNPUBLISH',
                 entity_type: 'CHATBOT',
                 entity_id: chatBotId,

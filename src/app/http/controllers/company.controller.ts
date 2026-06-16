@@ -159,7 +159,7 @@ class CompanyController {
       entity_id: data?.id,
 
       description: `Created user ${data?.name} (${data?.email})`,
-      seen:false,
+      read:false,
 
       new_data: {
         id: data?.id,
@@ -244,7 +244,7 @@ class CompanyController {
       action: 'UPDATE',
       entity_type: 'USER',
       entity_id: companyId,
-      seen:false,
+      read:false,
 
       description: `Updated user ${data?.name}`,
 
@@ -354,7 +354,7 @@ class CompanyController {
       action: 'UPDATE',
       entity_type: 'USER',
       entity_id: id,
-      seen:false,
+      read:false,
       description: `Updated user ${id}`,
 
       new_data: req.body,
@@ -387,7 +387,7 @@ class CompanyController {
       action: 'SUSPEND',
       entity_type: 'USER',
       entity_id: id,
-      seen:false,
+      read:false,
 
       description: `Suspended user account`,
 
@@ -443,7 +443,7 @@ class CompanyController {
       action: 'SUSPEND',
       entity_type: 'SUBSCRIPTION',
       entity_id: userActivePlan.id,
-      seen:false,
+      read:false,
 
       description: `Suspended user subscription plan`,
 
@@ -490,7 +490,7 @@ class CompanyController {
       action: 'ACTIVATE',
       entity_type: 'USER',
       entity_id: id,
-      seen:false,
+      read:false,
 
       description: `Activated user account`,
 

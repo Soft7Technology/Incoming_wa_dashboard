@@ -38,7 +38,7 @@ class ContactController {
       action: 'CREATE',
       entity_type: 'CONTACT',
       entity_id:  contact?.id,
-      seen:false,
+      read:false,
 
       description: `Created contact ${ contact?.name ||  contact?.phone_number}`,
 
@@ -126,7 +126,7 @@ class ContactController {
       action: 'UPDATE',
       entity_type: 'CONTACT',
       entity_id: id,
-      seen:false,
+      read:false,
 
       description: `Updated contact ${contact?.name || contact?.phone_number}`,
 
@@ -328,7 +328,7 @@ class ContactController {
       action: 'TAG_ADD',
       entity_type: 'TAGS',
       entity_id: data.id,
-      seen:false,
+      read:false,
 
       description: `Added tag(s) to ${data.name}`,
       ip_address:

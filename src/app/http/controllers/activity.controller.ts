@@ -74,6 +74,13 @@ class ActivityController {
             notifications
         );
     }
+
+    async readUserNotification(req:AuthRequest,res:Response){
+        const{read} = req.query
+        const{data} = req.body
+        const updateNotification = await activityService.readUserNotification(req.userId!,req.companyId!,data)
+        successResponse(req,res,"User Notification read",updateNotification)
+    }
 }
 
 export default new ActivityController()
