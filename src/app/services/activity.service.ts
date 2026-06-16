@@ -18,6 +18,11 @@ class ActivityService {
         const activityNotification = await activityLogsModel.getActivityNotifications(user_id,company_id,role,filters)
         return activityNotification
     }
+
+    async getCompanyNotifications(user_id:string,company_id:string,role:any,filters:any){
+        const activityNotification = await activityLogsModel.getCompanyNotifications(user_id,company_id,role,filters)
+        return activityNotification
+    }
 }
 
 

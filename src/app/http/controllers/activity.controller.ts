@@ -49,6 +49,31 @@ class ActivityController {
             notifications
         );
     }
+
+    async getAdminNotification(req: AuthRequest, res: Response) {
+        const filters = {
+            type: req.query.type,
+            time_frame: req.query.time_frame,
+            page: req.query.page,
+            limit: req.query.limit,
+        };
+        const role = req.query.role
+
+        const notifications =
+            await activityService.getCompanyNotifications(
+                req.userId!,
+                req.companyId!,
+                role,
+                filters
+            );
+
+        return successResponse(
+            req,
+            res,
+            "Notifications retrieved successfully",
+            notifications
+        );
+    }
 }
 
 export default new ActivityController()

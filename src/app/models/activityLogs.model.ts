@@ -153,6 +153,71 @@ class ActivityLogsModel extends BaseModel {
       .orderBy('created_at', 'desc')
       .limit(50);
   }
+
+  async getCompanyNotifications(
+    user_id: string,
+    company_id: string,
+    role: string,
+    filters: any
+  ) {
+    console.log("CompanyId",company_id)
+    const query = this.query().whereNull('deleted_at');
+
+    // User-specific notifications
+    query.where('company_id', company_id);
+
+    const type = upperCase(filters.type)
+
+    if (filters?.type) {
+      query.where('entity_type', type);
+    }
+
+    if(filters.action){
+      query.where('action',filters?.action)
+    }
+
+    const now = new Date();
+
+    switch (filters?.time_frame) {
+      case 'today':
+        query.whereRaw('DATE(created_at) = CURRENT_DATE');
+        break;
+
+      case 'yesterday':
+        query.whereRaw(
+          "DATE(created_at) = CURRENT_DATE - INTERVAL '1 day'"
+        );
+        break;
+
+      case '7days':
+        query.where(
+          'created_at',
+          '>=',
+          new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+        );
+        break;
+
+      case '30days':
+        query.where(
+          'created_at',
+          '>=',
+          new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+        );
+        break;
+
+      case '90days':
+        query.where(
+          'created_at',
+          '>=',
+          new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+        );
+        break;
+    }
+
+    return query
+      .orderBy('created_at', 'desc')
+      .limit(50);
+  }
 }
 
 export default new ActivityLogsModel();
