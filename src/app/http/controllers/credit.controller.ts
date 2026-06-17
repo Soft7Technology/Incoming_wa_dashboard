@@ -36,9 +36,9 @@ class CreditController {
     console.log("Company Id",req.companyId!,req.userRole!)
 
     // Company users can only view their own balance
-    if (req.userRole === 'company' || req.userRole === 'admin' && req.companyId!) {
-      throw new HTTP400Error({ message: 'You can only view your own credit balance' });
-    }
+    // if (req.userRole! === 'company' || req.userRole! === 'admin') {
+    //   throw new HTTP400Error({ message: 'You can only view your own credit balance' });
+    // }
 
     const balance = await CreditService.getBalance(req.companyId!);
     return successResponse(req, res, 'Credit balance retrieved successfully', balance);

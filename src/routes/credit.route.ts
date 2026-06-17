@@ -12,7 +12,6 @@ CreditRoute.get('/balance', CreditController.getCompanyBalance);
 // Get balance (all authenticated users can view balance based on their role)
 CreditRoute.get('/balance/:companyId', CreditController.getBalance);
 
-
 // Get transactions (all authenticated users can view based on their role)
 CreditRoute.get('/transactions/:companyId', CreditController.getTransactions);
 
