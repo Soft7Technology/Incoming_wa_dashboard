@@ -24,6 +24,7 @@ class SubscriptionController {
       active,
       features,
     });
+
     await activityLogsModel.create({
       user_id: newSubscription?.userId,
       company_id: newSubscription?.companyId,
@@ -112,7 +113,7 @@ class SubscriptionController {
       action: 'UPDATE',
       entity_type: 'SUBSCRIPTION',
       entity_id: id,
-      seen: false,
+      read: false,
 
       description: `Updated subscription plan "${data?.plan_name}"`,
 
@@ -164,7 +165,7 @@ class SubscriptionController {
       action: 'SUBSCRIBE',
       entity_type: 'SUBSCRIPTION',
       entity_id: planId,
-      seen: false,
+      read: false,
 
       description: `Activated subscription plan "${data?.plan_name}"`,
 
@@ -455,7 +456,7 @@ class SubscriptionController {
         action: 'CANCEL',
         entity_type: 'SUBSCRIPTION',
         entity_id: planId,
-        seen: false,
+        read: false,
 
         description: `Cancelled subscription plan "${cancelSubscriptionPlan?.plan_name}"`,
 

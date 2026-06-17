@@ -9,6 +9,8 @@ import CompanyService from './company.service';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import userPlansModel from '../models/userPlans.model';
 import userModel from '../models/user.model';
+import companyModel from '../models/company.model';
+import creditTransactionModel from '../models/creditTransaction.model';
 
 class subscriptionService {
   /**
@@ -67,10 +69,63 @@ class subscriptionService {
     }
   }
 
+
+  
+      // // Create transaction
+      // const transaction = await CreditTransactionModel.create({
+      //   company_id: data.company_id,
+      //   company_name:data.company_name,
+      //   type: 'credit',
+      //   amount: data.amount,
+      //   balance_before: balanceBefore,
+      //   balance_after: balanceAfter,
+      //   description: `${data.amount} Credits added to ${data.company_name}`,
+      //   created_by: data.created_by,
+      //   reference_type: 'manual',
+      // });
+  
+      // // Update company balance
+      // await CompanyModel.update(data.company_id, {
+      //   credit_balance: balanceAfter,
+      // });
+
+            // const balanceBefore = parseFloat(company.credit_balance || '0');
+      // const balanceAfter = balanceBefore + data.amount;
+
   async createSubscriptionPlan(userId: string, companyId: string, data: subscriptionPlans) {
     console.log('Creating subscription plan with data:', data);
-    const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
-    return newSubscriptionPlan;
+    // Check price and credit_balance of companies
+    // Give error not have enough balance 
+    const companyDetails = await companyModel.findById(companyId)
+    if(!companyDetails){
+      throw new HTTP400Error({message:"Company Not found"})
+    }
+    
+    if (companyDetails.credit_balance >= data.price) {
+      const balanceBefore = parseFloat(companyDetails.credit_balance)
+      const balanceAfter = balanceBefore - data.price
+
+      const transaction = await creditTransactionModel.create({
+        company_id: companyId,
+        company_name:companyDetails.company_name,
+        type: 'debit',
+        amount: balanceAfter,
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        description: `${balanceAfter} debited to ${companyDetails.company_name}`,
+        created_by: userId,
+        reference_type: 'manual',
+      });
+
+      await companyModel.update(companyDetails.id, {
+        credit_balance: balanceAfter
+      });
+
+      const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
+      return newSubscriptionPlan;
+    } else {
+      throw new HTTP400Error({ message: "Your Company have not credit balance to create a new Subscription Plan" })
+    }
   }
 
   async getActiveSubscriptionPlan(companyId: string) {
