@@ -26,8 +26,8 @@ class SubscriptionController {
     });
 
     await activityLogsModel.create({
-      user_id: newSubscription?.userId,
-      company_id: newSubscription?.companyId,
+      user_id: req.userId!,
+      company_id: req.companyId!,
 
       action: 'CREATE',
       entity_type: 'SUBSCRIPTION',
