@@ -112,7 +112,7 @@ class subscriptionService {
         amount: balanceAfter,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
-        description: `${balanceAfter} debited to ${companyDetails.company_name}`,
+        description: `${balanceAfter} debited to ${companyDetails.name}`,
         created_by: userId,
         reference_type: 'manual',
       });
