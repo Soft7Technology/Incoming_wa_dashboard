@@ -26,7 +26,7 @@ export interface CreateCompanyDto {
   webhook_url?: string;
   meta_config?: any;
   settings?: any;
-  initial_credit?: number;
+  credit_balance?: number;
   logo?:any;
   user?: {
     name: string;
