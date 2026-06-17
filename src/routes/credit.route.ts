@@ -8,15 +8,16 @@ const CreditRoute = Router();
 
 CreditRoute.get('/balance', CreditController.getCompanyBalance);
 
-
 // Get balance (all authenticated users can view balance based on their role)
 CreditRoute.get('/balance/:companyId', CreditController.getBalance);
 
 // Get transactions (all authenticated users can view based on their role)
 CreditRoute.get('/transactions/:companyId', CreditController.getTransactions);
 
+CreditRoute.get('/transactions',CreditController.getTransactionHistory)
+
 // Add credits (admin/superadmin only)
-CreditRoute.post('/add', requireRole('admin', 'superadmin'), CreditController.addCredit);
+CreditRoute.post('/add', requireRole('superadmin'), CreditController.addCredit);
 
 // Refund credits (admin/superadmin only)
 CreditRoute.post('/refund', requireRole('admin', 'superadmin'), CreditController.refundCredit);
