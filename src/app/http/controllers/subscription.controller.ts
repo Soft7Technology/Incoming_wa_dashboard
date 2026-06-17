@@ -31,7 +31,7 @@ class SubscriptionController {
       action: 'CREATE',
       entity_type: 'SUBSCRIPTION',
       entity_id: newSubscription?.id,
-      seen: false,
+      read: false,
 
       description: `Created subscription plan "${newSubscription?.plan_name}"`,
 

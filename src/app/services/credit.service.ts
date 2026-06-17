@@ -15,6 +15,7 @@ class CreditService {
       throw new HTTP404Error({ message: 'Company not found' });
     }
 
+    console.log("COMPANY",company)
     const transactions = await CreditTransactionModel.findByCompanyId(companyId, 10);
 
     return {

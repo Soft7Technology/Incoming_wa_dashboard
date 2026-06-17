@@ -5,7 +5,6 @@ import CreditController from '@surefy/console/http/controllers/credit.controller
 const CreditRoute = Router();
 
 // All credit endpoints require JWT authentication (applied at route group level)
-
 CreditRoute.get('/balance', CreditController.getCompanyBalance);
 
 // Get balance (all authenticated users can view balance based on their role)
