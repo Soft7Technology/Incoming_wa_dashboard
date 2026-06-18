@@ -105,8 +105,9 @@ class CompanyController {
    * GET /v1/companies
    * Get all companies
    */
-  getAll = tryCatchAsync(async (req: Request, res: Response) => {
-    const companies = await CompanyService.getAllCompanies();
+  getAllCompanies  = tryCatchAsync(async (req: Request, res: Response) => {
+    const{status} = req.query
+    const companies = await CompanyService.getAllCompanies(status);
     return successResponse(req, res, 'Companies retrieved successfully', companies);
   });
 
@@ -521,6 +522,17 @@ class CompanyController {
     );
   }
 
+  async suspendCompany(req:AuthRequest,res:Response){
+    const{companyId} = req.params
+    const suspendCompany = await companyService.suspendCompany(companyId)
+    successResponse(req,res,'Company Suspended successfully', suspendCompany)
+  }
+
+  async activeCompany(req:AuthRequest,res:Response){
+    const{companyId} = req.params
+    const activeCompany = await companyService.activateUser(companyId)
+    successResponse(req,res,'Company Active successfully',activeCompany)
+  }
 
 
   // async updateCompanyUser(req:AuthRequest,res:Response){

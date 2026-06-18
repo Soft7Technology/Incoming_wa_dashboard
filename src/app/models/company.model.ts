@@ -88,6 +88,10 @@ class CompanyModel extends BaseModel {
     return this.query().where({ id: companyId }).increment('credit_balance', amount).returning('*');
   }
 
+  async findCompanies(status:any){
+    return this.query().where({status:status}).whereNull('deleted_at');
+  }
+
   // async getDashboardStats(companyId: string,userId?:string,role?:string) {
   //   console.log("Fetching dashboard stats for companyId:", companyId); // Debug log
   //   return this.query()
