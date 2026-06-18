@@ -31,7 +31,7 @@ class chatBotController {
         const { data }: any = result
         await activityLogsModel.create({
             company_id: data?.companyId!,
-            user_id:data?.userId!,
+            user_id: data?.userId!,
 
             action: 'CREATE',
             entity_type: 'CHATBOT',
@@ -59,7 +59,7 @@ class chatBotController {
             api_endpoint: req.originalUrl,
 
             status: 'SUCCESS',
-            read:false
+            read: false
         });
         return successResponse(req, res, 'Create ChatBot successfully', result);
     })
@@ -105,7 +105,7 @@ class chatBotController {
                 api_endpoint: req.originalUrl,
 
                 status: 'SUCCESS',
-                read:false
+                read: false
             });
 
             return successResponse(req, res, 'ChatBot published successfully', result);
@@ -128,7 +128,7 @@ class chatBotController {
             await activityLogsModel.create({
                 company_id: req.companyId,
                 user_id: req.userId,
-                read:false,
+                read: false,
                 action: 'UNPUBLISH',
                 entity_type: 'CHATBOT',
                 entity_id: chatBotId,
@@ -176,6 +176,15 @@ class chatBotController {
             const { chatBotId } = req.params;
             const result = await chatBotService.deleteChatBot(chatBotId);
             return successResponse(req, res, 'ChatBot deleted successfully', result);
+        }
+    )
+
+    assigndChatBot = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const { chatBotId } = req.params
+            const { assigned_to } = req.body
+            const result = await chatBotService.assignedChatBotToUser(assigned_to, chatBotId)
+            return successResponse(req, res, `Chatbot assigned ${assigned_to} successfully`, result, HttpStatusCode.OK)
         }
     )
 

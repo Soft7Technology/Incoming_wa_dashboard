@@ -448,6 +448,17 @@ class ContactController {
       throw new HTTP400Error({ message: 'Failed to retrieve user contacts' });
     }
   }
+
+  /**
+   * User Assigned Contact
+   */
+  assignedContactToUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const{assigned_to} = req.body
+    const {contactId} = req.params
+
+    const userAssignedContact = await ContactService.userAssignedContact(contactId,assigned_to)
+    successResponse(req,res,`User assigned ${contactId}`,userAssignedContact, HttpStatusCode.OK)
+  })
 }
 
 export default new ContactController();

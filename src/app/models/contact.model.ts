@@ -101,6 +101,7 @@ class ContactModel extends BaseModel {
     let query = this.query()
       // .where({ company_id: companyId })
       .where({ user_id: userId })
+      .orWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
       .whereNull('deleted_at');
 
     if (filters.is_valid !== undefined) {
@@ -131,6 +132,11 @@ class ContactModel extends BaseModel {
       .where({ user_id: userId })
       .whereNull('deleted_at')
       .orderBy('created_at', 'desc');
+  }
+
+  async getAssignedUser(userId:string){
+    let query = this.query()
+    return query.where({user_id:userId}).orWhere({assigned_to:userId}).returning("*")
   }
 }
 

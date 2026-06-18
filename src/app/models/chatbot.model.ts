@@ -15,7 +15,7 @@ class chatBotModel extends BaseModel{
     }
 
     async findByUserId(userId: string | number): Promise<any> {
-        return this.query().where({user_id: userId})
+        return this.query().where({user_id: userId}).orWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId]);
     }
 
     async getPublishedBotByUser(userId:string){

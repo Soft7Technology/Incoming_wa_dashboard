@@ -4,6 +4,9 @@ import crypto from "crypto";
 import { generateInviteTemplate } from '@surefy/console/utils';
 import bcrypt from "bcrypt";
 import userModel from '../models/user.model';
+import { Model } from 'firebase-admin/lib/machine-learning/machine-learning';
+import permissionModel from '../models/permission.model';
+import { bulkUpdateTableExecutionQueue } from '@surefy/console/queues/bulkTableUpdate.queue';
 
 class teamService{
     async inviteTeam(data: any) {
@@ -90,6 +93,7 @@ class teamService{
 
             // 3.check already accepted
             if (existingInvite.invite_status === 'accepted') {
+                
                 return {
                     success: false,
                     message: 'Invite already used'
@@ -121,6 +125,22 @@ class teamService{
             })
 
             await userTeamModel.update(existingInvite.id, { invite_status: "accepted" })
+            // for(const permission of createdUser.permission){
+            //     await bulkUpdateTableExecutionQueue.add(
+            //         `bulkTableUpdate - ${permission}`,
+            //         {
+            //             permission:permission,
+            //             assigned_to:createdUser.id
+            //         },
+            //         {
+            //           jobId: createdUser.id,
+            //           delay: 3000, // 3-second delay so the DB write fully commits first
+            //         }
+            //     )
+            // }
+
+            // Add user_id into assigned_to array
+            // Check permission[] and pass into the permissionModel Update 
             return {
                 success: true,
                 message: "Password setup successful",
