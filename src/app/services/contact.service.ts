@@ -136,10 +136,11 @@ class ContactService {
     const updated = await ContactModel.update(contactId, {
       name: data.name,
       email: data.email,
-      phone_number:data.phone_number,
+      phone_number: data.phone_number,
       status: data.status,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
+      ...(data.assigned_to !== undefined && { assigned_to: data.assigned_to }),
     });
 
     // Update tags if provided
@@ -604,8 +605,12 @@ class ContactService {
     return buffer;
   }
 
-  async getContactsByUserId(userId:string){
+  async getContactsByUserId(userId: string) {
     return ContactModel.findByUserId(userId);
+  }
+
+  async findContactByPhone(userId: string, phoneNumber: string) {
+    return ContactModel.findByPhone(userId, phoneNumber);
   }
 }
 

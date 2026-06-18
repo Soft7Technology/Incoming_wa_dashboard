@@ -8,6 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import userPlansModel from '../../models/userPlans.model';
 import activityLogsModel from '../../models/activityLogs.model';
+import userTeamModel from '../../models/team.model';
 
 class ContactController {
   /**
@@ -105,7 +106,7 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids, status, phone_number } = req.body;
+    const { name, email, attributes, notes, tag_ids, status, phone_number, assigned_to } = req.body;
 
     const contact = await ContactService.updateContact(id, {
       name,
@@ -115,6 +116,7 @@ class ContactController {
       notes,
       status,
       tag_ids,
+      assigned_to: assigned_to ?? undefined,
     });
 
     console.log("Contact",contact)
@@ -448,6 +450,40 @@ class ContactController {
       throw new HTTP400Error({ message: 'Failed to retrieve user contacts' });
     }
   }
+
+  /**
+   * PATCH /v1/contacts/assign
+   * Assign a contact (looked up by phone) to a team member
+   */
+  assignContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { phone_number, assigned_to } = req.body;
+
+    if (!phone_number || !assigned_to) {
+      throw new HTTP400Error({ message: 'phone_number and assigned_to are required' });
+    }
+
+    // Normalize phone — add + if missing
+    const normalized = phone_number.startsWith('+') ? phone_number : `+${phone_number}`;
+
+    // Find contact by phone for this user
+    const contact = await ContactService.findContactByPhone(req.userId!, normalized);
+    if (!contact) {
+      return res.status(404).json({ success: false, message: 'Contact not found for this phone number' });
+    }
+
+    const updated = await ContactService.updateContact(contact.id, { assigned_to });
+
+    return successResponse(req, res, 'Contact assigned successfully', updated);
+  });
+
+  /**
+   * GET /v1/contacts/team/accepted
+   * Return team members whose invite_status = 'accepted' — returns real users.id
+   */
+  getAcceptedTeamMembers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const members = await userTeamModel.findAcceptedByInviter(req.userId!);
+    return successResponse(req, res, 'Accepted team members retrieved', members);
+  });
 }
 
 export default new ContactController();
