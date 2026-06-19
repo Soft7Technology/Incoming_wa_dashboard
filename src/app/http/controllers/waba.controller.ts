@@ -57,7 +57,8 @@ class WabaController {
    * Get all WABA accounts for company
    */
   getWabas = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const wabas = await WabaService.getCompanyWabas(req.userId!,req.companyId!);
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const wabas = await WabaService.getCompanyWabas(effectiveUserId, req.companyId!);
     return successResponse(req, res, 'WABA accounts retrieved successfully', wabas);
   });
 
@@ -89,8 +90,9 @@ class WabaController {
    * Get all phone numbers for company
    */
   getPhoneNumbers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    console.log("Getting phone numbers for user:", req.userId, "company:", req.companyId);
-    const phoneNumbers = await WabaService.getUserPhoneNumbers(req.userId!,req.companyId!);
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    console.log("Getting phone numbers for effectiveUserId:", effectiveUserId, "company:", req.companyId);
+    const phoneNumbers = await WabaService.getUserPhoneNumbers(effectiveUserId, req.companyId!);
     return successResponse(req, res, 'Phone numbers retrieved successfully', phoneNumbers);
   });
 

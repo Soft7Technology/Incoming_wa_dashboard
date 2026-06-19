@@ -141,6 +141,7 @@ class ContactService {
       status: data.status,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
+      ...(data.assigned_to !== undefined && { assigned_to: data.assigned_to }),
     });
 
     // Update tags if provided
@@ -609,6 +610,10 @@ class ContactService {
     return ContactModel.findByUserId(userId);
   }
 
+  async findContactByPhone(userId: string, phoneNumber: string) {
+    return ContactModel.findByPhone(userId, phoneNumber);
+  }
+
   async userAssignedContact(contactId: string, assigned_to: string) {
     const contact = await ContactModel.findById(contactId);
 
@@ -621,10 +626,10 @@ class ContactService {
     const updatedAssignedTo = [...new Set([...assignedTo, assigned_to])];
 
     return await db('contacts')
-  .where('id', contactId)
-  .update({
-    assigned_to: updatedAssignedTo
-  });
+      .where('id', contactId)
+      .update({
+        assigned_to: updatedAssignedTo
+      });
   }
 }
 

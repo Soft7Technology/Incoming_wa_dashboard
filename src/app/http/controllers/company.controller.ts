@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import CompanyService from '@surefy/console/services/company.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import subscriptionModel from '@surefy/console/models/subscription.model'
@@ -12,6 +13,8 @@ import sendEmail from '../../utils';
 import MessageService from '../../services/message.service';
 import { uploadImage } from '@surefy/config/firebase.config';
 import activityLogsModel from '../../models/activityLogs.model';
+import userTeamModel from '../../models/team.model';
+import userModel from '../../models/user.model';
 
 
 class CompanyController {
@@ -87,9 +90,11 @@ class CompanyController {
   });
 
   getUserStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    console.log("User Id", req.userId!)
+    // Use ownerId so team members see the account owner's stats
+    const effectiveUserId = req.ownerId ?? req.userId!
+    console.log("Effective User Id (ownerId ?? userId)", effectiveUserId)
     const { time_frame } = req.query
-    const userStats = await MessageService.getUserStats(req.userId!, time_frame)
+    const userStats = await MessageService.getUserStats(effectiveUserId, time_frame)
     return successResponse(req, res, 'User Stats retrieved successfully', userStats)
   })
 
@@ -210,8 +215,10 @@ class CompanyController {
   });
 
   getdashboardStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    console.log("Fetching dashboard stats for companyId:", req.companyId!); // Debug log
-    const stats = await CompanyService.getDashboardStats(req.companyId!, req.userId!)
+    // Use ownerId so team members see the account owner's dashboard
+    const effectiveUserId = req.ownerId ?? req.userId!
+    console.log("Fetching dashboard stats for effectiveUserId:", effectiveUserId);
+    const stats = await CompanyService.getDashboardStats(req.companyId!, effectiveUserId)
     return successResponse(req, res, 'Dashboard stats retrieved successfully', stats)
   })
 
@@ -376,25 +383,35 @@ class CompanyController {
     return successResponse(req, res, 'Company updated successfully', company);
   }
 
-  async suspendUser(req: AuthRequest, res: Response) {
+  async resetUserPassword(req: JWTAuthRequest, res: Response) {
     const { id } = req.params;
+    const { password } = req.body;
 
-    const suspendUser = await CompanyService.suspendUser(id);
+    if (!password) {
+      throw new HTTP400Error({ message: 'Password is required' });
+    }
+
+    if (password.length < 6) {
+      throw new HTTP400Error({ message: 'Password must be at least 6 characters long' });
+    }
+
+    if (req.userRole !== 'superadmin' && req.userRole !== 'admin') {
+      throw new HTTP403Error({ message: 'Unauthorized to reset user password' });
+    }
+
+    const resetResult = await CompanyService.resetUserPassword(id, password);
 
     await activityLogsModel.create({
       company_id: req.companyId,
       user_id: req.userId,
 
-      action: 'SUSPEND',
+      action: 'UPDATE',
       entity_type: 'USER',
       entity_id: id,
-      read:false,
+      read: false,
+      description: `Reset password for user ${id}`,
 
-      description: `Suspended user account`,
-
-      new_data: {
-        suspended_user_id: id
-      },
+      new_data: { password_reset: true },
 
       ip_address:
         (req.headers['x-forwarded-for'] as string) ||
@@ -409,13 +426,47 @@ class CompanyController {
       status: 'SUCCESS'
     });
 
-    successResponse(
-      req,
-      res,
-      'User Suspend Successfully',
-      suspendUser,
-      HttpStatusCode.CREATED
-    );
+    return successResponse(req, res, 'User password reset successfully', resetResult);
+  }
+
+  async suspendUser(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+
+    // Resolve real users.id — the frontend may send user_team.id
+    let userId = id;
+    const directUser = await userModel.findById(id);
+    if (!directUser) {
+      // Try resolving via user_team (team invite id)
+      const teamRow = await userTeamModel.findById(id);
+      if (!teamRow) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      const realUser = await userModel.findOne({ email: teamRow.email });
+      if (!realUser) {
+        return res.status(404).json({ success: false, message: 'User account not found for this invite' });
+      }
+      userId = realUser.id;
+    }
+
+    const suspendUser = await CompanyService.suspendUser(userId);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+      action: 'SUSPEND',
+      entity_type: 'USER',
+      entity_id: userId,
+      read: false,
+      description: `Suspended user account`,
+      new_data: { suspended_user_id: userId },
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
+      user_agent: req.headers['user-agent'] || '',
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+      status: 'SUCCESS'
+    });
+
+    successResponse(req, res, 'User Suspended Successfully', suspendUser, HttpStatusCode.CREATED);
   }
 
   async suspendUserPlan(req: AuthRequest, res: Response) {
@@ -482,44 +533,40 @@ class CompanyController {
   async activateUser(req: AuthRequest, res: Response) {
     const { id } = req.params;
 
-    const activateUser = await CompanyService.activateUser(id);
+    // Resolve real users.id — the frontend may send user_team.id
+    let userId = id;
+    const directUser = await userModel.findById(id);
+    if (!directUser) {
+      const teamRow = await userTeamModel.findById(id);
+      if (!teamRow) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      const realUser = await userModel.findOne({ email: teamRow.email });
+      if (!realUser) {
+        return res.status(404).json({ success: false, message: 'User account not found for this invite' });
+      }
+      userId = realUser.id;
+    }
+
+    const activateUser = await CompanyService.activateUser(userId);
 
     await activityLogsModel.create({
       company_id: req.companyId,
       user_id: req.userId,
-
       action: 'ACTIVATE',
       entity_type: 'USER',
-      entity_id: id,
-      read:false,
-
+      entity_id: userId,
+      read: false,
       description: `Activated user account`,
-
-      new_data: {
-        user_id: id,
-        status: 'ACTIVE'
-      },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
+      new_data: { user_id: userId, status: 'active' },
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',
-
       request_method: req.method,
       api_endpoint: req.originalUrl,
-
       status: 'SUCCESS'
     });
 
-    successResponse(
-      req,
-      res,
-      'User Activated Successfully',
-      activateUser,
-      HttpStatusCode.CREATED
-    );
+    successResponse(req, res, 'User Activated Successfully', activateUser, HttpStatusCode.CREATED);
   }
 
   async suspendCompany(req:AuthRequest,res:Response){

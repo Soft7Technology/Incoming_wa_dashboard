@@ -429,6 +429,7 @@ class MessageModel extends BaseModel {
 
   async getMessagesConversation(userId: string, phone_number_id: string) {
     console.log('User Id', userId);
+    const db = this.db;
     const query = this.query();
 
     // ✅ FULL normalization (BEST)
@@ -459,7 +460,17 @@ class MessageModel extends BaseModel {
         'updated_at',
       ])
       .where('phone_number_id', phone_number_id)
-      .andWhere('user_id', userId)
+      .where((builder: any) => {
+        builder
+          .where('user_id', userId)
+          .orWhereIn(
+            db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
+            db('contacts')
+              .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
+              .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
+              .whereNull('deleted_at')
+          );
+      })
 
       // ✅ unique per CLEAN number
       .distinctOn([this.db.raw(normalizedToPhoneSQL) as any])
@@ -472,7 +483,17 @@ class MessageModel extends BaseModel {
     const counts = this.query()
       .select([this.db.raw(`${normalizedToPhoneSQL} AS to_phone`), this.db.raw(`COUNT(*) AS "totalMessages"`)])
       .where('phone_number_id', phone_number_id)
-      .andWhere('user_id', userId)
+      .where((builder: any) => {
+        builder
+          .where('user_id', userId)
+          .orWhereIn(
+            db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
+            db('contacts')
+              .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
+              .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
+              .whereNull('deleted_at')
+          );
+      })
       .groupByRaw(normalizedToPhoneSQL)
       .as('counts');
 

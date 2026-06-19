@@ -5,7 +5,6 @@ import chatBotService from '../../services/chatbot.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
-import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
 import userPlansModel from '../../models/userPlans.model';
 import activityLogsModel from '../../models/activityLogs.model';
@@ -15,30 +14,30 @@ class chatBotController {
      * POST /v1/chatbot
      * Create New Chatbot
      */
-    createChatBot = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    createChatBot = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
         const { name, description, phoneNumberId } = req.body
         console.log("Req", req.body)
         const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(phoneNumberId)
-        console.log("PhoneNumber found:", phoneNumber); // Debug log
+        console.log("PhoneNumber found:", phoneNumber);
 
         if (!phoneNumber || !phoneNumber.phone_number_id) {
             throw new HTTP400Error({ message: 'Associated WABA account not found for user' });
         }
 
-        const result = await chatBotService.createChatBot({ user_id: req.userId!, name, description, status: 'draft', published: false, phoneNumberId: phoneNumber.phone_number_id })
-        await userPlansModel.incrementUsage(req.userId!, 'Chatbot');
+        // Create under owner's account so the chatbot belongs to the owner's data
+        const effectiveUserId = req.ownerId ?? req.userId!;
+
+        const result = await chatBotService.createChatBot({ user_id: effectiveUserId, name, description, status: 'draft', published: false, phoneNumberId: phoneNumber.phone_number_id })
+        await userPlansModel.incrementUsage(effectiveUserId, 'Chatbot');
 
         const { data }: any = result
         await activityLogsModel.create({
             company_id: data?.companyId!,
-            user_id: data?.userId!,
-
+            user_id: effectiveUserId,
             action: 'CREATE',
             entity_type: 'CHATBOT',
             entity_id: data?.id,
-
             description: `Created chatbot "${data?.name}"`,
-
             new_data: {
                 id: data?.id,
                 name: data?.name,
@@ -47,17 +46,10 @@ class chatBotController {
                 published: data?.published,
                 phone_number_id: data?.phoneNumberId
             },
-
-            ip_address:
-                (req.headers['x-forwarded-for'] as string) ||
-                req.socket.remoteAddress ||
-                '',
-
+            ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
             user_agent: req.headers['user-agent'] || '',
-
             request_method: req.method,
             api_endpoint: req.originalUrl,
-
             status: 'SUCCESS',
             read: false
         });
@@ -65,59 +57,52 @@ class chatBotController {
     })
 
     getChatBots = tryCatchAsync(
-        async (req: AuthRequest, res: Response) => {
-            const chatBots = await chatBotService.getChatBots(req.userId!);
+        async (req: JWTAuthRequest, res: Response) => {
+            // For team members: use the inviter/owner's userId so they see the owner's chatbots.
+            // For account owners: ownerId === userId, so behaviour is unchanged.
+            const effectiveUserId = req.ownerId ?? req.userId!;
+            const chatBots = await chatBotService.getChatBots(effectiveUserId);
             return successResponse(req, res, 'ChatBots retrieved successfully', chatBots);
         }
     );
 
     publishedChatBot = tryCatchAsync(
-        async (req: AuthRequest, res: Response) => {
+        async (req: JWTAuthRequest, res: Response) => {
             const { chatBotId } = req.params;
-            // const {status, published} = req.body
+            const effectiveUserId = req.ownerId ?? req.userId!;
 
-            const result = await chatBotService.publishedChatBot(req.userId!, chatBotId);
+            const result = await chatBotService.publishedChatBot(effectiveUserId, chatBotId);
             const { data }: any = result
             await activityLogsModel.create({
                 company_id: data?.companyId,
-                user_id: data?.userId,
-
+                user_id: effectiveUserId,
                 action: 'PUBLISH',
                 entity_type: 'CHATBOT',
                 entity_id: chatBotId,
-
                 description: `Published chatbot "${data?.name}"`,
-
                 new_data: {
                     chatbot_name: data?.name,
                     status: data?.status,
                     published: data?.published
                 },
-
-                ip_address:
-                    (req.headers['x-forwarded-for'] as string) ||
-                    req.socket.remoteAddress ||
-                    '',
-
+                ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
                 user_agent: req.headers['user-agent'] || '',
-
                 request_method: req.method,
                 api_endpoint: req.originalUrl,
-
                 status: 'SUCCESS',
                 read: false
             });
-
             return successResponse(req, res, 'ChatBot published successfully', result);
         }
     )
 
     unpublishedChatBot = tryCatchAsync(
-        async (req: AuthRequest, res: Response) => {
+        async (req: JWTAuthRequest, res: Response) => {
             const { chatBotId } = req.params;
+            const effectiveUserId = req.ownerId ?? req.userId!;
 
             const result = await chatBotService.unpublishedChatBot(
-                req.userId!,
+                effectiveUserId,
                 chatBotId,
                 'unpublished',
                 false
@@ -127,39 +112,25 @@ class chatBotController {
 
             await activityLogsModel.create({
                 company_id: req.companyId,
-                user_id: req.userId,
+                user_id: effectiveUserId,
                 read: false,
                 action: 'UNPUBLISH',
                 entity_type: 'CHATBOT',
                 entity_id: chatBotId,
-
                 description: `Unpublished chatbot "${data.name}"`,
-
                 new_data: {
                     chatbot_name: data.name,
                     status: data.status,
                     published: data.published
                 },
-
-                ip_address:
-                    (req.headers['x-forwarded-for'] as string) ||
-                    req.socket.remoteAddress ||
-                    '',
-
+                ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
                 user_agent: req.headers['user-agent'] || '',
-
                 request_method: req.method,
                 api_endpoint: req.originalUrl,
-
                 status: 'SUCCESS'
             });
 
-            return successResponse(
-                req,
-                res,
-                'ChatBot unpublished successfully',
-                result
-            );
+            return successResponse(req, res, 'ChatBot unpublished successfully', result);
         }
     );
 
@@ -189,13 +160,15 @@ class chatBotController {
     )
 
     createChatBotFlow = tryCatchAsync(
-        async (req: AuthRequest, res: Response) => {
+        async (req: JWTAuthRequest, res: Response) => {
             const { chatBotId } = req.params;
             const { name, nodes, edges } = req.body;
 
-            console.log("Creating chatbot flow:", { chatBotId, name }); // Debug log
+            console.log("Creating chatbot flow:", { chatBotId, name });
 
-            const result = await chatBotService.createFlow(req.userId!, {
+            const effectiveUserId = req.ownerId ?? req.userId!;
+
+            const result = await chatBotService.createFlow(effectiveUserId, {
                 chatBotId,
                 name,
                 nodes,

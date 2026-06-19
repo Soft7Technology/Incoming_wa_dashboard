@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import CampaignService from '@surefy/console/services/campaign.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import userPlansModel from '../../models/userPlans.model';
 import campaignModel from '../../models/campaign.model';
@@ -13,7 +14,7 @@ class CampaignController {
    * POST /v1/campaigns
    * Create new campaign
    */
-  createCampaign = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  createCampaign = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const {
       name,
       description,
@@ -32,7 +33,10 @@ class CampaignController {
       throw new HTTP400Error({ message: 'Name, phone_number_id, and template_id are required' });
     }
 
-    const campaign = await CampaignService.createCampaign(req.userId!, req.companyId!, {
+    // Create under owner's account so the campaign belongs to the owner's data
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
+    const campaign = await CampaignService.createCampaign(effectiveUserId, req.companyId!, {
       name,
       description,
       phone_number_id,
@@ -46,14 +50,11 @@ class CampaignController {
 
     await activityLogsModel.create({
       company_id: req.companyId!,
-      user_id: req.userId!,
-
+      user_id: effectiveUserId,
       action: 'CREATE',
       entity_type: 'CAMPAIGN',
       entity_id: campaign.id,
-
       description: `Created campaign "${campaign.name}"`,
-
       new_data: {
         id: campaign.id,
         name: campaign.name,
@@ -62,22 +63,15 @@ class CampaignController {
         scheduled_at: campaign.scheduled_at,
         send_immediately: campaign.send_immediately,
       },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',
-
       request_method: req.method,
       api_endpoint: req.originalUrl,
-
       status: 'SUCCESS',
-      read:false
+      read: false
     });
 
-    await userPlansModel.incrementUsage(req.userId!, 'Campaign');
+    await userPlansModel.incrementUsage(effectiveUserId, 'Campaign');
 
     return successResponse(req, res, 'Campaign created successfully', campaign, HttpStatusCode.CREATED);
   });
@@ -97,7 +91,11 @@ class CampaignController {
    * GET /v1/campaigns
    * Get all campaigns
    */
-  getCampaigns = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  getCampaigns = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    // For team members: use the inviter/owner's userId so they see the owner's campaigns.
+    // For account owners: ownerId === userId, so behaviour is unchanged.
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
     const filters = {
       status: req.query.status,
       phone_number_id: req.query.phone_number_id,
@@ -106,7 +104,7 @@ class CampaignController {
       limit: req.query.limit,
     };
 
-    const result = await CampaignService.getCampaigns( req.userId!, filters);
+    const result = await CampaignService.getCampaigns(effectiveUserId, filters);
     return successResponse(req, res, 'Campaigns retrieved successfully', result);
   });
 
@@ -269,7 +267,7 @@ class CampaignController {
    * POST /v1/campaigns/upload-media
    * Upload media for campaign template
    */
-  uploadMedia = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  uploadMedia = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { phone_number_id, type } = req.body;
     console.log('Uploaded file:', req.file);
     console.log('Request body:', req.body);
@@ -279,7 +277,8 @@ class CampaignController {
       throw new HTTP400Error({ message: 'phone_number_id, type, and file are required' });
     }
 
-    const result = await CampaignService.uploadMedia(req.companyId!, phone_number_id, file, type);
+    const effectiveCompanyId = req.companyId!;
+    const result = await CampaignService.uploadMedia(effectiveCompanyId, phone_number_id, file, type);
     return successResponse(req, res, 'Media uploaded successfully', result, HttpStatusCode.CREATED);
   });
 

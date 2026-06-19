@@ -18,6 +18,7 @@ UserRoute.get('/plan/status', CompanyController.checkUserPlanStatus)
 UserRoute.put('/:id/suspend-plan', companyController.suspendUserPlan)
 UserRoute.put('/:id/suspend-user',companyController.suspendUser)
 UserRoute.put('/:id/active-user',companyController.activateUser)
+UserRoute.put('/:id/reset-password', CompanyController.resetUserPassword);
 UserRoute.put('/:id', CompanyController.updateUser);
 UserRoute.delete('/:id', CompanyController.deleteCompanyUser);
 UserRoute.post('/:id/regenerate-keys', CompanyController.regenerateKeys);

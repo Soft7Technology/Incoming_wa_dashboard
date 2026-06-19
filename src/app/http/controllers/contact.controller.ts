@@ -3,25 +3,30 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import ContactService from '@surefy/console/services/contact.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import * as path from 'path';
 import * as fs from 'fs';
 import userPlansModel from '../../models/userPlans.model';
 import activityLogsModel from '../../models/activityLogs.model';
+import userTeamModel from '../../models/team.model';
 
 class ContactController {
   /**
    * POST /v1/contacts
    * Create new contact
    */
-  createContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  createContact = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { phone_number, name, email, attributes, notes, tag_ids, status } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
     }
 
-    const contact = await ContactService.createContact(req.userId!, req.companyId!, {
+    // Write under the owner's account so the contact belongs to Aakanksha's data
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
+    const contact = await ContactService.createContact(effectiveUserId, req.companyId!, {
       phone_number,
       name,
       email,
@@ -33,38 +38,28 @@ class ContactController {
 
     await activityLogsModel.create({
       company_id: req.companyId!,
-      user_id: req.userId!,
-
+      user_id: effectiveUserId,
       action: 'CREATE',
       entity_type: 'CONTACT',
-      entity_id:  contact?.id,
-      read:false,
-
-      description: `Created contact ${ contact?.name ||  contact?.phone_number}`,
-
+      entity_id: contact?.id,
+      read: false,
+      description: `Created contact ${contact?.name || contact?.phone_number}`,
       new_data: {
-        id:  contact?.id,
-        name:  contact?.name,
-        phone_number:  contact?.phone_number,
-        email:  contact?.email,
-        status:  contact?.status,
-        tags_count:  contact?.tag_ids?.length || 0
+        id: contact?.id,
+        name: contact?.name,
+        phone_number: contact?.phone_number,
+        email: contact?.email,
+        status: contact?.status,
+        tags_count: contact?.tag_ids?.length || 0
       },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',
-
       request_method: req.method,
       api_endpoint: req.originalUrl,
-
       status: 'SUCCESS'
     });
 
-    await userPlansModel.incrementUsage(req.userId!, 'Contact');
+    await userPlansModel.incrementUsage(effectiveUserId, 'Contact');
 
     return successResponse(req, res, 'Contact created successfully', contact, HttpStatusCode.CREATED);
   });
@@ -74,6 +69,8 @@ class ContactController {
    * Get all contacts with filters
    */
   getContacts = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
     const filters = {
       is_valid: req.query.is_valid,
       search: req.query.search,
@@ -85,7 +82,7 @@ class ContactController {
       sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined
     };
 
-    const contacts = await ContactService.getContacts(req.userId!, filters);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -105,7 +102,7 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids, status, phone_number } = req.body;
+    const { name, email, attributes, notes, tag_ids, status, phone_number, assigned_to } = req.body;
 
     const contact = await ContactService.updateContact(id, {
       name,
@@ -115,6 +112,7 @@ class ContactController {
       notes,
       status,
       tag_ids,
+      assigned_to: assigned_to ?? undefined,
     });
 
     console.log("Contact",contact)
@@ -190,7 +188,7 @@ class ContactController {
    * Queue contact import from XLSX (async processing)
    */
 
-  importContacts = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
     const { list_name, phone_column, name_column, email_column, tag_ids, country_code } = req.body;
 
@@ -204,30 +202,26 @@ class ContactController {
       throw new HTTP400Error({ message: 'List name is required' });
     }
 
-    // Define upload directory
-    // Define upload directory
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
     const uploadDir = path.join(
       process.cwd(),
       'uploads',
       'contacts',
-      req.userId!
+      effectiveUserId
     );
 
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
     }
 
-    // Permanent file path
     const fileName = `${Date.now()}_${file.originalname}`;
     const filePath = path.join(uploadDir, fileName);
 
-    // Copy file
     fs.copyFileSync(file.path, filePath);
-
-    // Remove temp file
     fs.unlinkSync(file.path);
-    // Queue the import job instead of processing synchronously
-    const importJob = await ContactService.queueContactImport(req.userId!, req.companyId!, filePath, list_name, {
+
+    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
@@ -312,35 +306,28 @@ class ContactController {
    * POST /v1/contacts/tags
    * Create new tag
    */
-  createTag = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  createTag = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { name, color, description } = req.body;
 
     if (!name) {
       throw new HTTP400Error({ message: 'Tag name is required' });
     }
 
-    const tag = await ContactService.createTag(req.userId!, req.companyId!, { name, color, description });
-    const { data }: any = tag
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const tag = await ContactService.createTag(effectiveUserId, req.companyId!, { name, color, description });
+    const { data }: any = tag;
     await activityLogsModel.create({
       company_id: req.companyId,
-      user_id: req.userId,
-
+      user_id: effectiveUserId,
       action: 'TAG_ADD',
       entity_type: 'TAGS',
       entity_id: data.id,
-      read:false,
-
+      read: false,
       description: `Added tag(s) to ${data.name}`,
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',
-
       request_method: req.method,
       api_endpoint: req.originalUrl,
-
       status: 'SUCCESS'
     });
     return successResponse(req, res, 'Tag created successfully', tag, HttpStatusCode.CREATED);
@@ -351,7 +338,8 @@ class ContactController {
    * Get all tags
    */
   getTags = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const tags = await ContactService.getTags(req.userId!);
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const tags = await ContactService.getTags(effectiveUserId);
     return successResponse(req, res, 'Tags retrieved successfully', tags);
   });
 
@@ -382,7 +370,8 @@ class ContactController {
    * Get all contact lists
    */
   getLists = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const lists = await ContactService.getLists(req.userId!);
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const lists = await ContactService.getLists(effectiveUserId);
     return successResponse(req, res, 'Lists retrieved successfully', lists);
   });
 
@@ -448,6 +437,41 @@ class ContactController {
       throw new HTTP400Error({ message: 'Failed to retrieve user contacts' });
     }
   }
+
+  /**
+   * PATCH /v1/contacts/assign
+   * Assign a contact (looked up by phone) to a team member
+   */
+  assignContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { phone_number, assigned_to } = req.body;
+
+    if (!phone_number || !assigned_to) {
+      throw new HTTP400Error({ message: 'phone_number and assigned_to are required' });
+    }
+
+    // Normalize phone — add + if missing
+    const normalized = phone_number.startsWith('+') ? phone_number : `+${phone_number}`;
+
+    // Find contact by phone for this user
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const contact = await ContactService.findContactByPhone(effectiveUserId, normalized);
+    if (!contact) {
+      return res.status(404).json({ success: false, message: 'Contact not found for this phone number' });
+    }
+
+    const updated = await ContactService.updateContact(contact.id, { assigned_to });
+
+    return successResponse(req, res, 'Contact assigned successfully', updated);
+  });
+
+  /**
+   * GET /v1/contacts/team/accepted
+   * Return team members whose invite_status = 'accepted' — returns real users.id
+   */
+  getAcceptedTeamMembers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const members = await userTeamModel.findAcceptedByInviter(req.userId!);
+    return successResponse(req, res, 'Accepted team members retrieved', members);
+  });
 
   /**
    * User Assigned Contact

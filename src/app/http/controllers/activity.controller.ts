@@ -5,13 +5,13 @@ import chatBotService from '../../services/chatbot.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
-import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
 import userPlansModel from '../../models/userPlans.model';
 import activityService from '../../services/activity.service';
 
 class ActivityController {
-    async getActivityLogs(req: AuthRequest, res: Response) {
+    async getActivityLogs(req: JWTAuthRequest, res: Response) {
+        const effectiveUserId = req.ownerId ?? req.userId!;
         const filters = {
             type: req.query.type,
             page: req.query.page,
@@ -21,11 +21,12 @@ class ActivityController {
             sort_order: req.query.sort_order,
         }
         console.log("Role",req.query.role)
-        const userActivities = await activityService.getAcitvityLogs(req.companyId!, req.userId!, req.query.role!, filters)
+        const userActivities = await activityService.getAcitvityLogs(req.companyId!, effectiveUserId, req.query.role!, filters)
         successResponse(req, res, "Activity Logs retrived succesfully", userActivities)
     }
 
-    async getActivityNotification(req: AuthRequest, res: Response) {
+    async getActivityNotification(req: JWTAuthRequest, res: Response) {
+        const effectiveUserId = req.ownerId ?? req.userId!;
         const filters = {
             type: req.query.type,
             time_frame: req.query.time_frame,
@@ -36,7 +37,7 @@ class ActivityController {
 
         const notifications =
             await activityService.getActivityNotifications(
-                req.userId!,
+                effectiveUserId,
                 req.companyId!,
                 role,
                 filters
@@ -50,7 +51,8 @@ class ActivityController {
         );
     }
 
-    async getAdminNotification(req: AuthRequest, res: Response) {
+    async getAdminNotification(req: JWTAuthRequest, res: Response) {
+        const effectiveUserId = req.ownerId ?? req.userId!;
         const filters = {
             type: req.query.type,
             time_frame: req.query.time_frame,
@@ -61,7 +63,7 @@ class ActivityController {
 
         const notifications =
             await activityService.getCompanyNotifications(
-                req.userId!,
+                effectiveUserId,
                 req.companyId!,
                 role,
                 filters
@@ -75,10 +77,11 @@ class ActivityController {
         );
     }
 
-    async readUserNotification(req:AuthRequest,res:Response){
+    async readUserNotification(req: JWTAuthRequest, res: Response){
+        const effectiveUserId = req.ownerId ?? req.userId!;
         const{read} = req.query
         const{data} = req.body
-        const updateNotification = await activityService.readUserNotification(req.userId!,req.companyId!,data)
+        const updateNotification = await activityService.readUserNotification(effectiveUserId, req.companyId!, data)
         successResponse(req,res,"User Notification read",updateNotification)
     }
 }
