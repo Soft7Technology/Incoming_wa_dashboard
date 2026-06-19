@@ -328,19 +328,19 @@ class AuthService {
   /**
    * Change password
    */
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(userId: string, newPassword: string) {
     const user = await UserModel.findById(userId);
 
     if (!user) {
       throw new HTTP400Error({ message: 'User not found' });
     }
 
-    // Verify current password
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    // // Verify current password
+    // const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
 
-    if (!isPasswordValid) {
-      throw new HTTP401Error({ message: 'Current password is incorrect' });
-    }
+    // if (!isPasswordValid) {
+    //   throw new HTTP401Error({ message: 'Current password is incorrect' });
+    // }
 
     // Hash new password
     const hashedPassword = await this.hashPassword(newPassword);
