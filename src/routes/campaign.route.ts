@@ -27,6 +27,7 @@ CampaignRoute.post('/:id/start', CampaignController.startCampaign);
 CampaignRoute.post('/:id/pause', CampaignController.pauseCampaign);
 CampaignRoute.post('/:id/resume', CampaignController.resumeCampaign);
 CampaignRoute.post('/:id/test', CampaignController.testCampaign);
+CampaignRoute.put('/:campaignId/assigned',CampaignController.assignedCampaignToUser)
 
 // Campaign stats
 CampaignRoute.get('/:id/stats', CampaignController.getCampaignStats);

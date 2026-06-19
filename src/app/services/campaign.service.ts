@@ -13,7 +13,7 @@ import * as fs from 'fs';
 import campaignModel from '../models/campaign.model';
 import { v4 as uuidv4 } from "uuid";
 import { uploadImage } from '@surefy/config/firebase.config';
-
+import db from '@surefy/database';
 
 
 interface CreateCampaignData {
@@ -934,6 +934,23 @@ class CampaignService {
 
       await CampaignModel.incrementCount(cm.campaign_id, 'invalid_numbers_count');
     }
+  }
+
+  async assignedCampaignToUser(assigned_to: string, campaignId: string) {
+    const campaigns = await campaignModel.findById(campaignId);
+
+    let assignedTo = campaigns.assigned_to || [];
+
+    if (typeof assignedTo === 'string') {
+      assignedTo = JSON.parse(assignedTo);
+    }
+
+    const updatedAssignedTo = [...new Set([...assignedTo, assigned_to])];
+    return await db('campaigns')
+      .where('id', campaignId)
+      .update({
+        assigned_to: updatedAssignedTo
+      });
   }
 }
 

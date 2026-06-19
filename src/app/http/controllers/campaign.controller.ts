@@ -281,6 +281,14 @@ class CampaignController {
     const result = await CampaignService.uploadMedia(effectiveCompanyId, phone_number_id, file, type);
     return successResponse(req, res, 'Media uploaded successfully', result, HttpStatusCode.CREATED);
   });
+
+  assignedCampaignToUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const{assigned_to} = req.body
+    console.log("Body",req.body)
+    const{campaignId} = req.params
+    const assignedCampaign = await CampaignService.assignedCampaignToUser(assigned_to,campaignId)
+    successResponse(req,res,`Campaign assigned to ${assigned_to}`,assignedCampaign, HttpStatusCode.OK)
+  })
 }
 
 export default new CampaignController();

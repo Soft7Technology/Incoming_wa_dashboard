@@ -10,6 +10,7 @@ import chatBotEdgeModel from '../models/chatBotEdge.model';
 import chatBotNodeModel from '../models/chatBotNode.model';
 import wabaModel from '../models/waba.model';
 import { v4 as uuidv4 } from 'uuid';
+import db from '@surefy/database';
 
 class chatBotService {
   async createChatBot(data: chatBot) {
@@ -78,6 +79,23 @@ class chatBotService {
     }
     const unpublishedChatBot = await chatBotModel.update(chatBotId, { published, status });
     return unpublishedChatBot;
+  }
+
+  async assignedChatBotToUser(assigned_to: string, chatBotId: string) {
+    const chatBot = await chatBotModel.findById(chatBotId);
+
+    let assignedTo = chatBot.assigned_to || [];
+
+    if (typeof assignedTo === 'string') {
+      assignedTo = JSON.parse(assignedTo);
+    }
+
+    const updatedAssignedTo = [...new Set([...assignedTo, assigned_to])];
+    return await db('chat_bot')
+      .where('id', chatBot.id)
+      .update({
+        assigned_to: updatedAssignedTo
+      });
   }
 
   async createFlow(userId: string, data: any) {

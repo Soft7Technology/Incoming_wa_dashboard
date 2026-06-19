@@ -150,6 +150,15 @@ class chatBotController {
         }
     )
 
+    assigndChatBot = tryCatchAsync(
+        async (req: AuthRequest, res: Response) => {
+            const { chatBotId } = req.params
+            const { assigned_to } = req.body
+            const result = await chatBotService.assignedChatBotToUser(assigned_to, chatBotId)
+            return successResponse(req, res, `Chatbot assigned ${assigned_to} successfully`, result, HttpStatusCode.OK)
+        }
+    )
+
     createChatBotFlow = tryCatchAsync(
         async (req: JWTAuthRequest, res: Response) => {
             const { chatBotId } = req.params;

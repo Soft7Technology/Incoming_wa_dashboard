@@ -2,6 +2,7 @@ import { Router } from 'express';
 import CompanyController from '@surefy/console/http/controllers/company.controller';
 import companyController from '@surefy/console/http/controllers/company.controller';
 import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
+import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
 
 const companyRoute = Router();
 
@@ -15,11 +16,13 @@ companyRoute.delete('/:companyId', CompanyController.deleteCompany);
 companyRoute.delete('/', CompanyController.deleteCompany);
 companyRoute.get('/dashboard', CompanyController.getdashboardStats)
 companyRoute.get('/details',companyController.getCompanyDetails)
+companyRoute.put('/:companyId/suspend',requireRole('superadmin'), companyController.suspendCompany)
+companyRoute.put('/:companyId/active', requireRole('superadmin'), companyController.activeCompany)
 
 /**
  * Get All Companies
  */
-companyRoute.get('/', CompanyController.getAll);
+companyRoute.get('/', CompanyController.getAllCompanies);
 
 
 /**

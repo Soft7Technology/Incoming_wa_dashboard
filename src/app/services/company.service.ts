@@ -13,6 +13,7 @@ import { transformFeatures } from '../utils';
 import subscriptionService from './subscription.service';
 import { sub } from 'date-fns';
 import {uploadImage} from '@surefy/config/firebase.config'
+import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 
 class CompanyService {
   /**
@@ -113,8 +114,8 @@ class CompanyService {
   /**
    * Get all companies
    */
-  async getAllCompanies(filters: any = {}) {
-    return CompanyRepository.getAll(filters);
+  async getAllCompanies(status: any = {}) {
+    return CompanyRepository.getAllCompanies(status);
   }
 
   /**
@@ -581,9 +582,32 @@ class CompanyService {
     return suspendUser
   }
 
-  async activateUser(userId:string){
-    const activateUser = await userModel.update(userId,{status:'active'})
-    return activateUser
+  async activateUser(companyId:string){
+    const companyUser = await userModel.findAllUserByCompanyId(companyId)
+    if(!companyUser){
+      throw new HTTP401Error({message:"Company not have any active user"})
+    }
+
+    for(const user of companyUser){
+      await userModel.update(user.id,{status:"active"})
+    }
+    
+    const activeCompany = await companyModel.update(companyId,{status:"active"})
+    return activeCompany 
+  }
+
+  async suspendCompany(companyId:string){
+    const companyActiveUser = await userModel.findAllUserByCompanyId(companyId)
+    if(!companyActiveUser){
+      throw new HTTP401Error({message:"Company not have any active user to suspend"})
+    }
+
+    for(const user of companyActiveUser){
+      await userModel.update(user.id,{status:"suspend"})
+    }
+
+    const suspendCompany = await companyModel.update(companyId,{status:'suspend'})
+    return suspendCompany
   }
 
   //   async createUser(

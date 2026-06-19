@@ -8,6 +8,7 @@ class CampaignModel extends BaseModel {
   async findByCompany(userId:string, filters: any = {}) {
     let query = this.query()
       .whereNull('deleted_at')
+      .orWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
       .where({ user_id: userId });
 
     if (filters.status) {

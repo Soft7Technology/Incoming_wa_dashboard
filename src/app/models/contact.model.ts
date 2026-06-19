@@ -148,6 +148,11 @@ class ContactModel extends BaseModel {
       .whereNull('deleted_at')
       .orderBy('created_at', 'desc');
   }
+
+  async getAssignedUser(userId:string){
+    let query = this.query()
+    return query.where({user_id:userId}).orWhere({assigned_to:userId}).returning("*")
+  }
 }
 
 export default new ContactModel();
