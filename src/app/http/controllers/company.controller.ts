@@ -312,9 +312,10 @@ class CompanyController {
 
   async checkUserPlanStatus(req: AuthRequest, res: Response) {
     try {
-      console.log("Checking user plan status for userId:", req.userId!)
+      const effectiveUserId = req.ownerId ?? req.userId!;
+      console.log("Checking user plan status for effectiveUserId:", effectiveUserId);
 
-      const userPlan = await userPlansModel.getUserPlan(req.userId!)
+      const userPlan = await userPlansModel.getUserPlan(effectiveUserId)
       if (!userPlan) {
         return successResponse(req, res, 'No Active Plan found', userPlan)
       }
@@ -548,7 +549,7 @@ class CompanyController {
       userId = realUser.id;
     }
 
-    const activateUser = await CompanyService.activateUser(userId);
+    const activateUser = await CompanyService.activateSingleUser(userId);
 
     await activityLogsModel.create({
       company_id: req.companyId,
