@@ -1,4 +1,11 @@
 import { BaseModel } from '@surefy/models/base.model';
+import db from '../../database';
+
+// Helper: build an OR condition for uuid-array column "assigned_to"
+// Postgres requires the @> (contains) operator for uuid[] columns
+function orAssignedTo(query: any, userId: string) {
+  return query.orWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId]);
+}
 
 class ContactModel extends BaseModel {
   constructor() {
@@ -8,7 +15,8 @@ class ContactModel extends BaseModel {
   async findByPhone(userId: string, phoneNumber: string) {
     return this.query()
       .where(function(this: any) {
-        this.where('user_id', userId).orWhere('assigned_to', userId);
+        this.where('user_id', userId);
+        orAssignedTo(this, userId);
       })
       .where({ phone_number: phoneNumber })
       .whereNull('deleted_at')
@@ -103,7 +111,8 @@ class ContactModel extends BaseModel {
     console.log("UserId", userId)
     let query = this.query()
       .where(function(this: any) {
-        this.where('user_id', userId).orWhere('assigned_to', userId);
+        this.where('user_id', userId);
+        orAssignedTo(this, userId);
       })
       .whereNull('deleted_at');
 
@@ -133,7 +142,8 @@ class ContactModel extends BaseModel {
   async findByUserId(userId: string) {
     return this.query()
       .where(function(this: any) {
-        this.where('user_id', userId).orWhere('assigned_to', userId);
+        this.where('user_id', userId);
+        orAssignedTo(this, userId);
       })
       .whereNull('deleted_at')
       .orderBy('created_at', 'desc');

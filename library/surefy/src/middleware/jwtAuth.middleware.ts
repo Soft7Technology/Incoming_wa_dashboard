@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import HTTP401Error from '../exceptions/HTTP401Error';
 import jwt from 'jsonwebtoken';
+import db from '../database';
 
 export interface JWTAuthRequest extends Request {
   userId?: string;
@@ -8,6 +9,9 @@ export interface JWTAuthRequest extends Request {
   companyId?: string;
   email?: string;
   phone?: string;
+  /** For team members: the inviter's userId whose data they should see.
+   *  For account owners: same as userId. */
+  ownerId?: string;
 }
 
 interface JWTPayload {
@@ -16,6 +20,7 @@ interface JWTPayload {
   phone?: string;
   role: string;
   companyId?: string;
+  ownerId?: string;
 }
 
 /**
@@ -25,7 +30,6 @@ interface JWTPayload {
 export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers['authorization'];
-    // console.log("JWT Auth Middleware - Authorization header:", authHeader); // Debug log
 
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       throw new HTTP401Error({ message: 'No token provided. Authorization header required' });
@@ -47,14 +51,35 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
       throw new HTTP401Error({ message: 'Invalid or expired token' });
     }
 
+    // ── Live status check ─────────────────────────────────────────
+    // Check DB to ensure the user is still active — this blocks suspended
+    // users immediately even if they hold a valid JWT token.
+    const user = await db('users')
+      .where({ id: decoded.userId })
+      .select('status')
+      .first();
+
+    if (!user) {
+      throw new HTTP401Error({ message: 'User not found' });
+    }
+
+    if (user.status === 'suspended' || user.status === 'suspend') {
+      throw new HTTP401Error({ message: 'Your account has been suspended. Please contact your administrator.' });
+    }
+
+    if (user.status === 'inactive') {
+      throw new HTTP401Error({ message: 'Account is inactive' });
+    }
+    // ─────────────────────────────────────────────────────────────
+
     // Attach user info to request
     req.userId = decoded.userId;
     req.userRole = decoded.role;
     req.companyId = decoded.companyId;
     req.email = decoded.email;
     req.phone = decoded.phone;
-
-    // console.log("Decoded JWT payload:", decoded); // Debug log
+    // ownerId = inviter's userId for team members, own userId for account owners
+    req.ownerId = decoded.ownerId ?? decoded.userId;
 
     next();
   } catch (error) {

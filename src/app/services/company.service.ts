@@ -565,6 +565,17 @@ class CompanyService {
     return updateUser
   }
 
+  async resetUserPassword(userId: string, newPassword: string) {
+    const user = await userModel.findById(userId);
+    if (!user) {
+      throw new HTTP404Error({ message: 'User not found' });
+    }
+
+    const hashedPassword = await AuthService.hashPassword(newPassword);
+    const updatedUser = await userModel.changePassword(userId, hashedPassword);
+    return updatedUser;
+  }
+
   async suspendUser(userId:string){
     const suspendUser = await userModel.update(userId,{status:'suspended'})
     return suspendUser

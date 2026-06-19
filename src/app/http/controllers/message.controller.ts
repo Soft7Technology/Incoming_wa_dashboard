@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import { handleIncomingMessageChatBot } from '../../utils'
@@ -13,16 +14,19 @@ class MessageController {
    * POST /v1/messages/send
    * Send a message
    */
-  sendMessage = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  sendMessage = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { phone_number_id, to, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
     }
 
+    // Send under the owner's account so message is attributed to Aakanksha's data
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
     const message = await MessageService.sendMessage({
       messageUUID: uuidv4(),
-      user_id: req.userId!,
+      user_id: effectiveUserId,
       company_id: req.companyId!,
       campaign_id: campaign_id || undefined,
       phone_number_id,
@@ -45,39 +49,14 @@ class MessageController {
 
     const { data } = message
 
-    let description = '';
-
-    switch (type) {
-      case 'text':
-        description = `Sent text message to ${to}`;
-        break;
-      case 'template':
-        description = `Sent template "${template?.name}" to ${to}`;
-        break;
-      case 'image':
-        description = `Sent image message to ${to}`;
-        break;
-      case 'video':
-        description = `Sent video message to ${to}`;
-        break;
-      case 'document':
-        description = `Sent document message to ${to}`;
-        break;
-      default:
-        description = `Sent ${type} message to ${to}`;
-    }
-
     await activityLogsModel.create({
-      user_id: req.userId!,
-      company_id:req.companyId!,
-
+      user_id: effectiveUserId,
+      company_id: req.companyId!,
       action: 'SEND',
       entity_type: 'MESSAGE',
       entity_id: data?.id,
-      read:false,
-
+      read: false,
       description: `Sent ${type} message to ${to}`,
-
       new_data: {
         recipient: to,
         message_type: type,
@@ -85,20 +64,12 @@ class MessageController {
         phone_number_id,
         whatsapp_message_id: data?.whatsapp_message_id
       },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',
-
       request_method: req.method,
       api_endpoint: req.originalUrl,
-
       status: 'SUCCESS'
     });
-
 
     return successResponse(req, res, 'Message sent successfully', message, HttpStatusCode.CREATED);
   });
@@ -142,7 +113,9 @@ class MessageController {
       sort_order
     } = req.query;
 
-    const result = await MessageService.getMessages(req.companyId!, req.userId!, {
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
+    const result = await MessageService.getMessages(req.companyId!, effectiveUserId, {
       status,
       direction,
       type,
@@ -244,7 +217,7 @@ class MessageController {
    * POST /v1/messages/bulk-send
    * Send multiple messages in bulk (max 1000 per request)
    */
-  bulkSendMessages = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  bulkSendMessages = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { messages } = req.body;
 
     console.log("Bulk send messages request received", messages);
@@ -253,27 +226,32 @@ class MessageController {
       throw new HTTP400Error({ message: 'Messages array is required' });
     }
 
-    const result = await MessageService.bulkSendMessages(req.userId!, messages);
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const result = await MessageService.bulkSendMessages(effectiveUserId, messages);
 
     return successResponse(req, res, 'Bulk messages queued for sending', result, HttpStatusCode.ACCEPTED);
   });
 
   getMessagesConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { phone_number_id } = req.query
-    const userMessages = await MessageService.getMessagesConversation(req.userId!, phone_number_id)
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const userMessages = await MessageService.getMessagesConversation(effectiveUserId, phone_number_id)
     return successResponse(req, res, 'Message Retrived succesfully', userMessages);
   })
 
   getLeadConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { phone_number_id, leadNumber } = req.query
-    const userMessages = await MessageService.getLeadConversations(leadNumber, phone_number_id, req.userId!)
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const userMessages = await MessageService.getLeadConversations(leadNumber, phone_number_id, effectiveUserId)
     return successResponse(req, res, "Lead Message Retreived Succesfuly", userMessages)
   })
 
   getUserStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    console.log("User Id", req.userId!)
+    // Use ownerId so team members see the account owner's stats
+    const effectiveUserId = req.ownerId ?? req.userId!
+    console.log("Effective User Id (ownerId ?? userId)", effectiveUserId)
     const { time_frame } = req.query
-    const userStats = await MessageService.getUserStats(req.userId!, time_frame)
+    const userStats = await MessageService.getUserStats(effectiveUserId, time_frame)
     return successResponse(req, res, 'User Stats retrieved successfully', userStats)
   })
 

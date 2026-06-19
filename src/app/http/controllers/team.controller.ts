@@ -3,6 +3,7 @@ import { successResponse,errorResponse, tryCatchAsync } from '@surefy/utils/Cont
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import sendEmail from '@surefy/console/utils';
 import teamService from '@surefy/console/services/team.service';
 import userModel from '../../models/user.model';
@@ -14,9 +15,11 @@ class teamController{
     teamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         try {
             const { name, email, phone_number, role, permission } = req.body
-            if (!email || !phone_number || !role || !permission) {
-                throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
+            if (!email || !phone_number || !role) {
+                throw new HTTP400Error({ message: 'Email, phone number, and role are required' });
             }
+            // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
+            const permissionArray: string[] = Array.isArray(permission) ? permission : []
             const invite_sent_by  = req.userId!
             const company_id = req.companyId!
 
@@ -29,7 +32,7 @@ class teamController{
                 })
             }
 
-            const inviteTeam = await teamService.inviteTeam({ name, invite_sent_by, company_id, email, phone_number, role, permission })
+            const inviteTeam = await teamService.inviteTeam({ name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray })
             successResponse(req, res, `Invite send ${email} successfully`, inviteTeam)
         } catch (error: any) {
             console.error('Create Ticket Error:', error);
@@ -61,8 +64,10 @@ class teamController{
     /**
      * GET /v1/team/invites
      */
-    userTeamInvites = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const teamInvites = await teamService.userInvites(req.userId!)
+    userTeamInvites = tryCatchAsync(async(req: JWTAuthRequest, res: Response)=>{
+        // Members see the invites sent by the owner (their inviter)
+        const effectiveUserId = req.ownerId ?? req.userId!;
+        const teamInvites = await teamService.userInvites(effectiveUserId)
         successResponse(req,res,"All User Invites",teamInvites)
     })
 

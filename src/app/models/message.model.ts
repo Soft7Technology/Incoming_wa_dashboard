@@ -467,7 +467,7 @@ class MessageModel extends BaseModel {
             db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
             db('contacts')
               .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
-              .where('assigned_to', userId)
+              .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
       })
@@ -490,7 +490,7 @@ class MessageModel extends BaseModel {
             db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
             db('contacts')
               .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
-              .where('assigned_to', userId)
+              .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
       })

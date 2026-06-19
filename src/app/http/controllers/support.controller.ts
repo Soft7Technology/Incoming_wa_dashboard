@@ -1,12 +1,9 @@
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
-import chatBotService from '../../services/chatbot.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
-import wabaModel from '../../models/waba.model';
-import phoneNumberModel from '../../models/phoneNumber.model';
 import supportService from '../../services/support.service';
 import sendEmail from '../../utils';
 import supportTicketModel from '../../models/supportTicket.model';
@@ -104,39 +101,24 @@ Message: ${message}`,
       );
       console.log('Reply:', reply);
 
-    // Email should NEVER crash API
-    if (reply && email) {
-      try {
-        await sendEmail(
-          email,
-          'Support Ticket Update',
-          `${message}`
-        );
-
-        console.log('Email sent successfully');
-
-      } catch (emailError: any) {
-        console.error('Email Sending Failed:', emailError.message);
-
-        // Optional: store failed email logs in DB
-        // Optional: retry queue
+      // Email should NEVER crash API
+      if (reply && email) {
+        try {
+          await sendEmail(email, 'Support Ticket Update', `${message}`);
+          console.log('Email sent successfully');
+        } catch (emailError: any) {
+          console.error('Email Sending Failed:', emailError.message);
+        }
       }
-    }
-
 
       return successResponse(req, res, 'Reply sent successfully', reply, HttpStatusCode.OK);
     } catch (error: any) {
       console.error('Reply Error:', error);
 
-      // If it's your custom error
       if (error instanceof HTTP400Error) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
+        return res.status(400).json({ success: false, message: error.message });
       }
 
-      // fallback error
       return res.status(500).json({
         success: false,
         message: error.message || 'Something went wrong',
@@ -153,7 +135,9 @@ Message: ${message}`,
     successResponse(req, res, 'Support Ticket retrieved successfully', conversation, HttpStatusCode.OK);
   }
 
-  async getAllTickets(req: AuthRequest, res: Response) {
+  async getAllTickets(req: JWTAuthRequest, res: Response) {
+    // Members should see tickets scoped to the owner's company context
+    const effectiveUserId = req.ownerId ?? req.userId!;
     const tickets = await supportService.getAllTickets(req.companyId!);
     successResponse(req, res, 'Tickets retrieved successfully', tickets, HttpStatusCode.OK);
   }
@@ -176,23 +160,21 @@ Message: ${message}`,
     successResponse(req, res, 'Ticket closed successfully', closedTicket, HttpStatusCode.OK);
   }
 
-  async forwardTicketToSuperAdmin(req:AuthRequest,res:Response){
-    const {ticketId} = req.params
-    if(!ticketId){
+  async forwardTicketToSuperAdmin(req: JWTAuthRequest, res: Response) {
+    const { ticketId } = req.params;
+    if (!ticketId) {
       throw new HTTP400Error({ message: 'Ticket Id is required' });
     }
-
-    const forwardTicket = await supportService.fowardTicketToSuperAdmin(req.userId!,ticketId)
-    successResponse(req,res,"Ticket forward to superadmin successfully",forwardTicket,HttpStatusCode.OK)
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const forwardTicket = await supportService.fowardTicketToSuperAdmin(effectiveUserId, ticketId);
+    successResponse(req, res, 'Ticket forward to superadmin successfully', forwardTicket, HttpStatusCode.OK);
   }
 
-
-
-  async forwardTicketConversations(req:AuthRequest,res:Response){
-    const {ticketId} = req.params
-    const superAdminId =  '5a66df74-92d4-4bcd-814b-13d6318d4116'
-    const forwardTicketConversations = await ticketConversation.forwardTicketConversations(ticketId,superAdminId)
-    successResponse(req,res,"Forward Ticket Conversation",forwardTicketConversations,HttpStatusCode.OK)
+  async forwardTicketConversations(req: AuthRequest, res: Response) {
+    const { ticketId } = req.params;
+    const superAdminId = '5a66df74-92d4-4bcd-814b-13d6318d4116';
+    const forwardTicketConversations = await ticketConversation.forwardTicketConversations(ticketId, superAdminId);
+    successResponse(req, res, 'Forward Ticket Conversation', forwardTicketConversations, HttpStatusCode.OK);
   }
 
   async forwardTicketReply(req: AuthRequest, res: Response) {
@@ -226,15 +208,10 @@ Message: ${message}`,
     } catch (error: any) {
       console.error('Reply Error:', error);
 
-      // If it's your custom error
       if (error instanceof HTTP400Error) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
+        return res.status(400).json({ success: false, message: error.message });
       }
 
-      // fallback error
       return res.status(500).json({
         success: false,
         message: error.message || 'Something went wrong',
@@ -242,22 +219,18 @@ Message: ${message}`,
     }
   }
 
-  async getAllforwardTickets(req:AuthRequest,res:Response){
-    try{
-      const tickets = await supportService.getAllforwardTickets(req.userId!);
+  async getAllforwardTickets(req: JWTAuthRequest, res: Response) {
+    try {
+      const effectiveUserId = req.ownerId ?? req.userId!;
+      const tickets = await supportService.getAllforwardTickets(effectiveUserId);
       successResponse(req, res, 'Tickets retrieved successfully', tickets, HttpStatusCode.OK);
-    }catch(error:any){
-            console.error('Reply Error:', error);
+    } catch (error: any) {
+      console.error('Reply Error:', error);
 
-      // If it's your custom error
       if (error instanceof HTTP400Error) {
-        return res.status(400).json({
-          success: false,
-          message: error.message,
-        });
+        return res.status(400).json({ success: false, message: error.message });
       }
 
-      // fallback error
       return res.status(500).json({
         success: false,
         message: error.message || 'Something went wrong',
@@ -265,41 +238,11 @@ Message: ${message}`,
     }
   }
 
-  async deleteSupportTicket(req:AuthRequest,res:Response){
-        const {ticketId} = req.params
-        await supportService.deleteSupportTicket(ticketId);
-        return successResponse(req, res, 'Ticket deleted successfully');
+  async deleteSupportTicket(req: AuthRequest, res: Response) {
+    const { ticketId } = req.params;
+    await supportService.deleteSupportTicket(ticketId);
+    return successResponse(req, res, 'Ticket deleted successfully');
   }
 }
 
-export default new supporController()
-
-
-
-
-
-// -- CREATE TABLE support_tickets (
-// --     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-
-// --     name VARCHAR(255) NOT NULL,
-// --     email VARCHAR(255) NOT NULL,
-// --     phone VARCHAR(20),
-
-// --     message TEXT NOT NULL,
-
-// --     user_id UUID,
-// --     company_id UUID NOT NULL,
-
-// --     status VARCHAR(50) DEFAULT 'open',  -- open, in_progress, closed
-
-// --     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-// --     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-
-// --     CONSTRAINT fk_user
-// --         FOREIGN KEY (user_id) REFERENCES users(id)
-// --         ON DELETE SET NULL,
-
-// --     CONSTRAINT fk_company
-// --         FOREIGN KEY (company_id) REFERENCES companies(id)
-// --         ON DELETE CASCADE
-// -- );
+export default new supporController();

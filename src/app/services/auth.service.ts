@@ -8,6 +8,7 @@ import sendEmail from '../utils';
 import passwordResetModel from '../models/passwordReset.model';
 import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
+import userTeamModel from '../models/team.model';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -20,6 +21,7 @@ interface JWTPayload {
   phone?: string;
   role: string;
   companyId?: string;
+  ownerId?: string;
 }
 
 class AuthService {
@@ -69,16 +71,36 @@ class AuthService {
     // Get active plan status from user_plans table
     const activePlan = await userPlansModel.getUserPlan(user.id);
 
+    // Look up team invite permissions — if this user was invited as a team member,
+    // their allowed nav keys are stored in user_team.permission
+    let teamPermissions: string[] = [];
+    let ownerId: string = user.id; // default: own data
+    try {
+      const teamRow = await userTeamModel.findOne({ email: user.email, invite_status: 'accepted' });
+      if (teamRow?.permission) {
+        const perm = teamRow.permission;
+        // Handle both flat array ["dashboard","inbox"] and legacy {nav:[...]} shape
+        if (Array.isArray(perm)) {
+          teamPermissions = perm.map((p: string) => p.toLowerCase());
+        } else if (Array.isArray(perm?.nav)) {
+          teamPermissions = perm.nav.map((p: string) => p.toLowerCase());
+        }
+        // The inviter's userId — team member sees inviter's data
+        ownerId = teamRow.invite_sent_by;
+      }
+    } catch { /* ignore — not a team member */ }
+
     // Update last login
     await UserModel.updateLastLogin(user.id, ipAddress);
 
-    // Generate JWT token
+    // Generate JWT token — include ownerId so all queries use inviter's data
     const token = this.generateToken({
       userId: user.id,
       email: user.email,
       phone: user.phone,
       role: user.role,
       companyId: user.company_id,
+      ownerId,
     });
 
     // Remove password from response
@@ -91,6 +113,9 @@ class AuthService {
         plan_name: activePlan ? activePlan.plan_name : null,
         plan_start_date: activePlan ? activePlan.start_date : null,
         plan_end_date: activePlan ? activePlan.end_date : null,
+        // Include team permissions — empty array means no restriction (owner/admin)
+        permissions: teamPermissions,
+        owner_id: ownerId,
       },
       company,
       token,

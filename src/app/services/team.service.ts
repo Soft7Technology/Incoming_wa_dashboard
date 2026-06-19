@@ -110,12 +110,16 @@ class teamService{
             const hashedPassword = await bcrypt.hash(password, 10)
 
             //6. Create user account
+            // permission in user_team is a flat array e.g. ["dashboard","contact"]
+            // users table stores it as permissions (jsonb)
             const createdUser = await userModel.create({
-                name:existingInvite.name,
+                name: existingInvite.name,
                 email: existingInvite.email,
                 phone: existingInvite.phone_number,
                 role: existingInvite.role,
-                permission: existingInvite.permission,
+                permissions: Array.isArray(existingInvite.permission)
+                    ? existingInvite.permission
+                    : (existingInvite.permission?.nav ?? []),
                 password: hashedPassword,
                 status: "active"
             })
@@ -145,15 +149,37 @@ class teamService{
     async userInvites(userId: string) {
         const invites = await userTeamModel.findAll({ invite_sent_by: userId })
         // Normalize each record: lowercase role, ensure name is present
-        return invites.map((invite: any) => ({
-            ...invite,
-            name: invite.name ?? null,
-            role: invite.role ? invite.role.toLowerCase() : invite.role,
-        }))
+        // Also fetch the real user's status so UI can show Suspend/Restore correctly
+        const db = userTeamModel['db'] as any;
+        return Promise.all(invites.map(async (invite: any) => {
+            let user_status = 'unknown';
+            try {
+                const user = await db('users').where('email', invite.email).select('status').first();
+                user_status = user?.status ?? 'unknown';
+            } catch { /* ignore */ }
+            return {
+                ...invite,
+                name: invite.name ?? null,
+                role: invite.role ? invite.role.toLowerCase() : invite.role,
+                user_status,
+            };
+        }));
     }
 
-    async deleteInvite(inviteId:string){
-        return await userTeamModel.delete(inviteId)
+    async deleteInvite(inviteId: string) {
+        // 1. Find the invite to get the email
+        const invite = await userTeamModel.findById(inviteId);
+
+        // 2. Delete the user account permanently (hard delete from users table)
+        if (invite?.email) {
+            const user = await userModel.findOne({ email: invite.email });
+            if (user) {
+                await userModel.delete(user.id);
+            }
+        }
+
+        // 3. Delete the invite record
+        return await userTeamModel.delete(inviteId);
     }
 }
 

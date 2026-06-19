@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import subscriptionService from "../../services/subscription.service"
 import crypto from 'crypto';
@@ -60,8 +61,9 @@ class SubscriptionController {
     return successResponse(req, res, 'New Subscription created successfully', newSubscription, HttpStatusCode.CREATED);
   });
 
-  getDeafultSubscritionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const subscriptionPlans = await subscriptionService.getDeafultSubscritionPlan(req.userId!);
+  getDeafultSubscritionPlan = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const subscriptionPlans = await subscriptionService.getDeafultSubscritionPlan(effectiveUserId);
     return successResponse(
       req,
       res,
@@ -71,18 +73,15 @@ class SubscriptionController {
     );
   });
 
-  getSubscription = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  getSubscription = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const effectiveUserId = req.ownerId ?? req.userId!;
     const filters = {
       page: req.query.page,
       limit: req.query.limit,
     };
     const { active } = req.query;
-    // if(active === 'true'){
-    //     const subscription = await subscriptionService.getActiveSubscriptionPlan(req.companyId!)
-    //     return successResponse(req, res, 'Active Subscription retrieved successfully', subscription, HttpStatusCode.OK);
-    // }
     console.log('Active:', active);
-    const subscription = await subscriptionService.getSubscriptionPlans(req.userId!, req.companyId!, active, filters);
+    const subscription = await subscriptionService.getSubscriptionPlans(effectiveUserId, req.companyId!, active, filters);
     return successResponse(req, res, 'Subscription retrieved successfully', subscription, HttpStatusCode.OK);
   });
 
