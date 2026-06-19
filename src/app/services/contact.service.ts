@@ -613,6 +613,24 @@ class ContactService {
   async findContactByPhone(userId: string, phoneNumber: string) {
     return ContactModel.findByPhone(userId, phoneNumber);
   }
+
+  async userAssignedContact(contactId: string, assigned_to: string) {
+    const contact = await ContactModel.findById(contactId);
+
+    let assignedTo = contact.assigned_to || [];
+
+    if (typeof assignedTo === 'string') {
+      assignedTo = JSON.parse(assignedTo);
+    }
+
+    const updatedAssignedTo = [...new Set([...assignedTo, assigned_to])];
+
+    return await db('contacts')
+      .where('id', contactId)
+      .update({
+        assigned_to: updatedAssignedTo
+      });
+  }
 }
 
 export default new ContactService();

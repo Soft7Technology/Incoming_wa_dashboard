@@ -472,6 +472,17 @@ class ContactController {
     const members = await userTeamModel.findAcceptedByInviter(req.userId!);
     return successResponse(req, res, 'Accepted team members retrieved', members);
   });
+
+  /**
+   * User Assigned Contact
+   */
+  assignedContactToUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const{assigned_to} = req.body
+    const {contactId} = req.params
+
+    const userAssignedContact = await ContactService.userAssignedContact(contactId,assigned_to)
+    successResponse(req,res,`User assigned ${contactId}`,userAssignedContact, HttpStatusCode.OK)
+  })
 }
 
 export default new ContactController();
