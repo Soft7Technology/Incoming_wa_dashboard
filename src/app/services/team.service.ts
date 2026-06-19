@@ -11,7 +11,7 @@ import { bulkUpdateTableExecutionQueue } from '@surefy/console/queues/bulkTableU
 class teamService{
     async inviteTeam(data: any) {
         try {
-            const { name, email, role, invite_sent_by } = data
+            const { name, email, role, invite_sent_by,user_id, company_id, } = data
 
             const existingInvite = await userTeamModel.findInvite(email,invite_sent_by)
             console.log("Existing Value",existingInvite)

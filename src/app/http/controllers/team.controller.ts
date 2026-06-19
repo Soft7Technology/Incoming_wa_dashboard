@@ -29,7 +29,7 @@ class teamController{
                 })
             }
 
-            const inviteTeam = await teamService.inviteTeam({ name, invite_sent_by, company_id, email, phone_number, role, permission })
+            const inviteTeam = await teamService.inviteTeam({ name, invite_sent_by,user_id, company_id, email, phone_number, role, permission })
             successResponse(req, res, `Invite send ${email} successfully`, inviteTeam)
         } catch (error: any) {
             console.error('Create Ticket Error:', error);
