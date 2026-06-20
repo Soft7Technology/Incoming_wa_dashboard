@@ -6,7 +6,7 @@ class CompanyModel extends BaseModel {
   }
 
   async findById(id: string) {
-    return this.query().where({ id }).whereNull('deleted_at').first();
+    return this.query().where({ id }).first();
   }
 
   async findAll(conditions: any = {}) {

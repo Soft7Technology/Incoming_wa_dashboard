@@ -108,8 +108,6 @@ class chatBotController {
                 false
             );
 
-            const { data }: any = result;
-
             await activityLogsModel.create({
                 company_id: req.companyId,
                 user_id: effectiveUserId,
@@ -117,11 +115,11 @@ class chatBotController {
                 action: 'UNPUBLISH',
                 entity_type: 'CHATBOT',
                 entity_id: chatBotId,
-                description: `Unpublished chatbot "${data.name}"`,
+                description: `Unpublished chatbot "${ result.name}"`,
                 new_data: {
-                    chatbot_name: data.name,
-                    status: data.status,
-                    published: data.published
+                    chatbot_name:  result.name,
+                    status:  result.status,
+                    published:  result.published
                 },
                 ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
                 user_agent: req.headers['user-agent'] || '',
