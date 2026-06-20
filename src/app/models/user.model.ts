@@ -297,6 +297,8 @@ class UserModel extends BaseModel {
       .returning('*')
       .then((res: any) => res[0]);
   }
+
+
 }
 
 export default new UserModel();

@@ -105,36 +105,39 @@ class subscriptionService {
     if (!companyId) {
       throw new HTTP400Error({ message: "Company Not found" })
     }
-    const companyDetails = await companyModel.findById(companyId)
-    if (!companyDetails) {
-      throw new HTTP400Error({ message: "Company Not found" })
-    }
+    // const companyDetails = await companyModel.findById(companyId)
+    // if (!companyDetails) {
+    //   throw new HTTP400Error({ message: "Company Not found" })
+    // }
 
-    if (companyDetails.credit_balance >= data.price) {
-      const balanceBefore = parseFloat(companyDetails.credit_balance)
-      const balanceAfter = balanceBefore - data.price
+    // if (companyDetails.credit_balance >= data.price) {
+    //   const balanceBefore = parseFloat(companyDetails.credit_balance)
+    //   const balanceAfter = balanceBefore - data.price
 
-      await creditTransactionModel.create({
-        company_id: companyId,
-        company_name: companyDetails.company_name,
-        type: 'debit',
-        amount: balanceAfter,
-        balance_before: balanceBefore,
-        balance_after: balanceAfter,
-        description: `${data.price} Debited from ${companyDetails.company_name} wallet`,
-        created_by: userId,
-        reference_type: 'manual',
-      });
+    //   await creditTransactionModel.create({
+    //     company_id: companyId,
+    //     company_name: companyDetails.company_name,
+    //     type: 'debit',
+    //     amount: balanceAfter,
+    //     balance_before: balanceBefore,
+    //     balance_after: balanceAfter,
+    //     description: `${data.price} Debited from ${companyDetails.company_name} wallet`,
+    //     created_by: userId,
+    //     reference_type: 'manual',
+    //   });
 
-      await companyModel.update(companyDetails.id, {
-        credit_balance: balanceAfter
-      });
+    //   await companyModel.update(companyDetails.id, {
+    //     credit_balance: balanceAfter
+    //   });
 
-      const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
-      return newSubscriptionPlan;
-    } else {
-      throw new HTTP400Error({ message: "Your Company does not have enough credit balance to create a new Subscription Plan" })
-    }
+    //   const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
+    //   return newSubscriptionPlan;
+    // } else {
+    //   throw new HTTP400Error({ message: "Your Company does not have enough credit balance to create a new Subscription Plan" })
+    // }
+
+    const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
+    return newSubscriptionPlan;
   }
 
   async getActiveSubscriptionPlan(companyId: string) {

@@ -12,7 +12,9 @@ import userPlansModel from '../models/userPlans.model';
 import { transformFeatures } from '../utils';
 import subscriptionService from './subscription.service';
 import { sub } from 'date-fns';
-import {uploadImage} from '@surefy/config/firebase.config'
+import { uploadImage } from '@surefy/config/firebase.config'
+import creditTransactionModel from '../models/creditTransaction.model';
+import activityLogsModel from '../models/activityLogs.model';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 
 class CompanyService {
@@ -21,7 +23,7 @@ class CompanyService {
    */
   async onboardCompany(data: CreateCompanyDto) {
     // Check if email already exists
-    console.log("Data",data)
+    console.log("Data", data)
     const existingCompany = await CompanyRepository.findByEmail(data.email);
     if (existingCompany) {
       throw new HTTP400Error({ message: 'Company with this email already exists' });
@@ -64,7 +66,7 @@ class CompanyService {
     };
   }
 
-  async getCompanyDetails(companyId:string){
+  async getCompanyDetails(companyId: string) {
     const companyDetails = await companyModel.findById(companyId)
     return companyDetails
   }
@@ -96,9 +98,9 @@ class CompanyService {
   /**
    * Update company
    */
-  async updateCompany(companyId:string, data: UpdateCompanyDto) {
+  async updateCompany(companyId: string, data: UpdateCompanyDto) {
     const company = await this.getCompanyById(companyId);
-    if(company){
+    if (company) {
       return CompanyRepository.update(companyId, data);
     }
   }
@@ -157,7 +159,7 @@ class CompanyService {
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId, user.role,role);
+    const users = await userModel.findAllUserByCompanyId(companyId, user.role, role);
     return users;
   }
 
@@ -330,37 +332,137 @@ class CompanyService {
     return newUserPlan;
   }
 
-  async activateUserPlan(userId: string, planData?: any, existingUserPlan?: any, companyId?: string) {
-    console.log('Activing Plan', userId, planData);
-    console.log('Existing User Plan:', existingUserPlan);
+  // if its monthly so from company credit_balance price of the subscription will get cut 
+  // commission to the superAdmin of 1000 on yearly and 100 on monthly 
+  // where debit of prices from company balance and in superadmin balance will add the comission of 100 and 1000 ruppes based upon the mothly yearly
+
+
+  async activateUserPlan(
+    userId: string,
+    planData?: any,
+    existingUserPlan?: any,
+    companyId?: any
+  ) {
     if (!planData) {
-      console.error('planData is undefined ❌');
       throw new Error('planData is required');
     }
 
     const { plan_name, price, billing_cycle, features } = planData;
 
-    if (existingUserPlan) {
-      await userPlansModel.update(existingUserPlan, { active: false });
+    // ============================================
+    // COMPANY WALLET VALIDATION & DEBIT
+    // ============================================
+
+    const companyDetails = await companyModel.findById(companyId);
+
+    if (!companyDetails) {
+      throw new HTTP400Error({
+        message: 'Company not found',
+      });
     }
 
-    const durationDays = billing_cycle === 'Monthly' ? 30 : billing_cycle === 'Yearly' ? 365 : 3;
+    if (Number(companyDetails.credit_balance) < Number(price)) {
+      throw new HTTP400Error({
+        message: 'Insufficient company wallet balance',
+      });
+    }
+
+    const companyBalanceBefore = Number(companyDetails.credit_balance);
+    const companyBalanceAfter =
+      companyBalanceBefore - Number(price);
+
+    await companyModel.update(companyDetails.id, {
+      credit_balance: companyBalanceAfter,
+    });
+
+    await creditTransactionModel.create({
+      company_id: companyId,
+      company_name: companyDetails.company_name,
+      type: 'debit',
+      amount: Number(price),
+      balance_before: companyBalanceBefore,
+      balance_after: companyBalanceAfter,
+      description: `Subscription purchase (${plan_name})`,
+      created_by: userId,
+      reference_type: 'subscription',
+    });
+
+    // ============================================
+    // SUPER ADMIN COMMISSION
+    // ============================================
+
+    let commission = 0;
+
+    if (billing_cycle === 'Monthly') {
+      commission = 100;
+    } else if (billing_cycle === 'Yearly') {
+      commission = 1000;
+    }
+
+    if (commission > 0) {
+      const superAdmin: any = await userModel.findByRole('superadmin')
+
+      if (superAdmin) {
+        const balanceBefore =
+          Number(superAdmin.credit_balance || 0);
+
+        const balanceAfter =
+          balanceBefore + commission;
+
+        await userModel.update(superAdmin.id, {
+          credit_balance: balanceAfter,
+        });
+
+        await creditTransactionModel.create({
+          user_id: superAdmin.id,
+          type: 'credit',
+          amount: commission,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+          description: `Commission received from ${companyDetails.company_name} subscription purchase`,
+          created_by: userId,
+          reference_type: 'subscription_commission',
+        });
+      }
+    }
+
+    // ============================================
+    // DEACTIVATE OLD PLAN
+    // ============================================
+
+    if (existingUserPlan) {
+      await userPlansModel.update(existingUserPlan.id, {
+        active: false,
+      });
+    }
+
+    // ============================================
+    // PLAN DATES
+    // ============================================
+
+    const durationDays =
+      billing_cycle === 'Monthly'
+        ? 30
+        : billing_cycle === 'Yearly'
+          ? 365
+          : 3;
 
     const { limits, usage } = transformFeatures(features);
-    console.log('Transformed limits:', limits);
-    console.log('Transformed usage:', usage);
 
     const startDate = new Date();
-
     const endDate = new Date(startDate);
 
     if (billing_cycle === 'Monthly') {
       endDate.setMonth(endDate.getMonth() + 1);
     } else if (billing_cycle === 'Yearly') {
       endDate.setFullYear(endDate.getFullYear() + 1);
-    } else if (billing_cycle === 'Free') {
+    } else {
       endDate.setDate(endDate.getDate() + 3);
     }
+
+    // ============================================
+    // CREATE PLAN
+    // ============================================
 
     const newUserPlan = await userPlansModel.create({
       user_id: userId,
@@ -373,12 +475,45 @@ class CompanyService {
       end_date: endDate,
       subscription_id: planData.id,
       active: true,
-      limits: JSON.stringify(limits), // JSONB
-      usage: JSON.stringify(usage), // JSONB
+      limits: JSON.stringify(limits),
+      usage: JSON.stringify(usage),
       duration_days: durationDays,
     });
 
-    await userModel.update(userId,{assigned_plan:newUserPlan.id})
+    await userModel.update(userId, {
+      assigned_plan: newUserPlan.id,
+    });
+
+    // ============================================
+    // ACTIVITY LOG
+    // ============================================
+
+    await activityLogsModel.create({
+      user_id: userId,
+      company_id: companyId,
+
+      action: 'ACTIVATE',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: newUserPlan.id,
+
+      read: false,
+
+      description: `${plan_name} plan activated (${billing_cycle}) for ₹${price}`,
+
+      new_data: {
+        id: newUserPlan.id,
+        plan_name: newUserPlan.plan_name,
+        billing_cycle: newUserPlan.billing_cycle,
+        price: newUserPlan.price,
+        start_date: newUserPlan.start_date,
+        end_date: newUserPlan.end_date,
+        active: true,
+        commission,
+      },
+
+      status: 'SUCCESS',
+    });
+
     return newUserPlan;
   }
 
@@ -488,7 +623,7 @@ class CompanyService {
     return newUserPlan;
   }
 
-  async getcompanySubscriptions(userId: string, companyId: string,active:any) {
+  async getcompanySubscriptions(userId: string, companyId: string, active: any) {
     const user = await userModel.findById(userId);
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
@@ -561,8 +696,8 @@ class CompanyService {
     return deleteUser;
   }
 
-  async updateUser(userId:string,data:string){
-    const updateUser = await userModel.update(userId,data)
+  async updateUser(userId: string, data: string) {
+    const updateUser = await userModel.update(userId, data)
     return updateUser
   }
 
@@ -577,8 +712,8 @@ class CompanyService {
     return updatedUser;
   }
 
-  async suspendUser(userId:string){
-    const suspendUser = await userModel.update(userId,{status:'suspended'})
+  async suspendUser(userId: string) {
+    const suspendUser = await userModel.update(userId, { status: 'suspended' })
     return suspendUser
   }
 
@@ -587,31 +722,31 @@ class CompanyService {
     return activatedUser;
   }
 
-  async activateUser(companyId:string){
+  async activateUser(companyId: string) {
     const companyUser = await userModel.findAllUserByCompanyId(companyId)
-    if(!companyUser){
-      throw new HTTP401Error({message:"Company not have any active user"})
+    if (!companyUser) {
+      throw new HTTP401Error({ message: "Company not have any active user" })
     }
 
-    for(const user of companyUser){
-      await userModel.update(user.id,{status:"active"})
+    for (const user of companyUser) {
+      await userModel.update(user.id, { status: "active" })
     }
-    
-    const activeCompany = await companyModel.update(companyId,{status:"active"})
-    return activeCompany 
+
+    const activeCompany = await companyModel.update(companyId, { status: "active" })
+    return activeCompany
   }
 
-  async suspendCompany(companyId:string){
+  async suspendCompany(companyId: string) {
     const companyActiveUser = await userModel.findAllUserByCompanyId(companyId)
-    if(!companyActiveUser){
-      throw new HTTP401Error({message:"Company not have any active user to suspend"})
+    if (!companyActiveUser) {
+      throw new HTTP401Error({ message: "Company not have any active user to suspend" })
     }
 
-    for(const user of companyActiveUser){
-      await userModel.update(user.id,{status:"suspend"})
+    for (const user of companyActiveUser) {
+      await userModel.update(user.id, { status: "suspend" })
     }
 
-    const suspendCompany = await companyModel.update(companyId,{status:'suspend'})
+    const suspendCompany = await companyModel.update(companyId, { status: 'suspend' })
     return suspendCompany
   }
 
