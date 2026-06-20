@@ -582,6 +582,11 @@ class CompanyService {
     return suspendUser
   }
 
+  async activateSingleUser(userId: string) {
+    const activatedUser = await userModel.update(userId, { status: 'active' });
+    return activatedUser;
+  }
+
   async activateUser(companyId:string){
     const companyUser = await userModel.findAllUserByCompanyId(companyId)
     if(!companyUser){

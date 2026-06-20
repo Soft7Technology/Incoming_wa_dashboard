@@ -92,27 +92,36 @@ class subscriptionService {
             // const balanceBefore = parseFloat(company.credit_balance || '0');
       // const balanceAfter = balanceBefore + data.amount;
 
-  async createSubscriptionPlan(userId: string, companyId: string, data: subscriptionPlans) {
-    console.log('Creating subscription plan with data:', data);
-    // Check price and credit_balance of companies
-    // Give error not have enough balance 
-    const companyDetails = await companyModel.findById(companyId)
-    if(!companyDetails){
-      throw new HTTP400Error({message:"Company Not found"})
+  async createSubscriptionPlan(userId: string, companyId: string | undefined, userRole: string, data: subscriptionPlans) {
+    console.log('Creating subscription plan with data:', data, 'role:', userRole);
+
+    // SuperAdmin creates global platform plans — no company or credit check needed
+    if (userRole === 'superadmin') {
+      const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId });
+      return newSubscriptionPlan;
     }
-    
+
+    // For regular company users: check company exists and has enough credit balance
+    if (!companyId) {
+      throw new HTTP400Error({ message: "Company Not found" })
+    }
+    const companyDetails = await companyModel.findById(companyId)
+    if (!companyDetails) {
+      throw new HTTP400Error({ message: "Company Not found" })
+    }
+
     if (companyDetails.credit_balance >= data.price) {
       const balanceBefore = parseFloat(companyDetails.credit_balance)
       const balanceAfter = balanceBefore - data.price
 
-      const transaction = await creditTransactionModel.create({
+      await creditTransactionModel.create({
         company_id: companyId,
-        company_name:companyDetails.company_name,
+        company_name: companyDetails.company_name,
         type: 'debit',
         amount: balanceAfter,
         balance_before: balanceBefore,
         balance_after: balanceAfter,
-        description: `${data.price} Debited from  ${companyDetails.name} wallet`,
+        description: `${data.price} Debited from ${companyDetails.company_name} wallet`,
         created_by: userId,
         reference_type: 'manual',
       });
@@ -124,7 +133,7 @@ class subscriptionService {
       const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
       return newSubscriptionPlan;
     } else {
-      throw new HTTP400Error({ message: "Your Company have not credit balance to create a new Subscription Plan" })
+      throw new HTTP400Error({ message: "Your Company does not have enough credit balance to create a new Subscription Plan" })
     }
   }
 

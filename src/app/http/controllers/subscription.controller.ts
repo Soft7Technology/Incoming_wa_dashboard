@@ -14,10 +14,10 @@ class SubscriptionController {
   /**
    * Create Subscription Plans
    */
-  createSubscription = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  createSubscription = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { plan_name, price, billing_cycle, description, active, features } = req.body;
 
-    const newSubscription = await subscriptionService.createSubscriptionPlan(req.userId!, req.companyId!, {
+    const newSubscription = await subscriptionService.createSubscriptionPlan(req.userId!, req.companyId, req.userRole!, {
       plan_name,
       price,
       billing_cycle,
@@ -28,7 +28,7 @@ class SubscriptionController {
 
     await activityLogsModel.create({
       user_id: req.userId!,
-      company_id: req.companyId!,
+      company_id: req.companyId,
 
       action: 'CREATE',
       entity_type: 'SUBSCRIPTION',
