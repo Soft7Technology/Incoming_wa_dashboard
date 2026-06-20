@@ -199,7 +199,7 @@ class UserModel extends BaseModel {
   }
 
   async findByRole(role: string, filters: any = {}) {
-    let query = this.query().where({ role }).whereNull('deleted_at');
+    let query = this.query().where({ role:role }).whereNull('deleted_at');
 
     if (filters.status) {
       query = query.where({ status: filters.status });
@@ -210,6 +210,11 @@ class UserModel extends BaseModel {
     }
 
     return query.orderBy('created_at', 'desc');
+  }
+
+  async findSuperAdmin(role:string){
+    let query = this.query().where({ role:role }).whereNull('deleted_at').first()
+    return query
   }
 
   async updateLastLogin(userId: string, ipAddress: string) {

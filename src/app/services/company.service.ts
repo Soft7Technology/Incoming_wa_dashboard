@@ -343,9 +343,12 @@ class CompanyService {
     existingUserPlan?: any,
     companyId?: any
   ) {
+
     if (!planData) {
       throw new Error('planData is required');
     }
+
+    console.log("User",userId,companyId)
 
     const { plan_name, price, billing_cycle, features } = planData;
 
@@ -377,6 +380,7 @@ class CompanyService {
 
     await creditTransactionModel.create({
       company_id: companyId,
+      user_id: userId,
       company_name: companyDetails.company_name,
       type: 'debit',
       amount: Number(price),
@@ -400,7 +404,9 @@ class CompanyService {
     }
 
     if (commission > 0) {
-      const superAdmin: any = await userModel.findByRole('superadmin')
+      const superAdmin: any = await userModel.findSuperAdmin('superadmin')
+      console.log('Super Admin:', superAdmin);
+      console.log('Super Admin ID:', superAdmin?.id);
 
       if (superAdmin) {
         const balanceBefore =
@@ -415,6 +421,7 @@ class CompanyService {
 
         await creditTransactionModel.create({
           user_id: superAdmin.id,
+          company_id:superAdmin.company_id,
           type: 'credit',
           amount: commission,
           balance_before: balanceBefore,
