@@ -64,6 +64,7 @@ class UserModel extends BaseModel {
             .from('campaigns')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('campaigns_count'),
 
         // chatbot
@@ -72,6 +73,7 @@ class UserModel extends BaseModel {
             .from('chat_bot')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('chatbot_count'),
 
         // contacts
@@ -80,6 +82,7 @@ class UserModel extends BaseModel {
             .from('contacts')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('contacts_count'),
 
         // contact lists
@@ -88,6 +91,7 @@ class UserModel extends BaseModel {
             .from('contact_lists')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('contact_lists_count'),
 
         // sent messages

@@ -11,7 +11,7 @@ import { bulkUpdateTableExecutionQueue } from '@surefy/console/queues/bulkTableU
 class teamService{
     async inviteTeam(data: any) {
         try {
-            const { name, email, role, invite_sent_by } = data
+            const { name, email, role, invite_sent_by,user_id, company_id, } = data
 
             const existingInvite = await userTeamModel.findInvite(email,invite_sent_by)
             console.log("Existing Value",existingInvite)
@@ -129,22 +129,7 @@ class teamService{
             })
 
             await userTeamModel.update(existingInvite.id, { invite_status: "accepted" })
-            // for(const permission of createdUser.permission){
-            //     await bulkUpdateTableExecutionQueue.add(
-            //         `bulkTableUpdate - ${permission}`,
-            //         {
-            //             permission:permission,
-            //             assigned_to:createdUser.id
-            //         },
-            //         {
-            //           jobId: createdUser.id,
-            //           delay: 3000, // 3-second delay so the DB write fully commits first
-            //         }
-            //     )
-            // }
-
-            // Add user_id into assigned_to array
-            // Check permission[] and pass into the permissionModel Update 
+            
             return {
                 success: true,
                 message: "Password setup successful",

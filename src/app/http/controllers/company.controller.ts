@@ -435,21 +435,22 @@ class CompanyController {
 
     // Resolve real users.id — the frontend may send user_team.id
     let userId = id;
-    const directUser = await userModel.findById(id);
-    if (!directUser) {
-      // Try resolving via user_team (team invite id)
-      const teamRow = await userTeamModel.findById(id);
-      if (!teamRow) {
-        return res.status(404).json({ success: false, message: 'User not found' });
-      }
-      const realUser = await userModel.findOne({ email: teamRow.email });
-      if (!realUser) {
-        return res.status(404).json({ success: false, message: 'User account not found for this invite' });
-      }
-      userId = realUser.id;
-    }
+    const suspendUser = await userModel.update(id,{status:"suspended"})
+    // const directUser = await userModel.findById(id);
+    // if (!directUser) {
+    //   // Try resolving via user_team (team invite id)
+    //   const teamRow = await userTeamModel.findById(id);
+    //   if (!teamRow) {
+    //     return res.status(404).json({ success: false, message: 'User not found' });
+    //   }
+    //   const realUser = await userModel.findOne({ email: teamRow.email });
+    //   if (!realUser) {
+    //     return res.status(404).json({ success: false, message: 'User account not found for this invite' });
+    //   }
+    //   userId = realUser.id;
+    // }
 
-    const suspendUser = await CompanyService.suspendUser(userId);
+    // const suspendUser = await CompanyService.suspendUser(userId);
 
     await activityLogsModel.create({
       company_id: req.companyId,
@@ -567,7 +568,7 @@ class CompanyController {
       status: 'SUCCESS'
     });
 
-    successResponse(req, res, 'User Activated Successfully', activateUser, HttpStatusCode.CREATED);
+    successResponse(req, res, 'User Activated Successfully', activate , HttpStatusCode.CREATED);
   }
 
   async suspendCompany(req:AuthRequest,res:Response){
