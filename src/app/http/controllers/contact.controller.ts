@@ -459,7 +459,7 @@ class ContactController {
       return res.status(404).json({ success: false, message: 'Contact not found for this phone number' });
     }
 
-    const updated = await ContactService.updateContact(contact.id, { assigned_to });
+    const updated = await ContactService.userAssignedContact(contact.id, assigned_to);
 
     return successResponse(req, res, 'Contact assigned successfully', updated);
   });

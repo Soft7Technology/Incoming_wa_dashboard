@@ -7,6 +7,8 @@ import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import sendEmail from '@surefy/console/utils';
 import teamService from '@surefy/console/services/team.service';
 import userModel from '../../models/user.model';
+import userTeamModel from '../../models/team.model';
+import db from '@surefy/database';
 
 class teamController{
     /**
@@ -78,6 +80,57 @@ class teamController{
         const{id}=req.params
         const deleteInvite = await teamService.deleteInvite(id)
         successResponse(req,res,"Delete team invite successfully",deleteInvite,HttpStatusCode.ACCEPTED)
+    })
+
+    /**
+     * PATCH /v1/team/:id/permissions
+     * Add nav permissions to an accepted team member.
+     * :id is the user.id of the team member.
+     * Body: { add: string[] }  — array of nav keys to add, e.g. ["inbox"]
+     */
+    updateMemberPermissions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+        const { id } = req.params;
+        const { add = [] }: { add: string[] } = req.body;
+
+        // Find the user to get their email
+        const user = await userModel.findById(id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        // Find the user_team row for this member (invited by the current user or by owner)
+        const effectiveUserId = req.ownerId ?? req.userId!;
+        const teamRow = await db('user_team')
+            .where('email', user.email)
+            .where('invite_status', 'accepted')
+            .first();
+
+        if (!teamRow) {
+            return res.status(404).json({ success: false, message: 'Team member not found' });
+        }
+
+        // Merge new permissions into existing nav array
+        const existing: any = teamRow.permission ?? {};
+        const existingNav: string[] = Array.isArray(existing?.nav)
+            ? existing.nav
+            : (Array.isArray(existing) ? existing : []);
+
+        const { replace }: { replace?: string[] } = req.body;
+
+        // If `replace` is provided, use it as the full new nav list; otherwise append
+        const mergedNav = replace !== undefined
+            ? replace.map((k: string) => k.toLowerCase())
+            : [...new Set([...existingNav, ...add.map((k: string) => k.toLowerCase())])];
+
+        const updatedPermission = Array.isArray(existing)
+            ? mergedNav  // legacy flat array
+            : { ...existing, nav: mergedNav };
+
+        await db('user_team')
+            .where('id', teamRow.id)
+            .update({ permission: JSON.stringify(updatedPermission) });
+
+        return successResponse(req, res, 'Permissions updated successfully', { permission: updatedPermission });
     })
 }
 
