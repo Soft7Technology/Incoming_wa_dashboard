@@ -312,9 +312,10 @@ class CompanyController {
 
   async checkUserPlanStatus(req: AuthRequest, res: Response) {
     try {
-      console.log("Checking user plan status for userId:", req.userId!)
+      const effectiveUserId = req.ownerId ?? req.userId!;
+      console.log("Checking user plan status for effectiveUserId:", effectiveUserId);
 
-      const userPlan = await userPlansModel.getUserPlan(req.userId!)
+      const userPlan = await userPlansModel.getUserPlan(effectiveUserId)
       if (!userPlan) {
         return successResponse(req, res, 'No Active Plan found', userPlan)
       }
@@ -536,20 +537,20 @@ class CompanyController {
 
     // Resolve real users.id — the frontend may send user_team.id
     let userId = id;
-    // const directUser = await userModel.findById(id);
-    // if (!directUser) {
-    //   const teamRow = await userTeamModel.findById(id);
-    //   if (!teamRow) {
-    //     return res.status(404).json({ success: false, message: 'User not found' });
-    //   }
-    //   const realUser = await userModel.findOne({ email: teamRow.email });
-    //   if (!realUser) {
-    //     return res.status(404).json({ success: false, message: 'User account not found for this invite' });
-    //   }
-    //   userId = realUser.id;
-    // }
+    const directUser = await userModel.findById(id);
+    if (!directUser) {
+      const teamRow = await userTeamModel.findById(id);
+      if (!teamRow) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      const realUser = await userModel.findOne({ email: teamRow.email });
+      if (!realUser) {
+        return res.status(404).json({ success: false, message: 'User account not found for this invite' });
+      }
+      userId = realUser.id;
+    }
 
-    const activate = await userModel.update(id,{status:"active"})
+    const activateUser = await CompanyService.activateSingleUser(userId);
 
     await activityLogsModel.create({
       company_id: req.companyId,
