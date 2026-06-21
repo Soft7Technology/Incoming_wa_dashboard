@@ -167,6 +167,7 @@ class teamService{
                 name: invite.name ?? null,
                 role: invite.role ? invite.role.toLowerCase() : invite.role,
                 user_status,
+                permission: invite.permission ?? null,
             };
         }));
     }
