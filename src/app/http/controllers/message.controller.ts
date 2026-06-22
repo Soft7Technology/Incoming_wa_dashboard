@@ -153,11 +153,6 @@ class MessageController {
    * Handle Meta webhook callbacks
    */
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
-    console.log(
-      "🔥 META WEBHOOK RECEIVED",
-      JSON.stringify(req.body, null, 2)
-    );
-
     const { entry } = req.body;
 
     for (const item of entry || []) {
@@ -177,7 +172,7 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
-            console.log("📩 INCOMING MESSAGE:", message)
+            console.log("Value",message)
             await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
               profile_name: value.contacts?.[0]?.profile?.name || "",
@@ -185,10 +180,10 @@ class MessageController {
               from: message.from,
               type: message.type,
               content: message,
-              context: message.context ? message.context.id : null,
+              context: message?.context?.id,
             });
 
-            await handleIncomingMessageChatBot(value.metadata.phone_number_id, message)
+            await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,value.contacts?.[0]?.profile?.name)
           }
         }
       }

@@ -1,14 +1,17 @@
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
+import { executeNode } from "../engine/executeNode";
 import { buildResponse, matchTrigger } from "@surefy/console/utils";
 
 export const triggerFlow = async ({
     bot,
     phone,
-    incomingText
+    incomingText,
+    phoneNumberId
 }: {
     bot: any,
     phone: string,
-    incomingText: string
+    incomingText: string,
+    phoneNumberId:string
 }) => {
 
     console.log("Trigger Flow", phone, incomingText);
@@ -16,7 +19,7 @@ export const triggerFlow = async ({
     const triggerNode = bot.nodes.find(
         (n: any) => n.type === "trigger"
     );
-    console.log('Trigger Node',triggerNode)
+    console.log('Trigger Node', triggerNode)
 
     if (!triggerNode) return null;
 
@@ -41,14 +44,31 @@ export const triggerFlow = async ({
     if (!nextNode) return null;
 
     // Create session WITHOUT current node
-    await chatSessionModel.create({
+    const session = await chatSessionModel.create({
         phone_number: phone,
+        variables: {
+            phone_number: phone
+        },
+        phoneNumberId:phoneNumberId,
+        active: true,
         chatbot_id: bot.id,
         current_node_id: nextNode.id,
         current_flow: bot.flow_type,
         last_message: incomingText,
     });
 
+    return await executeNode({
+        bot,
+        session: {
+            ...session,
+            current_node_id: nextNode.id,
+            variables: {
+                phone_number: phone
+            }
+        },
+        currentNode: nextNode
+    });
     // ONLY send response
-    return buildResponse(nextNode);
+    // return buildResponse(nextNode,bot);
+
 };
