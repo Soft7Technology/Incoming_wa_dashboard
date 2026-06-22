@@ -2,7 +2,6 @@
 
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
 import { executeNode } from "@surefy/console/services/chatbot/engine/executeNode"
-import { downloadImage } from "@surefy/console/utils";
 
 export const menuFlow = async ({
   bot,
@@ -13,38 +12,21 @@ export const menuFlow = async ({
 }: any) => {
 
   console.log("Menu Incoming ID",incomingId,incomingText)
-  
+
   // =========================================
-  // START FLOW
+  // 1. START FLOW
   // =========================================
 
   let currentNodeId = session?.current_node_id;
-
-  // =========================================
-  // GET CURRENT NODE
-  // =========================================
-  const currentNode = bot.nodes.find(
-    (n: any) => n.id === currentNodeId
-  );
-
-  if (!currentNode) return null;
-
-  console.log("📍 Current Node:", currentNode.data?.title);
-
-  const nodeKey = currentNode.data?.key;
 
   // ========================================
   // GLOBAL INTERACTIVE Actions
   // ========================================
   if(incomingId){
     // Find ANY edges globally
-    let updatedVariables;
-    let variable;
-    let variableValue = incomingText;
-
     console.log("Global")
     const globalEdge = bot.edges.find(
-      (e:any)=> e?.data?.button_id === incomingId
+      (e:any)=> e?.data?.buttonId === incomingId
     )
 
     console.log("Global Edge",globalEdge)
@@ -56,35 +38,13 @@ export const menuFlow = async ({
         (n:any)=> n.id === globalEdge.target
       )
 
-      if (nodeKey === "@whatsapp/send-list-message" || 
-                      "@whatsapp/send-button-message") {
-        variable = currentNode.data?.attributes?.variable;
-
-        console.log("Variable Identify", variable)
-
-        // save answer in session
-        const existingVariables =
-          session?.variables || {};
-
-        // if(message?.type === 'interactve'){
-        //   variableValue = message?.interactive?.list_reply?.title 
-        // }
-
-        if(variable){
-          updatedVariables = {
-          ...existingVariables,
-          [variable]: variableValue
-        };
-
-        }
-      }
-
       if(!nextNode) return null;
 
       //VARIABLES
+      let updatedVariables = session?.variables || {};
 
       //RESET VARIABLES
-      if(globalEdge.data && !variable){
+      if(globalEdge.data){
         updatedVariables = {}
       }
 
@@ -136,21 +96,31 @@ export const menuFlow = async ({
 
 
 
+
   // =========================================
-  //  ASK QUESTION FLOW
+  // 2. GET CURRENT NODE
+  // =========================================
+  const currentNode = bot.nodes.find(
+    (n: any) => n.id === currentNodeId
+  );
+
+  if (!currentNode) return null;
+
+  console.log("📍 Current Node:", currentNode.data?.title);
+
+  const nodeKey = currentNode.data?.key;
+
+  // =========================================
+  // 3. ASK QUESTION FLOW
   // =========================================
 
   if (
     nodeKey === "@whatsapp/ask-question" ||
-    nodeKey === "@whatsapp/send-button-message" ||
-    nodeKey === "@whatsapp/send-list-message" ||
     nodeKey === "@whatsapp/ask-location"
   ) {
 
     const variable =
       currentNode.data?.attributes?.variable;
-
-    console.log("Variable Identify",variable)
 
     // save answer in session
     const existingVariables =
@@ -166,19 +136,13 @@ export const menuFlow = async ({
       };
     }
 
-    //interactive support
-    if(message?.type === 'interactve'){
-      answer = message?.interactive?.list_reply?.title 
-    }
-
     // media support
     if (
       message?.type === "image" ||
       message?.type === "document" ||
       message?.type === "video"
     ) {
-      const mediaUrl = await downloadImage(message?.image.id)
-      answer = mediaUrl.firebaseUrl;
+      answer = message;
     }
 
     const updatedVariables = {
@@ -220,7 +184,7 @@ export const menuFlow = async ({
 
 
   // =========================================
-  // INTERACTIVE FLOW
+  // 4. INTERACTIVE FLOW
   // =========================================
 
   const edges = bot.edges.filter(

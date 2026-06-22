@@ -4,8 +4,8 @@ import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
 import chatBotEdgeModel from '@surefy/console/models/chatBotEdge.model';
 import messageService from "@surefy/console/services/message.service"
 import nodemailer from "nodemailer";
-import { flowRouter } from "./flow.route"
- 
+import { flowRouter } from './flow.route'
+
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
@@ -41,6 +41,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
     const bot: any = await chatBotModel.getPublishedBotByPhoneNumberId(phoneNumberId);
     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+    console.log("🤖 Found bot:", bot ? bot.name : "No bot");
     if (!bot) return null;
 
     // 2️⃣ Load nodes + edges
@@ -67,9 +68,9 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       bot,
       phone,
       incomingText,
-      incomingId,
-      message
+      incomingId
     })
+
 
     // // 3️⃣ Resolve flow WITHOUT session
     // const response = resolveFlow(bot, incomingText,incomingId);

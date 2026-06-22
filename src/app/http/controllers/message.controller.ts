@@ -3,30 +3,25 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import MessageService from '@surefy/console/services/message.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
-import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
-import { handleIncomingMessageChatBot } from '../../utils'
-import activityLogsModel from '../../models/activityLogs.model';
+import { handleIncomingMessageChatBot } from  "@surefy/console/app/services/chatbot/chatbot.service"
 
 class MessageController {
   /**
    * POST /v1/messages/send
    * Send a message
    */
-  sendMessage = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number_id, to, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
+  sendMessage = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { phone_number_id, to, type,profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
     }
 
-    // Send under the owner's account so message is attributed to Aakanksha's data
-    const effectiveUserId = req.ownerId ?? req.userId!;
-
     const message = await MessageService.sendMessage({
       messageUUID: uuidv4(),
-      user_id: effectiveUserId,
+      user_id: req.userId!,
       company_id: req.companyId!,
       campaign_id: campaign_id || undefined,
       phone_number_id,
@@ -45,30 +40,6 @@ class MessageController {
       sticker,
       reaction,
       context,
-    });
-
-    const { data } = message
-
-    await activityLogsModel.create({
-      user_id: effectiveUserId,
-      company_id: req.companyId!,
-      action: 'SEND',
-      entity_type: 'MESSAGE',
-      entity_id: data?.id,
-      read: false,
-      description: `Sent ${type} message to ${to}`,
-      new_data: {
-        recipient: to,
-        message_type: type,
-        campaign_id: campaign_id || null,
-        phone_number_id,
-        whatsapp_message_id: data?.whatsapp_message_id
-      },
-      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
-      user_agent: req.headers['user-agent'] || '',
-      request_method: req.method,
-      api_endpoint: req.originalUrl,
-      status: 'SUCCESS'
     });
 
     return successResponse(req, res, 'Message sent successfully', message, HttpStatusCode.CREATED);
@@ -113,9 +84,7 @@ class MessageController {
       sort_order
     } = req.query;
 
-    const effectiveUserId = req.ownerId ?? req.userId!;
-
-    const result = await MessageService.getMessages(req.companyId!, effectiveUserId, {
+    const result = await MessageService.getMessages(req.companyId!,req.userId!, {
       status,
       direction,
       type,
@@ -153,11 +122,6 @@ class MessageController {
    * Handle Meta webhook callbacks
    */
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
-    console.log(
-      "🔥 META WEBHOOK RECEIVED",
-      JSON.stringify(req.body, null, 2)
-    );
-
     const { entry } = req.body;
 
     for (const item of entry || []) {
@@ -177,7 +141,7 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
-            console.log("📩 INCOMING MESSAGE:", message)
+            console.log("Value",message)
             await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
               profile_name: value.contacts?.[0]?.profile?.name || "",
@@ -185,10 +149,10 @@ class MessageController {
               from: message.from,
               type: message.type,
               content: message,
-              context: message.context ? message.context.id : null,
+              context: message?.context?.id,
             });
 
-            await handleIncomingMessageChatBot(value.metadata.phone_number_id, message)
+            await handleIncomingMessageChatBot(value.metadata.phone_number_id,message)
           }
         }
       }
@@ -217,7 +181,7 @@ class MessageController {
    * POST /v1/messages/bulk-send
    * Send multiple messages in bulk (max 1000 per request)
    */
-  bulkSendMessages = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+  bulkSendMessages = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { messages } = req.body;
 
     console.log("Bulk send messages request received", messages);
@@ -226,33 +190,27 @@ class MessageController {
       throw new HTTP400Error({ message: 'Messages array is required' });
     }
 
-    const effectiveUserId = req.ownerId ?? req.userId!;
-    const result = await MessageService.bulkSendMessages(effectiveUserId, messages);
+    const result = await MessageService.bulkSendMessages(req.userId!, messages);
 
     return successResponse(req, res, 'Bulk messages queued for sending', result, HttpStatusCode.ACCEPTED);
   });
 
-  getMessagesConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number_id } = req.query
-    const effectiveUserId = req.ownerId ?? req.userId!;
-    const userMessages = await MessageService.getMessagesConversation(effectiveUserId, phone_number_id)
+  getMessagesConversations = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const {phone_number_id} = req.query
+    const userMessages = await MessageService.getMessagesConversation(req.userId!,phone_number_id)
     return successResponse(req, res, 'Message Retrived succesfully', userMessages);
   })
 
-  getLeadConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number_id, leadNumber } = req.query
-    const effectiveUserId = req.ownerId ?? req.userId!;
-    const userMessages = await MessageService.getLeadConversations(leadNumber, phone_number_id, effectiveUserId)
-    return successResponse(req, res, "Lead Message Retreived Succesfuly", userMessages)
+  getLeadConversations = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const {phone_number_id,leadNumber} = req.query
+    const userMessages = await MessageService.getLeadConversations(leadNumber,phone_number_id, req.userId!)
+    return successResponse(req,res,"Lead Message Retreived Succesfuly",userMessages)
   })
 
-  getUserStats = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    // Use ownerId so team members see the account owner's stats
-    const effectiveUserId = req.ownerId ?? req.userId!
-    console.log("Effective User Id (ownerId ?? userId)", effectiveUserId)
-    const { time_frame } = req.query
-    const userStats = await MessageService.getUserStats(effectiveUserId, time_frame)
-    return successResponse(req, res, 'User Stats retrieved successfully', userStats)
+  getUserStats = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+      console.log("User Id",req.userId!)
+      const userStats = await MessageService.getUserStats(req.userId!)
+      return successResponse(req,res, 'User Stats retrieved successfully', userStats)
   })
 
 }
