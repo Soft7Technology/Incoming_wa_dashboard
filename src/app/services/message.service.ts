@@ -516,7 +516,11 @@ class MessageService {
   /**
    * Save incoming message
    */
-  async saveIncomingMessage(data: any) {
+/**
+ * Save incoming WhatsApp message
+ */
+async saveIncomingMessage(data: any) {
+  try {
     console.log("Saving incoming message", data);
 
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(
@@ -525,64 +529,103 @@ class MessageService {
 
     if (!phoneNumber) {
       console.warn(`Phone number not found: ${data.phone_number_id}`);
-      return;
+      return null;
     }
 
     let content = data.content;
+    const type = data.type;
 
-    const type = content?.type;
-
+    // Handle media messages
     if (["image", "video", "audio", "document"].includes(type)) {
       let mediaId: string | undefined;
 
       switch (type) {
         case "image":
-          mediaId = content.image?.id;
+          mediaId = content?.image?.id;
           break;
 
         case "video":
-          mediaId = content.video?.id;
+          mediaId = content?.video?.id;
           break;
 
         case "audio":
-          mediaId = content.audio?.id;
+          mediaId = content?.audio?.id;
           break;
 
         case "document":
-          mediaId = content.document?.id;
+          mediaId = content?.document?.id;
           break;
       }
 
       if (mediaId) {
-        const mediaUrl = await downloadImage(mediaId);
+        try {
+          const media = await downloadImage(mediaId);
 
-        content = {
-          type: type,
-          media_url: mediaUrl.firebaseUrl,
-        };
+          content = {
+            type,
+            media_id: mediaId,
+            media_url: media.firebaseUrl,
+          };
+        } catch (error) {
+          console.error(`Failed to download ${type}`, error);
+
+          content = {
+            type,
+            media_id: mediaId,
+          };
+        }
       }
     }
 
-    const message = await MessageModel.create({
+    // Handle button replies
+    if (type === "button") {
+      content = {
+        type: "button",
+        text: content?.button?.text,
+        payload: content?.button?.payload,
+      };
+    }
+
+    // Handle text messages
+    if (type === "text") {
+      content = {
+        type: "text",
+        text: content?.text?.body || content?.text || "",
+      };
+    }
+
+    const messagePayload = {
       user_id: phoneNumber.user_id,
       company_id: phoneNumber.company_id,
       profile_name: data.profile_name,
+
       phone_number_id: phoneNumber.id,
       wamid: data.message_id,
+
       direction: "inbound",
-      type: data.type,
+      type,
+
       from_phone: data.from,
       to_phone: phoneNumber.display_phone_number,
+
       status: "received",
+
       content,
       context: data.context,
-      delivered_at: new Date(),
-    });
 
-    console.log("Incoming Message stored", message)
+      delivered_at: new Date(),
+    };
+
+    const message = await MessageModel.create(messagePayload);
+
+    console.log("Incoming message stored", message.id);
 
     return message;
+  } catch (error) {
+    console.error("Failed to save incoming message", error);
+    throw error;
   }
+}
 
   /**
    * Get messages for company
