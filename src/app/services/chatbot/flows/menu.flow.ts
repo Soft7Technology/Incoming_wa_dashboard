@@ -26,7 +26,7 @@ export const menuFlow = async ({
     // Find ANY edges globally
     console.log("Global")
     const globalEdge = bot.edges.find(
-      (e:any)=> e?.data?.buttonId === incomingId
+      (e:any)=> e?.data?.buttonId || e?.data?.button_id === incomingId
     )
 
     console.log("Global Edge",globalEdge)
