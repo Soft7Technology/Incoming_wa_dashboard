@@ -107,7 +107,7 @@ class CompanyController {
 
 
   /**
-   * GET /v1/companies
+   * GET /v1/companies/all
    * Get all companies
    */
   getAllCompanies  = tryCatchAsync(async (req: Request, res: Response) => {
@@ -278,6 +278,12 @@ class CompanyController {
     });
 
     return successResponse(req, res, 'User updated successfully', updatedUser)
+  })
+
+  getCompanyUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
+    const{userId} = req.params
+    const user = await CompanyService.getUserById(userId)
+    successResponse(req,res,'Company User Details',user)
   })
 
   //   razorpayOrderId: "order_SgA55nIqCKdwUs"
