@@ -157,13 +157,19 @@ export const menuFlow = async ({
       (e: any) => e.source === currentNodeId
     );
 
-    if (!edge) return null;
+    if (!edge){
+      const updatChatSession = await chatSessionModel.update(session.id,{active:false})
+      return updatChatSession
+    }
 
     const nextNode = bot.nodes.find(
       (n: any) => n.id === edge.target
     );
 
-    if (!nextNode) return null;
+    if (!nextNode){
+      const updatChatSession = await chatSessionModel.update(session.id,{active:false})
+      return updatChatSession
+    };
 
     await chatSessionModel.update(session.id, {
       current_node_id: nextNode.id,
