@@ -8,6 +8,7 @@ class CreditTransactionModel extends BaseModel {
   async findByCompanyId(companyId: string, limit: number = 100) {
     return this.query()
       .where({ company_id: companyId })
+      .whereNot({ reference_type: 'subscription_commission' })
       .orderBy('created_at', 'desc')
       .limit(limit);
   }
@@ -15,6 +16,7 @@ class CreditTransactionModel extends BaseModel {
   async getTotalCredits(companyId: string): Promise<number> {
     const result = await this.query()
       .where({ company_id: companyId, type: 'credit' })
+      .whereNot({ reference_type: 'subscription_commission' })
       .sum('amount as total')
       .first();
     return parseFloat(result?.total || 0);
@@ -52,12 +54,14 @@ class CreditTransactionModel extends BaseModel {
   async findByCompany(companyId: string, filters: any = {}) {
     let query = this.query().where({ company_id: companyId });
 
-    if (filters.type) {
-      query = query.where({ type: filters.type });
-    }
-
     if (filters.reference_type) {
       query = query.where({ reference_type: filters.reference_type });
+    } else {
+      query = query.whereNot({ reference_type: 'subscription_commission' });
+    }
+
+    if (filters.type) {
+      query = query.where({ type: filters.type });
     }
 
     if (filters.start_date) {
@@ -103,3 +107,4 @@ class CreditTransactionModel extends BaseModel {
 }
 
 export default new CreditTransactionModel();
+// Trigger restart
