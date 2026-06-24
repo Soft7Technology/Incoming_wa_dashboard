@@ -84,60 +84,54 @@ class teamController{
 
     /**
      * PATCH /v1/team/:id/permissions
-     * Update nav permissions for an accepted team member.
-     * :id is the user_team.id (invite row id) — same as what the table uses.
-     * Body: { replace: string[] } — full replacement list, OR { add: string[] } to append
+     * Add nav permissions to an accepted team member.
+     * :id is the user.id of the team member.
+     * Body: { add: string[] }  — array of nav keys to add, e.g. ["inbox"]
      */
     updateMemberPermissions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
         const { id } = req.params;
-        const { add = [], replace }: { add?: string[]; replace?: string[] } = req.body;
+        const { add = [] }: { add: string[] } = req.body;
 
-        // Look up by user_team.id directly
+
+        // Find the user to get their email
+        const user = await userModel.findById(id);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        // Find the user_team row for this member (invited by the current user or by owner)
+        const effectiveUserId = req.ownerId ?? req.userId!;
         const teamRow = await db('user_team')
-            .where('id', id)
+            .where('email', user.email)
             .where('invite_status', 'accepted')
             .first();
 
         if (!teamRow) {
-            // Fallback: maybe id is a users.id — find via email
-            const user = await userModel.findById(id);
-            if (!user) {
-                return res.status(404).json({ success: false, message: 'Team member not found' });
-            }
-            const rowByEmail = await db('user_team')
-                .where('email', user.email)
-                .where('invite_status', 'accepted')
-                .first();
-            if (!rowByEmail) {
-                return res.status(404).json({ success: false, message: 'Team member not found' });
-            }
-            // Re-assign so rest of logic works
-            Object.assign(teamRow ?? {}, rowByEmail);
-            return await applyPermissionUpdate(rowByEmail, replace, add, req, res);
+            return res.status(404).json({ success: false, message: 'Team member not found' });
         }
 
-        return await applyPermissionUpdate(teamRow, replace, add, req, res);
+        // Merge new permissions into existing nav array
+        const existing: any = teamRow.permission ?? {};
+        const existingNav: string[] = Array.isArray(existing?.nav)
+            ? existing.nav
+            : (Array.isArray(existing) ? existing : []);
 
-        async function applyPermissionUpdate(row: any, replace: string[] | undefined, add: string[], req: any, res: any) {
-            const existing: any = row.permission ?? {};
-            const existingNav: string[] = Array.isArray(existing?.nav)
-                ? existing.nav
-                : (Array.isArray(existing) ? existing : []);
+        const { replace }: { replace?: string[] } = req.body;
 
-            const mergedNav = replace !== undefined
-                ? replace.map((k: string) => k.toLowerCase())
-                : [...new Set([...existingNav, ...add.map((k: string) => k.toLowerCase())])];
+        // If `replace` is provided, use it as the full new nav list; otherwise append
+        const mergedNav = replace !== undefined
+            ? replace.map((k: string) => k.toLowerCase())
+            : [...new Set([...existingNav, ...add.map((k: string) => k.toLowerCase())])];
 
-            const updatedPermission = Array.isArray(existing)
-                ? mergedNav
-                : { ...existing, nav: mergedNav };
+        const updatedPermission = Array.isArray(existing)
+            ? mergedNav  // legacy flat array
+            : { ...existing, nav: mergedNav };
 
-            await db('user_team')
-                .where('id', row.id)
-                .update({ permission: JSON.stringify(updatedPermission) });
+        await db('user_team')
+            .where('id', teamRow.id)
+            .update({ permission: JSON.stringify(updatedPermission) });
 
-            return successResponse(req, res, 'Permissions updated successfully', { permission: updatedPermission });
-        }
+        return successResponse(req, res, 'Permissions updated successfully', { permission: updatedPermission });
     })
 }
 

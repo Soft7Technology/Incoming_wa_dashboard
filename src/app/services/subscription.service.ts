@@ -95,6 +95,8 @@ class subscriptionService {
   async createSubscriptionPlan(userId: string, companyId: string | undefined, userRole: string, data: subscriptionPlans) {
     console.log('Creating subscription plan with data:', data, 'role:', userRole);
 
+    console.log("Subscription Price",data.price)
+    
     // SuperAdmin creates global platform plans — no company or credit check needed
     if (userRole === 'superadmin') {
       const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId });
@@ -135,6 +137,8 @@ class subscriptionService {
     // } else {
     //   throw new HTTP400Error({ message: "Your Company does not have enough credit balance to create a new Subscription Plan" })
     // }
+
+
 
     const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
     return newSubscriptionPlan;

@@ -269,12 +269,12 @@ class CompanyService {
 
     // ✅ Case 1: No existing plan
     if (!existingPlan) {
-      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, null, user.company_id);
+      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, null, user);
     }
 
     // ✅ Case 2: Existing FREE plan → replace directly
     else if (existingPlan.billing_cycle === 'Free') {
-      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, existingPlan, user.company_id);
+      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, existingPlan, user);
     }
 
     // ✅ Case 3: Existing PAID plan → settle (carry forward)
@@ -341,22 +341,22 @@ class CompanyService {
     userId: string,
     planData?: any,
     existingUserPlan?: any,
-    companyId?: any
+    user?: any
   ) {
-
+    console.log("User", user)
     if (!planData) {
       throw new Error('planData is required');
     }
 
-    console.log("User",userId,companyId)
-
     const { plan_name, price, billing_cycle, features } = planData;
 
-    // ============================================
-    // COMPANY WALLET VALIDATION & DEBIT
-    // ============================================
+    console.log('User:', userId, 'Company:', user.company_id);
 
-    const companyDetails = await companyModel.findById(companyId);
+    // =====================================================
+    // COMPANY VALIDATION
+    // =====================================================
+
+    const companyDetails = await companyModel.findById(user.company_id);
 
     if (!companyDetails) {
       throw new HTTP400Error({
@@ -364,78 +364,181 @@ class CompanyService {
       });
     }
 
-    if (Number(companyDetails.credit_balance) < Number(price)) {
-      throw new HTTP400Error({
-        message: 'Insufficient company wallet balance',
-      });
-    }
-
-    const companyBalanceBefore = Number(companyDetails.credit_balance);
-    const companyBalanceAfter =
-      companyBalanceBefore - Number(price);
-
-    await companyModel.update(companyDetails.id, {
-      credit_balance: companyBalanceAfter,
-    });
-
-    await creditTransactionModel.create({
-      company_id: companyId,
-      user_id: userId,
-      company_name: companyDetails.company_name,
-      type: 'debit',
-      amount: Number(price),
-      balance_before: companyBalanceBefore,
-      balance_after: companyBalanceAfter,
-      description: `Subscription purchase (${plan_name})`,
-      created_by: userId,
-      reference_type: 'subscription',
-    });
-
-    // ============================================
-    // SUPER ADMIN COMMISSION
-    // ============================================
+    // =====================================================
+    // COMMISSION CALCULATION
+    // =====================================================
 
     let commission = 0;
 
     if (billing_cycle === 'Monthly') {
-      commission = 100;
+      commission = 100.00;
     } else if (billing_cycle === 'Yearly') {
-      commission = 1000;
+      commission = 1000.00;
     }
 
+    const subscriptionAmount = Number(price);
+    const totalDeduction = commission;
+
+    const companyBalanceBefore = Number(
+      companyDetails.credit_balance || 0
+    );
+
+    if (companyBalanceBefore < commission) {
+      throw new HTTP400Error({
+        message: `Insufficient company wallet balance. Required ₹${totalDeduction}`,
+      });
+    }
+
+    const companyBalanceAfter =
+      companyBalanceBefore - commission;
+
+    // =====================================================
+    // DEBIT COMPANY WALLET
+    // =====================================================
+
+    await companyModel.update(user.company_id, {
+      credit_balance: companyBalanceAfter,
+    });
+
+    // =====================================================
+    // COMPANY TRANSACTION - SUBSCRIPTION DEBIT
+    // =====================================================
+
+    const balanceAfterSubscription =
+      companyBalanceBefore - subscriptionAmount;
+
+    // await creditTransactionModel.create({
+    //   company_id: companyId,
+    //   user_id: userId,
+    //   company_name:
+    //     companyDetails.company_name || companyDetails.name,
+
+    //   type: 'debit',
+    //   amount: subscriptionAmount,
+
+    //   balance_before: companyBalanceBefore,
+    //   balance_after: balanceAfterSubscription,
+
+    //   description: `Subscription plan (${plan_name}) assigned to ${userId}`,
+
+    //   created_by: userId,
+    //   reference_type: 'subscription',
+    // });
+
+    // =====================================================
+    // COMPANY TRANSACTION - COMMISSION DEBIT
+    // =====================================================
+
     if (commission > 0) {
-      const superAdmin: any = await userModel.findSuperAdmin('superadmin')
-      console.log('Super Admin:', superAdmin);
-      console.log('Super Admin ID:', superAdmin?.id);
+      await creditTransactionModel.create({
+        company_id: user.company_id,
+        user_id: userId,
+        company_name:
+          companyDetails.company_name || companyDetails.name,
+
+        type: 'debit',
+        amount: - commission,
+
+        balance_before: balanceAfterSubscription,
+        balance_after: companyBalanceAfter,
+
+        description: `${commission} platform fee  transferred to Soft7`,
+
+        created_by: userId,
+        reference_type: 'subscription_commission',
+      });
+
+      await activityLogsModel.create({
+        user_id: userId,
+        company_id: user.company_id,
+
+        action: 'DEBIT',
+        entity_type: 'WALLET',
+        entity_id: user.company_id,
+
+        read: false,
+
+        description: `₹${commission} Platform fee deducted from company wallet`,
+
+        new_data: {
+          commission,
+          billing_cycle,
+          balance_before: balanceAfterSubscription,
+          balance_after: companyBalanceAfter,
+        },
+
+        status: 'SUCCESS',
+      });
+    }
+
+    // =====================================================
+    // SUPER ADMIN COMMISSION CREDIT
+    // =====================================================
+
+    if (commission > 0) {
+      const superAdmin: any =
+        await userModel.findSuperAdmin('superadmin');
 
       if (superAdmin) {
-        const balanceBefore =
-          Number(superAdmin.credit_balance || 0);
+        const superAdminBalanceBefore = Number(
+          superAdmin.credit_balance || 0
+        );
 
-        const balanceAfter =
-          balanceBefore + commission;
+        const superAdminBalanceAfter =
+          superAdminBalanceBefore + commission;
 
         await userModel.update(superAdmin.id, {
-          credit_balance: balanceAfter,
+          credit_balance: superAdminBalanceAfter,
         });
 
         await creditTransactionModel.create({
           user_id: superAdmin.id,
-          company_id:superAdmin.company_id,
+          company_id: superAdmin.company_id,
+
           type: 'credit',
-          amount: commission,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-          description: `Commission received from ${companyDetails.company_name} subscription purchase`,
+          amount: superAdminBalanceAfter,
+
+          balance_before: superAdminBalanceBefore,
+          balance_after: superAdminBalanceAfter,
+
+          description: `Platform fee received from ${companyDetails.company_name || companyDetails.name
+            } for assiging ${plan_name} to ${user.name} `,
+
           created_by: userId,
           reference_type: 'subscription_commission',
+        });
+
+        await activityLogsModel.create({
+          user_id: superAdmin.id,
+          company_id: superAdmin.company_id,
+
+          action: 'CREDIT',
+          entity_type: 'WALLET',
+          entity_id: superAdmin.id,
+
+          read: false,
+
+          description: `₹${commission} Platform fee received from ${companyDetails.company_name || companyDetails.name
+            }`,
+
+          new_data: {
+            commission,
+            source_company:
+              companyDetails.company_name ||
+              companyDetails.name,
+
+            balance_before: superAdminBalanceBefore,
+            balance_after: superAdminBalanceAfter,
+          },
+
+          status: 'SUCCESS',
         });
       }
     }
 
-    // ============================================
+    // =====================================================
     // DEACTIVATE OLD PLAN
-    // ============================================
+    // =====================================================
 
     if (existingUserPlan) {
       await userPlansModel.update(existingUserPlan.id, {
@@ -443,9 +546,9 @@ class CompanyService {
       });
     }
 
-    // ============================================
+    // =====================================================
     // PLAN DATES
-    // ============================================
+    // =====================================================
 
     const durationDays =
       billing_cycle === 'Monthly'
@@ -454,7 +557,8 @@ class CompanyService {
           ? 365
           : 3;
 
-    const { limits, usage } = transformFeatures(features);
+    const { limits, usage } =
+      transformFeatures(features);
 
     const startDate = new Date();
     const endDate = new Date(startDate);
@@ -467,37 +571,48 @@ class CompanyService {
       endDate.setDate(endDate.getDate() + 3);
     }
 
-    // ============================================
-    // CREATE PLAN
-    // ============================================
+    // =====================================================
+    // CREATE USER PLAN
+    // =====================================================
 
     const newUserPlan = await userPlansModel.create({
       user_id: userId,
-      company_id: companyId,
+      company_id: user.company_id,
+
       plan_name,
       price,
       billing_cycle,
+
       status: 'COMPLETED',
+
       start_date: startDate,
       end_date: endDate,
+
       subscription_id: planData.id,
+
       active: true,
+
       limits: JSON.stringify(limits),
       usage: JSON.stringify(usage),
+
       duration_days: durationDays,
     });
+
+    // =====================================================
+    // ASSIGN PLAN TO USER
+    // =====================================================
 
     await userModel.update(userId, {
       assigned_plan: newUserPlan.id,
     });
 
-    // ============================================
-    // ACTIVITY LOG
-    // ============================================
+    // =====================================================
+    // PLAN ACTIVATION ACTIVITY
+    // =====================================================
 
     await activityLogsModel.create({
       user_id: userId,
-      company_id: companyId,
+      company_id: user.company_id,
 
       action: 'ACTIVATE',
       entity_type: 'SUBSCRIPTION',
@@ -512,10 +627,15 @@ class CompanyService {
         plan_name: newUserPlan.plan_name,
         billing_cycle: newUserPlan.billing_cycle,
         price: newUserPlan.price,
+
+        commission,
+
+        total_deduction: totalDeduction,
+
         start_date: newUserPlan.start_date,
         end_date: newUserPlan.end_date,
+
         active: true,
-        commission,
       },
 
       status: 'SUCCESS',
@@ -584,47 +704,296 @@ class CompanyService {
   //   return newUserPlan;
   // }
 
-  async settleUserPlan(userPlanId: string, planData: any, existingUserPlan: any, companyId: string) {
+  async settleUserPlan(
+    userPlanId: string,
+    planData: any,
+    existingUserPlan: any,
+    companyId: string
+  ) {
     const now = new Date();
 
-    // Calculate remaining days
-    const endDate = new Date(existingUserPlan.end_date);
-    let remainingDays = 0;
+    const { plan_name, price, billing_cycle, features } = planData;
 
-    if (endDate > now) {
-      remainingDays = Math.ceil((endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    // =====================================================
+    // COMPANY VALIDATION
+    // =====================================================
+
+    const companyDetails = await companyModel.findById(companyId);
+
+    if (!companyDetails) {
+      throw new HTTP400Error({
+        message: 'Company not found',
+      });
     }
 
-    const { limits, usage } = transformFeatures(planData.features);
+    // =====================================================
+    // COMMISSION CALCULATION
+    // =====================================================
+
+    let commission = 0;
+
+    if (billing_cycle === 'Monthly') {
+      commission = 100.00;
+    } else if (billing_cycle === 'Yearly') {
+      commission = 1000.00;
+    }
+
+    const companyBalanceBefore = Number(
+      companyDetails.credit_balance || 0
+    );
+
+    if (companyBalanceBefore < commission) {
+      throw new HTTP400Error({
+        message: `Insufficient company wallet balance. Required ₹${commission}`,
+      });
+    }
+
+    const companyBalanceAfter =
+      companyBalanceBefore - commission;
+
+    // =====================================================
+    // DEBIT COMPANY WALLET (ONLY COMMISSION)
+    // =====================================================
+
+    await companyModel.update(companyDetails.id, {
+      credit_balance: companyBalanceAfter,
+    });
+
+    // =====================================================
+    // COMPANY COMMISSION TRANSACTION
+    // =====================================================
+
+    if (commission > 0) {
+      await creditTransactionModel.create({
+        company_id: companyId,
+        user_id: existingUserPlan.user_id,
+        company_name:
+          companyDetails.company_name || companyDetails.name,
+
+        type: 'debit',
+        amount: - commission,
+
+        balance_before: companyBalanceBefore,
+        balance_after: companyBalanceAfter,
+
+        description: `Platform fee deducted for plan upgrade (${existingUserPlan.plan_name} → ${plan_name}) for ${billing_cycle}`,
+
+        created_by: existingUserPlan.user_id,
+        reference_type: 'subscription_commission',
+      });
+
+      await activityLogsModel.create({
+        user_id: existingUserPlan.user_id,
+        company_id: companyId,
+
+        action: 'DEBIT',
+        entity_type: 'WALLET',
+        entity_id: companyId,
+
+        read: false,
+
+        description: `Platform fee deducted for upgrading ${existingUserPlan.plan_name}- ${existingUserPlan.billing_cycle} to ${plan_name}-${billing_cycle}`,
+
+        new_data: {
+          old_plan: existingUserPlan.plan_name,
+          new_plan: plan_name,
+          commission,
+          balance_before: companyBalanceBefore,
+          balance_after: companyBalanceAfter,
+        },
+
+        status: 'SUCCESS',
+      });
+    }
+
+    // =====================================================
+    // SUPER ADMIN COMMISSION CREDIT
+    // =====================================================
+
+    if (commission > 0) {
+      const superAdmin: any =
+        await userModel.findSuperAdmin('superadmin');
+
+      if (superAdmin) {
+        const superAdminBalanceBefore = Number(
+          superAdmin.credit_balance || 0
+        );
+
+        const superAdminBalanceAfter =
+          superAdminBalanceBefore + commission;
+
+        await userModel.update(superAdmin.id, {
+          credit_balance: superAdminBalanceAfter,
+        });
+
+        await creditTransactionModel.create({
+          user_id: superAdmin.id,
+          company_id: superAdmin.company_id,
+
+          type: 'credit',
+          amount: commission,
+
+          balance_before: superAdminBalanceBefore,
+          balance_after: superAdminBalanceAfter,
+
+          description: `Platform fee received for upgrade (${existingUserPlan.plan_name} → ${plan_name}) from ${companyDetails.company_name || companyDetails.name
+            }`,
+
+          created_by: existingUserPlan.user_id,
+          reference_type: 'subscription_commission',
+        });
+
+        await activityLogsModel.create({
+          user_id: superAdmin.id,
+          company_id: superAdmin.company_id,
+
+          action: 'CREDIT',
+          entity_type: 'WALLET',
+          entity_id: superAdmin.id,
+
+          read: false,
+
+          description: `Platform fee received for plan upgrade (${existingUserPlan.plan_name} → ${plan_name})`,
+
+          new_data: {
+            source_company:
+              companyDetails.company_name ||
+              companyDetails.name,
+
+            old_plan: existingUserPlan.plan_name,
+            new_plan: plan_name,
+
+            commission,
+
+            balance_before: superAdminBalanceBefore,
+            balance_after: superAdminBalanceAfter,
+          },
+
+          status: 'SUCCESS',
+        });
+      }
+    }
+
+    // =====================================================
+    // CALCULATE REMAINING DAYS
+    // =====================================================
+
+    const currentEndDate = new Date(
+      existingUserPlan.end_date
+    );
+
+    let remainingDays = 0;
+
+    if (currentEndDate > now) {
+      remainingDays = Math.ceil(
+        (currentEndDate.getTime() - now.getTime()) /
+        (1000 * 60 * 60 * 24)
+      );
+    }
+
+    // =====================================================
+    // FEATURE TRANSFORMATION
+    // =====================================================
+
+    const { limits, usage } =
+      transformFeatures(features);
 
     const finalDays =
-      planData.billing_cycle === 'Monthly'
+      billing_cycle === 'Monthly'
         ? 30 + remainingDays
-        : planData.billing_cycle === 'Yearly'
+        : billing_cycle === 'Yearly'
           ? 365 + remainingDays
           : remainingDays;
 
-    // ✅ Calculate end date
-    const newEndDate = new Date(now);
-    newEndDate.setDate(newEndDate.getDate() + finalDays);
+    // =====================================================
+    // CALCULATE NEW END DATE
+    // =====================================================
 
-    // (Optional but recommended) deactivate old plan
-    await userPlansModel.update(existingUserPlan.id, { active: false, end_date: now });
+    const newEndDate = new Date(now);
+    newEndDate.setDate(
+      newEndDate.getDate() + finalDays
+    );
+
+    // =====================================================
+    // DEACTIVATE OLD PLAN
+    // =====================================================
+
+    await userPlansModel.update(existingUserPlan.id, {
+      active: false,
+      end_date: now,
+    });
+
+    // =====================================================
+    // CREATE NEW PLAN
+    // =====================================================
 
     const newUserPlan = await userPlansModel.create({
       user_id: existingUserPlan.user_id,
       company_id: companyId,
-      plan_name: planData.plan_name,
-      price: planData.price,
-      billing_cycle: planData.billing_cycle,
+
+      plan_name,
+      price,
+      billing_cycle,
+
       status: 'COMPLETED',
+
       subscription_id: planData.id,
+
       active: true,
+
       limits: JSON.stringify(limits),
       usage: JSON.stringify(usage),
+
       start_date: now,
       end_date: newEndDate,
+
       duration_days: finalDays,
+    });
+
+    // =====================================================
+    // UPDATE ASSIGNED PLAN
+    // =====================================================
+
+    await userModel.update(existingUserPlan.user_id, {
+      assigned_plan: newUserPlan.id,
+    });
+
+    // =====================================================
+    // PLAN UPGRADE ACTIVITY
+    // =====================================================
+
+    await activityLogsModel.create({
+      user_id: existingUserPlan.user_id,
+      company_id: companyId,
+
+      action: 'UPGRADE',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: newUserPlan.id,
+
+      read: false,
+
+      description: `Plan upgraded from ${existingUserPlan.plan_name} to ${plan_name} (${billing_cycle})`,
+
+      new_data: {
+        id: newUserPlan.id,
+
+        old_plan: existingUserPlan.plan_name,
+        new_plan: plan_name,
+
+        billing_cycle,
+        price,
+
+        commission,
+
+        start_date: newUserPlan.start_date,
+        end_date: newUserPlan.end_date,
+
+        remaining_days_carried: remainingDays,
+
+        active: true,
+      },
+
+      status: 'SUCCESS',
     });
 
     return newUserPlan;
