@@ -437,7 +437,7 @@ class CompanyService {
           companyDetails.company_name || companyDetails.name,
 
         type: 'debit',
-        amount: - commission,
+        amount: -commission,
 
         balance_before: balanceAfterSubscription,
         balance_after: companyBalanceAfter,
