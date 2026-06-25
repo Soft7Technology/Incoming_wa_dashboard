@@ -366,7 +366,7 @@ export const transformFeatures = (features: any) => {
 
   Object.keys(features).forEach((key) => {
     limits[key] = {
-      limit: features[key].limit_value
+      limit: features[key]?.limit_value ?? null,
     };
 
     usage[key] = 0; // initialize usage

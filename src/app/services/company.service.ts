@@ -339,9 +339,9 @@ class CompanyService {
 
   async activateUserPlan(
     userId: string,
+    user: any,
     planData?: any,
     existingUserPlan?: any,
-    user?: any
   ) {
     console.log("User", user)
     if (!planData) {
@@ -349,6 +349,7 @@ class CompanyService {
     }
 
     const { plan_name, price, billing_cycle, features } = planData;
+    console.log("Plan Data",planData)
 
     console.log('User:', userId, 'Company:', user.company_id);
 
@@ -578,7 +579,6 @@ class CompanyService {
     const newUserPlan = await userPlansModel.create({
       user_id: userId,
       company_id: user.company_id,
-
       plan_name,
       price,
       billing_cycle,

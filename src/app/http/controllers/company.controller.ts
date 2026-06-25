@@ -464,7 +464,7 @@ class CompanyController {
       entity_type: 'USER',
       entity_id: userId,
       read: false,
-      description: `Suspended user account`,
+      description: `Suspended user account ${id}`,
       new_data: { suspended_user_id: userId },
       ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',

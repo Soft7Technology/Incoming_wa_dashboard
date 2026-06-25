@@ -22,6 +22,7 @@ class ActivityLogsModel extends BaseModel {
     console.log("Filters",filters)
 
     const type =  upperCase(filters?.type)
+    const action = upperCase(filters?.action)
     const search = filters?.search?.trim();
 
     const sortedBy = filters?.sorted_by || 'created_at';
@@ -38,12 +39,11 @@ class ActivityLogsModel extends BaseModel {
       if (!company_id) {
         throw new Error('company_id is required for non-superadmin');
       }
-
       query.where('company_id', company_id);
     }
 
     if (type) {
-      query.where('entity_type', type);
+      query.where('action', action).orWhere('entity_type', type);
     }
 
     if (search) {

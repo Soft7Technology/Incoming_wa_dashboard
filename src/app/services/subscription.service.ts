@@ -171,7 +171,7 @@ class subscriptionService {
     return updatedSubscriptionPlan;
   }
 
-  async activateFreeTrial(userId: string, planId: string) {
+  async activateFreeTrial(userId: string,companyId:string,planId: string) {
     // Check if user already has an active subscription or trial
     const planData = await subscriptionModel.findFreeTrial(planId);
 
@@ -180,11 +180,17 @@ class subscriptionService {
       throw new HTTP400Error({ message: 'User already has an active Trial' });
     }
 
+    const user = await userModel.findById(userId)
+
+    if(!user){
+      throw new HTTP400Error({ message: 'User Not found' });
+    }
+
     if (!planData) {
       throw new HTTP400Error({ message: 'Free trial already activated' });
     }
 
-    const subscribePlan = await CompanyService.activateUserPlan(userId, planData);
+    const subscribePlan = await CompanyService.activateUserPlan(userId,user, planData,null);
     return subscribePlan;
   }
 
