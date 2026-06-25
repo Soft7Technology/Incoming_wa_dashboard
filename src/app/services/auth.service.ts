@@ -9,6 +9,7 @@ import passwordResetModel from '../models/passwordReset.model';
 import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
 import userTeamModel from '../models/team.model';
+import db from '@surefy/database';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -89,6 +90,21 @@ class AuthService {
         ownerId = teamRow.invite_sent_by;
       }
     } catch { /* ignore — not a team member */ }
+
+    // If the user has assigned contacts, automatically grant contacts navigation permission
+    try {
+      const assignedContactsCount = await db('contacts')
+        .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [user.id])
+        .whereNull('deleted_at')
+        .count('* as count')
+        .first();
+      const hasAssignedContacts = parseInt(String(assignedContactsCount?.count || 0)) > 0;
+      if (hasAssignedContacts && !teamPermissions.includes('contact') && !teamPermissions.includes('contacts')) {
+        teamPermissions.push('contact');
+      }
+    } catch (err) {
+      console.error("Error checking assigned contacts for permissions:", err);
+    }
 
     // Update last login
     await UserModel.updateLastLogin(user.id, ipAddress);

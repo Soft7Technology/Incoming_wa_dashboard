@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import userPlansModel from '../../models/userPlans.model';
 import activityLogsModel from '../../models/activityLogs.model';
 import userTeamModel from '../../models/team.model';
+import db from '@surefy/database';
 
 class ContactController {
   /**
@@ -68,9 +69,37 @@ class ContactController {
    * GET /v1/contacts
    * Get all contacts with filters
    */
-  getContacts = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  getContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
     console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
+    
+    // Check if the logged-in user is a team member
+    const isTeamMember = req.userId !== req.ownerId;
+    let onlyAssigned = false;
+    
+    if (isTeamMember) {
+      // Find the team member's permissions in user_team
+      const teamRow = await db('user_team')
+        .where({ email: req.email, invite_status: 'accepted' })
+        .first();
+      
+      let hasContactPermission = false;
+      if (teamRow && teamRow.permission) {
+        const perm = teamRow.permission;
+        let teamPermissions: string[] = [];
+        if (Array.isArray(perm)) {
+          teamPermissions = perm.map((p: string) => p.toLowerCase());
+        } else if (Array.isArray(perm?.nav)) {
+          teamPermissions = perm.nav.map((p: string) => p.toLowerCase());
+        }
+        hasContactPermission = teamPermissions.includes('contact') || teamPermissions.includes('contacts');
+      }
+      
+      if (!hasContactPermission) {
+        onlyAssigned = true;
+      }
+    }
+
     const filters = {
       is_valid: req.query.is_valid,
       search: req.query.search,
@@ -79,7 +108,8 @@ class ContactController {
       page: req.query.page,
       limit: req.query.limit,
       sortBy: req.query.sortBy ? String(req.query.sortBy) : undefined,
-      sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined
+      sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined,
+      onlyAssignedToUserId: onlyAssigned ? req.userId : undefined
     };
 
     const contacts = await ContactService.getContacts(effectiveUserId, filters);
@@ -90,9 +120,41 @@ class ContactController {
    * GET /v1/contacts/:id
    * Get contact by ID
    */
-  getContactById = tryCatchAsync(async (req: Request, res: Response) => {
+  getContactById = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { id } = req.params;
     const contact = await ContactService.getContactById(id);
+
+    // Enforce that a team member without general contact permission can only view contacts assigned to them
+    const isTeamMember = req.userId !== req.ownerId;
+    if (isTeamMember) {
+      const teamRow = await db('user_team')
+        .where({ email: req.email, invite_status: 'accepted' })
+        .first();
+      
+      let hasContactPermission = false;
+      if (teamRow && teamRow.permission) {
+        const perm = teamRow.permission;
+        let teamPermissions: string[] = [];
+        if (Array.isArray(perm)) {
+          teamPermissions = perm.map((p: string) => p.toLowerCase());
+        } else if (Array.isArray(perm?.nav)) {
+          teamPermissions = perm.nav.map((p: string) => p.toLowerCase());
+        }
+        hasContactPermission = teamPermissions.includes('contact') || teamPermissions.includes('contacts');
+      }
+      
+      if (!hasContactPermission) {
+        const assignedTo = contact.assigned_to || [];
+        const isAssigned = Array.isArray(assignedTo) 
+          ? assignedTo.includes(req.userId)
+          : (typeof assignedTo === 'string' && JSON.parse(assignedTo).includes(req.userId));
+        
+        if (!isAssigned) {
+          throw new HTTP400Error({ message: 'Access denied: Contact is not assigned to you' });
+        }
+      }
+    }
+
     return successResponse(req, res, 'Contact retrieved successfully', contact);
   });
 

@@ -109,12 +109,18 @@ class ContactModel extends BaseModel {
 
   findWithFilters(userId: string, filters: any) {
     console.log("UserId", userId)
-    let query = this.query()
-      .where(function(this: any) {
+    let query = this.query();
+    
+    if (filters.onlyAssignedToUserId) {
+      query = query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
+    } else {
+      query = query.where(function(this: any) {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
-      })
-      .whereNull('deleted_at');
+      });
+    }
+    
+    query = query.whereNull('deleted_at');
 
     if (filters.is_valid !== undefined) {
       query = query.where({ is_valid: filters.is_valid });
