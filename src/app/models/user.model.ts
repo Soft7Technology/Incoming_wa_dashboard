@@ -9,8 +9,8 @@ class UserModel extends BaseModel {
     return this.query().where({ email }).whereNull('deleted_at').first();
   }
 
-  async findByEmailPhone(email:string,phone_number:string){
-      return this.query().where('email', email).orWhere('phone', phone_number).first();
+  async findByEmailPhone(email: string, phone_number: string) {
+    return this.query().where('email', email).orWhere('phone', phone_number).first();
   }
 
   // async getNotificationStats(userId: string) {
@@ -64,6 +64,7 @@ class UserModel extends BaseModel {
             .from('campaigns')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('campaigns_count'),
 
         // chatbot
@@ -72,6 +73,7 @@ class UserModel extends BaseModel {
             .from('chat_bot')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('chatbot_count'),
 
         // contacts
@@ -80,6 +82,7 @@ class UserModel extends BaseModel {
             .from('contacts')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('contacts_count'),
 
         // contact lists
@@ -88,6 +91,7 @@ class UserModel extends BaseModel {
             .from('contact_lists')
             .count('*')
             .where('user_id', userId)
+            // .orWhere('assigned_to',userId)
         ).as('contact_lists_count'),
 
         // sent messages
@@ -175,15 +179,27 @@ class UserModel extends BaseModel {
 
   async findByEmailOrPhone(identifier: string) {
     return this.query()
+      .select(
+        'users.*',
+        'user_plans.active as plan_active',
+        'user_plans.status as plan_status'
+      )
+      .leftJoin(
+        'user_plans',
+        'users.assigned_plan',
+        'user_plans.id'
+      )
       .where((builder) => {
-        builder.where({ email: identifier }).orWhere({ phone: identifier });
+        builder
+          .where({ 'users.email': identifier })
+          .orWhere({ 'users.phone': identifier });
       })
-      .whereNull('deleted_at')
+      .whereNull('users.deleted_at')
       .first();
   }
 
   async findByRole(role: string, filters: any = {}) {
-    let query = this.query().where({ role }).whereNull('deleted_at');
+    let query = this.query().where({ role:role }).whereNull('deleted_at');
 
     if (filters.status) {
       query = query.where({ status: filters.status });
@@ -196,6 +212,11 @@ class UserModel extends BaseModel {
     return query.orderBy('created_at', 'desc');
   }
 
+  async findSuperAdmin(role:string){
+    let query = this.query().where({ role:role }).whereNull('deleted_at').first()
+    return query
+  }
+
   async updateLastLogin(userId: string, ipAddress: string) {
     return this.update(userId, {
       last_login_at: new Date(),
@@ -206,13 +227,6 @@ class UserModel extends BaseModel {
   async changePassword(userId: string, hashedPassword: string) {
     return this.update(userId, {
       password: hashedPassword,
-    });
-  }
-
-  async softDelete(userId: string) {
-    return this.update(userId, {
-      deleted_at: new Date(),
-      status: 'inactive',
     });
   }
 
@@ -288,6 +302,8 @@ class UserModel extends BaseModel {
       .returning('*')
       .then((res: any) => res[0]);
   }
+
+
 }
 
 export default new UserModel();

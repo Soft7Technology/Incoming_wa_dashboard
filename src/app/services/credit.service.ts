@@ -15,6 +15,7 @@ class CreditService {
       throw new HTTP404Error({ message: 'Company not found' });
     }
 
+    console.log("COMPANY",company)
     const transactions = await CreditTransactionModel.findByCompanyId(companyId, 10);
 
     return {
@@ -48,11 +49,12 @@ class CreditService {
     // Create transaction
     const transaction = await CreditTransactionModel.create({
       company_id: data.company_id,
+      company_name:data.company_name,
       type: 'credit',
       amount: data.amount,
       balance_before: balanceBefore,
       balance_after: balanceAfter,
-      description: data.description || 'Credit added',
+      description: `${data.amount} Credit added to ${data.company_name}`,
       created_by: data.created_by,
       reference_type: 'manual',
     });

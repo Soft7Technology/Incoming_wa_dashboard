@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { uploadXLSXMiddleware } from '@surefy/middleware/upload.middleware';
 import ContactController from '@surefy/console/http/controllers/contact.controller';
 import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
-
+import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
 
 const ContactRoute = Router();
 
@@ -23,11 +23,15 @@ ContactRoute.delete('/tags/:id', ContactController.deleteTag);
 // Contact CRUD
 ContactRoute.post('/', checkPlanLimit('Contact'), ContactController.createContact);
 ContactRoute.get('/', ContactController.getContacts);
+ContactRoute.get('/team/accepted', ContactController.getAcceptedTeamMembers);
+ContactRoute.patch('/assign', ContactController.assignContact);
 ContactRoute.get('/:id', ContactController.getContactById);
-ContactRoute.put('/:id', ContactController.updateContact);
-ContactRoute.delete('/:id', ContactController.deleteContact);
+ContactRoute.put('/:id', requireRole('user','member'),ContactController.updateContact);
+ContactRoute.delete('/:id',requireRole('user','member'), ContactController.deleteContact);
+ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
+ContactRoute.put('/:contactId/assigned',ContactController.assignedContactToUser)
 
-// Contact import
+// Contact importc
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
 ContactRoute.get('/import/jobs', ContactController.getImportJobs);
 ContactRoute.get('/import/:jobId/status', ContactController.getImportStatus);
@@ -35,11 +39,9 @@ ContactRoute.post('/import/preview', uploadXLSXMiddleware, ContactController.pre
 ContactRoute.post('/import',checkPlanLimit('Contact'), uploadXLSXMiddleware, ContactController.importContacts);
 
 // Contact tags management
-ContactRoute.post('/:id/tags',checkPlanLimit('Contact'), ContactController.addTags);
+ContactRoute.post('/:id/tags',checkPlanLimit('Tag'), ContactController.addTags);
 ContactRoute.delete('/:id/tags', ContactController.removeTags);
-// ContactRoute.get()
-
-
-
 
 export default ContactRoute;
+
+

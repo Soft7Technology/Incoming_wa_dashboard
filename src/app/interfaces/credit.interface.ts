@@ -15,6 +15,7 @@ export interface CreditTransaction {
 
 export interface AddCreditDto {
   company_id: string;
+  company_name:string,
   amount: number;
   description?: string;
   created_by: string;

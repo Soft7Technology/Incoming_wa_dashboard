@@ -15,7 +15,9 @@ class ColumnController {
    * Get all columns for the current user/company
    */
   getColumns = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const columns = await ColumnModel.findByUser(req.userId!);
+    // Use ownerId so team members share the account owner's column config
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const columns = await ColumnModel.findByUser(effectiveUserId);
     return successResponse(req, res, 'Columns retrieved successfully', columns);
   });
 

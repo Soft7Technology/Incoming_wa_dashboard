@@ -32,6 +32,4 @@ ApiRoute.use('/admin', AdminRoute);
 // API Consumer routes - API key authentication required (for programmatic access)
 ApiRoute.use('/api', ApiConsumerRoute);
 
-
-
 export default ApiRoute;

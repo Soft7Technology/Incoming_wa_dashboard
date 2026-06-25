@@ -24,6 +24,7 @@ const createBaseApp = (routes: RouteConfig[] = []): Application => {
   app.use(helmet({
     contentSecurityPolicy: false, // Allow Swagger UI to load
   }));
+  
   app.use(cors());
   app.use(hpp());
   app.use(compression());

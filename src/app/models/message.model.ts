@@ -355,37 +355,43 @@ class MessageModel extends BaseModel {
   // }
 
   async getLeadConversations(contactNumber: string, phone_number_id: string, userId: string) {
+    const db = this.db;
     const query = this.query();
 
     const normalizedNumber = contactNumber.slice(-10);
 
     const result = await query
+      .leftJoin('templates as t', function () {
+        this.on('t.id', '=', 'messages.template_id')
+          .orOn((join) => {
+            join.on('t.name', '=', db.raw(`content->'template'->>'name'`))
+              .andOn('t.language', '=', db.raw(`content->'template'->'language'->>'code'`));
+          });
+      })
       .select([
-        'id',
-        'phone_number_id',
-        'direction',
-        'type',
+        'messages.id',
+        'messages.phone_number_id',
+        'messages.direction',
+        'messages.type',
 
-        this.db.raw(`REPLACE(from_phone, '+', '') AS from_phone`),
-        this.db.raw(`REPLACE(to_phone, '+', '') AS to_phone`),
+        this.db.raw(`REPLACE(messages.from_phone, '+', '') AS from_phone`),
+        this.db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
 
-        'status',
-        'created_at',
-
-        this.db.raw(`
-        CASE 
-          WHEN type = 'text' 
-          THEN content->'text'->>'body'
-        END AS "content"
-      `),
+        'messages.status',
+        'messages.created_at',
+        'messages.content',
 
         this.db.raw(`
-        CASE 
-          WHEN type = 'template' 
-          THEN content->'template'->'components'
-          ELSE NULL
-        END AS "templateComponents"
-      `),
+          CASE
+            WHEN messages.type = 'template'
+              THEN COALESCE(
+                NULLIF(messages.content->'template'->'components', '[]'::jsonb),
+                t.components,
+                '[]'::jsonb
+              )
+            ELSE NULL
+          END AS "templateComponents"
+        `),
       ])
       .where('phone_number_id', phone_number_id)
       .andWhere((builder) => {
@@ -423,6 +429,7 @@ class MessageModel extends BaseModel {
 
   async getMessagesConversation(userId: string, phone_number_id: string) {
     console.log('User Id', userId);
+    const db = this.db;
     const query = this.query();
 
     // ✅ FULL normalization (BEST)
@@ -453,7 +460,17 @@ class MessageModel extends BaseModel {
         'updated_at',
       ])
       .where('phone_number_id', phone_number_id)
-      .andWhere('user_id', userId)
+      .where((builder: any) => {
+        builder
+          .where('user_id', userId)
+          .orWhereIn(
+            db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
+            db('contacts')
+              .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
+              .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
+              .whereNull('deleted_at')
+          );
+      })
 
       // ✅ unique per CLEAN number
       .distinctOn([this.db.raw(normalizedToPhoneSQL) as any])
@@ -466,7 +483,17 @@ class MessageModel extends BaseModel {
     const counts = this.query()
       .select([this.db.raw(`${normalizedToPhoneSQL} AS to_phone`), this.db.raw(`COUNT(*) AS "totalMessages"`)])
       .where('phone_number_id', phone_number_id)
-      .andWhere('user_id', userId)
+      .where((builder: any) => {
+        builder
+          .where('user_id', userId)
+          .orWhereIn(
+            db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
+            db('contacts')
+              .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
+              .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
+              .whereNull('deleted_at')
+          );
+      })
       .groupByRaw(normalizedToPhoneSQL)
       .as('counts');
 

@@ -41,6 +41,8 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
 
     let hasMore = true;
     let processedCount = 0;
+    let totalSent = 0;
+    let totalFailed = 0;
 
     while (hasMore) {
       // Check if campaign should still be running
@@ -55,11 +57,13 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
 
       if (pendingMessages.length === 0) {
         hasMore = false;
-        await CampaignModel.updateStatus(campaignId, 'completed', {
+        // Only mark 'completed' if at least some messages were sent.
+        // If EVERY message failed, mark as 'failed' so the dashboard shows the truth.
+        const finalStatus = totalSent > 0 ? 'completed' : 'failed';
+        await CampaignModel.updateStatus(campaignId, finalStatus, {
           completed_at: new Date(),
         });
-
-        console.log(`[Campaign ${campaignId}] Completed successfully`);
+        console.log(`[Campaign ${campaignId}] Finished. Sent: ${totalSent}, Failed: ${totalFailed}. Status: ${finalStatus}`);
         break;
       }
 
@@ -71,9 +75,11 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
       );
 
       // Count results
-      const successful = results.filter((r) => r.status === 'fulfilled').length;
-      const failed = results.filter((r) => r.status === 'rejected').length;
+      const batchSuccessful = results.filter((r) => r.status === 'fulfilled').length;
+      const batchFailed = results.filter((r) => r.status === 'rejected').length;
 
+      totalSent += batchSuccessful;
+      totalFailed += batchFailed;
       processedCount += pendingMessages.length;
 
       // Update job progress
@@ -81,8 +87,20 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
       await job.updateProgress(progress);
 
       console.log(
-        `[Campaign ${campaignId}] Batch processed: ${successful} successful, ${failed} failed. Progress: ${progress}%`
+        `[Campaign ${campaignId}] Batch: ${batchSuccessful} sent, ${batchFailed} failed. Total: ${totalSent} sent / ${totalFailed} failed. Progress: ${progress}%`
       );
+
+      // If failure rate in this batch is >80% (and batch is big enough to be meaningful),
+      // pause the campaign to prevent hammering the Meta API with bad requests.
+      const failureRate = batchFailed / pendingMessages.length;
+      if (failureRate > 0.8 && pendingMessages.length >= 5) {
+        console.error(
+          `[Campaign ${campaignId}] ❌ High failure rate (${Math.round(failureRate * 100)}%). Pausing campaign to prevent further errors.`
+        );
+        await CampaignModel.updateStatus(campaignId, 'paused');
+        hasMore = false;
+        break;
+      }
 
       // Delay between batches to avoid rate limiting
       if (pendingMessages.length === BATCH_SIZE) {
@@ -90,12 +108,14 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
       }
     }
 
-    console.log(`[Campaign ${campaignId}] Execution completed. Processed ${processedCount} messages`);
+    console.log(`[Campaign ${campaignId}] Execution completed. Processed: ${processedCount}, Sent: ${totalSent}, Failed: ${totalFailed}`);
 
     return {
       campaign_id: campaignId,
       processed: processedCount,
-      status: 'completed',
+      sent: totalSent,
+      failed: totalFailed,
+      status: totalSent > 0 ? 'completed' : 'failed',
     };
   } catch (error: any) {
     console.error(`[Campaign ${campaignId}] Fatal error:`, error);
@@ -194,12 +214,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { id: media.media_id } }],
+            parameters: [{ type: 'image', image: { link: media.link} }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'image', image: { link: media.link } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'VIDEO') {
@@ -207,12 +227,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { id: media.media_id } }],
+            parameters: [{ type: 'video', video: { link:  media.link } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'video', video: { link:  media.link } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
@@ -220,12 +240,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { id: media.media_id } }],
+            parameters: [{ type: 'document', document: { link:  media.link } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'document', document: { link: media.link } }],
           });
         }
       } else if (component.type === 'BODY' && component.text) {

@@ -1,6 +1,8 @@
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import CompanyModel from '@surefy/console/models/company.model';
+import TemplateModel from '@surefy/console/models/template.model';
+import WabaModel from '@surefy/console/models/waba.model';
 import { SendMessageDto, SendBulkMessageDto, MarkAsReadDto, MessageStatusUpdate, BulkSendMessageDto } from '@surefy/console/interfaces/message.interface';
 import MetaService from '@surefy/console/services/meta.service';
 import CreditService from '@surefy/console/services/credit.service';
@@ -12,6 +14,7 @@ import { bulkMessageSendQueue } from '../../queues/bulkMessageSend.queue';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import messageModel from '@surefy/console/models/message.model';
 import userModel from '../models/user.model';
+import { downloadImage } from '../utils';
 
 
 class MessageService {
@@ -29,13 +32,13 @@ class MessageService {
   }
 
 
-    async getUserStats(userId:any,time_frame:any){
-      const userStats = await userModel.getUserStats(userId,time_frame)
-      return userStats
-    }
+  async getUserStats(userId: any, time_frame: any) {
+    const userStats = await userModel.getUserStats(userId, time_frame)
+    return userStats
+  }
 
   /**
-   * Send message
+   * Send messages
    */
   async sendMessage(data: SendMessageDto) {
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
@@ -98,6 +101,102 @@ class MessageService {
 
     // const messageId = data?.messageUUID && uuidValidate(data.messageUUID) ? data.messageUUID : uuidv4();
 
+    let templateRecordId: string | null = null;
+    // Resolve template language at the wider scope so it's available for Meta API fallback
+    const templateLanguage = data.type === 'template' && data.template
+      ? (typeof data.template.language === 'string'
+        ? data.template.language
+        : (data.template.language as any)?.code)
+      : undefined;
+
+    // Store template definition components (BODY/HEADER/FOOTER with text) for frontend display
+    let templateDefinitionComponents: any[] | null = null;
+
+    if (data.type === 'template' && data.template?.name && templateLanguage) {
+      const template = await TemplateModel.findByNameAndLanguage(
+        data.user_id,
+        data.template.name,
+        templateLanguage,
+      );
+      if (template) {
+        templateRecordId = template.id;
+        // Save template definition components for display (BODY, HEADER, FOOTER with text)
+        if (Array.isArray(template.components) && template.components.length > 0) {
+          templateDefinitionComponents = template.components;
+        }
+      }
+    }
+
+    // If template not found in DB, try to fetch from Meta API using the phone number
+    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents) {
+      try {
+        // Get phone number details to access waba_id for Meta API call
+        const pn = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+        if (pn) {
+          const waba = await WabaModel.findById(pn.waba_id);
+          if (waba) {
+            // Fetch all templates from Meta API and find the one we need
+            const metaTemplates = await MetaService.getTemplates(waba.waba_id);
+            const matchedTemplate = metaTemplates.data?.find(
+              (t: any) => t.name === data.template?.name && t.language === templateLanguage
+            );
+            if (matchedTemplate && Array.isArray(matchedTemplate.components) && matchedTemplate.components.length > 0) {
+              templateDefinitionComponents = matchedTemplate.components;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch template from Meta API:', error);
+      }
+    }
+
+    // Build the content to store in DB — include template definition components for frontend display
+    // The metaPayload keeps the parameter components for the Meta API call
+    const contentToStore = { ...metaPayload };
+    if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
+      // Merge parameters from sent payload into definition components
+      const mergedComponents = templateDefinitionComponents.map((defComp: any) => {
+        const type = String(defComp.type || "").toLowerCase();
+        let paramComp;
+
+        if (type === 'buttons' || type === 'button') {
+          const buttonParams = metaPayload.template.components?.filter(
+            (pc: any) => String(pc.type || "").toLowerCase() === 'button'
+          );
+          if (buttonParams && buttonParams.length > 0) {
+            const mergedButtons = defComp.buttons?.map((btn: any, btnIdx: number) => {
+              const matchingParam = buttonParams.find(
+                (bp: any) => bp.index === btnIdx.toString()
+              );
+              return {
+                ...btn,
+                parameters: matchingParam?.parameters || [],
+              };
+            });
+            return {
+              ...defComp,
+              buttons: mergedButtons,
+            };
+          }
+        } else {
+          paramComp = metaPayload.template.components?.find(
+            (pc: any) => String(pc.type || "").toLowerCase() === type
+          );
+        }
+
+        return {
+          ...defComp,
+          parameters: paramComp?.parameters || [],
+        };
+      });
+
+      // Store definition components alongside the template data for frontend rendering
+      contentToStore.template = {
+        ...contentToStore.template,
+        components: mergedComponents,
+      };
+    }
+
     // Create message record
     const message = await MessageModel.create({
       id: data.messageUUID,
@@ -111,7 +210,8 @@ class MessageService {
       from_phone: phoneNumber.display_phone_number,
       to_phone: data.to,
       status: 'queued',
-      content: metaPayload,
+      content: contentToStore,
+      template_id: templateRecordId,
       // cost: messageCost,
       queued_at: new Date(),
     });
@@ -220,6 +320,92 @@ class MessageService {
 
     // const messageId = data?.messageUUID && uuidValidate(data.messageUUID) ? data.messageUUID : uuidv4();
 
+    let templateRecordId: string | null = null;
+    const templateLanguage = data.type === 'template' && data.template
+      ? (typeof data.template.language === 'string'
+        ? data.template.language
+        : (data.template.language as any)?.code)
+      : undefined;
+
+    let templateDefinitionComponents: any[] | null = null;
+
+    if (data.type === 'template' && data.template?.name && templateLanguage) {
+      const template = await TemplateModel.findByNameAndLanguage(
+        data.user_id,
+        data.template.name,
+        templateLanguage,
+      );
+      if (template) {
+        templateRecordId = template.id;
+        if (Array.isArray(template.components) && template.components.length > 0) {
+          templateDefinitionComponents = template.components;
+        }
+      }
+    }
+
+    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents) {
+      try {
+        const pn = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+        if (pn) {
+          const waba = await WabaModel.findById(pn.waba_id);
+          if (waba) {
+            const metaTemplates = await MetaService.getTemplates(waba.waba_id);
+            const matchedTemplate = metaTemplates.data?.find(
+              (t: any) => t.name === data.template?.name && t.language === templateLanguage
+            );
+            if (matchedTemplate && Array.isArray(matchedTemplate.components) && matchedTemplate.components.length > 0) {
+              templateDefinitionComponents = matchedTemplate.components;
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to fetch template from Meta API in bulkSendMessage:', error);
+      }
+    }
+
+    const contentToStore = { ...metaPayload };
+    if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
+      const mergedComponents = templateDefinitionComponents.map((defComp: any) => {
+        const type = String(defComp.type || "").toLowerCase();
+        let paramComp;
+
+        if (type === 'buttons' || type === 'button') {
+          const buttonParams = metaPayload.template.components?.filter(
+            (pc: any) => String(pc.type || "").toLowerCase() === 'button'
+          );
+          if (buttonParams && buttonParams.length > 0) {
+            const mergedButtons = defComp.buttons?.map((btn: any, btnIdx: number) => {
+              const matchingParam = buttonParams.find(
+                (bp: any) => bp.index === btnIdx.toString()
+              );
+              return {
+                ...btn,
+                parameters: matchingParam?.parameters || [],
+              };
+            });
+            return {
+              ...defComp,
+              buttons: mergedButtons,
+            };
+          }
+        } else {
+          paramComp = metaPayload.template.components?.find(
+            (pc: any) => String(pc.type || "").toLowerCase() === type
+          );
+        }
+
+        return {
+          ...defComp,
+          parameters: paramComp?.parameters || [],
+        };
+      });
+
+      contentToStore.template = {
+        ...contentToStore.template,
+        components: mergedComponents,
+      };
+    }
+
     // Create message record
     const message = await MessageModel.create({
       id: data.messageUUID,
@@ -231,7 +417,8 @@ class MessageService {
       from_phone: phoneNumber.display_phone_number,
       to_phone: data.to,
       status: 'queued',
-      content: metaPayload,
+      content: contentToStore,
+      template_id: templateRecordId,
       // cost: messageCost,
       queued_at: new Date(),
     });
@@ -329,94 +516,204 @@ class MessageService {
   /**
    * Save incoming message
    */
-  async saveIncomingMessage(data: any) {
-    console.log("Saving incoming message", data)
-    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+/**
+ * Save incoming WhatsApp message
+ */
+async saveIncomingMessage(data: any) {
+  try {
+    console.log("Saving incoming message", data);
+
+    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(
+      data.phone_number_id
+    );
+
     if (!phoneNumber) {
       console.warn(`Phone number not found: ${data.phone_number_id}`);
-      return;
+      return null;
     }
 
-    const message = await MessageModel.create({
+    let content = data.content;
+    const type = data.type;
+
+    // Handle media messages
+    if (["image", "video", "audio", "document"].includes(type)) {
+      let mediaId: string | undefined;
+
+      switch (type) {
+        case "image":
+          mediaId = content?.image?.id;
+          break;
+
+        case "video":
+          mediaId = content?.video?.id;
+          break;
+
+        case "audio":
+          mediaId = content?.audio?.id;
+          break;
+
+        case "document":
+          mediaId = content?.document?.id;
+          break;
+      }
+
+      if (mediaId) {
+        try {
+          const media = await downloadImage(mediaId);
+
+          content = {
+            type,
+            media_id: mediaId,
+            media_url: media.firebaseUrl,
+          };
+        } catch (error) {
+          console.error(`Failed to download ${type}`, error);
+
+          content = {
+            type,
+            media_id: mediaId,
+          };
+        }
+      }
+    }
+
+    // Handle button replies
+    if (type === "button") {
+      content = {
+        type: "button",
+        text: content?.button?.text,
+        payload: content?.button?.payload,
+      };
+    }
+
+    // Handle text messages
+    if (type === "text") {
+      content = {
+        type: "text",
+        text: content?.text?.body || content?.text || "",
+      };
+    }
+
+    const messagePayload = {
       user_id: phoneNumber.user_id,
       company_id: phoneNumber.company_id,
       profile_name: data.profile_name,
+
       phone_number_id: phoneNumber.id,
       wamid: data.message_id,
-      direction: 'inbound',
-      type: data.type,
+
+      direction: "inbound",
+      type,
+
       from_phone: data.from,
       to_phone: phoneNumber.display_phone_number,
-      status: 'received',
-      content: data.content,
+
+      status: "received",
+
+      content,
       context: data.context,
+
       delivered_at: new Date(),
-    });
+    };
 
-    // const webhookPayload = webhookService.buildIncomingWebhookPayload(message, phoneNumber);
-    // await WebhookService.triggerWebhook(
-    //   phoneNumber.company_id,
-    //   'message.received',
-    //   webhookPayload
-    // );
+    const message = await MessageModel.create(messagePayload);
 
+    console.log("Incoming message stored", message.id);
 
     return message;
+  } catch (error) {
+    console.error("Failed to save incoming message", error);
+    throw error;
   }
+}
 
   /**
    * Get messages for company
    */
-  async getMessages(companyId: string,userId:string, filters: any = {}) {
-    return MessageModel.findByUserId(companyId,userId, filters);
+  async getMessages(companyId: string, userId: string, filters: any = {}) {
+    return MessageModel.findByUserId(companyId, userId, filters);
   }
 
 
-    /**
-   * Handle Send ChatBot message
-   */
+  /**
+ * Handle Send ChatBot message
+ */
   async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
-    {
-      try {
-        let metaPayload: any = {
-          messaging_product: "whatsapp",
-          to: to,
+    console.log('Response', JSON.stringify(response))
+
+    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
+    if (!phoneNumber) {
+      console.warn(`Phone number not found: ${phoneNumberId}`);
+      return;
+    }
+
+    try {
+      let metaPayload: any = {
+        messaging_product: "whatsapp",
+        to: to,
+      };
+
+      metaPayload.type = response.type
+      metaPayload.interactive = response.interactive
+
+      // // ✅ TEXT MESSAGE
+      if (response.type === "text") {
+        metaPayload.type = "text";
+        metaPayload.text = {
+          body: response.text,
         };
-
-        // ✅ TEXT MESSAGE
-        if (response.type === "text") {
-          metaPayload.type = "text";
-          metaPayload.text = {
-            body: response.text,
-          };
-        }
-
-        // ✅ INTERACTIVE BUTTON MESSAGE
-        if (response.type === "interactive") {
-          metaPayload.type = "interactive";
-          metaPayload.interactive = {
-            type: "button",
-            body: {
-              text: response.interactive.body.text,
-            },
-            action: {
-              buttons: response.interactive.action.buttons.map((btn: any) => ({
-                type: "reply",
-                reply: {
-                  id: btn.reply.id,
-                  title: btn.reply.title,
-                },
-              })),
-            },
-          };
-        }
-        const metaResponse = await MetaService.sendMessage(phoneNumberId, metaPayload);
-        console.log("✅ Message Sent:", metaResponse.data);
-        return metaResponse.data;
-      } catch (error: any) {
-        console.error("❌ Send Message Error:", error?.response?.data || error.message);
-        return null;
       }
+
+
+      // // ✅ INTERACTIVE BUTTON MESSAGE
+      // if (response.type === "interactive") {
+      //   metaPayload.type = "interactive";
+      //   metaPayload.interactive = {
+      //     type: "button",
+      //     body: {
+      //       text: response.interactive.body.text,
+      //     },
+      //     action: {
+      //       buttons: response.interactive.action.buttons.map((btn: any) => ({
+      //         type: "reply",
+      //         reply: {
+      //           id: btn.reply.id,
+      //           title: btn.reply.title,
+      //         },
+      //       })),
+      //     },
+      //   };
+      // }
+
+      console.log("Meta Payload Message Service", JSON.stringify(metaPayload))
+      const metaResponse = await MetaService.sendMessage(phoneNumberId, metaPayload);
+
+      console.log("✅ Message Sent:", metaResponse);
+
+
+      const message = await MessageModel.create({
+        user_id: phoneNumber.user_id,
+        company_id: phoneNumber.company_id,
+        profile_name: "",
+        phone_number_id: phoneNumber.id,
+        wamid: metaResponse.messages[0].id,
+        direction: 'outbound',
+        type: metaPayload.type,
+        from_phone: phoneNumber.display_phone_number,
+        to_phone: to,
+        status: 'sent',
+        content: metaPayload,
+        context: "",
+        delivered_at: new Date(),
+      });
+
+      console.log('chatbot mesage', message)
+
+
+      return metaResponse.data;
+    } catch (error: any) {
+      console.error("❌ Send Message Error:", error?.response?.data || error.message);
+      return null;
     }
   }
 
@@ -491,91 +788,91 @@ class MessageService {
     return MessageModel.getMessageStats(companyId, fromDate, toDate);
   }
 
-  async getMessagesConversation(userId:string,phone_number_id:any){
-    return MessageModel.getMessagesConversation(userId,phone_number_id)
+  async getMessagesConversation(userId: string, phone_number_id: any) {
+    return MessageModel.getMessagesConversation(userId, phone_number_id)
   }
 
-  async getLeadConversations(leadNumber:any,phone_number_id:any,userId:string){
-    return MessageModel.getLeadConversations(leadNumber,phone_number_id,userId)
+  async getLeadConversations(leadNumber: any, phone_number_id: any, userId: string) {
+    return MessageModel.getLeadConversations(leadNumber, phone_number_id, userId)
   }
 
 
-//   async getUserDetails(userId:string,query:any){
-//     const userId = 'YOUR_USER_ID';
+  //   async getUserDetails(userId:string,query:any){
+  //     const userId = 'YOUR_USER_ID';
 
-// const query = knex('users as u')
-//   .where('u.id', userId)
+  // const query = knex('users as u')
+  //   .where('u.id', userId)
 
-//   .leftJoin(
-//     knex('campaigns')
-//       .select('user_id')
-//       .count('* as total_campaigns')
-//       .groupBy('user_id')
-//       .as('cc'),
-//     'cc.user_id',
-//     'u.id'
-//   )
+  //   .leftJoin(
+  //     knex('campaigns')
+  //       .select('user_id')
+  //       .count('* as total_campaigns')
+  //       .groupBy('user_id')
+  //       .as('cc'),
+  //     'cc.user_id',
+  //     'u.id'
+  //   )
 
-//   .leftJoin(
-//     knex('contacts')
-//       .select('user_id')
-//       .count('* as active_contacts')
-//       .groupBy('user_id')
-//       .as('ct'),
-//     'ct.user_id',
-//     'u.id'
-//   )
+  //   .leftJoin(
+  //     knex('contacts')
+  //       .select('user_id')
+  //       .count('* as active_contacts')
+  //       .groupBy('user_id')
+  //       .as('ct'),
+  //     'ct.user_id',
+  //     'u.id'
+  //   )
 
-//   .leftJoin(
-//     knex('contact_lists')
-//       .select('user_id')
-//       .count('* as total_leads')
-//       .groupBy('user_id')
-//       .as('lc'),
-//     'lc.user_id',
-//     'u.id'
-//   )
+  //   .leftJoin(
+  //     knex('contact_lists')
+  //       .select('user_id')
+  //       .count('* as total_leads')
+  //       .groupBy('user_id')
+  //       .as('lc'),
+  //     'lc.user_id',
+  //     'u.id'
+  //   )
 
-//   .leftJoin(
-//     knex('messages')
-//       .select('user_id')
-//       .sum({
-//         messages_sent: knex.raw("CASE WHEN direction = 'sent' THEN 1 ELSE 0 END"),
-//       })
-//       .sum({
-//         messages_received: knex.raw("CASE WHEN direction = 'received' THEN 1 ELSE 0 END"),
-//       })
-//       .groupBy('user_id')
-//       .as('mc'),
-//     'mc.user_id',
-//     'u.id'
-//   )
+  //   .leftJoin(
+  //     knex('messages')
+  //       .select('user_id')
+  //       .sum({
+  //         messages_sent: knex.raw("CASE WHEN direction = 'sent' THEN 1 ELSE 0 END"),
+  //       })
+  //       .sum({
+  //         messages_received: knex.raw("CASE WHEN direction = 'received' THEN 1 ELSE 0 END"),
+  //       })
+  //       .groupBy('user_id')
+  //       .as('mc'),
+  //     'mc.user_id',
+  //     'u.id'
+  //   )
 
-//   .leftJoin('campaigns as c', 'c.user_id', 'u.id')
-//   .leftJoin('subscription_plans as p', 'p.id', 'u.plan_id')
+  //   .leftJoin('campaigns as c', 'c.user_id', 'u.id')
+  //   .leftJoin('subscription_plans as p', 'p.id', 'u.plan_id')
 
-//   .select(
-//     'u.id',
-//     'u.name',
-//     knex.raw('COALESCE(lc.total_leads, 0) as total_leads'),
-//     knex.raw('COALESCE(mc.messages_sent, 0) as messages_sent'),
-//     knex.raw('COALESCE(mc.messages_received, 0) as messages_received'),
-//     knex.raw('COALESCE(cc.total_campaigns, 0) as total_campaigns'),
-//     knex.raw('COALESCE(ct.active_contacts, 0) as active_contacts'),
-//     knex.raw(`COALESCE(json_agg(DISTINCT c.*) FILTER (WHERE c.id IS NOT NULL), '[]') as campaigns`),
-//     'p.*'
-//   )
+  //   .select(
+  //     'u.id',
+  //     'u.name',
+  //     knex.raw('COALESCE(lc.total_leads, 0) as total_leads'),
+  //     knex.raw('COALESCE(mc.messages_sent, 0) as messages_sent'),
+  //     knex.raw('COALESCE(mc.messages_received, 0) as messages_received'),
+  //     knex.raw('COALESCE(cc.total_campaigns, 0) as total_campaigns'),
+  //     knex.raw('COALESCE(ct.active_contacts, 0) as active_contacts'),
+  //     knex.raw(`COALESCE(json_agg(DISTINCT c.*) FILTER (WHERE c.id IS NOT NULL), '[]') as campaigns`),
+  //     'p.*'
+  //   )
 
-//   .groupBy(
-//     'u.id',
-//     'p.id',
-//     'cc.total_campaigns',
-//     'ct.active_contacts',
-//     'lc.total_leads',
-//     'mc.messages_sent',
-//     'mc.messages_received'
-//   );
-//   }
+  //   .groupBy(
+  //     'u.id',
+  //     'p.id',
+  //     'cc.total_campaigns',
+  //     'ct.active_contacts',
+  //     'lc.total_leads',
+  //     'mc.messages_sent',
+  //     'mc.messages_received'
+  //   );
+  //   }
 }
 
 export default new MessageService();

@@ -20,11 +20,27 @@ class CreditController {
     const { companyId } = req.params;
 
     // Company users can only view their own balance
-    if (req.userRole === 'company' && req.companyId !== companyId) {
+    if (req.userRole === 'company' || req.userRole === 'admin' && req.companyId !== companyId) {
       throw new HTTP400Error({ message: 'You can only view your own credit balance' });
     }
 
     const balance = await CreditService.getBalance(companyId);
+    return successResponse(req, res, 'Credit balance retrieved successfully', balance);
+  });
+
+    /**
+   * GET /v1/credits/balance/:companyId
+   * Get credit balance for a company
+   */
+  getCompanyBalance = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    console.log("Company Id",req.companyId!,req.userRole!)
+
+    // Company users can only view their own balance
+    // if (req.userRole! === 'company' || req.userRole! === 'admin') {
+    //   throw new HTTP400Error({ message: 'You can only view your own credit balance' });
+    // }
+
+    const balance = await CreditService.getBalance(req.companyId!);
     return successResponse(req, res, 'Credit balance retrieved successfully', balance);
   });
 
@@ -33,7 +49,7 @@ class CreditController {
    * Add credits to a company (admin/superadmin only)
    */
   addCredit = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { company_id, amount, description } = req.body;
+    const { company_id, amount,company_name } = req.body;
 
     if (!company_id || !amount) {
       throw new HTTP400Error({ message: 'company_id and amount are required' });
@@ -45,8 +61,8 @@ class CreditController {
 
     const result = await CreditService.addCredit({
       company_id,
+      company_name,
       amount: parseFloat(amount),
-      description,
       created_by: req.userId!,
       user_role: req.userRole,
     });
@@ -69,6 +85,27 @@ class CreditController {
 
     const transactions = await CreditService.getTransactions(
       companyId,
+      limit ? parseInt(limit as string) : 100,
+    );
+
+    return successResponse(req, res, 'Transactions retrieved successfully', transactions);
+  });
+
+
+    /**
+   * GET /v1/credits/transactions/history
+   * Get credit transaction history
+   */
+  getTransactionHistory = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const { limit } = req.query;
+
+    // Company users can only view their own transactions
+    // if (req.userRole === 'admin' || req.companyId!) {
+    //   throw new HTTP400Error({ message: 'You can only view your own transactions' });
+    // }
+
+    const transactions = await CreditService.getTransactions(
+      req.companyId!,
       limit ? parseInt(limit as string) : 100,
     );
 

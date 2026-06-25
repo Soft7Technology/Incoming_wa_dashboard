@@ -11,6 +11,7 @@ export interface ContactImportJobData {
     phoneColumn?: string;
     nameColumn?: string;
     emailColumn?: string;
+    countryCodeColumn?:string
     tagIds?: string[];
   };
 }

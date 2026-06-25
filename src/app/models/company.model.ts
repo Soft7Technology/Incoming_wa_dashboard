@@ -5,6 +5,14 @@ class CompanyModel extends BaseModel {
     super('companies');
   }
 
+  async findById(id: string) {
+    return this.query().where({ id }).first();
+  }
+
+  async findAll(conditions: any = {}) {
+    return this.query().where(conditions).whereNull('deleted_at');
+  }
+
   async findByApiKey(apiKey: string) {
     return this.query().where({ api_key: apiKey, status: 'active' }).first();
   }
@@ -78,6 +86,10 @@ class CompanyModel extends BaseModel {
 
   async updateCreditBalance(companyId: string, amount: number) {
     return this.query().where({ id: companyId }).increment('credit_balance', amount).returning('*');
+  }
+
+  async findCompanies(status:any){
+    return this.query().where({status:status}).whereNull('deleted_at');
   }
 
   // async getDashboardStats(companyId: string,userId?:string,role?:string) {

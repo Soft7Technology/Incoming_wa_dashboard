@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import SubscriptionController from '@surefy/console/http/controllers/subscription.controller';
+import subscriptionController from '@surefy/console/http/controllers/subscription.controller';
 
 
 // companyRoute.post('/user/:planId/activate-plan', CompanyController.subscribePlan);
@@ -19,9 +20,8 @@ SubscriptionRoute.put('/plan/:id',SubscriptionController.updateSubscriptionPlan)
 SubscriptionRoute.delete('/plan/:id',SubscriptionController.deleteSubscriptionPlan)
 SubscriptionRoute.get('/plan/:id',SubscriptionController.getSubscriptionPlanById)
 SubscriptionRoute.post('/:planId/activate',SubscriptionController.subscribePlan)
-
-
-
+SubscriptionRoute.post('/verify-payment',SubscriptionController.activateUserPlanAfterPayment)
+SubscriptionRoute.post('/:planId/cancel-plan',subscriptionController.cancelUserSubscriptionPlan)
 
 export default SubscriptionRoute;
 

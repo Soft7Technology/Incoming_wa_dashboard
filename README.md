@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Console API - Meta WhatsApp Business Services
 
 A scalable microservice for managing WhatsApp Business API integrations, providing comprehensive APIs for company onboarding, message management, template management, webhook handling, and credit management.
@@ -558,6 +557,4 @@ For issues or questions, please contact the development team or create an issue 
 ## License
 
 ISC
-=======
 # Incoming_wa_dashboard
->>>>>>> 39fa7746770d870710df36801b05e5bfa9ee551c
