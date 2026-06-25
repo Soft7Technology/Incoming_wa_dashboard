@@ -269,6 +269,7 @@ class MetaService {
       const fileName = `${mediaId}_${Date.now()}.jpg`;
 
       // Step 4: Upload to Firebase Storage
+      if (!bucket) throw new Error("Firebase bucket is not initialized");
       const file = bucket.file(fileName);
 
       await file.save(buffer, {

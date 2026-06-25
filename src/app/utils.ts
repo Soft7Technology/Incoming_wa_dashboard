@@ -3,6 +3,8 @@ import chatBotModel from '../app/models/chatbot.model';
 import chatBotNodeModel from './models/chatBotNode.model';
 import chatBotEdgeModel from './models/chatBotEdge.model';
 import messageService from './services/message.service';
+import phoneNumberModel from './models/phoneNumber.model';
+import aiAgentService from './services/aiAgent.service';
 import nodemailer from "nodemailer";
 import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
@@ -92,72 +94,102 @@ export const generateInviteTemplate = ({
 };
 
 
-// export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
-//   try {
-//     console.log("📥 Incoming:", phoneNumberId, message);
+export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
+  try {
+    console.log("📥 Incoming:", phoneNumberId, message);
 
-//     const phone = message.from;
+    const phone = message.from;
 
-//     const incomingId =
-//       message?.interactive?.button_reply?.id ||
-//       message?.interactive?.list_reply?.id ||
-//       null;
+    const incomingId =
+      message?.interactive?.button_reply?.id ||
+      message?.interactive?.list_reply?.id ||
+      null;
 
-//     const incomingText = (
-//       message?.text?.body ||
-//       message?.interactive?.button_reply?.title ||
-//       message?.interactive?.list_reply?.title ||
-//       ""
-//     ).toLowerCase().trim();
+    const incomingText = (
+      message?.text?.body ||
+      message?.interactive?.button_reply?.title ||
+      message?.interactive?.list_reply?.title ||
+      ""
+    ).toLowerCase().trim();
 
-//     console.log("📩 Parsed:", { phone, incomingText });
+    // 1️⃣ Get bot
+    console.log("🔍 Finding bot for phone number:", phoneNumberId);
+    const bot: any = await chatBotModel.getPublishedBotByPhoneNumberId(phoneNumberId);
+    console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+    
+    if (!bot) {
+      // Fallback to active AI Assistant if no flow-based bot is published
+      const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
+      if (phoneNumber) {
+        console.log(`🤖 Checking for active AI Assistant for user: ${phoneNumber.user_id}`);
+        const aiResponse = await aiAgentService.runAssistant(
+          phoneNumber.user_id,
+          phoneNumber.company_id,
+          phone,
+          incomingText
+        );
+        
+        if (aiResponse) {
+          console.log(`🤖 AI Response generated: "${aiResponse}"`);
+          const responsePayload = {
+            type: 'text',
+            text: aiResponse
+          };
+          
+          await messageService.sendChatBotMessage(phoneNumberId, phone, responsePayload);
+          
+          await messageService.saveIncomingMessage({
+            phone_number_id: phoneNumberId,
+            message_id: `ai_${Date.now()}`,
+            from: 'SYSTEM',
+            type: 'text',
+            content: { body: aiResponse },
+            direction: 'outbound'
+          });
+          
+          return responsePayload;
+        }
+      }
+      return null;
+    }
 
-//     // 1️⃣ Get bot
-//     console.log("🔍 Finding bot for phone number:", phoneNumberId);
-//     const bot: any = await chatBotModel.getPublishedBotByPhoneNumberId(phoneNumberId);
-//     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
-//     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
-//     if (!bot) return null;
+    console.log("📩 Parsed:", { phone, incomingText });
 
-//     // 2️⃣ Load nodes + edges
-//     const rawNodes = await chatBotNodeModel.findByChatBotId(bot.id) || [];
-//     const rawEdges = await chatBotEdgeModel.findByChatBotId(bot.id) || [];
+    // 2️⃣ Load nodes + edges
+    const rawNodes = await chatBotNodeModel.findByChatBotId(bot.id) || [];
+    const rawEdges = await chatBotEdgeModel.findByChatBotId(bot.id) || [];
 
-//     bot.nodes = rawNodes.map((n: any) => ({
-//       ...n,
-//       data: safeJSON(n.data),
-//     }));
+    bot.nodes = rawNodes.map((n: any) => ({
+      ...n,
+      data: safeJSON(n.data),
+    }));
 
-//     bot.edges = rawEdges.map((e: any) => ({
-//       ...e,
-//       data: safeJSON(e.data),
-//     }));
+    bot.edges = rawEdges.map((e: any) => ({
+      ...e,
+      data: safeJSON(e.data),
+    }));
 
-//     console.log("📦 Nodes:", bot.nodes.length);
-//     console.log("🔗 Edges:", bot.edges.length);
+    console.log("📦 Nodes:", bot.nodes.length);
+    console.log("🔗 Edges:", bot.edges.length);
 
-//     // console.log("Nodes", JSON.stringify(bot.nodes))
-//     // console.log("Edges", JSON.stringify(bot.edges))
+    // 3️⃣ Resolve flow WITHOUT session
+    const response = resolveFlow(bot, incomingText,incomingId);
+    console.log("Response", JSON.stringify(response))
 
+    // 4️⃣ Send message
+    if (response) {
+      await messageService.sendChatBotMessage(phoneNumberId, phone, response);
+    } else {
+      console.log("⚠️ No response generated");
+    }
 
-//     // 3️⃣ Resolve flow WITHOUT session
-//     const response = resolveFlow(bot, incomingText,incomingId);
-//     console.log("Response", JSON.stringify(response))
+    return response;
 
-//     // 4️⃣ Send message
-//     if (response) {
-//       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
-//     } else {
-//       console.log("⚠️ No response generated");
-//     }
-
-//     return response;
-
-//   } catch (error) {
-//     console.error("❌ Chatbot Error:", error);
-//     return null;
-//   }
-// }
+  } catch (error) {
+    console.error("❌ Chatbot Error:", error);
+    return null;
+  }
+}
 
 
 function resolveFlow(bot: any, incomingText: string, incomingId?: string) {

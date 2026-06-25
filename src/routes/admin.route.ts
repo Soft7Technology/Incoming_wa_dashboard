@@ -15,6 +15,8 @@ import supportRoute from './support.route';
 import teamInviteRoute from './team.route';
 import ColumnRoute from './column.route';
 import activityRoute from './activity.route';
+import aiAssistantRoute from './aiAssistant.route';
+import PipelineStageRoute from './pipelineStage.route';
 
 const AdminRoute = Router();
 
@@ -37,5 +39,7 @@ AdminRoute.use('/chatbot',chatBotRoute );
 AdminRoute.use('/team',teamInviteRoute)
 AdminRoute.use('/columns', ColumnRoute);
 AdminRoute.use('/activity', activityRoute);
+AdminRoute.use('/ai-assistant', aiAssistantRoute);
+AdminRoute.use('/pipeline-stages', PipelineStageRoute);
 
 export default AdminRoute;
