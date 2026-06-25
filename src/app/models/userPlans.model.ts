@@ -62,22 +62,6 @@ class userPlansModel extends BaseModel {
     return await this.query().where({user_id:userId})
   }
 
-  //   async findCompanyActiveSubscriptions(companyId: string) {
-  //   return this.db('user_plans as up')
-  //     .select(
-  //       'up.*',
-  //       'u.name as user_name',
-  //       'u.role as user_role',
-  //       'u.email as user_email'
-  //     )
-  //     .leftJoin('users as u', 'u.id', 'up.user_id')
-  //     .where({
-  //       'up.company_id': companyId,
-  //       'up.active': true
-  //     })
-  //     .orderBy('up.created_at', 'desc');
-  // }
-
   async findCompanyActiveSubscriptions(userId: string, companyId?: string, role?: string, filters?: any) {
     const isSuperAdmin = role === 'superadmin';
 

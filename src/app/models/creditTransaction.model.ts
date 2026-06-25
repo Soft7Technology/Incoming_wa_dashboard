@@ -11,7 +11,6 @@ class CreditTransactionModel extends BaseModel {
       .orderBy('created_at', 'desc')
       .limit(limit);
   }
-
   async getTotalCredits(companyId: string): Promise<number> {
     const result = await this.query()
       .where({ company_id: companyId, type: 'credit' })
