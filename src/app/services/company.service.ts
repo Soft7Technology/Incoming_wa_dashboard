@@ -644,6 +644,7 @@ class CompanyService {
           },
 
           status: 'SUCCESS',
+          
         });
       }
     }
