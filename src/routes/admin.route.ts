@@ -16,6 +16,7 @@ import teamInviteRoute from './team.route';
 import ColumnRoute from './column.route';
 import activityRoute from './activity.route';
 import PipelineStageRoute from './pipelineStage.route';
+import cleanupRoute from './cleanup.route';
 
 const AdminRoute = Router();
 
@@ -39,5 +40,6 @@ AdminRoute.use('/team',teamInviteRoute)
 AdminRoute.use('/columns',ColumnRoute)
 AdminRoute.use('/activity',activityRoute )
 AdminRoute.use('/pipeline',PipelineStageRoute)
+AdminRoute.use('/cleanup', cleanupRoute);
 
 export default AdminRoute;
