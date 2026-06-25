@@ -8,7 +8,6 @@ class CreditTransactionModel extends BaseModel {
   async findByCompanyId(companyId: string, limit: number = 100) {
     return this.query()
       .where({ company_id: companyId })
-      .whereNot({ reference_type: 'subscription_commission' })
       .orderBy('created_at', 'desc')
       .limit(limit);
   }
