@@ -58,6 +58,10 @@ class userPlansModel extends BaseModel {
     return await this.query().where({ user_id: userId, active: true }).first();
   }
 
+  async getAllUserPlan(userId:string){
+    return await this.query().where({user_id:userId})
+  }
+
   //   async findCompanyActiveSubscriptions(companyId: string) {
   //   return this.db('user_plans as up')
   //     .select(

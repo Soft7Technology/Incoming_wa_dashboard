@@ -349,7 +349,7 @@ class CompanyService {
     }
 
     const { plan_name, price, billing_cycle, features } = planData;
-    console.log("Plan Data",planData)
+    console.log("Plan Data", planData)
 
     console.log('User:', userId, 'Company:', user.company_id);
 
@@ -360,9 +360,117 @@ class CompanyService {
     const companyDetails = await companyModel.findById(user.company_id);
 
     if (!companyDetails) {
-      throw new HTTP400Error({
-        message: 'Company not found',
+      // =====================================================
+      // PLAN DATES
+      // =====================================================
+
+      const durationDays =
+        billing_cycle === 'Monthly'
+          ? 30
+          : billing_cycle === 'Yearly'
+            ? 365
+            : 3;
+
+      const { limits, usage } =
+        transformFeatures(features);
+
+      const startDate = new Date();
+      const endDate = new Date(startDate);
+
+      if (billing_cycle === 'Monthly') {
+        endDate.setMonth(endDate.getMonth() + 1);
+      } else if (billing_cycle === 'Yearly') {
+        endDate.setFullYear(endDate.getFullYear() + 1);
+      } else {
+        endDate.setDate(endDate.getDate() + 3);
+      }
+
+      // =====================================================
+      // CREATE USER PLAN
+      // =====================================================
+
+      const superAdmin: any =
+        await userModel.findSuperAdmin('superadmin');
+
+      console.log("Superadmin", superAdmin)
+
+      if (!superAdmin) {
+        throw new HTTP400Error({
+          message: 'Super admin not found',
+        });
+      }
+
+      const balanceBefore =
+        Number(superAdmin.credit_balance || 0);
+
+      console.log("Balance bfore", balanceBefore)
+
+      const balanceAfter =
+        balanceBefore + Number(price);
+
+      await userModel.update(superAdmin.id, {
+        credit_balance: balanceAfter,
       });
+
+      // Credit Transaction
+      await creditTransactionModel.create({
+        user_id: superAdmin.id,
+        company_id: superAdmin.company_id,
+        type: 'credit',
+        amount: Number(price),
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        description: `Subscription purchase (${plan_name}) without company`,
+        created_by: userId,
+        reference_type: 'subscription',
+      });
+
+      // Activity Log
+      await activityLogsModel.create({
+        user_id: superAdmin.id,
+        company_id: superAdmin.company_id,
+
+        action: 'CREDIT',
+        entity_type: 'WALLET',
+        entity_id: superAdmin.id,
+
+        read: false,
+
+        description: `₹${price} credited from subscription purchase (${plan_name})`,
+
+        new_data: {
+          plan_name,
+          price,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+        },
+
+        status: 'SUCCESS',
+      });
+
+      const newUserPlan = await userPlansModel.create({
+        user_id: userId,
+        company_id: user.company_id,
+        plan_name,
+        price,
+        billing_cycle,
+
+        status: 'COMPLETED',
+
+        start_date: startDate,
+        end_date: endDate,
+
+        subscription_id: planData.id,
+
+        active: true,
+
+        limits: JSON.stringify(limits),
+        usage: JSON.stringify(usage),
+
+        duration_days: durationDays,
+      });
+
+      return newUserPlan
     }
 
     // =====================================================

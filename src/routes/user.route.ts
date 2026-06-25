@@ -13,6 +13,7 @@ UserRoute.get('/stats', CompanyController.getUserStats)
 UserRoute.get('/', CompanyController.getUser);
 UserRoute.get('/reminder',CompanyController.getReminders)
 UserRoute.get('/plan/status', CompanyController.checkUserPlanStatus)
+UserRoute.get('/plans',companyController.getAllUserPlans)
 
 
 UserRoute.put('/:id/suspend-plan', companyController.suspendUserPlan)

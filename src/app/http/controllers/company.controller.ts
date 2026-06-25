@@ -335,6 +335,11 @@ class CompanyController {
     }
   }
 
+  async getAllUserPlans(req:AuthRequest,res:Response){
+    const userPlans = await userPlansModel.getAllUserPlan(req.userId!)
+    successResponse(req,res,"All User Plans",userPlans)
+  }
+
   async getUserById(req: AuthRequest, res: Response) {
     const { userId } = req.params
     const user = await CompanyService.getUserById(userId)
