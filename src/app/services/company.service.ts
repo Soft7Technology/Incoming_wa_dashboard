@@ -16,6 +16,7 @@ import { uploadImage } from '@surefy/config/firebase.config'
 import creditTransactionModel from '../models/creditTransaction.model';
 import activityLogsModel from '../models/activityLogs.model';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
+import { now } from 'lodash';
 
 class CompanyService {
   /**
@@ -232,6 +233,7 @@ class CompanyService {
 
   async updateCompanyUser(userId: string, data: any) {
     const { assigned_plan } = data;
+    
 
     const user = await userModel.findById(userId);
     if (!user) {
@@ -243,7 +245,7 @@ class CompanyService {
     }
 
     // 1. Get existing plan
-    const existingPlan = await userPlansModel.findPlanByUserId(userId);
+    const existingPlan = await userPlansModel.findPlanBySubscriptionId(assigned_plan);
 
     // 2. Prevent same plan reassignment
     if (existingPlan && existingPlan.subscription_id === assigned_plan) {
@@ -254,6 +256,7 @@ class CompanyService {
 
     // 3. Get new plan details
     const subscriptionPlanDetails = await subscriptionModel.findPlans(assigned_plan, true);
+    console.log("Subscruption",subscriptionPlanDetails)
 
     if (!subscriptionPlanDetails) {
       throw new HTTP400Error({
@@ -269,17 +272,17 @@ class CompanyService {
 
     // ✅ Case 1: No existing plan
     if (!existingPlan) {
-      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, null, user);
+      userPlan = await this.activateUserPlan(userId,user, subscriptionPlanDetails, null);
     }
 
     // ✅ Case 2: Existing FREE plan → replace directly
     else if (existingPlan.billing_cycle === 'Free') {
-      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, existingPlan, user);
+      userPlan = await this.activateUserPlan(userId,user, subscriptionPlanDetails, existingPlan);
     }
 
     // ✅ Case 3: Existing PAID plan → settle (carry forward)
     else {
-      userPlan = await this.settleUserPlan(existingPlan.id, subscriptionPlanDetails, existingPlan, user.company_id);
+      userPlan = await this.settleUserPlan(existingPlan.id,user, subscriptionPlanDetails, existingPlan);
     }
 
     // =========================
@@ -340,7 +343,7 @@ class CompanyService {
   async activateUserPlan(
     userId: string,
     user: any,
-    planData?: any,
+    planData: any,
     existingUserPlan?: any,
   ) {
     console.log("User", user)
@@ -652,6 +655,7 @@ class CompanyService {
     if (existingUserPlan) {
       await userPlansModel.update(existingUserPlan.id, {
         active: false,
+        end_date: now,
       });
     }
 
@@ -752,71 +756,12 @@ class CompanyService {
     return newUserPlan;
   }
 
-  //   async settleUserPlan(
-  //   userPlanId: string,
-  //   planData: any,
-  //   existingUserPlan: any,
-  //   companyId: string
-  // ) {
-  //   const now = new Date();
-
-  //   // 1. Calculate remaining days
-  //   const endDate = new Date(existingUserPlan.end_date);
-
-  //   let remainingDays = 0;
-  //   if (endDate > now) {
-  //     remainingDays = Math.ceil(
-  //       (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-  //     );
-  //   }
-
-  //   // 2. Calculate remaining value from old plan
-  //   const oldPlanDuration = existingUserPlan.duration_days;
-  //   const oldPlanPrice = existingUserPlan.price;
-
-  //   const oldPerDayPrice = oldPlanPrice / oldPlanDuration;
-  //   const remainingValue = remainingDays * oldPerDayPrice;
-
-  //   // 3. Convert value into new plan days
-  //   const newPlanDuration = planData.duration_days;
-  //   const newPlanPrice = planData.price;
-
-  //   const newPerDayPrice = newPlanPrice / newPlanDuration;
-
-  //   const extraDays = Math.floor(remainingValue / newPerDayPrice);
-
-  //   const finalDays = newPlanDuration + extraDays;
-
-  //   // 4. Deactivate old plan
-  //   await userPlansModel.query().patch({
-  //     is_active: false,
-  //     ended_at: now,
-  //   }).where({ id: userPlanId });
-
-  //   // 5. Create new plan
-  //   const newStartDate = now;
-  //   const newEndDate = new Date();
-  //   newEndDate.setDate(newEndDate.getDate() + finalDays);
-
-  //   const newUserPlan = await userPlansModel.query().insert({
-  //     user_id: existingUserPlan.user_id,
-  //     company_id: companyId,
-  //     subscription_id: planData.id,
-  //     start_date: newStartDate,
-  //     end_date: newEndDate,
-  //     duration_days: finalDays,
-  //     price: planData.price,
-  //     is_active: true,
-  //   });
-
-  //   return newUserPlan;
-  // }
 
   async settleUserPlan(
     userPlanId: string,
+    user:any,
     planData: any,
     existingUserPlan: any,
-    companyId: string
   ) {
     const now = new Date();
 
@@ -826,7 +771,7 @@ class CompanyService {
     // COMPANY VALIDATION
     // =====================================================
 
-    const companyDetails = await companyModel.findById(companyId);
+    const companyDetails = await companyModel.findById(user.companyId);
 
     if (!companyDetails) {
       throw new HTTP400Error({
@@ -873,7 +818,7 @@ class CompanyService {
 
     if (commission > 0) {
       await creditTransactionModel.create({
-        company_id: companyId,
+        company_id: user.companyId,
         user_id: existingUserPlan.user_id,
         company_name:
           companyDetails.company_name || companyDetails.name,
@@ -892,11 +837,11 @@ class CompanyService {
 
       await activityLogsModel.create({
         user_id: existingUserPlan.user_id,
-        company_id: companyId,
+        company_id: user.companyId,
 
         action: 'DEBIT',
         entity_type: 'WALLET',
-        entity_id: companyId,
+        entity_id: user.companyId,
 
         read: false,
 
@@ -1037,7 +982,7 @@ class CompanyService {
 
     const newUserPlan = await userPlansModel.create({
       user_id: existingUserPlan.user_id,
-      company_id: companyId,
+      company_id: user.companyId,
 
       plan_name,
       price,
@@ -1072,7 +1017,7 @@ class CompanyService {
 
     await activityLogsModel.create({
       user_id: existingUserPlan.user_id,
-      company_id: companyId,
+      company_id: user.companyId,
 
       action: 'UPGRADE',
       entity_type: 'SUBSCRIPTION',

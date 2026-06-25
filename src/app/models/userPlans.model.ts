@@ -178,6 +178,10 @@ class userPlansModel extends BaseModel {
       },
     };
   }
+
+  async findPlanBySubscriptionId(subscription_id:any){
+    return this.query().where({ subscription_id: subscription_id,active:true }).first();
+  }
 }
 
 export default new userPlansModel();
