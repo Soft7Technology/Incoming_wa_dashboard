@@ -482,9 +482,9 @@ class CompanyController {
   }
 
   async suspendUserPlan(req: AuthRequest, res: Response) {
-    const { id } = req.query;
+    const { userId } = req.query;
 
-    const userActivePlan = await userPlansModel.findPlanByUserId(id);
+    const userActivePlan = await userPlansModel.getPlanByUserId(userId);
 
     if (!userActivePlan) {
       throw new HTTP400Error({
