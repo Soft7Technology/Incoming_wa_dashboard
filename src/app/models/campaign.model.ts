@@ -5,7 +5,7 @@ class CampaignModel extends BaseModel {
     super('campaigns');
   }
 
-  async findByCompany(userId: string, filters: any = {}) {
+  async findByUserId(userId: string, filters: any = {}) {
     let query = this.query()
       .whereNull('deleted_at')
       .where((builder) => {
