@@ -64,7 +64,7 @@ class UserModel extends BaseModel {
             .from('campaigns')
             .count('*')
             .where('user_id', userId)
-            // .orWhere('assigned_to',userId)
+          // .orWhere('assigned_to',userId)
         ).as('campaigns_count'),
 
         // chatbot
@@ -73,7 +73,7 @@ class UserModel extends BaseModel {
             .from('chat_bot')
             .count('*')
             .where('user_id', userId)
-            // .orWhere('assigned_to',userId)
+          // .orWhere('assigned_to',userId)
         ).as('chatbot_count'),
 
         // contacts
@@ -82,7 +82,7 @@ class UserModel extends BaseModel {
             .from('contacts')
             .count('*')
             .where('user_id', userId)
-            // .orWhere('assigned_to',userId)
+          // .orWhere('assigned_to',userId)
         ).as('contacts_count'),
 
         // contact lists
@@ -91,7 +91,7 @@ class UserModel extends BaseModel {
             .from('contact_lists')
             .count('*')
             .where('user_id', userId)
-            // .orWhere('assigned_to',userId)
+          // .orWhere('assigned_to',userId)
         ).as('contact_lists_count'),
 
         // sent messages
@@ -199,7 +199,7 @@ class UserModel extends BaseModel {
   }
 
   async findByRole(role: string, filters: any = {}) {
-    let query = this.query().where({ role:role }).whereNull('deleted_at');
+    let query = this.query().where({ role: role }).whereNull('deleted_at');
 
     if (filters.status) {
       query = query.where({ status: filters.status });
@@ -212,8 +212,8 @@ class UserModel extends BaseModel {
     return query.orderBy('created_at', 'desc');
   }
 
-  async findSuperAdmin(role:string){
-    let query = this.query().where({ role:role }).whereNull('deleted_at').first()
+  async findSuperAdmin(role: string) {
+    let query = this.query().where({ role: role }).whereNull('deleted_at').first()
     return query
   }
 
@@ -242,7 +242,16 @@ class UserModel extends BaseModel {
           this.on('up.id', '=', 'u.assigned_plan');
         },
       )
-      .select('u.*', 'up.plan_name', 'up.start_date', 'up.end_date', 'up.active as plan_active')
+      .select('u.*', 
+        'up.plan_name', 
+        'up.start_date', 
+        'up.end_date', 
+        'up.active as plan_active',
+        'up.billing_cycle',
+        'up.limits',
+        'up.usage',
+        'up.active'
+      )
       .whereNull('u.deleted_at');
 
     // ✅ Restrict company for non-superadmin
@@ -303,6 +312,22 @@ class UserModel extends BaseModel {
       .then((res: any) => res[0]);
   }
 
+  async findByUserId(id: string) {
+    return this.query()
+      .leftJoin('user_plans', 'users.assigned_plan', 'user_plans.id')
+      .select(
+        'users.name',
+        'users.created_at as joined',
+        'users.email',
+        'user_plans.billing_cycle',
+        'user_plans.start_date',
+        'user_plans.end_date',
+        'user_plans.limits',
+        'user_plans.usage'
+      )
+      .where('users.id', id)
+      .first();
+  }
 
 }
 

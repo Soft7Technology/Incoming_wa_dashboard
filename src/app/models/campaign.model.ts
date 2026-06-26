@@ -5,10 +5,11 @@ class CampaignModel extends BaseModel {
     super('campaigns');
   }
 
-  async findByCompany(userId:string, filters: any = {}) {
+  async findUserCampaigns(userId:string, filters: any = {}) {
+    console.log("User Id",userId)
     let query = this.query()
       .whereNull('deleted_at')
-      .orWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
+      // .andWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
       .where({ user_id: userId });
 
     if (filters.status) {

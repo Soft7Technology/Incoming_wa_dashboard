@@ -6,12 +6,12 @@ class userPlansModel extends BaseModel {
     super('user_plans');
   }
 
-  async getPlanByUserId(userId: string | number): Promise<any> {
+  async getPlanByUserId(userId: any): Promise<any> {
     return this.query().where({ user_id: userId, active:true }).first();
   }
 
-  async findPlanByUserId(userId: any): Promise<any> {
-    return this.query().where({ user_id: userId }).first();
+  async existingFreePlan(userId:any,billing_cycle:any){
+    return this.query().where({user_id:userId, billing_cycle:billing_cycle}).first()
   }
 
   async incrementUsage(userId: string, feature: 'Contact' | 'Campaign' | 'Chatbot', count = 1) {
