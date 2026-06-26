@@ -29,7 +29,7 @@ companyRoute.get('/', CompanyController.getAllCompanies);
  */
 companyRoute.post('/user', companyController.createUser);
 companyRoute.get('/user', companyController.getAllUsers);
-companyRoute.put('/user/:id', CompanyController.updateCompanyUser);
+companyRoute.put('/user/:userId', CompanyController.updateCompanyUser);
 companyRoute.get('/user/:userId',companyController.getCompanyUser)
 
 
