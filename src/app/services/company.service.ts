@@ -611,13 +611,13 @@ class CompanyService {
           company_id: superAdmin.company_id,
 
           type: 'credit',
-          amount: superAdminBalanceAfter,
+          amount: commission,
 
           balance_before: superAdminBalanceBefore,
           balance_after: superAdminBalanceAfter,
 
           description: `Platform fee received from ${companyDetails.company_name || companyDetails.name
-            } for assiging ${plan_name} to ${user.name} `,
+            } for assiging ${plan_name} to ${user.name}`,
 
           created_by: userId,
           reference_type: 'subscription_commission',
