@@ -655,6 +655,7 @@ class CompanyService {
     // =====================================================
     // DEACTIVATE OLD PLAN
     // =====================================================
+    const now = new Date();
 
     if (existingUserPlan) {
       console.log("Existsing Plan",existingUserPlan)
