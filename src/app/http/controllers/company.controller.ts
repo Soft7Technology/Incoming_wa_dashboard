@@ -242,16 +242,16 @@ class CompanyController {
 
   updateCompanyUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { name, email, phone, permissions, assigned_plan } = req.body;
-    const { id } = req.params
+    const { userId } = req.params
 
-    const updatedUser = await CompanyService.updateCompanyUser(id, { name, email, phone, permissions, assigned_plan })
+    const updatedUser = await CompanyService.updateCompanyUser(userId, { name, email, phone, permissions, assigned_plan })
     const { data } = updatedUser
     await activityLogsModel.create({
       user_id: data?.id, // user performing the update
 
       action: 'UPDATE',
       entity_type: 'USER',
-      entity_id: id,
+      entity_id: userId,
       read:false,
 
       description: `Updated user ${data?.name}`,
