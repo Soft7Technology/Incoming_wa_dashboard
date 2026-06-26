@@ -76,7 +76,7 @@ class CreditController {
    */
   getTransactions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { companyId } = req.params;
-    const { limit } = req.query;
+    const { limit,type } = req.query;
 
     // Company users can only view their own transactions
     if (req.userRole === 'company' && req.companyId !== companyId) {
@@ -86,6 +86,7 @@ class CreditController {
     const transactions = await CreditService.getTransactions(
       companyId,
       limit ? parseInt(limit as string) : 100,
+      type
     );
 
     return successResponse(req, res, 'Transactions retrieved successfully', transactions);
@@ -97,7 +98,7 @@ class CreditController {
    * Get credit transaction history
    */
   getTransactionHistory = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { limit } = req.query;
+    const { limit,type } = req.query;
 
     // Company users can only view their own transactions
     // if (req.userRole === 'admin' || req.companyId!) {
@@ -107,6 +108,7 @@ class CreditController {
     const transactions = await CreditService.getTransactions(
       req.companyId!,
       limit ? parseInt(limit as string) : 100,
+      type,
     );
 
     return successResponse(req, res, 'Transactions retrieved successfully', transactions);
