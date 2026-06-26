@@ -110,9 +110,9 @@ class CompanyController {
    * GET /v1/companies/all
    * Get all companies
    */
-  getAllCompanies  = tryCatchAsync(async (req: Request, res: Response) => {
+  getAllCompanies  = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const{status} = req.query
-    const companies = await CompanyService.getAllCompanies(status);
+    const companies = await CompanyService.getAllCompanies(req.companyId,status);
     return successResponse(req, res, 'Companies retrieved successfully', companies);
   });
 
