@@ -237,7 +237,7 @@ class CampaignService {
     const limit = parseInt(filters.limit) || 20;
     const offset = (page - 1) * limit;
 
-    let campaigns = await CampaignModel.findUserCampaigns(userId, filters);
+    let campaigns = await CampaignModel.findByUserId(userId, filters);
 
     const total = campaigns.length;
     campaigns = campaigns.slice(offset, offset + limit);

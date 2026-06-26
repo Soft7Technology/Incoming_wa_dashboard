@@ -5,19 +5,21 @@ class CampaignModel extends BaseModel {
     super('campaigns');
   }
 
-  async findUserCampaigns(userId:string, filters: any = {}) {
-    console.log("User Id",userId)
+  async findByUserId(userId: string, filters: any = {}) {
     let query = this.query()
       .whereNull('deleted_at')
-      // .andWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
-      .where({ user_id: userId });
+      .where((builder) => {
+        builder
+          .where('user_id', userId)
+          .orWhereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId]);
+      });
 
     if (filters.status) {
-      query = query.where({ status: filters.status });
+      query = query.where('status', filters.status);
     }
 
     if (filters.phone_number_id) {
-      query = query.where({ phone_number_id: filters.phone_number_id });
+      query = query.where('phone_number_id', filters.phone_number_id);
     }
 
     if (filters.search) {
@@ -31,8 +33,8 @@ class CampaignModel extends BaseModel {
     return query.orderBy('created_at', 'desc');
   }
 
-  async getUserCampaigns(userId:string){
-    const userCampaigns = await this.query().where({user_id:userId})
+  async getUserCampaigns(userId: string) {
+    const userCampaigns = await this.query().where({ user_id: userId })
     return userCampaigns
   }
 
