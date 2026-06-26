@@ -12,11 +12,15 @@ UserRoute.get('/stats', CompanyController.getUserStats)
 
 UserRoute.get('/', CompanyController.getUser);
 UserRoute.get('/reminder',CompanyController.getReminders)
+
+
+
 UserRoute.get('/plan/status', CompanyController.checkUserPlanStatus)
+
+//To check if the user has existing free plan
 UserRoute.get('/plans',companyController.getAllUserPlans)
 
-
-UserRoute.put('/:id/suspend-plan', companyController.suspendUserPlan)
+UserRoute.put('/:userId/suspend-plan', companyController.suspendUserPlan)
 UserRoute.put('/:id/suspend-user',companyController.suspendUser)
 UserRoute.put('/:id/active-user',companyController.activateUser)
 UserRoute.put('/:id/reset-password', CompanyController.resetUserPassword);

@@ -233,7 +233,7 @@ class CompanyService {
 
   async updateCompanyUser(userId: string, data: any) {
     const { assigned_plan } = data;
-    
+
 
     const user = await userModel.findById(userId);
     if (!user) {
@@ -256,7 +256,7 @@ class CompanyService {
 
     // 3. Get new plan details
     const subscriptionPlanDetails = await subscriptionModel.findPlans(assigned_plan, true);
-    console.log("Subscruption",subscriptionPlanDetails)
+    console.log("Subscruption", subscriptionPlanDetails)
 
     if (!subscriptionPlanDetails) {
       throw new HTTP400Error({
@@ -272,17 +272,17 @@ class CompanyService {
 
     // ✅ Case 1: No existing plan
     if (!existingPlan) {
-      userPlan = await this.activateUserPlan(userId,user, subscriptionPlanDetails, null);
+      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, null);
     }
 
     // ✅ Case 2: Existing FREE plan → replace directly
     else if (existingPlan.billing_cycle === 'Free') {
-      userPlan = await this.activateUserPlan(userId,user, subscriptionPlanDetails, existingPlan);
+      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, existingPlan);
     }
 
     // ✅ Case 3: Existing PAID plan → settle (carry forward)
     else {
-      userPlan = await this.settleUserPlan(existingPlan.id,user, subscriptionPlanDetails, existingPlan);
+      userPlan = await this.settleUserPlan(existingPlan.id, user, subscriptionPlanDetails, existingPlan);
     }
 
     // =========================
@@ -644,7 +644,7 @@ class CompanyService {
           },
 
           status: 'SUCCESS',
-          
+
         });
       }
     }
@@ -760,7 +760,7 @@ class CompanyService {
 
   async settleUserPlan(
     userPlanId: string,
-    user:any,
+    user: any,
     planData: any,
     existingUserPlan: any,
   ) {
