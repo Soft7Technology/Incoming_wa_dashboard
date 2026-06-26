@@ -233,19 +233,22 @@ class CompanyService {
 
   async updateCompanyUser(userId: string, data: any) {
     const { assigned_plan } = data;
-    
+
 
     const user = await userModel.findById(userId);
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
 
+    console.log("User",user)
+
     if (!assigned_plan) {
       return await userModel.update(userId, data);
     }
 
     // 1. Get existing plan
-    const existingPlan = await userPlansModel.findPlanBySubscriptionId(assigned_plan);
+    const existingPlan = await userPlansModel.findUserPlan(user.assigned_plan);
+    console.log("Existing Plan",existingPlan)
 
     // 2. Prevent same plan reassignment
     if (existingPlan && existingPlan.subscription_id === assigned_plan) {
@@ -256,7 +259,7 @@ class CompanyService {
 
     // 3. Get new plan details
     const subscriptionPlanDetails = await subscriptionModel.findPlans(assigned_plan, true);
-    console.log("Subscruption",subscriptionPlanDetails)
+    console.log("Subscruption", subscriptionPlanDetails)
 
     if (!subscriptionPlanDetails) {
       throw new HTTP400Error({
@@ -272,17 +275,17 @@ class CompanyService {
 
     // ✅ Case 1: No existing plan
     if (!existingPlan) {
-      userPlan = await this.activateUserPlan(userId,user, subscriptionPlanDetails, null);
+      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, null);
     }
 
     // ✅ Case 2: Existing FREE plan → replace directly
     else if (existingPlan.billing_cycle === 'Free') {
-      userPlan = await this.activateUserPlan(userId,user, subscriptionPlanDetails, existingPlan);
+      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, existingPlan);
     }
 
     // ✅ Case 3: Existing PAID plan → settle (carry forward)
     else {
-      userPlan = await this.settleUserPlan(existingPlan.id,user, subscriptionPlanDetails, existingPlan);
+      userPlan = await this.settleUserPlan(existingPlan.id, user, subscriptionPlanDetails, existingPlan);
     }
 
     // =========================
@@ -644,7 +647,7 @@ class CompanyService {
           },
 
           status: 'SUCCESS',
-          
+
         });
       }
     }
@@ -762,11 +765,12 @@ class CompanyService {
 
   async settleUserPlan(
     userPlanId: string,
-    user:any,
+    user: any,
     planData: any,
     existingUserPlan: any,
   ) {
     const now = new Date();
+    console.log("Settle Plan",user)
 
     const { plan_name, price, billing_cycle, features } = planData;
 
@@ -774,7 +778,7 @@ class CompanyService {
     // COMPANY VALIDATION
     // =====================================================
 
-    const companyDetails = await companyModel.findById(user.companyId);
+    const companyDetails = await companyModel.findById(user.company_id);
 
     if (!companyDetails) {
       throw new HTTP400Error({
@@ -821,7 +825,7 @@ class CompanyService {
 
     if (commission > 0) {
       await creditTransactionModel.create({
-        company_id: user.companyId,
+        company_id: user.company_id,
         user_id: existingUserPlan.user_id,
         company_name:
           companyDetails.company_name || companyDetails.name,
@@ -840,7 +844,7 @@ class CompanyService {
 
       await activityLogsModel.create({
         user_id: existingUserPlan.user_id,
-        company_id: user.companyId,
+        company_id: user.company_id,
 
         action: 'DEBIT',
         entity_type: 'WALLET',

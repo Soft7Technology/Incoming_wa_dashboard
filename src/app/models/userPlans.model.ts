@@ -163,9 +163,8 @@ class userPlansModel extends BaseModel {
     };
   }
 
-  async findPlanBySubscriptionId(subscription_id:any){ 
-    
-    return this.query().where({ subscription_id: subscription_id,active:true }).first();
+  async findUserPlan(assigned_plan:any){ 
+    return this.query().where({ id: assigned_plan,active:true }).first();
   }
 }
 
