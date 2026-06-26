@@ -654,8 +654,10 @@ class CompanyService {
     // =====================================================
 
     if (existingUserPlan) {
+      console.log("Existsing Plan",existingUserPlan)
       await userPlansModel.update(existingUserPlan.id, {
         active: false,
+        status:'EXPIRED',
         end_date: now,
       });
     }
