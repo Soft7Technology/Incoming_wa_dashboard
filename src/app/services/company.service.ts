@@ -240,12 +240,15 @@ class CompanyService {
       throw new HTTP404Error({ message: 'User not found' });
     }
 
+    console.log("User",user)
+
     if (!assigned_plan) {
       return await userModel.update(userId, data);
     }
 
     // 1. Get existing plan
-    const existingPlan = await userPlansModel.findPlanBySubscriptionId(assigned_plan);
+    const existingPlan = await userPlansModel.findUserPlan(user.assigned_plan);
+    console.log("Existing Plan",existingPlan)
 
     // 2. Prevent same plan reassignment
     if (existingPlan && existingPlan.subscription_id === assigned_plan) {
@@ -767,6 +770,7 @@ class CompanyService {
     existingUserPlan: any,
   ) {
     const now = new Date();
+    console.log("Settle Plan",user)
 
     const { plan_name, price, billing_cycle, features } = planData;
 
@@ -774,7 +778,7 @@ class CompanyService {
     // COMPANY VALIDATION
     // =====================================================
 
-    const companyDetails = await companyModel.findById(user.companyId);
+    const companyDetails = await companyModel.findById(user.company_id);
 
     if (!companyDetails) {
       throw new HTTP400Error({
@@ -821,7 +825,7 @@ class CompanyService {
 
     if (commission > 0) {
       await creditTransactionModel.create({
-        company_id: user.companyId,
+        company_id: user.company_id,
         user_id: existingUserPlan.user_id,
         company_name:
           companyDetails.company_name || companyDetails.name,
@@ -840,7 +844,7 @@ class CompanyService {
 
       await activityLogsModel.create({
         user_id: existingUserPlan.user_id,
-        company_id: user.companyId,
+        company_id: user.company_id,
 
         action: 'DEBIT',
         entity_type: 'WALLET',
