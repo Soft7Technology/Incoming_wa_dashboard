@@ -16,7 +16,7 @@ class CreditTransactionModel extends BaseModel {
   async getCompanyTransaction(companyId: string, limit: number = 100,type?:any) {
     return this.query()
       .where({ company_id: companyId })
-      .andWhere({type:type})
+      .orWhere({type:type})
       .orderBy('created_at', 'desc')
       .limit(limit);
   }
