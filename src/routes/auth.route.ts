@@ -11,6 +11,8 @@ AuthRoute.post('/register', AuthController.register);
 AuthRoute.post('/register-company', AuthController.onboard);
 AuthRoute.post('/setup-password', teamController.setUpPassword )
 
+
+
 //Reset-password
 AuthRoute.post('/verify-otp', AuthController.verifyOtp);
 AuthRoute.post('/reset-password', AuthController.forgotPassword);
@@ -29,3 +31,6 @@ AuthRoute.post(
 );
 
 export default AuthRoute;
+
+
+

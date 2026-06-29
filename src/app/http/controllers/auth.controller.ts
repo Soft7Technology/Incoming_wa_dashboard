@@ -159,13 +159,13 @@ class AuthController {
       role: 'user'
     });
 
-    // if(user){
-    //   await sendEmail(
-    //     email,
-    //    'Welcome to Our Platform',
-    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
-    //   )
-    // }
+    if(user){
+      await sendEmail(
+        email,
+       'Welcome to Our Platform',
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+      )
+    }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });
