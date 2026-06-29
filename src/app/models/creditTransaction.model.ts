@@ -21,8 +21,9 @@ class CreditTransactionModel extends BaseModel {
     let query = this.query()
       .where({ company_id: companyId });
 
-    if (filters?.type) {
-      query = query.orWhere({ type: filters.type });
+    // Apply type filter only when type is not "all"
+    if (filters?.type && filters.type.toLowerCase() !== 'all') {
+      query = query.andWhere({ type: filters.type });
     }
 
     // Get total count
