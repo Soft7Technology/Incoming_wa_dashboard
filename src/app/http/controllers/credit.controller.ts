@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import CreditService from '@surefy/console/services/credit.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { AuthRequest } from '@surefy/middleware/auth.middleware';
 
 // Extended request interface for JWT auth
 export interface JWTAuthRequest extends Request {
@@ -76,7 +77,12 @@ class CreditController {
    */
   getTransactions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { companyId } = req.params;
-    const { limit,type } = req.query;
+    const filters = {
+            type: req.query.type,
+            time_frame: req.query.time_frame,
+            page: req.query.page,
+            limit: req.query.limit,
+      };
 
     // Company users can only view their own transactions
     if (req.userRole === 'company' && req.companyId !== companyId) {
@@ -85,8 +91,7 @@ class CreditController {
 
     const transactions = await CreditService.getTransactions(
       companyId,
-      limit ? parseInt(limit as string) : 100,
-      type
+      filters
     );
 
     return successResponse(req, res, 'Transactions retrieved successfully', transactions);
@@ -97,8 +102,13 @@ class CreditController {
    * GET /v1/credits/transactions/history
    * Get credit transaction history
    */
-  getTransactionHistory = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { limit,type } = req.query;
+  getTransactionHistory = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+        const filters = {
+            type: req.query.type,
+            time_frame: req.query.time_frame,
+            page: req.query.page,
+            limit: req.query.limit,
+        };
 
     // Company users can only view their own transactions
     // if (req.userRole === 'admin' || req.companyId!) {
@@ -107,8 +117,7 @@ class CreditController {
 
     const transactions = await CreditService.getTransactions(
       req.companyId!,
-      limit ? parseInt(limit as string) : 100,
-      type,
+      filters
     );
 
     return successResponse(req, res, 'Transactions retrieved successfully', transactions);

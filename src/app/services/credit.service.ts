@@ -117,8 +117,8 @@ class CreditService {
   /**
    * Get transaction history
    */
-  async getTransactions(companyId: string, limit: number = 100, type:any) {
-    return CreditTransactionModel.getCompanyTransaction(companyId, limit, type);
+  async getTransactions(companyId: string, filters:any) {
+    return CreditTransactionModel.getCompanyTransaction(companyId, filters);
   }
 
   /**
