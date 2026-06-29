@@ -13,14 +13,44 @@ class CreditTransactionModel extends BaseModel {
   }
 
 
-  async getCompanyTransaction(companyId: string, limit: number = 100,type?:any) {
-    return this.query()
-      .where({ company_id: companyId })
-      .orWhere({type:type})
-      .orderBy('created_at', 'desc')
-      .limit(limit);
-  }
+  async getCompanyTransaction(companyId: string, filters: any) {
+    const page = parseInt(filters?.page) || 1;
+    const limit = parseInt(filters?.limit) || 10;
+    const offset = (page - 1) * limit;
 
+    let query = this.query()
+      .where({ company_id: companyId });
+
+    if (filters?.type) {
+      query = query.orWhere({ type: filters.type });
+    }
+
+    // Get total count
+    const totalResult = await query
+      .clone()
+      .count('* as total')
+      .first();
+
+    const total = Number(totalResult?.total || 0);
+
+    // Get paginated data
+    const data = await query
+      .orderBy('created_at', 'desc')
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
 
   async getTotalCredits(companyId: string): Promise<number> {
     const result = await this.query()
