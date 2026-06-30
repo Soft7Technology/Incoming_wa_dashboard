@@ -16,6 +16,8 @@ companyRoute.delete('/:companyId', CompanyController.deleteCompany);
 companyRoute.delete('/', CompanyController.deleteCompany);
 companyRoute.put('/:companyId/suspend', requireRole('superadmin'), companyController.suspendCompany);
 companyRoute.put('/:companyId/active', requireRole('superadmin'), companyController.activeCompany);
+companyRoute.put('/:companyId/inactive', requireRole('superadmin'), companyController.inactiveCompany);
+companyRoute.delete('/:companyId/delete', requireRole('superadmin'), companyController.deleteCompany);
 companyRoute.get('/dashboard', CompanyController.getdashboardStats);
 companyRoute.get('/details', companyController.getCompanyDetails);
 

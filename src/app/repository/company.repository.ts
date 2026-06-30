@@ -95,8 +95,8 @@ class CompanyRepository {
   /**
    * Get all companies
    */
-  async getAllCompanies(companyId:any,status: any = {}) {
-    return CompanyModel.findCompanies(companyId,status);
+  async getAllCompanies(filters: any = {}) {
+    return CompanyModel.findCompanies(filters);
   }
 }
 

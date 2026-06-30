@@ -111,8 +111,13 @@ class CompanyController {
    * Get all companies
    */
   getAllCompanies  = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const{status} = req.query
-    const companies = await CompanyService.getAllCompanies(req.companyId,status);
+    const filters = {
+            status: req.query.status,
+            page: req.query.page,
+            limit: req.query.limit,
+    };
+    console.log("Filters status",filters)
+    const companies = await CompanyService.getAllCompanies(filters);
     return successResponse(req, res, 'Companies retrieved successfully', companies);
   });
 
@@ -133,15 +138,6 @@ class CompanyController {
     return successResponse(req, res, 'Company updated successfully', company);
   });
 
-  /**
-   * DELETE /v1/companies/:id
-   * Delete company
-   */
-  deleteCompany = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { companyId } = req.params;
-    await CompanyService.deleteCompany(companyId);
-    return successResponse(req, res, 'Company deleted successfully');
-  });
 
   /**
    * POST /v1/companies/user
@@ -223,17 +219,23 @@ class CompanyController {
   })
 
   getAllUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { role } = req.query
-    console.log("Fetching users with role filter:", role) // Debug log
-    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!, role)
+    const filters = {
+        status: req.query.status,
+        page: req.query.page,
+        limit: req.query.limit,
+    };
+    
+    console.log("Fetching users with role filter:", filters) // Debug log
+    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!, filters)
     return successResponse(req, res, 'Users retrieved successfully', users)
   })
 
-  getAdminUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!)
-    const adminUsers = users.filter((user: any) => user.role === 'admin')
-    return successResponse(req, res, 'Admin users retrieved successfully', adminUsers)
-  })
+  // getAdminUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  //   const 
+  //   const users = await CompanyService.getAllUsers(req.userId!, req.companyId!)
+  //   const adminUsers = users.filter((user: any) => user.role === 'admin')
+  //   return successResponse(req, res, 'Admin users retrieved successfully', adminUsers)
+  // })
 
   getUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const user = await CompanyService.getUserById(req.userId!)
@@ -542,7 +544,87 @@ class CompanyController {
     );
   }
 
+
+
   async activateUser(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+
+    // Resolve real users.id — the frontend may send user_team.id
+    let userId = id;
+    const directUser = await userModel.findById(id);
+    if (!directUser) {
+      const teamRow = await userTeamModel.findById(id);
+      if (!teamRow) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      const realUser = await userModel.findOne({ email: teamRow.email });
+      if (!realUser) {
+        return res.status(404).json({ success: false, message: 'User account not found for this invite' });
+      }
+      userId = realUser.id;
+    }
+
+    const activateUser = await CompanyService.activateSingleUser(userId);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+      action: 'ACTIVATE',
+      entity_type: 'USER',
+      entity_id: userId,
+      read: false,
+      description: `Activated user account`,
+      new_data: { user_id: userId, status: 'active' },
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
+      user_agent: req.headers['user-agent'] || '',
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+      status: 'SUCCESS'
+    });
+
+    successResponse(req, res, 'User Activated Successfully', activateUser, HttpStatusCode.CREATED);
+  }
+
+  async inactiveUser(req: AuthRequest, res: Response) {
+    const { id } = req.params;
+
+    // Resolve real users.id — the frontend may send user_team.id
+    let userId = id;
+    const directUser = await userModel.findById(id);
+    if (!directUser) {
+      const teamRow = await userTeamModel.findById(id);
+      if (!teamRow) {
+        return res.status(404).json({ success: false, message: 'User not found' });
+      }
+      const realUser = await userModel.findOne({ email: teamRow.email });
+      if (!realUser) {
+        return res.status(404).json({ success: false, message: 'User account not found for this invite' });
+      }
+      userId = realUser.id;
+    }
+
+    const inactiveUser = await CompanyService.inctiveSingleUser(userId);
+
+    await activityLogsModel.create({
+      company_id: req.companyId,
+      user_id: req.userId,
+      action: 'ACTIVATE',
+      entity_type: 'USER',
+      entity_id: userId,
+      read: false,
+      description: `Activated user account`,
+      new_data: { user_id: userId, status: 'active' },
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
+      user_agent: req.headers['user-agent'] || '',
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+      status: 'SUCCESS'
+    });
+
+    successResponse(req, res, 'User in-activated Successfully', inactiveUser, HttpStatusCode.CREATED);
+  }
+
+  async User(req: AuthRequest, res: Response) {
     const { id } = req.params;
 
     // Resolve real users.id — the frontend may send user_team.id
@@ -591,6 +673,18 @@ class CompanyController {
     const{companyId} = req.params
     const activeCompany = await companyService.activateUser(companyId)
     successResponse(req,res,'Company Active successfully',activeCompany)
+  }
+
+  async inactiveCompany(req:AuthRequest,res:Response){
+    const{companyId} = req.params
+    const activeCompany = await companyService.inactiveUser(companyId)
+    successResponse(req,res,'Company Inactive successfully',activeCompany)
+  }
+
+  async deleteCompany(req:AuthRequest,res:Response){
+    const{companyId} = req.params
+    const activeCompany = await companyService.deleteUser(companyId)
+    successResponse(req,res,'Company delete successfully',activeCompany)
   }
 
 
