@@ -722,6 +722,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(userId, {
+      status:'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -1016,6 +1017,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(existingUserPlan.user_id, {
+      status:'active',
       assigned_plan: newUserPlan.id,
     });
 
