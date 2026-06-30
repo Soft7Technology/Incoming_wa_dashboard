@@ -117,7 +117,7 @@ class CompanyController {
             limit: req.query.limit,
     };
     console.log("Filters status",filters)
-    const companies = await CompanyService.getAllCompanies(filters);
+    const companies = await CompanyService.getAllCompanies(req.companyId!,filters);
     return successResponse(req, res, 'Companies retrieved successfully', companies);
   });
 

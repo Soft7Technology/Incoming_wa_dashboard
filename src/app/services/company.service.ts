@@ -117,8 +117,8 @@ class CompanyService {
   /**
    * Get all companies
    */
-  async getAllCompanies(filters: any) {
-    return CompanyRepository.getAllCompanies(filters);
+  async getAllCompanies(companyId:string,filters: any) {
+    return CompanyRepository.getAllCompanies(companyId,filters);
   }
 
   /**
