@@ -88,11 +88,90 @@ class CompanyModel extends BaseModel {
     return this.query().where({ id: companyId }).increment('credit_balance', amount).returning('*');
   }
 
-  async findCompanies(companyId:string,status:any){
-    return this.query()
-    .where({status:status})
-    .whereNot({id:companyId})
-    .whereNull('deleted_at');
+    //   const page = parseInt(filters?.page) || 1;
+    // const limit = parseInt(filters?.limit) || 10;
+    // const offset = (page - 1) * limit;
+
+    // let query = this.query()
+    //   .where({ company_id: companyId });
+
+    // // Apply type filter only when type is not "all"
+    // if (filters?.type && filters.type.toLowerCase() !== 'all') {
+    //   query = query.andWhere({ type: filters.type });
+    // }
+
+    // // Get total count
+    // const totalResult = await query
+    //   .clone()
+    //   .count('* as total')
+    //   .first();
+
+    // const total = Number(totalResult?.total || 0);
+
+    // // Get paginated data
+    // const data = await query
+    //   .orderBy('created_at', 'desc')
+    //   .limit(limit)
+    //   .offset(offset);
+
+    // return {
+    //   data,
+    //   pagination: {
+    //     page,
+    //     limit,
+    //     total,
+    //     totalPages: Math.ceil(total / limit),
+    //     hasNextPage: page < Math.ceil(total / limit),
+    //     hasPreviousPage: page > 1,
+    //   },
+    // };
+
+  // async findCompanies(companyId:string,status:any){
+  //   return this.query()
+  //   .where({status:status})
+  //   .whereNot({id:companyId})
+  //   .whereNull('deleted_at');
+  // }
+
+  async findCompanies(filters:any){
+    const page = parseInt(filters?.page) || 1;
+    const limit = parseInt(filters?.limit) || 10;
+    const offset = (page - 1) * limit;
+    console.log("Filters",filters)
+
+    let query = this.query().whereNull('deleted_at');
+
+    // Apply type filter only when type is not "all"
+    if (filters?.status && filters.status.toLowerCase() !== 'all') {
+      query = query.andWhere('status', filters.status );
+    }
+
+    // Get total count
+    const totalResult = await query
+      .clone()
+      .count('* as total')
+      .first();
+
+    const total = Number(totalResult?.total || 0);
+
+    // Get paginated data
+    const data = await query
+      .orderBy('created_at', 'desc')
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    };
+
   }
 
   // async getDashboardStats(companyId: string,userId?:string,role?:string) {

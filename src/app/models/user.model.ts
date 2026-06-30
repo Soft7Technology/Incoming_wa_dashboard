@@ -230,41 +230,92 @@ class UserModel extends BaseModel {
     });
   }
 
-  async findAllUserByCompanyId(companyId?: string, role?: string, filterRole?: string) {
-    const isSuperAdmin = role === 'superadmin';
+  async findAllUserByCompanyId(companyId?: string, filters?: any) {
+    const page = parseInt(filters?.page) || 1;
+    const limit = parseInt(filters?.limit) || 10;
+    const offset = (page - 1) * limit;
 
-    const query = this.query()
+    const isSuperAdmin = filters?.role === 'superadmin';
+
+    let query = this.query()
       .from('users as u')
       .leftJoin(
-        // 🔥 subquery: get ONLY latest active plan per user
-        this.query().from('user_plans').select('*').where('active', true).orderBy('created_at', 'desc').as('up'),
+        this.query()
+          .from('user_plans')
+          .select('*')
+          .where('active', true)
+          .as('up'),
         function () {
           this.on('up.id', '=', 'u.assigned_plan');
-        },
+        }
       )
-      .select('u.*', 
-        'up.plan_name', 
-        'up.start_date', 
-        'up.end_date', 
+      .select(
+        'u.*',
+        'up.plan_name',
+        'up.start_date',
+        'up.end_date',
         'up.active as plan_active',
         'up.billing_cycle',
         'up.limits',
-        'up.usage',
-        'up.active'
+        'up.usage'
       )
       .whereNull('u.deleted_at');
 
-    // ✅ Restrict company for non-superadmin
-    if (!isSuperAdmin) {
-      query.where('u.company_id', companyId);
+    // Restrict company for non-superadmin
+    if (!isSuperAdmin && companyId) {
+      query = query.where('u.company_id', companyId);
     }
 
-    // ✅ Optional role filter
-    if (filterRole) {
-      query.where('u.role', filterRole);
+    // Optional role filter
+    if (filters?.role && filters.role.toLowerCase() !== 'all') {
+      query = query.where('u.role', filters.role);
     }
 
-    return await query;
+    // Optional status filter
+    if (filters?.status && filters.status.toLowerCase() !== 'all') {
+      query = query.where('u.status', filters.status);
+    }
+
+    // Search by name/email/phone
+    if (filters?.search) {
+      query = query.andWhere((builder) => {
+        builder
+          .whereILike('u.name', `%${filters.search}%`)
+          .orWhereILike('u.email', `%${filters.search}%`)
+          .orWhereILike('u.phone_number', `%${filters.search}%`);
+      });
+    }
+
+    // Get total count
+    const totalResult = await query
+      .clone()
+      .clearSelect()
+      .count('u.id as total')
+      .first();
+
+    const total = Number(totalResult?.total || 0);
+
+    // Get paginated data
+    const data = await query
+      .orderBy('u.created_at', 'desc')
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  async findCompanyUsers(companyId:string){
+    return this.query().where('company_id',companyId).returning('*')
   }
 
 

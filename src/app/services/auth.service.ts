@@ -242,7 +242,7 @@ class AuthService {
       company_id,
       password: hashedPassword,
       role: data.role,
-      status: 'active'
+      status: 'inactive'
     });
 
     // Remove password from response
