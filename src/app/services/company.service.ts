@@ -153,14 +153,13 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string, filters?: any) {
-    console.log('Fetching users for companyId:', companyId, 'with role filter:', filters); // Debug log
+  async getAllUsers(userId: string, companyId: string,role:string, filters?: any) {
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId, filters);
+    const users = await userModel.findAllUserByCompanyId(companyId,role, filters);
     return users;
   }
 
