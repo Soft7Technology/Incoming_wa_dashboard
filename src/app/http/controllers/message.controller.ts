@@ -229,8 +229,12 @@ class MessageController {
 
   getMessagesConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { phone_number_id } = req.query
-    const effectiveUserId = req.ownerId ?? req.userId!;
-    const userMessages = await MessageService.getMessagesConversation(effectiveUserId, phone_number_id)
+    const isTeamMember = req.userId !== req.ownerId;
+    // Team members must only see conversations for contacts assigned to them.
+    // The model query filters by `user_id = userId OR assigned_to contains userId`,
+    // so passing the team member's own userId correctly scopes the results.
+    const filterUserId = isTeamMember ? req.userId! : (req.ownerId ?? req.userId!);
+    const userMessages = await MessageService.getMessagesConversation(filterUserId, phone_number_id)
     return successResponse(req, res, 'Message Retrived succesfully', userMessages);
   })
 
