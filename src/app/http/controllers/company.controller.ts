@@ -226,8 +226,7 @@ class CompanyController {
         limit: req.query.limit,
     };
     
-    console.log("Fetching users with role filter:", filters) // Debug log
-    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!, filters)
+    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!,req.userRole!, filters)
     return successResponse(req, res, 'Users retrieved successfully', users)
   })
 

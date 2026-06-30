@@ -230,12 +230,12 @@ class UserModel extends BaseModel {
     });
   }
 
-  async findAllUserByCompanyId(companyId?: string, filters?: any) {
+  async findAllUserByCompanyId(companyId?: string,role?:string, filters?: any) {
     const page = parseInt(filters?.page) || 1;
     const limit = parseInt(filters?.limit) || 10;
     const offset = (page - 1) * limit;
 
-    const isSuperAdmin = filters?.role === 'superadmin';
+    const isSuperAdmin = role === 'superadmin';
 
     let query = this.query()
       .from('users as u')
