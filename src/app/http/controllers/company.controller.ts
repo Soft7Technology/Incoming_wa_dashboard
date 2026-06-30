@@ -220,6 +220,7 @@ class CompanyController {
 
   getAllUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const filters = {
+        role:req.query.role,
         status: req.query.status,
         page: req.query.page,
         limit: req.query.limit,
