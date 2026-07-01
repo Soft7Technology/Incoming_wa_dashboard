@@ -4,6 +4,7 @@ import { AddCreditDto, DeductCreditDto } from '@surefy/console/interfaces/credit
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
+import creditTransactionModel from '@surefy/console/models/creditTransaction.model';
 
 class CreditService {
   /**
@@ -28,13 +29,14 @@ class CreditService {
   /**
    * Add credits (admin/superadmin only)
    */
-  async addCredit(data: AddCreditDto & { user_role?: string }) {
+  async addCredit(userId:string,data: AddCreditDto & { user_role?: string }) {
     // Check authorization - only admin or superadmin can add credits
     if (data.user_role && data.user_role !== 'admin' && data.user_role !== 'superadmin') {
       throw new HTTP401Error({ message: 'Only admin or superadmin can add credits' });
     }
 
     const company = await CompanyModel.findById(data.company_id);
+    console.log("Company",company)
     if (!company) {
       throw new HTTP404Error({ message: 'Company not found' });
     }
@@ -49,13 +51,14 @@ class CreditService {
     // Create transaction
     const transaction = await CreditTransactionModel.create({
       company_id: data.company_id,
-      company_name:data.company_name || company.name,
+      company_name: company.name,
       type: 'debit',
       amount: data.amount,
       balance_before: balanceBefore,
       balance_after: balanceAfter,
-      description: `${data.amount} balance added to ${data.company_name}`,
+      description: `${data.amount} balance added to ${company.name}`,
       created_by: data.created_by,
+      balance_transafered_by:userId,
       reference_type: 'manual',
     });
 
@@ -161,6 +164,11 @@ class CreditService {
     });
 
     return refund;
+  }
+
+  async transactionHistory(userId:string){
+    const transactionHistory = await creditTransactionModel.transactionHistory(userId)
+    return transactionHistory
   }
 }
 
