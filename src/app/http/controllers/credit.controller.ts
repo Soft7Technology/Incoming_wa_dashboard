@@ -60,7 +60,7 @@ class CreditController {
       throw new HTTP400Error({ message: 'Amount must be greater than 0' });
     }
 
-    const result = await CreditService.addCredit({
+    const result = await CreditService.addCredit(req.userId!,{
       company_id,
       company_name,
       amount: parseFloat(amount),
@@ -143,6 +143,11 @@ class CreditController {
 
     return successResponse(req, res, 'Credit refunded successfully', refund, HttpStatusCode.CREATED);
   });
+
+  async superAdminTransaction(req:AuthRequest,res:Response){
+    const transactionHistory = await CreditService.transactionHistory(req.userId!)
+    return successResponse(req, res, 'Superadmin Transaction history retrieve successfully', transactionHistory , HttpStatusCode.CREATED);
+  }
 }
 
 export default new CreditController();
