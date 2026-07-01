@@ -67,9 +67,9 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
       throw new HTTP401Error({ message: 'Your account has been suspended. Please contact your administrator.' });
     }
 
-    if (user.status === 'inactive') {
-      throw new HTTP401Error({ message: 'Account is inactive' });
-    }
+    // if (user.status === 'inactive') {
+    //   throw new HTTP401Error({ message: 'Account is inactive' });
+    // }
     // ─────────────────────────────────────────────────────────────
 
     // Attach user info to request
