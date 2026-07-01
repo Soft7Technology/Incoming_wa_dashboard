@@ -128,7 +128,7 @@ class teamService{
                 status: "active"
             })
 
-            await userTeamModel.update(existingInvite.id, { invite_status: "accepted" })
+            await userTeamModel.update(existingInvite.id, { invite_status: "accepted",user_id:createdUser.id })
             
             return {
                 success: true,
