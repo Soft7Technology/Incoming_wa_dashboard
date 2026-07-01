@@ -51,7 +51,7 @@ class AuthService {
       throw new HTTP401Error({ message: 'Invalid credentials' });
     }
 
-    // Check if user is active
+    // // Check if user is active
     if (user.status === 'suspended') {
       throw new HTTP401Error({ message: 'Your Account is suspended' });
     }

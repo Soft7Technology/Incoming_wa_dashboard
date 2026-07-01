@@ -49,12 +49,12 @@ class CreditService {
     // Create transaction
     const transaction = await CreditTransactionModel.create({
       company_id: data.company_id,
-      company_name:data.company_name,
-      type: 'credit',
+      company_name:data.company_name || company.name,
+      type: 'debit',
       amount: data.amount,
       balance_before: balanceBefore,
       balance_after: balanceAfter,
-      description: `${data.amount} Credit added to ${data.company_name}`,
+      description: `${data.amount} balance added to ${data.company_name}`,
       created_by: data.created_by,
       reference_type: 'manual',
     });
