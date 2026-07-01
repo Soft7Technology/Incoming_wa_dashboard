@@ -52,8 +52,8 @@ class AuthService {
     }
 
     // Check if user is active
-    if (user.status !== 'active') {
-      throw new HTTP401Error({ message: 'Account is not active' });
+    if (user.status === 'suspended') {
+      throw new HTTP401Error({ message: 'Your Account is suspended' });
     }
 
     // Verify password
@@ -242,7 +242,7 @@ class AuthService {
       company_id,
       password: hashedPassword,
       role: data.role,
-      status: 'inactive'
+      status: 'active'
     });
 
     // Remove password from response
