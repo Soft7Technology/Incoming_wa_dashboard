@@ -24,6 +24,7 @@ class teamController{
             const permissionArray: string[] = Array.isArray(permission) ? permission : []
             const invite_sent_by  = req.userId!
             const company_id = req.companyId!
+            const assigned_plan = req.assigned_plan!
 
             const existingEmail = await userModel.findByEmailPhone(email,phone_number)
             console.log("EXISTING",existingEmail)
@@ -34,7 +35,7 @@ class teamController{
                 })
             }
 
-            const inviteTeam = await teamService.inviteTeam({ name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray })
+            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray })
             successResponse(req, res, `Invite send ${email} successfully`, inviteTeam)
         } catch (error: any) {
             console.error('Create Ticket Error:', error);

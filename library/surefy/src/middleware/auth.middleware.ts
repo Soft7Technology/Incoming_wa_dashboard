@@ -7,6 +7,7 @@ export interface AuthRequest extends Request {
   userId?: string;
   userRole?: string;
   apiKey?: string;
+  assigned_plan?:string
   /** For team members: the inviter's userId whose data they should see */
   ownerId?: string;
 }

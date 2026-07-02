@@ -9,6 +9,7 @@ export interface JWTAuthRequest extends Request {
   companyId?: string;
   email?: string;
   phone?: string;
+  assigned_plan?:string
   /** For team members: the inviter's userId whose data they should see.
    *  For account owners: same as userId. */
   ownerId?: string;
@@ -21,6 +22,7 @@ interface JWTPayload {
   role: string;
   companyId?: string;
   ownerId?: string;
+  assigned_plan?:string
 }
 
 /**
@@ -78,6 +80,7 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
     req.companyId = decoded.companyId;
     req.email = decoded.email;
     req.phone = decoded.phone;
+    // req.assigned_plan = decoded.assigned_plan
     // ownerId = inviter's userId for team members, own userId for account owners
     req.ownerId = decoded.ownerId ?? decoded.userId;
 
