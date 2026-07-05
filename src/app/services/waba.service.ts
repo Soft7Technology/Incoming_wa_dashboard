@@ -156,6 +156,8 @@ class WabaService {
 
     if (existing) {
       return WabaModel.update(existing.id, {
+        user_id:data.user_id,
+        company_id:data.company_id,
         name: wabaDetails.name,
         currency: wabaDetails.currency,
         timezone: wabaDetails.timezone,
@@ -194,8 +196,8 @@ class WabaService {
       if (existing) {
         // Update status changes (very important)
         await PhoneNumberModel.update(existing.id, {
-          user_id:clientData.user_id,
-          company_id:clientData.company_id,
+          user_id:clientData.user_id!,
+          company_id:clientData.company_id! || undefined,
           quality_rating: phone.quality_rating,
           meta_data: phone,
           updated_at: new Date(),
@@ -204,7 +206,7 @@ class WabaService {
       } else {
         await PhoneNumberModel.create({
           user_id: clientData.user_id,
-          company_id: clientData.company_id! || '',
+          company_id: clientData.company_id! || undefined,
           waba_id: clientData.company_WABAID,
           phone_number_id: phone.id,
           display_phone_number: phone.display_phone_number,
