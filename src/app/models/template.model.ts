@@ -6,7 +6,7 @@ class TemplateModel extends BaseModel {
   }
 
   async findByCompanyId(userId: string,companyId?:string, filters: any = {}) {
-    const query = this.query().where({ user_id: userId, deleted_at: null }).orWhere({ company_id: companyId});
+    const query = this.query().where({ user_id: userId, deleted_at: null }).orWhere({ company_id: companyId, waba_id:filters.wabaId});
 
     if (filters.status) {
       query.where({ status: filters.status });

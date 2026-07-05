@@ -25,6 +25,7 @@ class teamController{
             const invite_sent_by  = req.userId!
             const company_id = req.companyId!
             const assigned_plan = req.assigned_plan!
+            console.log("Assigned Plan",assigned_plan)
 
             const existingEmail = await userModel.findByEmailPhone(email,phone_number)
             console.log("EXISTING",existingEmail)
