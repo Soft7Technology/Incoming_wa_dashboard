@@ -8,34 +8,115 @@ import axios from "axios"
 import wabaModel from '@surefy/console/models/waba.model';
 import phoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import metaService from '@surefy/console/services/meta.service';
+import activityLogsModel from '../models/activityLogs.model';
 
 class WabaService {
   /**
    * Onboard WABA accounts
    */
+  // async onboardWaba(data: CreateWabaDto) {
+  //   try {
+  //     // Step 1: Register WABA account in database
+  //     const clientWabaAccount = await this.upsertWaba(data)
+  //     console.log("✅ WABA Account registered with ID:", clientWabaAccount.id);
+
+  //     // Step 2: Fetch phone numbers from Graph API and store
+  //     const clientData = {
+  //       user_id: data.user_id,
+  //       company_id:data.company_id,
+  //       waba_id: data.waba_id,
+  //       company_WABAID: clientWabaAccount.id
+  //     }
+
+  //     const clientPhoneNumbers = await this.syncCompanyPhoneNumbers(clientData)
+  //     console.log("✅ Phone numbers registered:", clientPhoneNumbers);
+
+  //     // Step 3: Subscribe to webhooks
+  //     const registeredWebhook = await MetaService.subscribeToWebhooks(clientData.waba_id)
+  //     console.log("✅ Webhook subscription registered with ID:", registeredWebhook);
+
+  //     return {
+  //       clientAccountStatusMessage: "Client WABA account setup successfully",
+  //       data: {
+  //         clientWabaAccount,
+  //         phoneNumbers: clientPhoneNumbers,
+  //         webhook: registeredWebhook
+  //       }
+  //     };
+  //   } catch (error: any) {
+  //     throw new HTTP400Error({
+  //       message: 'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
+  //       details: error.message,
+  //     });
+  //   }
+  // }
+
+
   async onboardWaba(data: CreateWabaDto) {
     try {
-      // Step 1: Register WABA account in database
-      const clientWabaAccount = await this.upsertWaba(data)
-      console.log("✅ WABA Account registered with ID:", clientWabaAccount.id);
+      console.log("Data",data)
+      const clientWabaAccount = await this.upsertWaba(data);
 
-      // Step 2: Fetch phone numbers from Graph API and store
+      await activityLogsModel.create({
+        company_id: data.company_id!,
+        user_id: data.user_id,
+        action: 'CREATE',
+        entity_type: 'WABA',
+        entity_id: clientWabaAccount.id,
+        description: `Connected WhatsApp Business Account (${data.waba_id})`,
+        new_data: {
+          waba_id: data.waba_id,
+          account_id: clientWabaAccount.id
+        },
+        status: 'SUCCESS',
+        read: false
+      });
+
       const clientData = {
         user_id: data.user_id,
-        company_id:data.company_id,
+        company_id: data.company_id,
         waba_id: data.waba_id,
         company_WABAID: clientWabaAccount.id
-      }
+      };
 
-      const clientPhoneNumbers = await this.syncCompanyPhoneNumbers(clientData)
-      console.log("✅ Phone numbers registered:", clientPhoneNumbers);
+      const clientPhoneNumbers =
+        await this.syncCompanyPhoneNumbers(clientData);
 
-      // Step 3: Subscribe to webhooks
-      const registeredWebhook = await MetaService.subscribeToWebhooks(clientData.waba_id)
-      console.log("✅ Webhook subscription registered with ID:", registeredWebhook);
+      await activityLogsModel.create({
+        company_id: data.company_id!,
+        user_id: data.user_id,
+        action: 'SYNC',
+        entity_type: 'PHONE_NUMBER',
+        entity_id: clientWabaAccount.id,
+        description: `Synced ${clientPhoneNumbers.length} phone number(s) from Meta`,
+        new_data: {
+          phone_numbers: clientPhoneNumbers
+        },
+        status: 'SUCCESS',
+        read: false
+      });
+
+      const registeredWebhook =
+        await MetaService.subscribeToWebhooks(clientData.waba_id);
+
+      await activityLogsModel.create({
+        company_id: data.company_id!,
+        user_id: data.user_id,
+        action: 'SUBSCRIBE',
+        entity_type: 'WEBHOOK',
+        entity_id: clientWabaAccount.id,
+        description: `Subscribed WABA to Meta webhooks`,
+        new_data: {
+          waba_id: data.waba_id,
+          webhook_response: registeredWebhook
+        },
+        status: 'SUCCESS',
+        read: false
+      });
 
       return {
-        clientAccountStatusMessage: "Client WABA account setup successfully",
+        clientAccountStatusMessage:
+          "Client WABA account setup successfully",
         data: {
           clientWabaAccount,
           phoneNumbers: clientPhoneNumbers,
@@ -43,9 +124,25 @@ class WabaService {
         }
       };
     } catch (error: any) {
+
+      await activityLogsModel.create({
+        company_id: data.company_id!,
+        user_id: data.user_id,
+        action: 'CREATE',
+        entity_type: 'WABA',
+        entity_id: data.waba_id,
+        description: `Failed to onboard WABA (${data.waba_id})`,
+        new_data: {
+          error: error.message
+        },
+        status: 'FAILED',
+        read: false
+      });
+
       throw new HTTP400Error({
-        message: 'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
-        details: error.message,
+        message:
+          'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
+        details: error.message
       });
     }
   }
@@ -86,7 +183,9 @@ class WabaService {
     waba_id: string;
     company_WABAID: string;
   }) {
+    console.log("Client data",clientData)
     const response = await MetaService.getPhoneNumbers(clientData.waba_id);
+    console.log("Phone number Response",response)
     const results = [];
 
     for (const phone of response.data || []) {
@@ -95,6 +194,8 @@ class WabaService {
       if (existing) {
         // Update status changes (very important)
         await PhoneNumberModel.update(existing.id, {
+          user_id:clientData.user_id,
+          company_id:clientData.company_id,
           quality_rating: phone.quality_rating,
           meta_data: phone,
           updated_at: new Date(),
