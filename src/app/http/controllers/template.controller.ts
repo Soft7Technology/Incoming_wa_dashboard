@@ -22,6 +22,7 @@ class TemplateController {
     const templates = await TemplateService.syncTemplates(effectiveUserId, waba_id, req.companyId!);
     return successResponse(req, res, `${templates.length} templates synced successfully`, templates);
   });
+  
 
   /**
    * POST /v1/templates
@@ -53,12 +54,13 @@ class TemplateController {
    * Get all templates for company
    */
   getTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { status, category } = req.query;
+    const { status, category, wabaId } = req.query;
     const effectiveUserId = req.ownerId ?? req.userId!;
 
     const templates = await TemplateService.getTemplates(effectiveUserId, req.companyId!, {
       status,
       category,
+      wabaId
     });
 
     return successResponse(req, res, 'Templates retrieved successfully', templates);
