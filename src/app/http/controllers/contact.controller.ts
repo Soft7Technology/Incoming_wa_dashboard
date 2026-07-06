@@ -325,6 +325,16 @@ class ContactController {
     res.setHeader('Content-Disposition', 'attachment; filename=contacts_import_sample.xlsx');
     res.send(buffer);
   });
+
+  /**
+   * GET /v1/contacts/user/:userId
+   * Get all contacts created by a specific user
+   */
+  getUsersContacts = tryCatchAsync(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    const contacts = await ContactService.getContactsByUserId(userId);
+    return successResponse(req, res, 'User contacts retrieved successfully', contacts);
+  })
 }
 
 export default new ContactController();

@@ -598,6 +598,13 @@ class ContactService {
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
     return buffer;
   }
+
+  /**
+   * Get contacts created by a specific user
+   */
+  async getContactsByUserId(userId: string) {
+    return ContactModel.findByUserId(userId);
+  }
 }
 
 export default new ContactService();

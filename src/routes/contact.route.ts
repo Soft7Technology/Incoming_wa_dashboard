@@ -26,6 +26,7 @@ ContactRoute.get('/', ContactController.getContacts);
 ContactRoute.get('/:id', ContactController.getContactById);
 ContactRoute.put('/:id', ContactController.updateContact);
 ContactRoute.delete('/:id', ContactController.deleteContact);
+ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
 
 // Contact import
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
