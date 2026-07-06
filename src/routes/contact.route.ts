@@ -26,16 +26,9 @@ ContactRoute.get('/', ContactController.getContacts);
 ContactRoute.get('/team/accepted', ContactController.getAcceptedTeamMembers);
 ContactRoute.patch('/assign', ContactController.assignContact);
 ContactRoute.get('/:id', ContactController.getContactById);
-<<<<<<< HEAD
 ContactRoute.put('/:id', ContactController.updateContact);
 ContactRoute.delete('/:id', ContactController.deleteContact);
 ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
-=======
-ContactRoute.put('/:id', requireRole('user','member'),ContactController.updateContact);
-ContactRoute.delete('/:id',requireRole('user','member'), ContactController.deleteContact);
-ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
-ContactRoute.put('/:contactId/assigned',ContactController.assignedContactToUser)
->>>>>>> 08aa9f3fc9ad7e6a566968595feafb2a68cd6ee9
 
 // Contact importc
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
