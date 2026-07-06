@@ -44,10 +44,16 @@ export class BaseModel {
     // Convert arrays and objects to JSON strings for JSONB columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
-      if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
+      if (processedData[key] === undefined) {
+        delete processedData[key];
+      } else if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
         processedData[key] = JSON.stringify(processedData[key]);
       }
     });
+
+    if (Object.keys(processedData).length === 0) {
+      return this.findOne({ id });
+    }
 
     const [result] = await this.query().where({ id }).update(processedData).returning('*');
     return result;

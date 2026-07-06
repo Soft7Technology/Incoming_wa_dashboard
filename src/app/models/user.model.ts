@@ -64,6 +64,7 @@ class UserModel extends BaseModel {
             .from('campaigns')
             .count('*')
             .where('user_id', userId)
+          // .orWhere('assigned_to',userId)
         ).as('campaigns_count'),
 
         // chatbot
@@ -72,6 +73,7 @@ class UserModel extends BaseModel {
             .from('chat_bot')
             .count('*')
             .where('user_id', userId)
+          // .orWhere('assigned_to',userId)
         ).as('chatbot_count'),
 
         // contacts
@@ -80,6 +82,7 @@ class UserModel extends BaseModel {
             .from('contacts')
             .count('*')
             .where('user_id', userId)
+          // .orWhere('assigned_to',userId)
         ).as('contacts_count'),
 
         // contact lists
@@ -88,6 +91,7 @@ class UserModel extends BaseModel {
             .from('contact_lists')
             .count('*')
             .where('user_id', userId)
+          // .orWhere('assigned_to',userId)
         ).as('contact_lists_count'),
 
         // sent messages
@@ -195,7 +199,7 @@ class UserModel extends BaseModel {
   }
 
   async findByRole(role: string, filters: any = {}) {
-    let query = this.query().where({ role }).whereNull('deleted_at');
+    let query = this.query().where({ role: role }).whereNull('deleted_at');
 
     if (filters.status) {
       query = query.where({ status: filters.status });
@@ -206,6 +210,11 @@ class UserModel extends BaseModel {
     }
 
     return query.orderBy('created_at', 'desc');
+  }
+
+  async findSuperAdmin(role: string) {
+    let query = this.query().where({ role: role }).whereNull('deleted_at').first()
+    return query
   }
 
   async updateLastLogin(userId: string, ipAddress: string) {
@@ -221,32 +230,92 @@ class UserModel extends BaseModel {
     });
   }
 
-  async findAllUserByCompanyId(companyId?: string, role?: string, filterRole?: string) {
+  async findAllUserByCompanyId(companyId?: string,role?:string, filters?: any) {
+    const page = parseInt(filters?.page) || 1;
+    const limit = parseInt(filters?.limit) || 10;
+    const offset = (page - 1) * limit;
+
     const isSuperAdmin = role === 'superadmin';
 
-    const query = this.query()
+    let query = this.query()
       .from('users as u')
       .leftJoin(
-        // 🔥 subquery: get ONLY latest active plan per user
-        this.query().from('user_plans').select('*').where('active', true).orderBy('created_at', 'desc').as('up'),
+        this.query()
+          .from('user_plans')
+          .select('*')
+          .where('active', true)
+          .as('up'),
         function () {
           this.on('up.id', '=', 'u.assigned_plan');
-        },
+        }
       )
-      .select('u.*', 'up.plan_name', 'up.start_date', 'up.end_date', 'up.active as plan_active')
+      .select(
+        'u.*',
+        'up.plan_name',
+        'up.start_date',
+        'up.end_date',
+        'up.active as plan_active',
+        'up.billing_cycle',
+        'up.limits',
+        'up.usage'
+      )
       .whereNull('u.deleted_at');
 
-    // ✅ Restrict company for non-superadmin
-    if (!isSuperAdmin) {
-      query.where('u.company_id', companyId);
+    // Restrict company for non-superadmin
+    if (!isSuperAdmin && companyId) {
+      query = query.where('u.company_id', companyId);
     }
 
-    // ✅ Optional role filter
-    if (filterRole) {
-      query.where('u.role', filterRole);
+    // Optional role filter
+    if (filters?.role && filters.role.toLowerCase() !== 'all') {
+      query = query.where('u.role', filters.role);
     }
 
-    return await query;
+    // Optional status filter
+    if (filters?.status && filters.status.toLowerCase() !== 'all') {
+      query = query.where('u.status', filters.status);
+    }
+
+    // Search by name/email/phone
+    if (filters?.search) {
+      query = query.andWhere((builder) => {
+        builder
+          .whereILike('u.name', `%${filters.search}%`)
+          .orWhereILike('u.email', `%${filters.search}%`)
+          .orWhereILike('u.phone_number', `%${filters.search}%`);
+      });
+    }
+
+    // Get total count
+    const totalResult = await query
+      .clone()
+      .clearSelect()
+      .count('u.id as total')
+      .first();
+
+    const total = Number(totalResult?.total || 0);
+
+    // Get paginated data
+    const data = await query
+      .orderBy('u.created_at', 'desc')
+      .limit(limit)
+      .offset(offset);
+
+    return {
+      data,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+        hasNextPage: page < Math.ceil(total / limit),
+        hasPreviousPage: page > 1,
+      },
+    };
+  }
+
+  async findCompanyUsers(companyId:string){
+    return this.query().where('company_id',companyId).returning('*')
   }
 
 
@@ -293,6 +362,24 @@ class UserModel extends BaseModel {
       .returning('*')
       .then((res: any) => res[0]);
   }
+
+  async findByUserId(id: string) {
+    return this.query()
+      .leftJoin('user_plans', 'users.assigned_plan', 'user_plans.id')
+      .select(
+        'users.name',
+        'users.created_at as joined',
+        'users.email',
+        'user_plans.billing_cycle',
+        'user_plans.start_date',
+        'user_plans.end_date',
+        'user_plans.limits',
+        'user_plans.usage'
+      )
+      .where('users.id', id)
+      .first();
+  }
+
 }
 
 export default new UserModel();

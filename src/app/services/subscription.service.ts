@@ -9,6 +9,8 @@ import CompanyService from './company.service';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import userPlansModel from '../models/userPlans.model';
 import userModel from '../models/user.model';
+import companyModel from '../models/company.model';
+import creditTransactionModel from '../models/creditTransaction.model';
 
 class subscriptionService {
   /**
@@ -68,8 +70,76 @@ class subscriptionService {
   }
 
 
-  async createSubscriptionPlan(userId: string, companyId: string, data: subscriptionPlans) {
-    console.log('Creating subscription plan with data:', data);
+  
+      // // Create transaction
+      // const transaction = await CreditTransactionModel.create({
+      //   company_id: data.company_id,
+      //   company_name:data.company_name,
+      //   type: 'credit',
+      //   amount: data.amount,
+      //   balance_before: balanceBefore,
+      //   balance_after: balanceAfter,
+      //   description: `${data.amount} Credits added to ${data.company_name}`,
+      //   created_by: data.created_by,
+      //   reference_type: 'manual',
+      // });
+  
+      // // Update company balance
+      // await CompanyModel.update(data.company_id, {
+      //   credit_balance: balanceAfter,
+      // });
+
+            // const balanceBefore = parseFloat(company.credit_balance || '0');
+      // const balanceAfter = balanceBefore + data.amount;
+
+  async createSubscriptionPlan(userId: string, companyId: string | undefined, userRole: string, data: subscriptionPlans) {
+    console.log('Creating subscription plan with data:', data, 'role:', userRole);
+
+    console.log("Subscription Price",data.price)
+    
+    // SuperAdmin creates global platform plans — no company or credit check needed
+    if (userRole === 'superadmin') {
+      const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId });
+      return newSubscriptionPlan;
+    }
+
+    // For regular company users: check company exists and has enough credit balance
+    if (!companyId) {
+      throw new HTTP400Error({ message: "Company Not found" })
+    }
+    // const companyDetails = await companyModel.findById(companyId)
+    // if (!companyDetails) {
+    //   throw new HTTP400Error({ message: "Company Not found" })
+    // }
+
+    // if (companyDetails.credit_balance >= data.price) {
+    //   const balanceBefore = parseFloat(companyDetails.credit_balance)
+    //   const balanceAfter = balanceBefore - data.price
+
+    //   await creditTransactionModel.create({
+    //     company_id: companyId,
+    //     company_name: companyDetails.company_name,
+    //     type: 'debit',
+    //     amount: balanceAfter,
+    //     balance_before: balanceBefore,
+    //     balance_after: balanceAfter,
+    //     description: `${data.price} Debited from ${companyDetails.company_name} wallet`,
+    //     created_by: userId,
+    //     reference_type: 'manual',
+    //   });
+
+    //   await companyModel.update(companyDetails.id, {
+    //     credit_balance: balanceAfter
+    //   });
+
+    //   const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
+    //   return newSubscriptionPlan;
+    // } else {
+    //   throw new HTTP400Error({ message: "Your Company does not have enough credit balance to create a new Subscription Plan" })
+    // }
+
+
+
     const newSubscriptionPlan = await subscriptionModel.create({ ...data, user_id: userId, company_id: companyId });
     return newSubscriptionPlan;
   }
@@ -79,13 +149,14 @@ class subscriptionService {
     return subscription;
   }
 
-  async getSubscriptionPlans(userId: string,companyId:string,active?: any) {
+  async getSubscriptionPlans(userId: string, companyId: string, active?: any, filters?: any) {
     const user = await userModel.findById(userId);
+
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const subscription = await subscriptionModel.findSubscriptionsPlans(userId,companyId, active,user.role);
-    return subscription;
+
+    return await subscriptionModel.findSubscriptionsPlans(userId, companyId, active, user.role, filters);
   }
 
   async updateSubscriptionPlan(id: string, data: subscriptionPlans) {
@@ -99,32 +170,37 @@ class subscriptionService {
     });
     return updatedSubscriptionPlan;
   }
-  
 
-  async activateFreeTrial(userId: string,planId:string) {
-    // Check if user already has an active subscription or trial
-    const planData = await subscriptionModel.findFreeTrial(planId)
-
-    const userActivate = await userPlansModel.getPlanByUserId(userId)
-    if(userActivate){
-      throw new HTTP400Error({ message: 'User already has an active Trial' });
+  async activateFreeTrial(userId: string,companyId:string,planId: string) {
+    //Check existing Free Trial already expired
+    const existingFreeTrialPlan = await userPlansModel.existingFreePlan(userId,'Free')
+    if(existingFreeTrialPlan){
+      throw new HTTP400Error({ message: 'Your are not eligible for freee trail, Upgrade your plan' });
     }
 
-    if (!planData) {
-      throw new HTTP400Error({ message: 'Free trial already activated' });
+    // // Check if user already has an active subscription or trial
+    const planData = await subscriptionModel.findFreeTrial(planId);
+
+    // const userActivate = await userPlansModel.getPlanByUserId(userId);
+    // if (userActivate) {
+    //   throw new HTTP400Error({ message: 'User already has an active Trial' });
+    // }
+
+    const user = await userModel.findById(userId)
+
+    if(!user){
+      throw new HTTP400Error({ message: 'User Not found' });
     }
-    
-    const subscribePlan = await CompanyService.activateUserPlan(
-        userId,
-        planData
-    );
+
+    // if (!planData) {
+    //   throw new HTTP400Error({ message: 'Free trial already activated' });
+    // }
+
+    const subscribePlan = await CompanyService.activateUserPlan(userId,user, planData,null);
     return subscribePlan;
-
   }
 
-
-
-  async subscribeUserPlan(userId: string,companyId:string,planId: string) {
+  async subscribeUserPlan(userId: string, companyId: string, planId: string) {
     try {
       // 1. Get plan
       const planData = await subscriptionModel.findById(planId);
@@ -178,9 +254,7 @@ class subscriptionService {
     }
   }
 
-  async assignedPlanToUser(userId: string, planId: string) {
-    
-  }
+  async assignedPlanToUser(userId: string, planId: string) {}
 
   async deleteSubscriptionPlan(id: string) {
     const subcription = await subscriptionModel.findById(id);
@@ -204,32 +278,50 @@ class subscriptionService {
     return subscriptionPlans;
   }
 
-  async activateUserPlanAfterPayment(userId: string, razorpayOrderId: string, razorpaymentId: string, razorpaySignature: string) {
+  async activateUserPlanAfterPayment(
+    userId: string,
+    razorpayOrderId: string,
+    razorpaymentId: string,
+    razorpaySignature: string,
+  ) {
     // 🔍 Step 2: Find existing subscription
     const subscription = await subscriptionModel.findByOrderId(razorpayOrderId);
-    if(!subscription){
+    if (!subscription) {
       throw new HTTP400Error({ message: 'Subscription not found for this order' });
     }
 
-
-    if(subscription.status === 'verified'){
+    if (subscription.status === 'verified') {
       throw new HTTP400Error({ message: 'Subscription already activated' });
     }
 
-    const updateSubscriptionPlan = await subscriptionModel.update(userId, { razorpayOrderId,razorpaymentId,razorpaySignature, status: 'verified', payment_method:"RAZORPAY" });
+    const updateSubscriptionPlan = await subscriptionModel.update(userId, {
+      razorpayOrderId,
+      razorpaymentId,
+      razorpaySignature,
+      status: 'verified',
+      payment_method: 'RAZORPAY',
+    });
     return updateSubscriptionPlan;
   }
 
-  async activeUserPlan(orderId:string, data: any) {
+  async activeUserPlan(orderId: string, data: any) {
     const subscription = await subscriptionModel.findByOrderId(orderId);
     if (!subscription) {
       throw new HTTP400Error({ message: 'Subscription not found for this order' });
     }
 
-    const updateSubscriptionPlan = await subscriptionModel.update(subscription.id, {...data, active: true });
+    const updateSubscriptionPlan = await subscriptionModel.update(subscription.id, { ...data, active: true });
     return updateSubscriptionPlan;
   }
 
+  async cancelSubscriptionPlan(planId: string) {
+    const subscriptionPlan = await userPlansModel.findUserSubscriptionPlan(planId);
+    if (!subscriptionPlan) {
+      throw new HTTP400Error({ message: 'Subscription Plan not found for this order' });
+    }
+    const cancelSubscriptionPlan = await userPlansModel.update(planId, { active: false, status: 'CANCELLED' });
+    return cancelSubscriptionPlan;
+  }
 }
 
 export default new subscriptionService();

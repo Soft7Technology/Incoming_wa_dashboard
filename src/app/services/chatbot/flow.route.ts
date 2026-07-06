@@ -11,13 +11,17 @@ type FlowRouterParams={
     phone:string;
     incomingText:string;
     incomingId:string;
+    message:string;
+    phoneNumberId:string
 }
 
 export const flowRouter = async ({ 
     bot, 
     phone, 
     incomingText, 
-    incomingId 
+    incomingId,
+    message,
+    phoneNumberId
 }: FlowRouterParams)=> {
     // Get Session
     console.log("Flow Body",phone,incomingText,incomingId)
@@ -25,7 +29,7 @@ export const flowRouter = async ({
     console.log('Session',session)
 
     if(session){
-        return await menuFlow({bot,session,incomingId,incomingText})
+        return await menuFlow({bot,session,incomingId,incomingText,message})
         // if(session.current_flow === 'form'){
         //     return formFlow({bot,session,incomingText,incomingId})
         // }
@@ -41,5 +45,5 @@ export const flowRouter = async ({
     }
 
    // Default -> trigger flow
-    return await triggerFlow({bot,phone,incomingText})
+    return await triggerFlow({bot,phone,incomingText,phoneNumberId})
 }

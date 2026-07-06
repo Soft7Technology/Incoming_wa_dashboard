@@ -6,7 +6,10 @@ import * as bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import sendEmail from '../utils';
 import passwordResetModel from '../models/passwordReset.model';
+import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
+import userTeamModel from '../models/team.model';
+import db from '@surefy/database';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -19,6 +22,7 @@ interface JWTPayload {
   phone?: string;
   role: string;
   companyId?: string;
+  ownerId?: string;
 }
 
 class AuthService {
@@ -47,10 +51,10 @@ class AuthService {
       throw new HTTP401Error({ message: 'Invalid credentials' });
     }
 
-    // Check if user is active
-    if (user.status !== 'active') {
-      throw new HTTP401Error({ message: 'Account is not active' });
-    }
+    // // Check if user is active
+    // if (user.status !== 'active') {
+    //   throw new HTTP401Error({ message: 'Account is not active' });
+    // }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
@@ -65,23 +69,70 @@ class AuthService {
       company = await CompanyModel.findById(user.company_id);
     }
 
+    // Get active plan status from user_plans table
+    const activePlan = await userPlansModel.getUserPlan(user.id);
+
+    // Look up team invite permissions — if this user was invited as a team member,
+    // their allowed nav keys are stored in user_team.permission
+    let teamPermissions: string[] = [];
+    let ownerId: string = user.id; // default: own data
+    try {
+      const teamRow = await userTeamModel.findOne({ email: user.email, invite_status: 'accepted' });
+      if (teamRow?.permission) {
+        const perm = teamRow.permission;
+        // Handle both flat array ["dashboard","inbox"] and legacy {nav:[...]} shape
+        if (Array.isArray(perm)) {
+          teamPermissions = perm.map((p: string) => p.toLowerCase());
+        } else if (Array.isArray(perm?.nav)) {
+          teamPermissions = perm.nav.map((p: string) => p.toLowerCase());
+        }
+        // The inviter's userId — team member sees inviter's data
+        ownerId = teamRow.invite_sent_by;
+      }
+    } catch { /* ignore — not a team member */ }
+
+    // If the user has assigned contacts, automatically grant contacts navigation permission
+    try {
+      const assignedContactsCount = await db('contacts')
+        .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [user.id])
+        .whereNull('deleted_at')
+        .count('* as count')
+        .first();
+      const hasAssignedContacts = parseInt(String(assignedContactsCount?.count || 0)) > 0;
+      if (hasAssignedContacts && !teamPermissions.includes('contact') && !teamPermissions.includes('contacts')) {
+        teamPermissions.push('contact');
+      }
+    } catch (err) {
+      console.error("Error checking assigned contacts for permissions:", err);
+    }
+
     // Update last login
     await UserModel.updateLastLogin(user.id, ipAddress);
 
-    // Generate JWT token
+    // Generate JWT token — include ownerId so all queries use inviter's data
     const token = this.generateToken({
       userId: user.id,
       email: user.email,
       phone: user.phone,
       role: user.role,
       companyId: user.company_id,
+      ownerId,
     });
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
     return {
-      user: userWithoutPassword,
+      data: {
+        ...userWithoutPassword,
+        plan_active: activePlan ? activePlan.active : false,
+        plan_name: activePlan ? activePlan.plan_name : null,
+        plan_start_date: activePlan ? activePlan.start_date : null,
+        plan_end_date: activePlan ? activePlan.end_date : null,
+        // Include team permissions — empty array means no restriction (owner/admin)
+        permissions: teamPermissions,
+        owner_id: ownerId,
+      },
       company,
       token,
       expiresIn: this.JWT_EXPIRES_IN,
@@ -293,19 +344,19 @@ class AuthService {
   /**
    * Change password
    */
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(userId: string, newPassword: string) {
     const user = await UserModel.findById(userId);
 
     if (!user) {
       throw new HTTP400Error({ message: 'User not found' });
     }
 
-    // Verify current password
-    const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+    // // Verify current password
+    // const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
 
-    if (!isPasswordValid) {
-      throw new HTTP401Error({ message: 'Current password is incorrect' });
-    }
+    // if (!isPasswordValid) {
+    //   throw new HTTP401Error({ message: 'Current password is incorrect' });
+    // }
 
     // Hash new password
     const hashedPassword = await this.hashPassword(newPassword);

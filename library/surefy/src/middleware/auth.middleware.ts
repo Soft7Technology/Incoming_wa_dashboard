@@ -5,7 +5,11 @@ import { generateCompanyKey, validateCompanyKey } from '../services/auth.service
 export interface AuthRequest extends Request {
   companyId?: string;
   userId?: string;
+  userRole?: string;
   apiKey?: string;
+  assigned_plan?:string
+  /** For team members: the inviter's userId whose data they should see */
+  ownerId?: string;
 }
 
 // Re-export for use in other files

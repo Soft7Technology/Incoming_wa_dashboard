@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import TemplateService from '@surefy/console/services/template.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 
 class TemplateController {
@@ -10,16 +11,18 @@ class TemplateController {
    * POST /v1/templates/sync
    * Sync templates from Meta
    */
-  syncTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  syncTemplates = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { waba_id } = req.body;
 
     if (!waba_id) {
       throw new HTTP400Error({ message: 'WABA ID is required' });
     }
 
-    const templates = await TemplateService.syncTemplates(req.userId!,waba_id,req.companyId!);
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const templates = await TemplateService.syncTemplates(effectiveUserId, waba_id, req.companyId!);
     return successResponse(req, res, `${templates.length} templates synced successfully`, templates);
   });
+  
 
   /**
    * POST /v1/templates
@@ -51,11 +54,13 @@ class TemplateController {
    * Get all templates for company
    */
   getTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { status, category } = req.query;
+    const { status, category, wabaId } = req.query;
+    const effectiveUserId = req.ownerId ?? req.userId!;
 
-    const templates = await TemplateService.getTemplates(req.userId!,req.companyId!, {
+    const templates = await TemplateService.getTemplates(effectiveUserId, req.companyId!, {
       status,
       category,
+      wabaId
     });
 
     return successResponse(req, res, 'Templates retrieved successfully', templates);

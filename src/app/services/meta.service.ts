@@ -1,5 +1,10 @@
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { bucket } from '@surefy/config/firebase.config';
+import fs from 'fs';
+import path from 'path';
+import activityLogsModel from '../models/activityLogs.model';
 
 class MetaService {
   private client: AxiosInstance;
@@ -119,7 +124,7 @@ class MetaService {
   async getPhoneNumbers(wabaId: string): Promise<any> {
     try {
       const response = await this.client.get(`/${wabaId}/phone_numbers`);
-      console.log("Response data",response.data)
+      console.log("Response data", response.data)
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
@@ -140,7 +145,7 @@ class MetaService {
           fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status',
         },
       });
-      console.log("Response",response.data)
+      console.log("Response", response.data)
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Phone Number Details:', error.response?.data || error.message);
@@ -160,7 +165,7 @@ class MetaService {
       const fs = require('fs');
       const formData = new FormData();
       formData.append('messaging_product', 'whatsapp');
-      
+
       // WhatsApp API expects the file as a stream or buffer
       formData.append('file', fs.createReadStream(file.path), {
         filename: file.originalname,
@@ -205,16 +210,70 @@ class MetaService {
   /**
    * Subscribe WABA Id
    */
-  async subscribeToWebhooks(wabaId:any){
-    try{
-      const response = await this.client.get(`/${wabaId}/subscribed_apps`,{
-      params : {
-        subscribed_fields:'messages,message_deliveries,message_reads'
+  async subscribeToWebhooks(
+    wabaId: string,
+    options?: {
+      user_id?: string;
+      company_id?: string;
+      company_waba_id?: string;
+    }
+  ) {
+    try {
+      const response = await this.client.post(`/${wabaId}/subscribed_apps`, {
+        // params: {
+        //   subscribed_fields: 'messages,message_deliveries,message_reads'
+        // }
+      });
+
+      if (!response.data?.success) {
+        throw new Error('Webhook subscription failed');
       }
-      })
+
+
+      console.log("Webhook response", response)
+
+      if (options?.user_id && options?.company_id) {
+        await activityLogsModel.create({
+          company_id: options.company_id,
+          user_id: options.user_id,
+          action: 'SUBSCRIBE',
+          entity_type: 'WEBHOOK',
+          entity_id: options.company_waba_id || wabaId,
+          description: `Subscribed WABA ${wabaId} to Meta webhooks`,
+          new_data: {
+            waba_id: wabaId,
+            response: response.data
+          },
+          status: 'SUCCESS',
+          read: false
+        });
+      }
+
       return response.data;
-    }catch(error:any){
-      console.error('Meta API Error - Failed to subscribe to webhooks', error.response?.data || error.message);
+    } catch (error: any) {
+
+      if (options?.user_id && options?.company_id) {
+        await activityLogsModel.create({
+          company_id: options.company_id,
+          user_id: options.user_id,
+          action: 'SUBSCRIBE',
+          entity_type: 'WEBHOOK',
+          entity_id: options.company_waba_id || wabaId,
+          description: `Failed to subscribe WABA ${wabaId} to Meta webhooks`,
+          new_data: {
+            waba_id: wabaId,
+            error: error.response?.data || error.message
+          },
+          status: 'FAILED',
+          read: false
+        });
+      }
+
+      console.error(
+        'Meta API Error - Failed to subscribe to webhooks',
+        error.response?.data || error.message
+      );
+
       throw new HTTP500Error({
         message: 'Failed to fetch phone number details from Meta API',
         details: error.response?.data || error.message,
@@ -242,21 +301,88 @@ class MetaService {
     }
   }
 
-/**
-   * Veriified Phone Numbers
-   */
-  async verifiedPhoneNumbers(phoneNumberId:string):Promise<any>{
-    try{
-      const response = await this.client.post(`/${phoneNumberId}/register`,{
-          "messaging_product": "whatsapp",
-          "pin": "123456"
+  /**
+ * Handle Media,file,document
+ */
+  async handleMedia(mediaId: string): Promise<any> {
+    try {
+      const mediaRes = await this.client.get(`/${mediaId}`);
+      const mediaUrl = mediaRes.data.url;
+      console.log("📥 Media URL:", mediaUrl);
+
+      // Step 2: Download image
+      const downloadRes = await axios.get(mediaUrl, {
+        responseType: 'arraybuffer',
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+        },
       });
-      console.log("Response Verified Data data",response.data)
+
+      const buffer = Buffer.from(downloadRes.data);
+
+      // Step 3: Create filename
+      const fileName = `${mediaId}_${Date.now()}.jpg`;
+
+      // Step 4: Upload to Firebase Storage
+      const file = bucket.file(fileName);
+
+      await file.save(buffer, {
+        metadata: {
+          contentType: 'image/jpeg',
+        },
+      });
+
+      // Make file public
+      await file.makePublic();
+
+      const firebaseUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+
+      console.log("✅ Firebase URL:", firebaseUrl);
+
+      // Optional: Save locally
+      const uploadsDir = path.join(__dirname, '../uploads');
+      fs.mkdirSync(uploadsDir, { recursive: true });
+
+      const filePath = path.join(uploadsDir, fileName);
+      fs.writeFileSync(filePath, buffer);
+
+      console.log(`✅ Image saved locally: ${filePath}`);
+
+      const imageRecord = {
+        firebaseUrl,
+        filename: fileName,
+        path: filePath,
+        mime_type: 'image/jpeg',
+      };
+
+      console.log("📦 Image record:", imageRecord);
+
+      return imageRecord;
+    } catch (error: any) {
+      console.error('Meta API Error - Mark as Read:', error.response?.data || error.message);
+      throw new HTTP400Error({
+        message: 'Failed to mark message as read',
+        details: error.response?.data || error.message,
+      });
+    }
+
+  }
+
+  /**
+     * Veriified Phone Numbers
+     */
+  async verifiedPhoneNumbers(phoneNumberId: string): Promise<any> {
+    try {
+      const response = await this.client.post(`/${phoneNumberId}/register`, {
+        "messaging_product": "whatsapp",
+        "pin": "123456"
+      });
+      console.log("Response Verified Data data", response.data)
       return response.data
-    }catch(error:any){
+    } catch (error: any) {
       console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
       throw new HTTP500Error({
-        message:'Failed to fetch phone numbers from Meta API',
+        message: 'Failed to fetch phone numbers from Meta API',
         details: error.response?.data || error.message
       });
     }

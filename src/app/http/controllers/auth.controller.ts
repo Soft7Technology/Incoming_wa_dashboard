@@ -6,6 +6,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import companyController from './company.controller';
 import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
+import activityLogsModel from '../../models/activityLogs.model';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -28,6 +29,22 @@ class AuthController {
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
 
     const result = await AuthService.login({ identifier, password }, ipAddress);
+    const{data}:any = result
+
+    console.log("data",data)
+    
+    await activityLogsModel.create({
+      user_id: data?.id,
+      company_id:data?.company_id,
+      action: 'LOGIN',
+      entity_type: 'AUTH',
+      description: `User logged in successfully ${data.name}`,
+      ip_address: ipAddress,
+      request_method: 'POST',
+      api_endpoint: '/auth/login',
+      status: 'SUCCESS',
+      read:false
+    })
 
     return successResponse(req, res, 'Login successful', result);
   });
@@ -142,13 +159,13 @@ class AuthController {
       role: 'user'
     });
 
-    // if(user){
-    //   await sendEmail(
-    //     email,
-    //    'Welcome to Our Platform',
-    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
-    //   )
-    // }
+    if(user){
+      await sendEmail(
+        email,
+       'Welcome to Our Platform',
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+      )
+    }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });
@@ -202,9 +219,13 @@ class AuthController {
    * Change user password
    */
   changePassword = tryCatchAsync(async (req: JWTRequest, res: Response) => {
-    const { current_password, new_password } = req.body;
+    const { new_password } = req.body;
 
-    if (!current_password || !new_password) {
+    // if (!current_password || !new_password) {
+    //   throw new HTTP400Error({ message: 'Current password and new password are required' });
+    // }
+
+    if ( !new_password) {
       throw new HTTP400Error({ message: 'Current password and new password are required' });
     }
 
@@ -212,7 +233,9 @@ class AuthController {
       throw new HTTP400Error({ message: 'New password must be at least 6 characters long' });
     }
 
-    const result = await AuthService.changePassword(req.userId!, current_password, new_password);
+    const userId = '5a66df74-92d4-4bcd-814b-13d6318d4116'
+
+    const result = await AuthService.changePassword(userId,  new_password);
 
     return successResponse(req, res, result.message);
   });

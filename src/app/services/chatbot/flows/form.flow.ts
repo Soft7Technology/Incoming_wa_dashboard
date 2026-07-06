@@ -1,6 +1,5 @@
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
-import { buildResponse } from "../../../utils"
-
+import { buildResponse } from "@surefy/console/utils";
 
 export const formFlow = async ({
     bot,

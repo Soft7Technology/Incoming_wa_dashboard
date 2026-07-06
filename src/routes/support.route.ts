@@ -22,8 +22,4 @@ supportRoute.post('/:ticketId/forward',supportController.forwardTicketToSuperAdm
 supportRoute.get('/:ticketId/forward',supportController.forwardTicketConversations)
 supportRoute.post('/:ticketId/forward/reply',supportController.forwardTicketReply)
 
-
-
-// supportRoute.get()
-
 export default supportRoute

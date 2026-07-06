@@ -11,42 +11,44 @@ import { contactImportQueue } from '../../queues/contactImport.queue';
 import * as fs from 'fs';
 import * as path from 'path';
 import { filter } from 'lodash';
+import db from '@surefy/database';
 
 class ContactService {
   /**
    * Create a new contact
    */
-  async createContact(userId: string,companyId:string, data: any) {
-   let phone = data.phone_number?.toString().trim();
+  async createContact(userId: string, companyId: string, data: any) {
+    let phone = data.phone_number?.toString().trim();
 
-   // Add + if not present
-   if (phone && !phone.startsWith('+')) {
-    phone = '+' + phone;
-   }
+    // Add + if not present
+    if (phone && !phone.startsWith('+')) {
+      phone = '+' + phone;
+    }
 
-   // Check if contact already exists
-   const existing = await ContactModel.findByPhone(userId, phone);
-   if (existing) {
-    throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
-   }
+    // Check if contact already exists
+    const existing = await ContactModel.findByPhone(userId, phone);
+    if (existing) {
+      throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
+    }
 
-   const contact = await ContactModel.create({
-    user_id: userId,
-    company_id: companyId,
-    phone_number: phone,
-    name: data.name,
-    email: data.email,
-    attributes: data.attributes || {},
-    notes: data.notes,
-   });
+    const contact = await ContactModel.create({
+      user_id: userId,
+      company_id: companyId,
+      phone_number: phone,
+      name: data.name,
+      email: data.email,
+      status: data.status,
+      attributes: data.attributes || {},
+      notes: data.notes,
+    });
 
-   return contact;
- }
+    return contact;
+  }
 
   /**
    * Get all contacts for a company
    */
-  async getContacts(userId:string, filters: any = {}) {
+  async getContacts(userId: string, filters: any = {}) {
     let query = ContactModel.findWithFilters(userId, filters);
 
     // Filter by tags
@@ -73,7 +75,7 @@ class ContactService {
     const sortBy = filters.sortBy
     const sortOrder = filters.sortOrder
 
-    const contacts = await query.orderBy(sortBy,sortOrder).limit(limit).offset(offset)
+    const contacts = await query.orderBy(sortBy, sortOrder).limit(limit).offset(offset)
 
     // Get tags for each contact
     if (contacts.length > 0) {
@@ -135,9 +137,11 @@ class ContactService {
     const updated = await ContactModel.update(contactId, {
       name: data.name,
       email: data.email,
-      phone_number:data.phone_number,
+      phone_number: data.phone_number,
+      status: data.status,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
+      ...(data.assigned_to !== undefined && { assigned_to: data.assigned_to }),
     });
 
     // Update tags if provided
@@ -164,20 +168,22 @@ class ContactService {
    * Queue contact import job (async processing)
    */
   async queueContactImport(
-    userId:string,
-    companyId:string,
+    userId: string,
+    companyId: string,
     filePath: string,
     listName: string,
     options: {
       phoneColumn?: string;
       nameColumn?: string;
       emailColumn?: string;
+      countryCodeColumn?: string;
       tagIds?: string[];
     } = {}
   ) {
     // Quick validation of file before queuing
     const validation = await XLSXParserService.validateFile(filePath);
     if (!validation.valid) {
+      console.log("Invalid File", validation)
       throw new HTTP400Error({ message: `Invalid XLSX file: ${validation.errors.join(', ')}` });
     }
 
@@ -187,8 +193,8 @@ class ContactService {
 
     // Create import job record in database
     const importJob = await ImportJobModel.create({
-      user_id:userId,
-      company_id:companyId,
+      user_id: userId,
+      company_id: companyId,
       job_type: 'contact_import',
       status: 'queued',
       file_name: path.basename(filePath),
@@ -200,6 +206,7 @@ class ContactService {
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
+        country_code: options.countryCodeColumn,
         tag_ids: options.tagIds,
       },
     });
@@ -271,7 +278,7 @@ class ContactService {
    */
   async importContactsFromXLSX(
     companyId: string,
-    userId:string,
+    userId: string,
     filePath: string,
     listName: string,
     options: {
@@ -429,7 +436,7 @@ class ContactService {
   /**
    * Get contacts by filters (for campaign targeting)
    */
-  async getContactsByFilters(userId:string,companyId:string, filters: any) {
+  async getContactsByFilters(userId: string, companyId: string, filters: any) {
     let query = ContactModel.findWithFilters(userId, filters);
 
     // Exclude invalid numbers by default
@@ -483,7 +490,7 @@ class ContactService {
   /**
    * Tag Management
    */
-  async createTag(userId: string,companyId:string, data: any) {
+  async createTag(userId: string, companyId: string, data: any) {
     const existing = await ContactTagModel.findByName(userId, data.name);
     if (existing) {
       throw new HTTP400Error({ message: 'Tag with this name already exists' });
@@ -522,7 +529,7 @@ class ContactService {
   /**
    * List Management
    */
-  async getLists(userId:string) {
+  async getLists(userId: string) {
     return ContactListModel.findByUserId(userId);
   }
 
@@ -599,11 +606,30 @@ class ContactService {
     return buffer;
   }
 
-  /**
-   * Get contacts created by a specific user
-   */
   async getContactsByUserId(userId: string) {
     return ContactModel.findByUserId(userId);
+  }
+
+  async findContactByPhone(userId: string, phoneNumber: string) {
+    return ContactModel.findByPhone(userId, phoneNumber);
+  }
+
+  async userAssignedContact(contactId: string, assigned_to: string) {
+    const contact = await ContactModel.findById(contactId);
+
+    let assignedTo = contact.assigned_to || [];
+
+    if (typeof assignedTo === 'string') {
+      assignedTo = JSON.parse(assignedTo);
+    }
+
+    const updatedAssignedTo = [...new Set([...assignedTo, assigned_to])];
+
+    return await db('contacts')
+      .where('id', contactId)
+      .update({
+        assigned_to: updatedAssignedTo
+      });
   }
 }
 

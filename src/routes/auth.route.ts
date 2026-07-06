@@ -10,6 +10,11 @@ AuthRoute.post('/login', AuthController.login);
 AuthRoute.post('/register', AuthController.register); 
 AuthRoute.post('/register-company', AuthController.onboard);
 AuthRoute.post('/setup-password', teamController.setUpPassword )
+<<<<<<< HEAD
+=======
+
+
+>>>>>>> 08aa9f3fc9ad7e6a566968595feafb2a68cd6ee9
 
 //Reset-password
 AuthRoute.post('/verify-otp', AuthController.verifyOtp);
@@ -29,3 +34,6 @@ AuthRoute.post(
 );
 
 export default AuthRoute;
+
+
+

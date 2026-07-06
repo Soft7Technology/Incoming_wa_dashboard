@@ -23,10 +23,10 @@ class CompanyRepository {
   async create(data: CreateCompanyDto) {
     const apiKey = this.generateApiKey();
     const webhookVerifyToken = crypto.randomBytes(32).toString('hex');
-    const initialCredit = data.initial_credit || 0;
+    const initialCredit = data.credit_balance|| 0;
 
     // Remove initial_credit from data as it's not a database column
-    const { initial_credit, ...companyData } = data;
+    const { credit_balance, ...companyData } = data;
 
     const company = await CompanyModel.create({
       ...companyData,
@@ -95,8 +95,8 @@ class CompanyRepository {
   /**
    * Get all companies
    */
-  async getAll(filters: any = {}) {
-    return CompanyModel.findAll(filters);
+  async getAllCompanies(companyId:string,filters: any = {}) {
+    return CompanyModel.findCompanies(companyId,filters);
   }
 }
 

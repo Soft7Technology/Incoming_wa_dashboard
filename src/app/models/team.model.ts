@@ -13,7 +13,20 @@ class UserTeamModel extends BaseModel {
     return this.query().where('email',email).andWhere('invite_sent_by',userId).first()
   }
 
-//   async createSupportTicket(userId:string,companyId:stri)
+  async findAcceptedByInviter(inviteSentBy: string) {
+    return this.query()
+      .join('users as u', 'u.email', 'user_team.email')
+      .where('user_team.invite_sent_by', inviteSentBy)
+      .where('user_team.invite_status', 'accepted')
+      .select(
+        'u.id as id',
+        'user_team.id as invite_id',
+        'user_team.name as name',
+        'user_team.email as email',
+        'user_team.phone_number as phone_number',
+        'user_team.role as role',
+      );
+  }
 
 }
 
