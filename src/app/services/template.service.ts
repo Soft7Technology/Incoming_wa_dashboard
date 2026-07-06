@@ -92,7 +92,7 @@ class TemplateService {
   async getTemplates(userId: string,companyId?:string,waba_id?:any,phone_number_id?:any,filters: any = {}) {
     console.log("Details",phone_number_id,waba_id)
     if(phone_number_id){
-      const phoneNumber  = await phoneNumberModel.findByPhoneId(phone_number_id)
+      const phoneNumber  = await phoneNumberModel.findByPhoneNumberId(phone_number_id)
       console.log("Phone Number",phoneNumber)
       return TemplateModel.findByCompanyId(userId, companyId,phoneNumber.waba_id, filters);
     }else if(waba_id){
