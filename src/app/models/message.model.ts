@@ -430,7 +430,6 @@ class MessageModel extends BaseModel {
   // }
 
 
-
   async getLeadConversations(
     contactNumber: string,
     phone_number_id: string,
@@ -507,7 +506,8 @@ class MessageModel extends BaseModel {
       const messageTime = new Date(msg.created_at).getTime();
 
       return (
-        msg.direction === 'inbound' &&
+        msg.direction === 'inbound' ||
+        msg.type === 'template' &&
         now - messageTime <= TWENTY_FOUR_HOURS
       );
     });
