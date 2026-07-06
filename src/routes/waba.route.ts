@@ -15,6 +15,8 @@ WabaRoute.get('/', WabaController.getWabas);
 WabaRoute.post('/:wabaId/phone-numbers', WabaController.addPhoneNumber);
 WabaRoute.get('/phone-numbers', WabaController.getPhoneNumbers);
 WabaRoute.get('/:wabaId/phone-numbers', WabaController.getWabaPhoneNumbers);
+
+
 WabaRoute.post('/:wabaId/sync-phone-numbers', WabaController.syncPhoneNumbers);
 WabaRoute.put('/phone-numbers/:id', WabaController.updatePhoneNumber);
 WabaRoute.delete('/phone-numbers/:id', WabaController.deletePhoneNumber);
