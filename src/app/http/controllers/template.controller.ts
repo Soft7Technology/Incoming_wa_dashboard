@@ -54,13 +54,14 @@ class TemplateController {
    * Get all templates for company
    */
   getTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { status, category, wabaId } = req.query;
+    const { status, category, wabaId,phoneNumberId } = req.query;
     const effectiveUserId = req.ownerId ?? req.userId!;
+    const waba_id = wabaId
+    const phone_number_id = phoneNumberId
 
-    const templates = await TemplateService.getTemplates(effectiveUserId, req.companyId!, {
+    const templates = await TemplateService.getTemplates(effectiveUserId, req.companyId!, waba_id, phone_number_id,{
       status,
       category,
-      wabaId
     });
 
     return successResponse(req, res, 'Templates retrieved successfully', templates);
