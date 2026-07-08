@@ -14,21 +14,21 @@ class MessageModel extends BaseModel {
 
       // Campaign count
       .leftJoin(
-        this.db('campaigns').select('user_id').count('* as total_campaigns').groupBy('user_id',userId).as('cc'),
+        this.db('campaigns').select('user_id').count('* as total_campaigns').groupBy('user_id', userId).as('cc'),
         'cc.user_id',
         'u.id',
       )
 
       // Contacts count
       .leftJoin(
-        this.db('contacts').select('user_id').count('* as active_contacts').groupBy('user_id',userId).as('ct'),
+        this.db('contacts').select('user_id').count('* as active_contacts').groupBy('user_id', userId).as('ct'),
         'ct.user_id',
         'u.id',
       )
 
       // Leads count
       .leftJoin(
-        this.db('contact_lists').select('user_id').count('* as total_leads').groupBy('user_id',userId).as('lc'),
+        this.db('contact_lists').select('user_id').count('* as total_leads').groupBy('user_id', userId).as('lc'),
         'lc.user_id',
         'u.id',
       )
@@ -43,7 +43,7 @@ class MessageModel extends BaseModel {
           .sum({
             messages_received: this.db.raw("CASE WHEN direction = 'received' THEN 1 ELSE 0 END"),
           })
-          .groupBy('user_id',userId)
+          .groupBy('user_id', userId)
           .as('mc'),
         'mc.user_id',
         'u.id',
@@ -354,7 +354,87 @@ class MessageModel extends BaseModel {
   //     .orderBy('lm.created_at', 'desc');
   // }
 
-  async getLeadConversations(contactNumber: string, phone_number_id: string, userId: string) {
+  // async getLeadConversations(contactNumber: string, phone_number_id: string, userId: string) {
+  //   const db = this.db;
+  //   const query = this.query();
+
+  //   const normalizedNumber = contactNumber.slice(-10);
+
+  //   const result = await query
+  //     .leftJoin('templates as t', function () {
+  //       this.on('t.id', '=', 'messages.template_id')
+  //         .orOn((join) => {
+  //           join.on('t.name', '=', db.raw(`content->'template'->>'name'`))
+  //             .andOn('t.language', '=', db.raw(`content->'template'->'language'->>'code'`));
+  //         });
+  //     })
+  //     .select([
+  //       'messages.id',
+  //       'messages.phone_number_id',
+  //       'messages.direction',
+  //       'messages.type',
+
+  //       this.db.raw(`REPLACE(messages.from_phone, '+', '') AS from_phone`),
+  //       this.db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
+
+  //       'messages.status',
+  //       'messages.created_at',
+  //       'messages.content',
+
+  //       this.db.raw(`
+  //         CASE
+  //           WHEN messages.type = 'template'
+  //             THEN COALESCE(
+  //               NULLIF(messages.content->'template'->'components', '[]'::jsonb),
+  //               t.components,
+  //               '[]'::jsonb
+  //             )
+  //           ELSE NULL
+  //         END AS "templateComponents"
+  //       `),
+  //     ])
+  //     .where('phone_number_id', phone_number_id)
+  //     .andWhere((builder) => {
+  //       builder
+  //         .whereRaw(`RIGHT(REPLACE(from_phone, '+', ''), 10) = ?`, [normalizedNumber])
+  //         .orWhereRaw(`RIGHT(REPLACE(to_phone, '+', ''), 10) = ?`, [normalizedNumber]);
+  //     })
+  //     .orderBy('created_at', 'desc')
+  //     .limit(20);
+
+  //   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  //   const now = Date.now();
+
+  //   let isWindowOpen = false; // 🔥 default CLOSED
+
+  //   if (result.length > 0) {
+  //     // 🔥 find ANY template within last 24h
+  //     const validTemplate = result.find((msg) => {
+  //       if (msg.type !== 'template') return false;
+
+  //       if(msg.direction === 'inbound') return true
+
+  //       const templateTime = new Date(msg.created_at).getTime();
+  //       return now - templateTime <= TWENTY_FOUR_HOURS;
+  //     });
+
+  //     if (validTemplate) {
+  //       isWindowOpen = true; // ✅ OPEN only if template found in 24h
+  //     }
+  //   }
+
+  //   return {
+  //     isWindowOpen,
+  //     messages: result.reverse(),
+  //   };
+  // }
+
+
+  async getLeadConversations(
+    contactNumber: string,
+    phone_number_id: string,
+    userId: string
+  ) {
     const db = this.db;
     const query = this.query();
 
@@ -364,8 +444,17 @@ class MessageModel extends BaseModel {
       .leftJoin('templates as t', function () {
         this.on('t.id', '=', 'messages.template_id')
           .orOn((join) => {
-            join.on('t.name', '=', db.raw(`content->'template'->>'name'`))
-              .andOn('t.language', '=', db.raw(`content->'template'->'language'->>'code'`));
+            join
+              .on(
+                't.name',
+                '=',
+                db.raw(`messages.content->'template'->>'name'`)
+              )
+              .andOn(
+                't.language',
+                '=',
+                db.raw(`messages.content->'template'->'language'->>'code'`)
+              );
           });
       })
       .select([
@@ -374,52 +463,56 @@ class MessageModel extends BaseModel {
         'messages.direction',
         'messages.type',
 
-        this.db.raw(`REPLACE(messages.from_phone, '+', '') AS from_phone`),
-        this.db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
+        db.raw(`REPLACE(messages.from_phone, '+', '') AS from_phone`),
+        db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
 
         'messages.status',
         'messages.created_at',
         'messages.content',
 
-        this.db.raw(`
-          CASE
-            WHEN messages.type = 'template'
-              THEN COALESCE(
-                NULLIF(messages.content->'template'->'components', '[]'::jsonb),
-                t.components,
-                '[]'::jsonb
-              )
-            ELSE NULL
-          END AS "templateComponents"
-        `),
+        db.raw(`
+        CASE
+          WHEN messages.type = 'template'
+          THEN COALESCE(
+            NULLIF(messages.content->'template'->'components', '[]'::jsonb),
+            t.components,
+            '[]'::jsonb
+          )
+          ELSE NULL
+        END AS "templateComponents"
+      `),
       ])
-      .where('phone_number_id', phone_number_id)
+      .where('messages.phone_number_id', phone_number_id)
       .andWhere((builder) => {
         builder
-          .whereRaw(`RIGHT(REPLACE(from_phone, '+', ''), 10) = ?`, [normalizedNumber])
-          .orWhereRaw(`RIGHT(REPLACE(to_phone, '+', ''), 10) = ?`, [normalizedNumber]);
+          .whereRaw(
+            `RIGHT(REPLACE(messages.from_phone, '+', ''), 10) = ?`,
+            [normalizedNumber]
+          )
+          .orWhereRaw(
+            `RIGHT(REPLACE(messages.to_phone, '+', ''), 10) = ?`,
+            [normalizedNumber]
+          );
       })
-      .orderBy('created_at', 'desc')
+      .orderBy('messages.created_at', 'desc')
       .limit(20);
 
     const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    let isWindowOpen = false; // 🔥 default CLOSED
+    // Open window if ANY inbound message from customer
+    // exists within last 24 hours
+    const recentInboundMessage = result.find((msg) => {
+      const messageTime = new Date(msg.created_at).getTime();
 
-    if (result.length > 0) {
-      // 🔥 find ANY template within last 24h
-      const validTemplate = result.find((msg) => {
-        if (msg.type !== 'template') return false;
+      return (
+        msg.direction === 'inbound' ||
+        msg.type === 'template' &&
+        now - messageTime <= TWENTY_FOUR_HOURS
+      );
+    });
 
-        const templateTime = new Date(msg.created_at).getTime();
-        return now - templateTime <= TWENTY_FOUR_HOURS;
-      });
-
-      if (validTemplate) {
-        isWindowOpen = true; // ✅ OPEN only if template found in 24h
-      }
-    }
+    const isWindowOpen = !!recentInboundMessage;
 
     return {
       isWindowOpen,

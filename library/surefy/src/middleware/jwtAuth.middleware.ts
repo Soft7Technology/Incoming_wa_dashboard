@@ -9,6 +9,7 @@ export interface JWTAuthRequest extends Request {
   companyId?: string;
   email?: string;
   phone?: string;
+  assigned_plan?:string
   /** For team members: the inviter's userId whose data they should see.
    *  For account owners: same as userId. */
   ownerId?: string;
@@ -21,6 +22,7 @@ interface JWTPayload {
   role: string;
   companyId?: string;
   ownerId?: string;
+  assigned_plan?:string
 }
 
 /**
@@ -47,6 +49,7 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
 
     try {
       decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
+      console.log("Decode",decoded)
     } catch (error) {
       throw new HTTP401Error({ message: 'Invalid or expired token' });
     }
@@ -67,9 +70,9 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
       throw new HTTP401Error({ message: 'Your account has been suspended. Please contact your administrator.' });
     }
 
-    if (user.status === 'inactive') {
-      throw new HTTP401Error({ message: 'Account is inactive' });
-    }
+    // if (user.status === 'inactive') {
+    //   throw new HTTP401Error({ message: 'Account is inactive' });
+    // }
     // ─────────────────────────────────────────────────────────────
 
     // Attach user info to request
@@ -78,6 +81,7 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
     req.companyId = decoded.companyId;
     req.email = decoded.email;
     req.phone = decoded.phone;
+    // req.assigned_plan = decoded.assigned_plan
     // ownerId = inviter's userId for team members, own userId for account owners
     req.ownerId = decoded.ownerId ?? decoded.userId;
 

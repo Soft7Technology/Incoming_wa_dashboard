@@ -73,32 +73,9 @@ class ContactController {
     const effectiveUserId = req.ownerId ?? req.userId!;
     console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
     
-    // Check if the logged-in user is a team member
+    // Team members must only see contacts assigned to them.
+    // Permission flags control what actions they can perform, not what data they see.
     const isTeamMember = req.userId !== req.ownerId;
-    let onlyAssigned = false;
-    
-    if (isTeamMember) {
-      // Find the team member's permissions in user_team
-      const teamRow = await db('user_team')
-        .where({ email: req.email, invite_status: 'accepted' })
-        .first();
-      
-      let hasContactPermission = false;
-      if (teamRow && teamRow.permission) {
-        const perm = teamRow.permission;
-        let teamPermissions: string[] = [];
-        if (Array.isArray(perm)) {
-          teamPermissions = perm.map((p: string) => p.toLowerCase());
-        } else if (Array.isArray(perm?.nav)) {
-          teamPermissions = perm.nav.map((p: string) => p.toLowerCase());
-        }
-        hasContactPermission = teamPermissions.includes('contact') || teamPermissions.includes('contacts');
-      }
-      
-      if (!hasContactPermission) {
-        onlyAssigned = true;
-      }
-    }
 
     const filters = {
       is_valid: req.query.is_valid,
@@ -109,7 +86,8 @@ class ContactController {
       limit: req.query.limit,
       sortBy: req.query.sortBy ? String(req.query.sortBy) : undefined,
       sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined,
-      onlyAssignedToUserId: onlyAssigned ? req.userId : undefined
+      // Always filter to only assigned contacts for team members
+      onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
     const contacts = await ContactService.getContacts(effectiveUserId, filters);

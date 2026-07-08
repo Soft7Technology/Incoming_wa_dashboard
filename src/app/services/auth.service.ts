@@ -51,10 +51,10 @@ class AuthService {
       throw new HTTP401Error({ message: 'Invalid credentials' });
     }
 
-    // Check if user is active
-    if (user.status !== 'active') {
-      throw new HTTP401Error({ message: 'Account is not active' });
-    }
+    // // Check if user is active
+    // if (user.status !== 'active') {
+    //   throw new HTTP401Error({ message: 'Account is not active' });
+    // }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);

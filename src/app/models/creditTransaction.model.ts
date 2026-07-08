@@ -144,6 +144,13 @@ class CreditTransactionModel extends BaseModel {
 
     return stats;
   }
+
+  async transactionHistory(userId: string) {
+    return await this.query()
+      .where('balance_transafered_by', userId)
+      .andWhere('type', 'debit')
+      .orderBy('created_at', 'desc');
+  }
 }
 
 export default new CreditTransactionModel();

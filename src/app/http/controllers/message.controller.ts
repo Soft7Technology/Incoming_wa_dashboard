@@ -8,6 +8,8 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import { handleIncomingMessageChatBot } from  "@surefy/console/app/services/chatbot/chatbot.service"
 import activityLogsModel from '../../models/activityLogs.model';
+import phoneNumberModel from '../../models/phoneNumber.model';
+import contactModel from '../../models/contact.model';
 
 class MessageController {
   /**
@@ -183,6 +185,22 @@ class MessageController {
               context: message?.context?.id,
             });
 
+            const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(value.metadata.phone_number_id)
+
+            
+            //check exist contact
+            const existContact = await contactModel.findByPhone(phoneNumber.user_id,message.from)
+            console.log("Existing Contant",existContact)
+            if(!existContact){
+                  const newContact = await contactModel.create({
+                    user_id: phoneNumber.user_id,
+                    company_id:phoneNumber.company_id,
+                    phone_number:message.from,
+                    name:value.contacts?.[0]?.profile?.name || ""
+              })
+                  console.log("New Contact", newContact)
+                }
+
             await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,value.contacts?.[0]?.profile?.name)
           }
         }
@@ -229,8 +247,12 @@ class MessageController {
 
   getMessagesConversations = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { phone_number_id } = req.query
-    const effectiveUserId = req.ownerId ?? req.userId!;
-    const userMessages = await MessageService.getMessagesConversation(effectiveUserId, phone_number_id)
+    const isTeamMember = req.userId !== req.ownerId;
+    // Team members must only see conversations for contacts assigned to them.
+    // The model query filters by `user_id = userId OR assigned_to contains userId`,
+    // so passing the team member's own userId correctly scopes the results.
+    const filterUserId = isTeamMember ? req.userId! : (req.ownerId ?? req.userId!);
+    const userMessages = await MessageService.getMessagesConversation(filterUserId, phone_number_id)
     return successResponse(req, res, 'Message Retrived succesfully', userMessages);
   })
 

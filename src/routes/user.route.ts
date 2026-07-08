@@ -21,8 +21,11 @@ UserRoute.get('/plan/status', CompanyController.checkUserPlanStatus)
 UserRoute.get('/plans',companyController.getAllUserPlans)
 
 UserRoute.put('/:userId/suspend-plan', companyController.suspendUserPlan)
+
 UserRoute.put('/:id/suspend-user',companyController.suspendUser)
 UserRoute.put('/:id/active-user',companyController.activateUser)
+UserRoute.put('/:id/inactive-user',companyController.inactiveUser)
+
 UserRoute.put('/:id/reset-password', CompanyController.resetUserPassword);
 UserRoute.put('/:id', CompanyController.updateUser);
 UserRoute.delete('/:id', CompanyController.deleteCompanyUser);

@@ -117,8 +117,8 @@ class CompanyService {
   /**
    * Get all companies
    */
-  async getAllCompanies(companyId:any,status: any = {}) {
-    return CompanyRepository.getAllCompanies(companyId,status);
+  async getAllCompanies(companyId:string,filters: any) {
+    return CompanyRepository.getAllCompanies(companyId,filters);
   }
 
   /**
@@ -153,14 +153,13 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string, role?: any) {
-    console.log('Fetching users for companyId:', companyId, 'with role filter:', role); // Debug log
+  async getAllUsers(userId: string, companyId: string,role:string, filters?: any) {
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId, user.role, role);
+    const users = await userModel.findAllUserByCompanyId(companyId,role, filters);
     return users;
   }
 
@@ -722,6 +721,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(userId, {
+      status:'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -1016,6 +1016,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(existingUserPlan.user_id, {
+      status:'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -1100,31 +1101,6 @@ class CompanyService {
       });
     }
 
-    //Company Subscription Plan
-    // if (userData.assigned_plan) {
-    //   const subscriptionPlanDetails = userData.assigned_plan
-    //     ? await subscriptionModel.findPlans(userData.assigned_plan, true)
-    //     : null;
-
-    //   console.log('Subscription Plan Details:', subscriptionPlanDetails);
-    //   if (!subscriptionPlanDetails) {
-    //     throw new HTTP400Error({ message: 'Assigned subscription plan not found' });
-    //   }
-    //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
-    //   if (!activatedUserPlan) {
-    //     throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
-    //   }
-    //   await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
-    // }
-
-    // if (subscriptionPlanDetails) {
-    //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
-    //   if (!activatedUserPlan) {
-    //     throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
-    //   }
-    //   await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
-    // }
-
     return createdUser;
   }
 
@@ -1159,8 +1135,13 @@ class CompanyService {
     return activatedUser;
   }
 
+  async inctiveSingleUser(userId: string) {
+    const inactiveUser = await userModel.update(userId, { status: 'inactive' });
+    return inactiveUser;
+  }
+
   async activateUser(companyId: string) {
-    const companyUser = await userModel.findAllUserByCompanyId(companyId)
+    const companyUser = await userModel.findCompanyUsers(companyId)
     if (!companyUser) {
       throw new HTTP401Error({ message: "Company not have any active user" })
     }
@@ -1173,8 +1154,37 @@ class CompanyService {
     return activeCompany
   }
 
+
+  async inactiveUser(companyId: string) {
+    const companyUser = await userModel.findCompanyUsers(companyId)
+    if (!companyUser) {
+      throw new HTTP401Error({ message: "Company not have any active user" })
+    }
+
+    for (const user of companyUser) {
+      await userModel.update(user.id, { status: "inactive" })
+    }
+
+    const activeCompany = await companyModel.update(companyId, { status: "inactive" })
+    return activeCompany
+  }
+
+  async deleteUser(companyId: string) {
+    const companyUser = await userModel.findCompanyUsers(companyId)
+    if (!companyUser) {
+      throw new HTTP401Error({ message: "Company not have any active user" })
+    }
+
+    for (const user of companyUser) {
+      await userModel.delete(user.id)
+    }
+
+    const deleteCompany = await companyModel.delete(companyId)
+    return deleteCompany
+  }
+
   async suspendCompany(companyId: string) {
-    const companyActiveUser = await userModel.findAllUserByCompanyId(companyId)
+    const companyActiveUser = await userModel.findCompanyUsers(companyId)
     if (!companyActiveUser) {
       throw new HTTP401Error({ message: "Company not have any active user to suspend" })
     }
