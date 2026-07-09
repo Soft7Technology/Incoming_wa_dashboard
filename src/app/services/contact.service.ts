@@ -35,6 +35,7 @@ class ContactService {
       user_id: userId,
       company_id: companyId,
       phone_number: phone,
+      phone_number_id:data.phone_number_id,
       name: data.name,
       email: data.email,
       status: data.status,
