@@ -231,9 +231,17 @@ class ContactController {
 
   importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column, name_column, email_column, tag_ids, country_code } = req.body;
+    const { list_name, phone_column,phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
 
     console.log("Request file", req.body)
+
+    if(!country_code){
+      throw new HTTP400Error({ message: 'Country_code is required' });
+    }
+
+    if(!phone_number_id){
+      throw new HTTP400Error({ message: 'Phone Number Id is required' });
+    }
 
     if (!file) {
       throw new HTTP400Error({ message: 'XLSX file is required' });
@@ -262,11 +270,10 @@ class ContactController {
     fs.copyFileSync(file.path, filePath);
     fs.unlinkSync(file.path);
 
-    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!,phone_number_id,country_code, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
-      countryCodeColumn: country_code,
       tagIds: tag_ids ? tag_ids.split(',') : undefined,
     });
 

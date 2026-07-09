@@ -171,13 +171,14 @@ class ContactService {
   async queueContactImport(
     userId: string,
     companyId: string,
+    phone_number_id:string,
+    country_code:string,
     filePath: string,
     listName: string,
     options: {
       phoneColumn?: string;
       nameColumn?: string;
       emailColumn?: string;
-      countryCodeColumn?: string;
       tagIds?: string[];
     } = {}
   ) {
@@ -196,6 +197,8 @@ class ContactService {
     const importJob = await ImportJobModel.create({
       user_id: userId,
       company_id: companyId,
+      phone_number_id:phone_number_id,
+      country_code:country_code,
       job_type: 'contact_import',
       status: 'queued',
       file_name: path.basename(filePath),
@@ -207,7 +210,6 @@ class ContactService {
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
-        country_code: options.countryCodeColumn,
         tag_ids: options.tagIds,
       },
     });
@@ -220,6 +222,8 @@ class ContactService {
       {
         jobId: importJob.id,
         companyId,
+        phone_number_id,
+        country_code,
         userId,
         filePath,
         listName,
@@ -277,100 +281,102 @@ class ContactService {
    * Legacy synchronous import (kept for backward compatibility or small imports)
    * @deprecated Use queueContactImport for large imports
    */
-  async importContactsFromXLSX(
-    companyId: string,
-    userId: string,
-    filePath: string,
-    listName: string,
-    options: {
-      phoneColumn?: string;
-      nameColumn?: string;
-      emailColumn?: string;
-      tagIds?: string[];
-    } = {}
-  ) {
-    // Validate file
-    const validation = await XLSXParserService.validateFile(filePath);
-    if (!validation.valid) {
-      throw new HTTP400Error({ message: `Invalid XLSX file: ${validation.errors.join(', ')}` });
-    }
+  // async importContactsFromXLSX(
+  //   companyId: string,
+  //   country_code:string,
+  //   userId: string,
+  //   filePath: string,
+  //   listName: string,
+  //   options: {
+  //     phoneColumn?: string;
+  //     nameColumn?: string;
+  //     emailColumn?: string;
+  //     tagIds?: string[];
+  //   } = {}
+  // ) {
+  //   // Validate file
+  //   const validation = await XLSXParserService.validateFile(filePath);
+  //   if (!validation.valid) {
+  //     throw new HTTP400Error({ message: `Invalid XLSX file: ${validation.errors.join(', ')}` });
+  //   }
 
-    // Parse file
-    const parseResult = await XLSXParserService.parseContactsFromFile(
-      filePath,
-      options.phoneColumn,
-      options.nameColumn,
-      options.emailColumn
-    );
+  //   // Parse file
+  //   const parseResult = await XLSXParserService.parseContactsFromFile(
+  //     filePath,
+  //     country_code,
+  //     options.phoneColumn,
+  //     options.nameColumn,
+  //     options.emailColumn
+  //   );
 
-    // Create contact list
-    const list = await ContactListModel.create({
-      company_id: companyId,
-      name: listName,
-      file_name: path.basename(filePath),
-      file_path: filePath,
-      file_headers: parseResult.headers,
-      total_contacts: parseResult.contacts.length,
-      valid_contacts: parseResult.valid,
-      invalid_contacts: parseResult.invalid,
-    });
+  //   // Create contact list
+  //   const list = await ContactListModel.create({
+  //     company_id: companyId,
+  //     name: listName,
+  //     file_name: path.basename(filePath),
+  //     file_path: filePath,
+  //     file_headers: parseResult.headers,
+  //     total_contacts: parseResult.contacts.length,
+  //     valid_contacts: parseResult.valid,
+  //     invalid_contacts: parseResult.invalid,
+  //   });
 
-    const importedContacts = [];
-    const skippedContacts = [];
+  //   const importedContacts = [];
+  //   const skippedContacts = [];
 
-    // Import contacts
-    for (const contactData of parseResult.contacts) {
+  //   // Import contacts
+  //   for (const contactData of parseResult.contacts) {
 
-      try {
-        // Check if contact exists
-        let contact = await ContactModel.findByPhone(userId, contactData.phone_number);
+  //     try {
+  //       // Check if contact exists
+  //       let contact = await ContactModel.findByPhone(userId, contactData.phone_number);
 
-        if (contact) {
-          // Update existing contact attributes
-          contact = await ContactModel.update(contact.id, {
-            attributes: { ...contact.attributes, ...contactData.attributes },
-            name: contactData.name || contact.name,
-            email: contactData.email || contact.email,
-          });
-        } else {
-          // Create new contact
-          contact = await ContactModel.create({
-            company_id: companyId,
-            name: contactData.attributes.name || contactData.name || '',
-            ...contactData,
-          });
-        }
+  //       if (contact) {
+  //         // Update existing contact attributes
+  //         contact = await ContactModel.update(contact.id, {
+  //           attributes: { ...contact.attributes, ...contactData.attributes },
+  //           name: contactData.name || contact.name,
+  //           email: contactData.email || contact.email,
+  //         });
+  //       } else {
+  //         // Create new contact
+  //         contact = await ContactModel.create({
+  //           company_id: companyId,
+  //           name: contactData.attributes.name || contactData.name || '',
+  //           ...contactData,
+  //         });
+  //       }
 
-        // Add to list
-        await ContactListRelationModel.addContactToList(contact.id, list.id);
+  //       // Add to list
+  //       await ContactListRelationModel.addContactToList(contact.id, list.id);
 
-        // Add tags if specified
-        if (options.tagIds && options.tagIds.length > 0) {
-          await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
+  //       // Add tags if specified
+  //       if (options.tagIds && options.tagIds.length > 0) {
+  //         await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
 
-          // Update tag counts
-          for (const tagId of options.tagIds) {
-            await ContactTagModel.incrementContactCount(tagId);
-          }
-        }
+  //         // Update tag counts
+  //         for (const tagId of options.tagIds) {
+  //           await ContactTagModel.incrementContactCount(tagId);
+  //         }
+  //       }
 
-        importedContacts.push(contact);
-      } catch (error: any) {
-        skippedContacts.push({
-          phone_number: contactData.phone_number,
-          error: error.message,
-        });
-      }
-    }
+  //       importedContacts.push(contact);
+  //     } catch (error: any) {
+  //       skippedContacts.push({
+  //         phone_number: contactData.phone_number,
+  //         error: error.message,
+  //       });
+  //     }
+  //   }
 
-    return {
-      list,
-      imported: importedContacts.length,
-      skipped: skippedContacts.length,
-      errors: parseResult.errors,
-      skipped_contacts: skippedContacts,
-    };
-  }
+  //   return {
+  //     list,
+  //     imported: importedContacts.length,
+  //     skipped: skippedContacts.length,
+  //     errors: parseResult.errors,
+  //     skipped_contacts: skippedContacts,
+  //   };
+  // }
 
   /**
    * Get file preview before import
