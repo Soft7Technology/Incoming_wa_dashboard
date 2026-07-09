@@ -5,7 +5,7 @@ interface ParsedContact {
   phone_number: string;
   name?: string;
   email?: string;
-  country_code?:string;
+  country_code?: string;
   attributes: Record<string, any>;
 }
 
@@ -24,14 +24,14 @@ class XLSXParserService {
    * @param phoneColumn Name of column containing phone numbers (default: 'phone' or 'phone_number')
    * @param nameColumn Name of column containing names (optional)
    * @param emailColumn Name of column containing emails (optional)
-   * @param countryCodeColumn Name of column containing emails (optional)
+   * @param country_codeColumn Name of column containing emails (optional)
    */
   async parseContactsFromFile(
     filePath: string,
+    country_code: string,
     phoneColumn?: string,
     nameColumn?: string,
     emailColumn?: string,
-    countryCodeColumn?:string
   ): Promise<ParseResult> {
     try {
       // Read file
@@ -66,7 +66,7 @@ class XLSXParserService {
       // Process each row
       rawData.forEach((row, index) => {
         try {
-          const phoneNumber = this.normalizePhoneNumber(row[phoneColumn!]);
+          const phoneNumber = this.normalizePhoneNumber(row[phoneColumn!],country_code);
 
           if (!phoneNumber) {
             invalidCount++;
@@ -162,23 +162,35 @@ class XLSXParserService {
    * Normalize phone number to international format
    * Removes spaces, dashes, parentheses, and ensures it starts with +
    */
-  private normalizePhoneNumber(phone: any): string | null {
-    if (!phone) return null;
+  private normalizePhoneNumber(
+    phone: any,
+    country_code: string
+  ): string | null {
+    console.log("Phone",phone,country_code)
+    if (!phone || !country_code) return null;
 
-    // Convert to string and remove all non-numeric characters except +
+
     let normalized = String(phone)
       .trim()
-      .replace(/[\s\-\(\)\.]/g, '');
+      .replace(/[^\d+]/g, '');
+
+    // If number already contains country code (+...)
+    if (normalized.startsWith('+')) {
+      return normalized;
+    }
 
     // Remove leading zeros
     normalized = normalized.replace(/^0+/, '');
 
-    // Add + if not present
-    if (!normalized.startsWith('+')) {
-      normalized = '+' + normalized;
+    // Add country code if provided
+    if (country_code) {
+      country_code = country_code.replace('+', '');
+      normalized = `+${country_code}${normalized}`;
+    } else {
+      normalized = `+${normalized}`;
     }
 
-    return normalized || null;
+    return normalized;
   }
 
   /**

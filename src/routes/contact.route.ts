@@ -23,12 +23,11 @@ ContactRoute.delete('/tags/:id', ContactController.deleteTag);
 // Contact CRUD
 ContactRoute.post('/', checkPlanLimit('Contact'), ContactController.createContact);
 ContactRoute.get('/', ContactController.getContacts);
-ContactRoute.get('/team/accepted', ContactController.getAcceptedTeamMembers);
-ContactRoute.patch('/assign', ContactController.assignContact);
 ContactRoute.get('/:id', ContactController.getContactById);
-ContactRoute.put('/:id', ContactController.updateContact);
-ContactRoute.delete('/:id', ContactController.deleteContact);
+ContactRoute.put('/:id', requireRole('user','member'),ContactController.updateContact);
+ContactRoute.delete('/:id',requireRole('user','member'), ContactController.deleteContact);
 ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
+ContactRoute.put('/:contactId/assigned',ContactController.assignedContactToUser)
 
 // Contact importc
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);

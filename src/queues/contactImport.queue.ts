@@ -4,14 +4,15 @@ import redisConfig from '@surefy/config/redis.config';
 export interface ContactImportJobData {
   jobId: string; // Import job ID from database
   userId:string,
-  companyId:string
+  companyId:string;
+  phone_number_id:any;
+  country_code:any;
   filePath: string;
   listName: string;
   options: {
     phoneColumn?: string;
     nameColumn?: string;
     emailColumn?: string;
-    countryCodeColumn?:string
     tagIds?: string[];
   };
 }

@@ -412,7 +412,7 @@ function parseJSON(data: any) {
 
 export const normalizePhoneNumber = (
   phone: string,
-  countryCode?: string
+  country_code?: string
 ) => {
 
   if (!phone) return null;
@@ -444,7 +444,7 @@ export const normalizePhoneNumber = (
       // Use provided country
       parsed = parsePhoneNumberFromString(
         cleaned,
-        countryCode as any || "IN"
+        country_code as any || "IN"
       );
     }
   }
@@ -456,7 +456,7 @@ export const normalizePhoneNumber = (
   return {
     number: parsed.number,
     country: parsed.country,
-    countryCode: parsed.countryCallingCode,
+    country_code: parsed.countryCallingCode,
   };
 };
 
