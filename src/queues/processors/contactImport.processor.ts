@@ -109,15 +109,15 @@ async function processContactImport(job: Job<ContactImportJobData>) {
           // Add to list
           await ContactListRelationModel.addContactToList(contact.id, list.id);
 
-          // // Add tags if specified
-          // if (options.tagIds && options.tagIds.length > 0) {
-          //   await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
+          // Add tags if specified
+          if (options.tagIds && options.tagIds.length > 0) {
+            await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
 
-          //   // Update tag counts
-          //   for (const tagId of options.tagIds) {
-          //     await ContactTagModel.incrementContactCount(tagId);
-          //   }
-          // }
+            // Update tag counts
+            for (const tagId of options.tagIds) {
+              await ContactTagModel.incrementContactCount(tagId);
+            }
+          }
 
           successfulCount++;
         } catch (error: any) {

@@ -231,7 +231,7 @@ class ContactController {
 
   importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column,phone_number_id, name_column, email_column, country_code } = req.body;
+    const { list_name, phone_column,phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
 
     console.log("Request file", req.body)
 
@@ -274,7 +274,7 @@ class ContactController {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
-      // tagIds: tag_ids ? tag_ids.split(',') : undefined,
+      tagIds: tag_ids ? tag_ids.split(',') : undefined,
     });
 
     return successResponse(
