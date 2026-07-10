@@ -179,7 +179,6 @@ class ContactService {
       phoneColumn?: string;
       nameColumn?: string;
       emailColumn?: string;
-      tagIds?: string[];
     } = {}
   ) {
     // Quick validation of file before queuing
@@ -210,7 +209,6 @@ class ContactService {
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
-        tag_ids: options.tagIds,
       },
     });
 
