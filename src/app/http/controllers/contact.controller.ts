@@ -78,6 +78,8 @@ class ContactController {
     // Permission flags control what actions they can perform, not what data they see.
     const isTeamMember = req.userId !== req.ownerId;
 
+    const{phoneNumberId} = req.params
+
     const filters = {
       is_valid: req.query.is_valid,
       search: req.query.search,
@@ -91,7 +93,38 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters,phoneNumberId);
+    return successResponse(req, res, 'Contacts retrieved successfully', contacts);
+  });
+
+
+  /**
+   * GET /v1/contacts
+   * Get all contacts with filters
+   */
+  getContactByPhoneNumberId = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
+    
+    // Team members must only see contacts assigned to them.
+    // Permission flags control what actions they can perform, not what data they see.
+    const isTeamMember = req.userId !== req.ownerId;
+    const{phoneNumberId} = req.params
+
+    const filters = {
+      is_valid: req.query.is_valid,
+      search: req.query.search,
+      tag_ids: req.query.tag_ids ? String(req.query.tag_ids).split(',') : undefined,
+      list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
+      page: req.query.page,
+      limit: req.query.limit,
+      sortBy: req.query.sortBy ? String(req.query.sortBy) : undefined,
+      sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined,
+      // Always filter to only assigned contacts for team members
+      onlyAssignedToUserId: isTeamMember ? req.userId : undefined
+    };
+
+    const contacts = await ContactService.getContacts(effectiveUserId, filters,phoneNumberId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -231,7 +264,7 @@ class ContactController {
 
   importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column,phone_number_id, name_column, email_column, country_code } = req.body;
+    const { list_name, phone_column,phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
 
     console.log("Request file", req.body)
 
@@ -274,7 +307,7 @@ class ContactController {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
-      // tagIds: tag_ids ? tag_ids.split(',') : undefined,
+      tagIds: tag_ids ? tag_ids.split(',') : undefined,
     });
 
     return successResponse(

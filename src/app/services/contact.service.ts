@@ -49,8 +49,8 @@ class ContactService {
   /**
    * Get all contacts for a company
    */
-  async getContacts(userId: string, filters: any = {}) {
-    let query = ContactModel.findWithFilters(userId, filters);
+  async getContacts(userId: string, filters: any = {},phoneNumberId?:string) {
+    let query = ContactModel.findWithFilters(userId, filters,phoneNumberId);
 
     // Filter by tags
     if (filters.tag_ids && filters.tag_ids.length > 0) {
@@ -179,6 +179,7 @@ class ContactService {
       phoneColumn?: string;
       nameColumn?: string;
       emailColumn?: string;
+      tagIds?: string[];
     } = {}
   ) {
     // Quick validation of file before queuing
@@ -209,6 +210,7 @@ class ContactService {
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
+        tag_ids: options.tagIds,
       },
     });
 

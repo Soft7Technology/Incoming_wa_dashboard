@@ -107,15 +107,19 @@ class ContactModel extends BaseModel {
     return Promise.all(promises);
   }
 
-  findWithFilters(userId: string, filters: any) {
-    console.log("UserId", userId)
+  findWithFilters(userId: string, filters: any,phoneNumberId?:string) {
+    console.log("UserId", userId,phoneNumberId)
     let query = this.query();
+
+    if(phoneNumberId){
+      query = query.where('phone_number_id',phoneNumberId)
+    }
     
     if (filters.onlyAssignedToUserId) {
       query = query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
     } else {
       query = query.where(function(this: any) {
-        this.where('user_id', userId);
+        this.where('user_id', userId).andWhere('phone_number_id',phoneNumberId)
         orAssignedTo(this, userId);
       });
     }
