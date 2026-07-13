@@ -49,8 +49,8 @@ class ContactService {
   /**
    * Get all contacts for a company
    */
-  async getContacts(userId: string, filters: any = {}) {
-    let query = ContactModel.findWithFilters(userId, filters);
+  async getContacts(userId: string, filters: any = {},phoneNumberId?:string) {
+    let query = ContactModel.findWithFilters(userId, filters,phoneNumberId);
 
     // Filter by tags
     if (filters.tag_ids && filters.tag_ids.length > 0) {
