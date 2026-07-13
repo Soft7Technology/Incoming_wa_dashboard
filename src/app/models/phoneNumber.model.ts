@@ -24,7 +24,7 @@ async findByUserId(userId?: string, companyId?: string) {
 }
 
 
-  async findByPhoneNumberId(phoneNumberId: string) {
+  async findByPhoneNumberId(phoneNumberId: any) {
     console.log('Finding phone number with ID:', phoneNumberId); // Debug log
     return this.query().where({ phone_number_id: phoneNumberId }).first();
   }
