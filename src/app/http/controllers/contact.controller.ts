@@ -78,8 +78,6 @@ class ContactController {
     // Permission flags control what actions they can perform, not what data they see.
     const isTeamMember = req.userId !== req.ownerId;
 
-    const{phoneNumberId} = req.params
-
     const filters = {
       is_valid: req.query.is_valid,
       search: req.query.search,
@@ -93,7 +91,7 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters,phoneNumberId);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
