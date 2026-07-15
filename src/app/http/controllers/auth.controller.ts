@@ -7,6 +7,7 @@ import companyController from './company.controller';
 import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
 import activityLogsModel from '../../models/activityLogs.model';
+import { uploadImage } from '@surefy/config/firebase.config';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -244,6 +245,17 @@ class AuthController {
     const{token, newPassword} = req.body;
     const result = await AuthService.resetPassword(token,newPassword)
     return successResponse(req, res, 'Password reset successfully', result);
+  }
+
+  async uploadMedia(req:Request,res:Response){
+    const file = req.file
+    console.log("File",file)
+
+    if(file){
+      const media_url = await uploadImage(file)
+      console.log("Media", media_url)
+      return res.status(200).json({success:true,message:"Media upload successfully", media_url:media_url })
+    }
   }
 }
 

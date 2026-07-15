@@ -30,7 +30,7 @@ ContactRoute.delete('/:id',requireRole('user','member'), ContactController.delet
 ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
 ContactRoute.put('/:contactId/assigned',ContactController.assignedContactToUser)
 
-// Contact importc
+// Contact import
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
 ContactRoute.get('/import/jobs', ContactController.getImportJobs);
 ContactRoute.get('/import/:jobId/status', ContactController.getImportStatus);
