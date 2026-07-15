@@ -52,9 +52,9 @@ class AuthService {
     }
 
     // // Check if user is active
-    // if (user.status !== 'active') {
-    //   throw new HTTP401Error({ message: 'Account is not active' });
-    // }
+    if (user.status === 'suspended') {
+      throw new HTTP401Error({ message: 'Your Account is suspended' });
+    }
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, user.password);
