@@ -504,7 +504,7 @@ class ContactService {
     }
     console.log(`Creating tag for user ${userId} with data: ${JSON.stringify(data)}`);
 
-    return ContactTagModel.create({
+    return await ContactTagModel.create({
       user_id: userId,
       company_id: companyId,
       name: data.name,
