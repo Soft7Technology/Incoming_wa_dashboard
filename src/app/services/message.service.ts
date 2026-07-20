@@ -13,6 +13,7 @@ import webhookService from '@surefy/console/services/webhook.service';
 import { bulkMessageSendQueue } from '../../queues/bulkMessageSend.queue';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import messageModel from '@surefy/console/models/message.model';
+import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
 import { downloadImage } from '../utils';
 
@@ -619,6 +620,24 @@ async saveIncomingMessage(data: any) {
     const message = await MessageModel.create(messagePayload);
 
     console.log("Incoming message stored", message.id);
+
+    // Emit real-time event so WA_Dashboard browser clients get a toast notification
+    await publishSocketEvent("new_message", {
+      id: message.id,
+      contactId: message.user_id,       // used for routing; closest available field
+      userId: String(phoneNumber.user_id),
+      text: typeof content === "object" && content !== null
+        ? ((content as any).text ?? (content as any).body ?? "")
+        : "",
+      direction: "incoming",
+      sentBy: "customer",
+      status: "received",
+      createdAt: new Date().toISOString(),
+      mediaType: ["image","video","audio","document"].includes(type) ? type : null,
+      contactName: data.profile_name || data.from || "",
+      contactPhone: data.from || "",
+      from: data.from || "",
+    });
 
     return message;
   } catch (error) {
