@@ -26,6 +26,7 @@ ContactRoute.get('/', ContactController.getContacts);
 ContactRoute.get('/:phoneNumberId', ContactController.getContactByPhoneNumberId);
 ContactRoute.get('/:id', ContactController.getContactById);
 ContactRoute.put('/:id', requireRole('user','member'),ContactController.updateContact);
+ContactRoute.delete('/',requireRole('user','member'), ContactController.bulkDeleteContacts);
 ContactRoute.delete('/:id',requireRole('user','member'), ContactController.deleteContact);
 ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
 ContactRoute.put('/:contactId/assigned',ContactController.assignedContactToUser)
