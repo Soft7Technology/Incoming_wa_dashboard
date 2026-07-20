@@ -166,6 +166,13 @@ class ContactService {
   }
 
   /**
+   * Bulk delete contacts
+   */
+  async bulkDeleteContacts(companyId: string, contactIds: string[]) {
+    return await ContactModel.bulkDelete(companyId, contactIds);
+  }
+
+  /**
    * Queue contact import job (async processing)
    */
   async queueContactImport(

@@ -235,6 +235,38 @@ class ContactController {
   });
 
   /**
+   * DELETE /v1/contacts
+   * Bulk delete contacts
+   */
+  bulkDeleteContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const { ids } = req.body;
+
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      throw new HTTP400Error({ message: 'An array of contact ids (ids) is required' });
+    }
+
+    const effectiveUserId = req.ownerId ?? req.userId!;
+
+    const deletedCount = await ContactService.bulkDeleteContacts(req.companyId!, ids);
+
+    await activityLogsModel.create({
+      company_id: req.companyId!,
+      user_id: effectiveUserId,
+      action: 'DELETE',
+      entity_type: 'CONTACT',
+      read: false,
+      description: `Bulk deleted ${deletedCount} contact(s)`,
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
+      user_agent: req.headers['user-agent'] || '',
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+      status: 'SUCCESS'
+    });
+
+    return successResponse(req, res, `${deletedCount} contact(s) deleted successfully`, { deletedCount });
+  });
+
+  /**
    * POST /v1/contacts/import/preview
    * Preview XLSX file before import
    */

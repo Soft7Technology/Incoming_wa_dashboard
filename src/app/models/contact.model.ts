@@ -169,6 +169,13 @@ class ContactModel extends BaseModel {
     let query = this.query()
     return query.where({user_id:userId}).orWhere({assigned_to:userId}).returning("*")
   }
+
+  async bulkDelete(companyId: string, ids: string[]) {
+    return this.query()
+      .where({ company_id: companyId })
+      .whereIn('id', ids)
+      .del();
+  }
 }
 
 export default new ContactModel();
