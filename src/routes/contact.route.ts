@@ -23,15 +23,14 @@ ContactRoute.delete('/tags/:id', ContactController.deleteTag);
 // Contact CRUD
 ContactRoute.post('/', checkPlanLimit('Contact'), ContactController.createContact);
 ContactRoute.get('/', ContactController.getContacts);
-ContactRoute.get('/team/accepted', ContactController.getAcceptedTeamMembers);
-ContactRoute.patch('/assign', ContactController.assignContact);
+ContactRoute.get('/:phoneNumberId', ContactController.getContactByPhoneNumberId);
 ContactRoute.get('/:id', ContactController.getContactById);
 ContactRoute.put('/:id', requireRole('user','member'),ContactController.updateContact);
 ContactRoute.delete('/:id',requireRole('user','member'), ContactController.deleteContact);
 ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
 ContactRoute.put('/:contactId/assigned',ContactController.assignedContactToUser)
 
-// Contact importc
+// Contact import
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
 ContactRoute.get('/import/jobs', ContactController.getImportJobs);
 ContactRoute.get('/import/:jobId/status', ContactController.getImportStatus);

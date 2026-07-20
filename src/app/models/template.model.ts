@@ -5,8 +5,8 @@ class TemplateModel extends BaseModel {
     super('templates');
   }
 
-  async findByCompanyId(userId: string,companyId?:string, filters: any = {}) {
-    const query = this.query().where({ user_id: userId, deleted_at: null }).andWhere({ waba_id:filters.wabaId});
+  async findByCompanyId(userId: string,companyId?:string,wabaId?:string, filters: any = {}) {
+    const query = this.query().where({ user_id: userId, deleted_at: null }).andWhere({ waba_id:wabaId});
 
     if (filters.status) {
       query.where({ status: filters.status });

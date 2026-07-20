@@ -18,7 +18,7 @@ class ContactController {
    * Create new contact
    */
   createContact = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number, name, email, attributes, notes, tag_ids, status } = req.body;
+    const { phone_number, phone_number_id, name, email, attributes, notes, tag_ids, status } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
@@ -29,6 +29,7 @@ class ContactController {
 
     const contact = await ContactService.createContact(effectiveUserId, req.companyId!, {
       phone_number,
+      phone_number_id,
       name,
       email,
       attributes,
@@ -91,6 +92,37 @@ class ContactController {
     };
 
     const contacts = await ContactService.getContacts(effectiveUserId, filters);
+    return successResponse(req, res, 'Contacts retrieved successfully', contacts);
+  });
+
+
+  /**
+   * GET /v1/contacts
+   * Get all contacts with filters
+   */
+  getContactByPhoneNumberId = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
+    
+    // Team members must only see contacts assigned to them.
+    // Permission flags control what actions they can perform, not what data they see.
+    const isTeamMember = req.userId !== req.ownerId;
+    const{phoneNumberId} = req.params
+
+    const filters = {
+      is_valid: req.query.is_valid,
+      search: req.query.search,
+      tag_ids: req.query.tag_ids ? String(req.query.tag_ids).split(',') : undefined,
+      list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
+      page: req.query.page,
+      limit: req.query.limit,
+      sortBy: req.query.sortBy ? String(req.query.sortBy) : undefined,
+      sortOrder: req.query.sortOrder ? String(req.query.sortOrder) : undefined,
+      // Always filter to only assigned contacts for team members
+      onlyAssignedToUserId: isTeamMember ? req.userId : undefined
+    };
+
+    const contacts = await ContactService.getContacts(effectiveUserId, filters,phoneNumberId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -230,9 +262,17 @@ class ContactController {
 
   importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column, name_column, email_column, tag_ids, country_code } = req.body;
+    const { list_name, phone_column,phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
 
     console.log("Request file", req.body)
+
+    if(!country_code){
+      throw new HTTP400Error({ message: 'Country_code is required' });
+    }
+
+    if(!phone_number_id){
+      throw new HTTP400Error({ message: 'Phone Number Id is required' });
+    }
 
     if (!file) {
       throw new HTTP400Error({ message: 'XLSX file is required' });
@@ -261,11 +301,10 @@ class ContactController {
     fs.copyFileSync(file.path, filePath);
     fs.unlinkSync(file.path);
 
-    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!,phone_number_id,country_code, filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
-      countryCodeColumn: country_code,
       tagIds: tag_ids ? tag_ids.split(',') : undefined,
     });
 

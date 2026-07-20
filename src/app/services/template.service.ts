@@ -4,6 +4,7 @@ import { CreateTemplateDto } from '@surefy/console/interfaces/template.interface
 import MetaService from '@surefy/console/services/meta.service';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import phoneNumberModel from '../models/phoneNumber.model';
 
 class TemplateService {
   /**
@@ -88,8 +89,16 @@ class TemplateService {
   /**
    * Get templates for company
    */
-  async getTemplates(userId: string,companyId?:string, filters: any = {}) {
-    return TemplateModel.findByCompanyId(userId, companyId, filters);
+  async getTemplates(userId: string,companyId?:string,waba_id?:any,phone_number_id?:any,filters: any = {}) {
+    console.log("Details",phone_number_id,waba_id)
+    if(phone_number_id){
+      const phoneNumber  = await phoneNumberModel.findByPhoneNumberId(phone_number_id)
+      console.log("Phone Number",phoneNumber)
+      return TemplateModel.findByCompanyId(userId, companyId,phoneNumber.waba_id, filters);
+    }else if(waba_id){
+      return TemplateModel.findByCompanyId(userId, companyId,waba_id, filters);
+    }
+
   }
 
   /**
