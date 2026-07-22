@@ -64,7 +64,7 @@ class SubscriptionModel extends BaseModel {
   }
 
   async findDefaultPlan() {
-    return this.query().where({ user_id: '5a66df74-92d4-4bcd-814b-13d6318d4116' });
+    return this.query().where({ company_id: 'ae815512-cf4b-4e7e-8472-16d3c2d4bb18' });
   }
 
   async findByOrderId(razorpayOrderId: string) {
