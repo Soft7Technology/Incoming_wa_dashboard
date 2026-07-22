@@ -1,5 +1,5 @@
 import { BaseModel } from '@surefy/models/base.model';
-import { upperCase } from 'lodash';
+import { filter, upperCase } from 'lodash';
 
 class ActivityLogsModel extends BaseModel {
   constructor() {
@@ -43,7 +43,11 @@ class ActivityLogsModel extends BaseModel {
     }
 
     if (type) {
-      query.where('action', action).orWhere('entity_type', type).orWhere('user_id',user_id);
+      query.where('action', action).orWhere('entity_type', type)
+    }
+
+    if(filters.user_id){
+      query.where('user_id',filters.user_id)
     }
 
     if (search) {
