@@ -141,7 +141,7 @@ class AuthController {
    * Register new company user
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, password } = req.body; 
+    const { name, email, phone, password,company_id } = req.body; 
     // const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
 
     if (!name || !password) {
@@ -157,6 +157,7 @@ class AuthController {
       email,
       phone,
       password,
+      company_id,
       role: 'user'
     });
 
