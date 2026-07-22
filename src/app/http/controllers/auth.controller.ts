@@ -158,7 +158,7 @@ class AuthController {
       phone,
       password,
       company_id,
-      role: 'user'
+      role: 'user',
     });
 
     if(user){
