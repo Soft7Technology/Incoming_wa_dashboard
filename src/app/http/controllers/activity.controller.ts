@@ -19,6 +19,7 @@ class ActivityController {
             search: req.query.search,
             sorted_by: req.query.sorted_by,
             sort_order: req.query.sort_order,
+            user_id:req.query.uer_id
         }
         console.log("Role",req.query.role)
         const userActivities = await activityService.getAcitvityLogs(req.companyId!, effectiveUserId, req.query.role!, filters)

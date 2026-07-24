@@ -43,7 +43,7 @@ class ActivityLogsModel extends BaseModel {
     }
 
     if (type) {
-      query.where('action', action).orWhere('entity_type', type);
+      query.where('action', action).orWhere('entity_type', type).orWhere('user_id',user_id);
     }
 
     if (search) {
