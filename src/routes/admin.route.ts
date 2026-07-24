@@ -17,6 +17,7 @@ import ColumnRoute from './column.route';
 import activityRoute from './activity.route';
 import PipelineStageRoute from './pipelineStage.route';
 import cleanupRoute from './cleanup.route';
+import imageUploadRoute from './imageUpload.route';
 
 const AdminRoute = Router();
 
@@ -41,5 +42,6 @@ AdminRoute.use('/columns',ColumnRoute)
 AdminRoute.use('/activity',activityRoute )
 AdminRoute.use('/pipeline',PipelineStageRoute)
 AdminRoute.use('/cleanup', cleanupRoute);
+AdminRoute.use('/image-upload', imageUploadRoute);
 
 export default AdminRoute;
