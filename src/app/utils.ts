@@ -8,7 +8,6 @@ import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 
-
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
@@ -517,10 +516,10 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
 
   if (key === "@whatsapp/send-media-message") {
     const imageLink =
-      data?.attributes?.message?.image?.link || "";
+      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
  
     return {
-      type: "image",
+      type: data?.attributes?.message.type,
       image: {
         link: imageLink,
       },

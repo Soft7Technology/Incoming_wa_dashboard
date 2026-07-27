@@ -660,6 +660,8 @@ async saveIncomingMessage(data: any) {
   async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
     console.log('Response', JSON.stringify(response))
 
+    const { type } = response
+
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
     if (!phoneNumber) {
       console.warn(`Phone number not found: ${phoneNumberId}`);
@@ -683,26 +685,12 @@ async saveIncomingMessage(data: any) {
         };
       }
 
-
-      // // ✅ INTERACTIVE BUTTON MESSAGE
-      // if (response.type === "interactive") {
-      //   metaPayload.type = "interactive";
-      //   metaPayload.interactive = {
-      //     type: "button",
-      //     body: {
-      //       text: response.interactive.body.text,
-      //     },
-      //     action: {
-      //       buttons: response.interactive.action.buttons.map((btn: any) => ({
-      //         type: "reply",
-      //         reply: {
-      //           id: btn.reply.id,
-      //           title: btn.reply.title,
-      //         },
-      //       })),
-      //     },
-      //   };
-      // }
+      if(response.type === 'image'){
+        metaPayload.type = 'image',
+        metaPayload.image = {
+          link:response.image.link
+        }
+      }
 
       console.log("Meta Payload Message Service", JSON.stringify(metaPayload))
       const metaResponse = await MetaService.sendMessage(phoneNumberId, metaPayload);
