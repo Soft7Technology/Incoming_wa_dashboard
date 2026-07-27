@@ -22,17 +22,17 @@ export const transporter = nodemailer.createTransport({
 
 
 export const generateInviteTemplate = ({
-    name,
-    email,
-    role,
-    inviteUrl
+  name,
+  email,
+  role,
+  inviteUrl
 }: {
-    name?: string;
-    email: string;
-    role: string;
-    inviteUrl: string;
+  name?: string;
+  email: string;
+  role: string;
+  inviteUrl: string;
 }) => {
-    return `
+  return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
 
         <h2 style="color: #111;">
@@ -275,11 +275,11 @@ export function replaceVariables(
   obj: any,
   variables: Record<string, any>
 ): any {
-  console.log("Variables", obj,variables)
-  console.log("Typeof",typeof obj)
+  console.log("Variables", obj, variables)
+  console.log("Typeof", typeof obj)
 
   if (typeof obj === "string") {
-     console.log("STRING VALUE:", obj);
+    console.log("STRING VALUE:", obj);
 
     // Entire object injection
     if (obj.trim() === "{{data}}" || "{{variable}}") {
@@ -319,26 +319,26 @@ export function replaceVariables(
 
 
 export const downloadImage = async (mediaId: string) => {
-    console.log("MediaId:", mediaId);
-    try {
-      const mediaUrl = metaService.handleMedia(mediaId)
-      console.log("Media Url",mediaUrl)
-      return mediaUrl
-    } catch (error: any) {
-        console.error(
-            '❌ Error downloading image:',
-            error.response?.status,
-            error.response?.data || error.message
-        );
-        throw error;
-    }
+  console.log("MediaId:", mediaId);
+  try {
+    const mediaUrl = metaService.handleMedia(mediaId)
+    console.log("Media Url", mediaUrl)
+    return mediaUrl
+  } catch (error: any) {
+    console.error(
+      '❌ Error downloading image:',
+      error.response?.status,
+      error.response?.data || error.message
+    );
+    throw error;
+  }
 };
 
 
-export default function sendEmail(to: string, subject: string, text: string,html?: string) {
+export default function sendEmail(to: string, subject: string, text: string, html?: string) {
   console.log(`📧 Sending email to ${to}: ${subject}\n${text}`);
   return transporter.sendMail({
-    from : `"Your App Name" <${process.env.SMTP_USER}>`,
+    from: `"Your App Name" <${process.env.SMTP_USER}>`,
     to,
     subject,
     text,
@@ -479,7 +479,7 @@ export function replaceBodyVariables(
   });
 }
 
-export async function buildResponse(node: any, bot?:any,session?:any) {
+export async function buildResponse(node: any, bot?: any, session?: any) {
   console.log('NextNode', JSON.stringify(node))
   const data = safeJSON(node.data);
 
@@ -515,6 +515,18 @@ export async function buildResponse(node: any, bot?:any,session?:any) {
     };
   }
 
+  if (key === "@whatsapp/send-media-message") {
+    const imageLink =
+      data?.attributes?.message?.image?.link || "";
+
+    return {
+      type: "image",
+      image: {
+        link: imageLink,
+      },
+    };
+  }
+
   // Button Interactive  
   if (key === "@whatsapp/send-button-message") {
     return {
@@ -523,11 +535,11 @@ export async function buildResponse(node: any, bot?:any,session?:any) {
       interactive: {
         type: "button",
 
-        header:{
+        header: {
           type: "text",
           text: data?.attributes
-           ? data?.attributes?.message?.interactive?.header?.text || "" 
-           : ""
+            ? data?.attributes?.message?.interactive?.header?.text || ""
+            : ""
         },
 
         body: {
