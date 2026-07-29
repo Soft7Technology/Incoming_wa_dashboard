@@ -689,9 +689,30 @@ class CompanyController {
   }
 
   async createCustomName(req: AuthRequest, res: Response) {
-    const { domain_name } = req.body
-    const createCustomerDomain = await companyService.createCustomName(req.userId!, req.companyId!, domain_name)
-    successResponse(req, res, 'Domain name send successfully to superadmin for review', createCustomerDomain)
+    const { domain_name } = req.body;
+
+    const existingCustomDomain =
+      await companyDomainModel.findByDomain(domain_name);
+
+    if (existingCustomDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Domain name already exists",
+      });
+    }
+
+    const createCustomerDomain = await companyService.createCustomName(
+      req.userId!,
+      req.companyId!,
+      domain_name
+    );
+
+    return successResponse(
+      req,
+      res,
+      "Domain name sent successfully to superadmin for review",
+      createCustomerDomain
+    );
   }
 
   async getCompanyDomain(req: AuthRequest, res: Response) {
@@ -703,7 +724,7 @@ class CompanyController {
     const { company_domain } = req.params
     const companyDomain = await companyService.getCompanyDomainById(company_domain)
     successResponse(req, res, "Company Domain retriev succesfuly", companyDomain)
-  } 
+  }
 
 
   async companyDomainApproved(
