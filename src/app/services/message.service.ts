@@ -622,19 +622,24 @@ async saveIncomingMessage(data: any) {
     console.log("Incoming message stored", message.id);
 
     // Emit real-time event so WA_Dashboard browser clients get a toast notification
+    const extractedText =
+      typeof content === "object" && content !== null
+        ? ((content as any).text ?? (content as any).body ?? (content as any).caption ?? "")
+        : typeof content === "string"
+        ? content
+        : "";
+
     await publishSocketEvent("new_message", {
       id: message.id,
-      contactId: message.user_id,       // used for routing; closest available field
+      contactId: message.user_id,
       userId: String(phoneNumber.user_id),
-      text: typeof content === "object" && content !== null
-        ? ((content as any).text ?? (content as any).body ?? "")
-        : "",
+      text: extractedText,
       direction: "incoming",
       sentBy: "customer",
       status: "received",
       createdAt: new Date().toISOString(),
-      mediaType: ["image","video","audio","document"].includes(type) ? type : null,
-      contactName: data.profile_name || data.from || "",
+      mediaType: ["image", "video", "audio", "document"].includes(type) ? type : null,
+      contactName: data.profile_name || data.from || "New Contact",
       contactPhone: data.from || "",
       from: data.from || "",
     });
