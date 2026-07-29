@@ -8,7 +8,6 @@ import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 
-
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
@@ -517,10 +516,10 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
 
   if (key === "@whatsapp/send-media-message") {
     const imageLink =
-      data?.attributes?.message?.image?.link || "";
-
+      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
+ 
     return {
-      type: "image",
+      type: data?.attributes?.message.type,
       image: {
         link: imageLink,
       },
@@ -528,53 +527,64 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
   }
 
   // Button Interactive  
-  if (key === "@whatsapp/send-button-message") {
-    return {
-      type: "interactive",
+if (key === "@whatsapp/send-button-message") {
+  const interactiveHeader =
+    data?.attributes?.message?.interactive?.header;
 
-      interactive: {
-        type: "button",
+  return {
+    type: "interactive",
 
-        header: {
-          type: "text",
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.header?.text || ""
-            : ""
-        },
+    interactive: {
+      type: "button",
 
-        body: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.body?.text
-            : data.text,
-        },
-
-        footer: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.footer?.text || ""
-            : "",
-        },
-
-        action: {
-          buttons: (
-            data?.attributes
-              ? data?.attributes?.message?.interactive?.action?.buttons || []
-              : data.buttons || []
-          ).map((btn: any, i: number) => ({
-            type: "reply",
-
-            reply: {
-              id: btn?.reply?.id || btn.id || `btn_${i}`,
-
-              title:
-                btn?.reply?.title ||
-                btn.title ||
-                btn,
+      header:
+        interactiveHeader?.type === "image"
+          ? {
+              type: "image",
+              image: {
+                link:
+                  interactiveHeader?.image?.link ||
+                  interactiveHeader?.image?.url,
+              },
+            }
+          : {
+              type: "text",
+              text: interactiveHeader?.text || "",
             },
-          })),
-        },
+
+      body: {
+        text: data?.attributes
+          ? data?.attributes?.message?.interactive?.body?.text
+          : data.text,
       },
-    };
-  }
+
+      footer: {
+        text: data?.attributes
+          ? data?.attributes?.message?.interactive?.footer?.text || ""
+          : "",
+      },
+
+      action: {
+        buttons: (
+          data?.attributes
+            ? data?.attributes?.message?.interactive?.action?.buttons || []
+            : data.buttons || []
+        ).map((btn: any, i: number) => ({
+          type: "reply",
+
+          reply: {
+            id: btn?.reply?.id || btn.id || `btn_${i}`,
+
+            title:
+              btn?.reply?.title ||
+              btn.title ||
+              btn,
+          },
+        })),
+      },
+    },
+  };
+}
 
   if (key === "@whatsapp/ask-location") {
     return {

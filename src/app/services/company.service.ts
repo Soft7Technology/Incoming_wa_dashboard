@@ -16,7 +16,8 @@ import { uploadImage } from '@surefy/config/firebase.config'
 import creditTransactionModel from '../models/creditTransaction.model';
 import activityLogsModel from '../models/activityLogs.model';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
-import { now } from 'lodash';
+import companyDomainModel from '../models/companyDomain.model';
+import axios from 'axios'
 
 class CompanyService {
   /**
@@ -65,6 +66,59 @@ class CompanyService {
       companyKey: companyKey,
       freePlan: freePlan,
     };
+  }
+
+  private async createCustomerName(company_domain: any) {
+    try {
+      const payload = {
+        hostname: company_domain.domain_name,
+        ssl: {
+          method: "txt",
+          type: "dv",
+        },
+      };
+
+      console.log("PAYLOAD:", payload);
+
+      const response = await axios.post(
+        "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("Cloudflare Response:", response.data);
+
+      return response.data;
+    } catch (error: any) {
+      console.error("Cloudflare Custom Hostname Error");
+
+      if (error.response) {
+        console.error("Status:", error.response.status);
+        console.error("Response:", error.response.data);
+
+        throw new Error(
+          error.response.data?.errors?.[0]?.message ||
+          "Cloudflare API request failed"
+        );
+      }
+
+      if (error.request) {
+        console.error("No response received:", error.request);
+
+        throw new Error(
+          "No response received from Cloudflare. Check network connectivity."
+        );
+      }
+
+      console.error("Unexpected Error:", error.message);
+
+      throw new Error(error.message || "Unknown error occurred");
+    }
   }
 
   async getCompanyDetails(companyId: string) {
@@ -117,8 +171,8 @@ class CompanyService {
   /**
    * Get all companies
    */
-  async getAllCompanies(companyId:string,filters: any) {
-    return CompanyRepository.getAllCompanies(companyId,filters);
+  async getAllCompanies(companyId: string, filters: any) {
+    return CompanyRepository.getAllCompanies(companyId, filters);
   }
 
   /**
@@ -153,13 +207,13 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string,role:string, filters?: any) {
+  async getAllUsers(userId: string, companyId: string, role: string, filters?: any) {
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId,role, filters);
+    const users = await userModel.findAllUserByCompanyId(companyId, role, filters);
     return users;
   }
 
@@ -239,7 +293,7 @@ class CompanyService {
       throw new HTTP404Error({ message: 'User not found' });
     }
 
-    console.log("User",user)
+    console.log("User", user)
 
     if (!assigned_plan) {
       return await userModel.update(userId, data);
@@ -247,7 +301,7 @@ class CompanyService {
 
     // 1. Get existing plan
     const existingPlan = await userPlansModel.findUserPlan(user.assigned_plan);
-    console.log("Existing Plan",existingPlan)
+    console.log("Existing Plan", existingPlan)
 
     // 2. Prevent same plan reassignment
     if (existingPlan && existingPlan.subscription_id === assigned_plan) {
@@ -657,10 +711,10 @@ class CompanyService {
     const now = new Date();
 
     if (existingUserPlan) {
-      console.log("Existsing Plan",existingUserPlan)
+      console.log("Existsing Plan", existingUserPlan)
       await userPlansModel.update(existingUserPlan.id, {
         active: false,
-        status:'EXPIRED',
+        status: 'EXPIRED',
         end_date: now,
       });
     }
@@ -721,7 +775,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(userId, {
-      status:'active',
+      status: 'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -771,7 +825,7 @@ class CompanyService {
     existingUserPlan: any,
   ) {
     const now = new Date();
-    console.log("Settle Plan",user)
+    console.log("Settle Plan", user)
 
     const { plan_name, price, billing_cycle, features } = planData;
 
@@ -1016,7 +1070,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(existingUserPlan.user_id, {
-      status:'active',
+      status: 'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -1197,6 +1251,17 @@ class CompanyService {
     return suspendCompany
   }
 
+  async createCustomName(user_id: string, company_id: string, domain_name: string) {
+    const createCustomerName = await companyDomainModel.create({
+      user_id: user_id,
+      company_id: company_id,
+      domain_name: domain_name,
+      status: "pending",
+      ssl_status: "pending",
+    })
+    return createCustomerName
+  }
+
   //   async createUser(
   //   companyId: string,
   //   userData: {
@@ -1239,6 +1304,87 @@ class CompanyService {
 
   //   return createdUser;
   // }
+
+  async getCompanyDomains(userId: string) {
+    const companyDomain = await companyDomainModel.getCompanyDomains(userId)
+    return companyDomain
+  }
+
+  async getCompanyDomainById(custom_domain: string) {
+    const companyDomainDetails = await companyDomainModel.getCompanyDomainById(custom_domain)
+    return companyDomainDetails
+  }
+
+  async approvedCompanyDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      if (response.duplicate) {
+        return {
+          success: false,
+          message: "Domain already exists in Cloudflare"
+        };
+      }
+
+      await companyDomainModel.update(custom_domain, {
+        cloudfare_hostname_id: response.result.id,
+        status: response.result.status,
+        ssl_status: response.result.ssl?.status,
+      });
+
+      return {
+        success: true
+      };
+    } catch (error: any) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  async inactiveCompanyDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      const inactiveCompanyDomain = await companyDomainModel.update(
+        custom_domain,
+        {
+          cloudfare_hostname_id: response.result.id,
+          status: response.result.status,
+          ssl_status: response.result.ssl?.status || null,
+        }
+      );
+
+      return inactiveCompanyDomain;
+    } catch (error: any) {
+      console.error(
+        "Error inactive company domain:",
+        error?.response?.data || error.message
+      );
+
+      throw new Error(
+        error?.response?.data?.errors?.[0]?.message ||
+        "Failed to inactive company domain"
+      );
+    }
+  }
 }
 
 export default new CompanyService();
