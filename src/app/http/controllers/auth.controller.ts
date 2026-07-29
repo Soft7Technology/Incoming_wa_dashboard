@@ -15,6 +15,31 @@ export interface JWTRequest extends Request {
   companyId?: string;
 }
 
+export const extractDomain = (req: Request, reqDomain?: string, email?: string): string => {
+  if (reqDomain && typeof reqDomain === 'string' && reqDomain.trim()) {
+    return reqDomain.trim();
+  }
+  const origin = (req.headers.origin as string) || (req.headers.referer as string);
+  if (origin) {
+    try {
+      const parsedUrl = new URL(origin);
+      if (parsedUrl.hostname) {
+        return parsedUrl.hostname;
+      }
+    } catch {
+      // fallback
+    }
+  }
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || req.get('host');
+  if (host) {
+    return host.split(':')[0];
+  }
+  if (email && email.includes('@')) {
+    return email.split('@')[1];
+  }
+  return '';
+};
+
 class AuthController {
   /**
    * POST /v1/auth/login
@@ -100,7 +125,7 @@ class AuthController {
    * Onboard new company
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, user } = req.body;
+    const { name, email, phone, user, domain: bodyDomain } = req.body;
     console.log('Onboarding company with data:', { name, email, phone, user });
 
     if (!name || !email) {
@@ -113,10 +138,13 @@ class AuthController {
       });
     }
 
+    const domain = extractDomain(req, bodyDomain, email);
+
     const result = await companyService.onboardCompany({
       name,
       email,
       phone,
+      domain,
       user,
     });
 
@@ -128,7 +156,14 @@ class AuthController {
       )
     }
 
-    return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
+    const responseData = {
+      ...(typeof result === 'object' && result !== null ? result : {}),
+      domain,
+      domain_name: domain,
+      website_domain: domain,
+    };
+
+    return successResponse(req, res, 'Company and user created successfully', responseData, HttpStatusCode.CREATED);
   });
 
   /**
@@ -141,7 +176,7 @@ class AuthController {
    * Register new company user
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, password,company_id } = req.body; 
+    const { name, email, phone, password, company_id, domain: bodyDomain } = req.body; 
     // const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
 
     if (!name || !password) {
@@ -152,6 +187,8 @@ class AuthController {
       throw new HTTP400Error({ message: 'Either email or phone is required' });
     }
 
+    const domain = extractDomain(req, bodyDomain, email);
+
     const user = await AuthService.register({
       name,
       email,
@@ -159,6 +196,7 @@ class AuthController {
       password,
       company_id,
       role: 'user',
+      domain,
     });
 
     if(user){
@@ -169,7 +207,14 @@ class AuthController {
       )
     }
 
-    return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
+    const responseData = {
+      ...(typeof user === 'object' && user !== null ? user : {}),
+      domain,
+      domain_name: domain,
+      website_domain: domain,
+    };
+
+    return successResponse(req, res, 'User registered successfully', responseData, HttpStatusCode.CREATED);
   });
 
   /**

@@ -15,6 +15,7 @@ import { uploadImage } from '@surefy/config/firebase.config';
 import activityLogsModel from '../../models/activityLogs.model';
 import userTeamModel from '../../models/team.model';
 import userModel from '../../models/user.model';
+import { extractDomain } from './auth.controller';
 
 
 class CompanyController {
@@ -48,11 +49,13 @@ class CompanyController {
       });
     }
 
+    const domainName = extractDomain(req, domain, email);
+
     const result = await CompanyService.onboardCompany({
       name,
       email,
       phone,
-      domain,
+      domain: domainName,
       status,
       business_id,
       webhook_url,
@@ -71,7 +74,14 @@ class CompanyController {
       )
     }
 
-    return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
+    const responseData = {
+      ...(typeof result === 'object' && result !== null ? result : {}),
+      domain: domainName,
+      domain_name: domainName,
+      website_domain: domainName,
+    };
+
+    return successResponse(req, res, 'Company and user created successfully', responseData, HttpStatusCode.CREATED);
   });
 
   getCompanyDetails = tryCatchAsync(async (req: AuthRequest, res: Response) => {
