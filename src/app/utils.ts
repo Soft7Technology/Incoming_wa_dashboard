@@ -516,7 +516,7 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
 
   if (key === "@whatsapp/send-media-message") {
     const imageLink =
-      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
+      data?.attributes?.message?.image?.link || "";
  
     return {
       type: data?.attributes?.message.type,
