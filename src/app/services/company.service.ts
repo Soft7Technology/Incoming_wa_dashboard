@@ -78,14 +78,14 @@ class CompanyService {
         },
       };
 
-      console.log("PAYLOAD:", payload);
+      console.log("PAYLOAD:", payload,process.env.CLOUDFARE_API_TOKEN);
 
       const response = await axios.post(
         "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
         payload,
         {
           headers: { 
-            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            Authorization: `Bearer ${process.env.CLOUDFARE_API_TOKEN}`,
             "Content-Type": "application/json",
           },
         }
@@ -1335,8 +1335,8 @@ class CompanyService {
 
       await companyDomainModel.update(custom_domain, {
         cloudfare_hostname_id: response.result.id,
-        status: response.result.status,
-        ssl_status: response.result.ssl?.status,
+        status: "active",
+        ssl_status:"active",
       });
 
       return {
