@@ -36,7 +36,8 @@ companyRoute.get('/user/:userId',companyController.getCompanyUser)
 companyRoute.post('/custom-domain', companyController.createCustomName)
 companyRoute.get('/company-domain',companyController.getCompanyDomain)
 companyRoute.get('/:company_domain/domain',companyController.getCompanyDomainDetails)
-companyRoute.post('/:company_domain/domain/active',companyController.companyDomainApproved)
+companyRoute.post('/:company_domain/domain/active',companyController.companyDomainApproved) 
+
 companyRoute.post('/:company_domain/domain/inactive',companyController.companyDomainInactive)
 
 

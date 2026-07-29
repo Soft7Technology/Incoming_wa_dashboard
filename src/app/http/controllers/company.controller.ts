@@ -703,7 +703,7 @@ class CompanyController {
     const { company_domain } = req.params
     const companyDomain = await companyService.getCompanyDomainById(company_domain)
     successResponse(req, res, "Company Domain retriev succesfuly", companyDomain)
-  }
+  } 
 
 
   async companyDomainApproved(

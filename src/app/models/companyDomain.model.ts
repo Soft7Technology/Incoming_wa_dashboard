@@ -4,7 +4,7 @@ class CompanyDomainModel extends BaseModel {
   constructor() {
     super('company_domains');
   }
-
+ 
   async getCompanyDomains(userId:string){
     return this.query().returning("*")
   }
@@ -15,5 +15,5 @@ class CompanyDomainModel extends BaseModel {
 
 }
 
-
+ 
 export default new CompanyDomainModel();

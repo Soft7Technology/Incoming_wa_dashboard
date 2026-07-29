@@ -84,7 +84,7 @@ class CompanyService {
         "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
         payload,
         {
-          headers: {
+          headers: { 
             Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
             "Content-Type": "application/json",
           },
