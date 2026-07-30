@@ -66,7 +66,7 @@ class XLSXParserService {
       // Process each row
       rawData.forEach((row, index) => {
         try {
-          const phoneNumber = this.normalizePhoneNumber(row[phoneColumn!],country_code);
+          const phoneNumber = this.normalizePhoneNumber(row[phoneColumn!], country_code);
 
           if (!phoneNumber) {
             invalidCount++;
@@ -166,15 +166,15 @@ class XLSXParserService {
     phone: any,
     country_code: string
   ): string | null {
-    console.log("Phone",phone,country_code)
-    if (!phone || !country_code) return null;
+    console.log("Phone", phone, country_code);
 
+    if (!phone || !country_code) return null;
 
     let normalized = String(phone)
       .trim()
       .replace(/[^\d+]/g, '');
 
-    // If number already contains country code (+...)
+    // Already in international format
     if (normalized.startsWith('+')) {
       return normalized;
     }
@@ -182,15 +182,15 @@ class XLSXParserService {
     // Remove leading zeros
     normalized = normalized.replace(/^0+/, '');
 
-    // Add country code if provided
-    if (country_code) {
-      country_code = country_code.replace('+', '');
-      normalized = `+${country_code}${normalized}`;
-    } else {
-      normalized = `+${normalized}`;
+    const cleanCountryCode = country_code.replace('+', '');
+
+    // Check if number already starts with country code
+    if (!normalized.startsWith(cleanCountryCode)) {
+      normalized = `${cleanCountryCode}${normalized}`;
     }
 
-    return normalized;
+    // Ensure + prefix
+    return `+${normalized}`;
   }
 
   /**

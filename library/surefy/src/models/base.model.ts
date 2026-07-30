@@ -19,6 +19,10 @@ export class BaseModel {
     return this.query().where({ id }).first();
   }
 
+  async findByDomain(domain_name:string){
+    return this.query().where('domain_name',domain_name).first()
+  }
+
   async findOne(conditions: any) {
     return this.query().where(conditions).first();
   }

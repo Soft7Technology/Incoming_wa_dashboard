@@ -8,6 +8,7 @@ import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
 import activityLogsModel from '../../models/activityLogs.model';
 import { uploadImage } from '@surefy/config/firebase.config';
+import companyDomainModel from '../../models/companyDomain.model';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -49,7 +50,7 @@ class AuthController {
     const { identifier, password, domain_name, domain } = req.body;
 
     if (!identifier || !password) {
-      throw new HTTP400Error({ message: 'Identifier (email or phone) and password are required' });
+      throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
     }
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
@@ -59,11 +60,10 @@ class AuthController {
     const result = await AuthService.login({ identifier, password, domain: resolvedDomain }, ipAddress);
     const{data}:any = result
 
-    console.log("data",data)
-    
     await activityLogsModel.create({
       user_id: data?.id,
-      company_id:data?.company_id,
+      company_id: data?.company_id,
+      domain_name: domain_name,
       action: 'LOGIN',
       entity_type: 'AUTH',
       description: `User logged in successfully ${data.name}`,
@@ -71,7 +71,7 @@ class AuthController {
       request_method: 'POST',
       api_endpoint: '/auth/login',
       status: 'SUCCESS',
-      read:false
+      read: false
     })
 
     return successResponse(req, res, 'Login successful', result);
@@ -127,8 +127,8 @@ class AuthController {
    * Onboard new company
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, user, domain: bodyDomain } = req.body;
-    console.log('Onboarding company with data:', { name, email, phone, user });
+    const { name, email, phone, user } = req.body;
+    console.log('Onboarding company with data:', { name, email, phone, user});
 
     if (!name || !email) {
       throw new HTTP400Error({ message: 'Name and email are required' });
@@ -140,13 +140,10 @@ class AuthController {
       });
     }
 
-    const domain = extractDomain(req, bodyDomain, email);
-
     const result = await companyService.onboardCompany({
       name,
       email,
       phone,
-      domain,
       user,
     });
 
@@ -158,14 +155,7 @@ class AuthController {
       )
     }
 
-    const responseData = {
-      ...(typeof result === 'object' && result !== null ? result : {}),
-      domain,
-      domain_name: domain,
-      website_domain: domain,
-    };
-
-    return successResponse(req, res, 'Company and user created successfully', responseData, HttpStatusCode.CREATED);
+    return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
 
   /**
@@ -178,8 +168,17 @@ class AuthController {
    * Register new company user
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, password, company_id, domain: bodyDomain } = req.body; 
-    // const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
+    const { name, email, phone, password,domain_name } = req.body; 
+
+    if(!domain_name){
+      throw new HTTP400Error({ message: 'Domain Name is required' });
+    }
+
+    const existDomain = await companyDomainModel.findByDomain(domain_name)
+    console.log("Company domain",existDomain)
+    if(!existDomain){
+      throw new HTTP400Error({ message: 'Domain is not exist ' });
+    }
 
     if (!name || !password) {
       throw new HTTP400Error({ message: 'Name and password are required' });
@@ -189,34 +188,24 @@ class AuthController {
       throw new HTTP400Error({ message: 'Either email or phone is required' });
     }
 
-    const domain = extractDomain(req, bodyDomain, email);
-
     const user = await AuthService.register({
       name,
       email,
       phone,
+      company_id:existDomain.company_id,
       password,
-      company_id,
       role: 'user',
-      domain,
     });
 
     if(user){
       await sendEmail(
         email,
        'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
       )
     }
 
-    const responseData = {
-      ...(typeof user === 'object' && user !== null ? user : {}),
-      domain,
-      domain_name: domain,
-      website_domain: domain,
-    };
-
-    return successResponse(req, res, 'User registered successfully', responseData, HttpStatusCode.CREATED);
+    return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });
 
   /**
