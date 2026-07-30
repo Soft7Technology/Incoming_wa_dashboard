@@ -205,8 +205,9 @@ class AuthService {
     company_id?: string;
     password: string;
     role: string;
+    domain?: string;
   }) {
-    const { name, email, phone, company_id, password } = data;
+    const { name, email, phone, company_id, password, domain } = data;
 
     console.log('Registering user with data:', data);
 
@@ -248,7 +249,10 @@ class AuthService {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
-    return userWithoutPassword;
+    return {
+      ...userWithoutPassword,
+      ...(domain ? { domain, domain_name: domain, website_domain: domain } : {})
+    };
   }
 
   /**

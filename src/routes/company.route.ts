@@ -39,9 +39,6 @@ companyRoute.get('/:company_domain/domain',companyController.getCompanyDomainDet
 companyRoute.post('/:company_domain/domain/active',companyController.companyDomainApproved) 
 
 companyRoute.post('/:company_domain/domain/inactive',companyController.companyDomainInactive)
-
-
-
 companyRoute.get('/subscriptions', CompanyController.getCompaniesSubscription);
 
 companyRoute.get('/stats', CompanyController.getUserStats);
