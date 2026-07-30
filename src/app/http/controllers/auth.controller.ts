@@ -22,22 +22,33 @@ class AuthController {
    * Login with email or phone
    */
   login = tryCatchAsync(async (req: Request, res: Response) => {
-    const { identifier, password } = req.body;
+    const { identifier, password, domain_name } = req.body;
 
-    if (!identifier || !password) {
-      throw new HTTP400Error({ message: 'Identifier (email or phone) and password are required' });
+    if (!domain_name) {
+      throw new HTTP400Error({ message: 'Domain Name is required' });
+    }
+
+    const existDomain = await companyDomainModel.findByDomain(domain_name)
+    console.log("Company domain", existDomain)
+    if (!existDomain) {
+      throw new HTTP400Error({ message: 'Domain is not exist ' });
+    }
+
+    if (!identifier || !password || !domain_name) {
+      throw new HTTP400Error({ message: 'Identifier (email or phone) and password, domain name are required' });
     }
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
 
     const result = await AuthService.login({ identifier, password }, ipAddress);
-    const{data}:any = result
+    const { data }: any = result
 
-    console.log("data",data)
-    
+    console.log("data", data)
+
     await activityLogsModel.create({
       user_id: data?.id,
-      company_id:data?.company_id,
+      company_id: data?.company_id,
+      domain_name: domain_name,
       action: 'LOGIN',
       entity_type: 'AUTH',
       description: `User logged in successfully ${data.name}`,
@@ -45,7 +56,7 @@ class AuthController {
       request_method: 'POST',
       api_endpoint: '/auth/login',
       status: 'SUCCESS',
-      read:false
+      read: false
     })
 
     return successResponse(req, res, 'Login successful', result);
