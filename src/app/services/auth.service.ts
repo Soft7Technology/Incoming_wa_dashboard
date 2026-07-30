@@ -10,6 +10,7 @@ import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
 import userTeamModel from '../models/team.model';
 import db from '@surefy/database';
+import companyDomainModel from '../models/companyDomain.model';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -245,6 +246,17 @@ class AuthService {
       role: data.role,
       status: 'inactive'
     });
+
+    console.log("Domain register",company_id)
+
+    const registerDomain = await companyDomainModel.create({
+      company_id,
+      user_id:user.id,
+      domain_name:'admin.soft7.in',
+      domain_type:'default',
+      status:"active",
+      ssl_status:"active"
+    })
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;

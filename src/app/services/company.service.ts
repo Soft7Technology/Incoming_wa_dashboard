@@ -1258,6 +1258,7 @@ class CompanyService {
       domain_name: domain_name,
       status: "pending",
       ssl_status: "pending",
+      domain_type:'custom'
     })
     return createCustomerName
   }
