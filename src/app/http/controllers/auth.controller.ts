@@ -24,18 +24,18 @@ class AuthController {
   login = tryCatchAsync(async (req: Request, res: Response) => {
     const { identifier, password, domain_name } = req.body;
 
-    if (!domain_name) {
-      throw new HTTP400Error({ message: 'Domain Name is required' });
-    }
+    // if (!domain_name) {
+    //   throw new HTTP400Error({ message: 'Domain Name is required' });
+    // }
 
-    const existDomain = await companyDomainModel.findByDomain(domain_name)
-    console.log("Company domain", existDomain)
-    if (!existDomain) {
-      throw new HTTP400Error({ message: 'Domain is not exist ' });
-    }
+    // const existDomain = await companyDomainModel.findByDomain(domain_name)
+    // console.log("Company domain", existDomain)
+    // if (!existDomain) {
+    //   throw new HTTP400Error({ message: 'Domain is not exist ' });
+    // }
 
-    if (!identifier || !password || !domain_name) {
-      throw new HTTP400Error({ message: 'Identifier (email or phone) and password, domain name are required' });
+    if (!identifier || !password) {
+      throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
     }
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
