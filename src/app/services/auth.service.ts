@@ -14,6 +14,7 @@ import db from '@surefy/database';
 interface LoginCredentials {
   identifier: string; // email or phone
   password: string;
+  domain?: string;
 }
 
 interface JWTPayload {
@@ -38,7 +39,7 @@ class AuthService {
    * Login with email or phone number
    */
   async login(credentials: LoginCredentials, ipAddress: string) {
-    const { identifier, password } = credentials;
+    const { identifier, password, domain } = credentials;
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier and password are required' });
@@ -132,10 +133,12 @@ class AuthService {
         // Include team permissions — empty array means no restriction (owner/admin)
         permissions: teamPermissions,
         owner_id: ownerId,
+        ...(domain ? { domain, domain_name: domain, website_domain: domain } : {}),
       },
       company,
       token,
       expiresIn: this.JWT_EXPIRES_IN,
+      ...(domain ? { domain, domain_name: domain, website_domain: domain } : {}),
     };
   }
 

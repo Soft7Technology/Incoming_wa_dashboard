@@ -46,15 +46,17 @@ class AuthController {
    * Login with email or phone
    */
   login = tryCatchAsync(async (req: Request, res: Response) => {
-    const { identifier, password } = req.body;
+    const { identifier, password, domain_name, domain } = req.body;
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier (email or phone) and password are required' });
     }
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
+    const bodyDomain = domain_name || domain;
+    const resolvedDomain = extractDomain(req, bodyDomain, identifier);
 
-    const result = await AuthService.login({ identifier, password }, ipAddress);
+    const result = await AuthService.login({ identifier, password, domain: resolvedDomain }, ipAddress);
     const{data}:any = result
 
     console.log("data",data)
