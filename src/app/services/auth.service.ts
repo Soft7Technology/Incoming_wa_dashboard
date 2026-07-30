@@ -255,7 +255,7 @@ class AuthService {
       domain_name:'admin.soft7.in',
       domain_type:'default',
       status:"active",
-      ssl_status:"active",
+      ssl_status:"active"
     })
 
     // Remove password from response
