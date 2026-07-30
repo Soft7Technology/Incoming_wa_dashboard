@@ -8,6 +8,7 @@ import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
 import activityLogsModel from '../../models/activityLogs.model';
 import { uploadImage } from '@surefy/config/firebase.config';
+import companyDomainModel from '../../models/companyDomain.model';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -101,7 +102,7 @@ class AuthController {
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
     const { name, email, phone, user } = req.body;
-    console.log('Onboarding company with data:', { name, email, phone, user });
+    console.log('Onboarding company with data:', { name, email, phone, user});
 
     if (!name || !email) {
       throw new HTTP400Error({ message: 'Name and email are required' });
@@ -141,8 +142,17 @@ class AuthController {
    * Register new company user
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, password,company_id } = req.body; 
-    // const permissions = ["dashboard", "inbox", "contact", "campaigns", "integrations", "manage", "gallery", "faq bot", "chatbot", "ai assistant", "flows", "developers", "reminder", "settings","templates","whatsapp-flows","chatbot","knowledge-base"]
+    const { name, email, phone, password,domain_name } = req.body; 
+
+    if(!domain_name){
+      throw new HTTP400Error({ message: 'Domain Name is required' });
+    }
+
+    const existDomain = await companyDomainModel.findByDomain(domain_name)
+    console.log("Company domain",existDomain)
+    if(!existDomain){
+      throw new HTTP400Error({ message: 'Domain is not exist ' });
+    }
 
     if (!name || !password) {
       throw new HTTP400Error({ message: 'Name and password are required' });
@@ -156,8 +166,8 @@ class AuthController {
       name,
       email,
       phone,
+      company_id:existDomain.company_id,
       password,
-      company_id,
       role: 'user',
     });
 
@@ -165,7 +175,7 @@ class AuthController {
       await sendEmail(
         email,
        'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
       )
     }
 
