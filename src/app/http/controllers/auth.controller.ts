@@ -47,26 +47,26 @@ class AuthController {
    * Login with email or phone
    */
   login = tryCatchAsync(async (req: Request, res: Response) => {
-    const { identifier, password, domain_name, domain } = req.body;
+    const { identifier, password, hostname, domain_name, domain } = req.body;
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
     }
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
-    const bodyDomain = domain_name || domain;
+    const bodyDomain = hostname || domain_name || domain;
     const resolvedDomain = extractDomain(req, bodyDomain, identifier);
 
-    const result = await AuthService.login({ identifier, password, domain: resolvedDomain }, ipAddress);
+    const result = await AuthService.login({ identifier, password, domain: resolvedDomain, hostname: resolvedDomain }, ipAddress);
     const{data}:any = result
 
     await activityLogsModel.create({
       user_id: data?.id,
       company_id: data?.company_id,
-      domain_name: domain_name,
+      domain_name: domain_name || resolvedDomain,
       action: 'LOGIN',
       entity_type: 'AUTH',
-      description: `User logged in successfully ${data.name}`,
+      description: `User logged in successfully ${data?.name || ''}`,
       ip_address: ipAddress,
       request_method: 'POST',
       api_endpoint: '/auth/login',
