@@ -15,9 +15,9 @@ import companyDomainModel from '../models/companyDomain.model';
 interface LoginCredentials {
   identifier: string; // email or phone
   password: string;
+  hostname?: string;
   domain?: string;
   domain_name?: string;
-  hostname?: string;
 }
 
 interface JWTPayload {
@@ -226,9 +226,11 @@ class AuthService {
     company_id?: string;
     password: string;
     role: string;
+    hostname?: string;
     domain?: string;
   }) {
-    const { name, email, phone, company_id, password, domain } = data;
+    const { name, email, phone, company_id, password, hostname, domain } = data;
+    const targetHostname = hostname || domain;
 
     console.log('Registering user with data:', data);
 
@@ -272,7 +274,8 @@ class AuthService {
     const registerDomain = await companyDomainModel.create({
       company_id,
       user_id:user.id,
-      domain_name:'admin.soft7.in',
+      hostname: 'admin.soft7.in',
+      domain_name: 'admin.soft7.in',
       domain_type:'default',
       status:"active",
       ssl_status:"active"
@@ -284,8 +287,13 @@ class AuthService {
     const regDomain = domain || registerDomain?.domain_name || null;
     return {
       ...userWithoutPassword,
+<<<<<<< HEAD
       hostname: regDomain,
       ...(regDomain ? { domain: regDomain, domain_name: regDomain, website_domain: regDomain } : {})
+=======
+      hostname: targetHostname || registerDomain?.domain_name || null,
+      ...(targetHostname ? { hostname: targetHostname, domain: targetHostname, domain_name: targetHostname } : {})
+>>>>>>> dd9e6bf (fixed hostname spelling confusion)
     };
   }
 

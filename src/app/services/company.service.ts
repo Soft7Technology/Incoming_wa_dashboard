@@ -1251,11 +1251,12 @@ class CompanyService {
     return suspendCompany
   }
 
-  async createCustomName(user_id: string, company_id: string, domain_name: string) {
+  async createCustomName(user_id: string, company_id: string, hostname: string) {
     const createCustomerName = await companyDomainModel.create({
       user_id: user_id,
       company_id: company_id,
-      domain_name: domain_name,
+      hostname: hostname,
+      domain_name: hostname,
       status: "pending",
       ssl_status: "pending",
       domain_type:'custom'
