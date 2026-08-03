@@ -216,6 +216,79 @@ class AuthService {
     return { resetToken };
   }
 
+
+    /**
+   * Register new user (company role)
+   */
+  async registerUser(data: {
+    name: string;
+    email?: string;
+    phone?: string;
+    company_id?: string;
+    password: string;
+    role: string;
+    hostname?: string;
+    domain?: string;
+  }) {
+    const { name, email, phone, company_id, password, hostname, domain } = data;
+
+    console.log('Registering user with data:', data);
+
+    // Validate
+    if (!email && !phone) {
+      throw new HTTP400Error({ message: 'Either email or phone is required' });
+    }
+
+    // Check existing
+    if (email) {
+      const existingUser = await UserModel.findByEmail(email);
+      if (existingUser) {
+        throw new HTTP400Error({ message: 'Email already registered' });
+      }
+    }
+
+    if (phone) {
+      const existingUser = await UserModel.findByPhone(phone);
+      if (existingUser) {
+        throw new HTTP400Error({ message: 'Phone number already registered' });
+      }
+    }
+
+
+    // Hash password
+    const hashedPassword = await this.hashPassword(password);
+
+    // Create user
+    const user = await UserModel.create({
+      name,
+      email,
+      phone,
+      company_id,
+      password: hashedPassword,
+      role: data.role,
+      status: 'inactive'
+    });
+
+    console.log("Domain register",company_id)
+
+    // const registerDomain = await companyDomainModel.create({
+    //   company_id,
+    //   user_id:user.id,
+    //   hostname: 'admin.soft7.in',
+    //   domain_name: 'admin.soft7.in',
+    //   domain_type:'default',
+    //   status:"active",
+    //   ssl_status:"active"
+    // })
+
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = user;
+
+    return {
+      ...userWithoutPassword,
+    };
+  }
+
   /**
    * Register new user (company role)
    */
