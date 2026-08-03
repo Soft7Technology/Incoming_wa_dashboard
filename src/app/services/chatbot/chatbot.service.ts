@@ -6,6 +6,7 @@ import messageService from "@surefy/console/services/message.service"
 import nodemailer from "nodemailer";
 import { flowRouter } from  './flow.route'
 import contactModel from '@surefy/console/models/contact.model';
+import chatBotPhoneNumberModel from '../../models/chatBotPhoneNumber.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -42,7 +43,10 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     // 1️⃣ Get bot
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
-    const bot: any = await chatBotModel.getPublishedBotByPhoneNumberId(phoneNumberId);
+    // const bot: any = await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
+    // const 
+    // const bot:any = await chatbo
+    const bot:any= await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
     if (!bot) return null;
 
