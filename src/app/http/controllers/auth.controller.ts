@@ -24,15 +24,15 @@ class AuthController {
   login = tryCatchAsync(async (req: Request, res: Response) => {
     const { identifier, password, domain_name } = req.body;
 
-    // if (!domain_name) {
-    //   throw new HTTP400Error({ message: 'Domain Name is required' });
-    // }
+    if (!domain_name) {
+      throw new HTTP400Error({ message: 'Domain Name is required' });
+    }
 
-    // const existDomain = await companyDomainModel.findByDomain(domain_name)
-    // console.log("Company domain", existDomain)
-    // if (!existDomain) {
-    //   throw new HTTP400Error({ message: 'Domain is not exist ' });
-    // }
+    const existDomain = await companyDomainModel.findByDomain(domain_name)
+    console.log("Company domain", existDomain)
+    if (!existDomain) {
+      throw new HTTP400Error({ message: 'Domain is not exist ' });
+    }
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
