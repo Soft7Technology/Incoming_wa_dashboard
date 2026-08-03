@@ -14,8 +14,8 @@ class chatSessionModel extends BaseModel{
     }
 
     async getPublishedBotByPhoneNumberId(phoneNumberId:string){
-        return this.query().where({phoneNumberId: phoneNumberId, published:true}).first()
-    }
+        return this.query().where({connected_phone_number: phoneNumberId, published:true}).first()
+    } 
 
     async deleteChatBotPhoneNumber(chat_bot_id:string){
         return this.query().where("chat_bot_id",chat_bot_id).delete()

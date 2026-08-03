@@ -46,9 +46,11 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     // const bot: any = await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
     // const 
     // const bot:any = await chatbo
-    const bot:any= await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
+    const chatbot:any= await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
+    if (!chatbot) return null;
+
+    const bot: any = await chatBotModel.findById(chatbot.chat_bot_id)
     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
-    if (!bot) return null;
 
     //check exist contact
     const existContact = await contactModel.findByPhone(bot.user_id,message.from)
