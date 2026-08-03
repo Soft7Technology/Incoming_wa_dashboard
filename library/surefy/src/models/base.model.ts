@@ -44,7 +44,7 @@ export class BaseModel {
     return result;
   }
 
-  async update(id: string | number, data: any) {
+  async update(id: string | number | any, data: any) {
     // Convert arrays and objects to JSON strings for JSONB columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {

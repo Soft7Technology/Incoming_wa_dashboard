@@ -20,6 +20,10 @@ class chatSessionModel extends BaseModel{
     async deleteChatBotPhoneNumber(chat_bot_id:string){
         return this.query().where("chat_bot_id",chat_bot_id).delete()
     }
+
+    async getByChatBotId(chat_bot_id:string){
+        return this.query().where('chat_bot_id',chat_bot_id).returning("*")
+    }
 }
 
 export default new chatSessionModel();

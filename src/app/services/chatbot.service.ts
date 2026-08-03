@@ -42,7 +42,17 @@ class chatBotService {
 
   async publishedChatBot(userId: string, chatBotId: string) {
     // ✅ 1. Check chatbot exists
+    const chatBot_phonenumber: any = await chatBotPhoneNumberModel.getByChatBotId(chatBotId)
     const bot = await chatBotModel.findById(chatBotId);
+    console.log("Chatbot", chatBot_phonenumber)
+    for (const chatBotPhone of chatBot_phonenumber) {
+      console.log("Updating:", chatBotPhone);
+
+      await chatBotPhoneNumberModel.update(
+        chatBotPhone.id,
+        { published: true }
+      );
+    }
     if (!bot) {
       throw new HTTP400Error({ message: 'ChatBot not exists' });
     }
@@ -73,11 +83,24 @@ class chatBotService {
     return bot;
   }
 
+
+
   async unpublishedChatBot(userId: string, chatBotId: string, status: string, published: boolean) {
     // ✅ 1. Check chatbot exists
+    const chatBot_phonenumber: any = await chatBotPhoneNumberModel.getByChatBotId(chatBotId)
     const bot = await chatBotModel.findById(chatBotId);
+
     if (!bot) {
       throw new HTTP400Error({ message: 'ChatBot not exists' });
+    }
+        console.log("Chatbot", chatBot_phonenumber)
+    for (const chatBotPhone of chatBot_phonenumber) {
+      console.log("Updating:", chatBotPhone);
+
+      await chatBotPhoneNumberModel.update(
+        chatBotPhone.id,
+        { published: false }
+      );
     }
     const unpublishedChatBot = await chatBotModel.update(chatBotId, { published, status });
     return unpublishedChatBot;
