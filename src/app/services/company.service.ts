@@ -1387,6 +1387,11 @@ class CompanyService {
       );
     }
   }
+
+  async getCompanyCustomDomain(companyId:string){
+    const customDomain = await companyDomainModel.findCompanyDomainByCompanyId(companyId)
+    return customDomain
+  }
 }
 
 export default new CompanyService();

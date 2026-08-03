@@ -776,6 +776,11 @@ class CompanyController {
     successResponse(req, res, `Company ${companyDomainInactive.company_id} is approved`, companyDomainInactive)
   }
 
+  async getCompanyCustomDomain(req:AuthRequest,res:Response){
+    const companyDomain:any = await companyService.getCompanyCustomDomain(req.companyId!)
+    successResponse(req, res, `Company ${companyDomain.company_id} domain retrieve successfully`,companyDomain)
+  }
+
 
   // async updateCompanyUser(req:AuthRequest,res:Response){
   //   const 

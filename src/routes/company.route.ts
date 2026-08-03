@@ -34,6 +34,7 @@ companyRoute.get('/user', companyController.getAllUsers);
 companyRoute.put('/user/:userId', CompanyController.updateCompanyUser);
 companyRoute.get('/user/:userId',companyController.getCompanyUser)
 companyRoute.post('/custom-domain', companyController.createCustomName)
+companyRoute.get('/domain',companyController.getCompanyCustomDomain)
 companyRoute.get('/company-domain',companyController.getCompanyDomain)
 companyRoute.get('/:company_domain/domain',companyController.getCompanyDomainDetails)
 companyRoute.post('/:company_domain/domain/active',companyController.companyDomainApproved) 
