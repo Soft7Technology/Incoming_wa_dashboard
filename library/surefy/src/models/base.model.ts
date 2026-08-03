@@ -63,7 +63,7 @@ export class BaseModel {
     return result;
   }
 
-  async delete(id: string | number) {
+  async delete(id: string | number | any) {
     return this.query().where({ id }).del();
   }
 
