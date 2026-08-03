@@ -284,16 +284,11 @@ class AuthService {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
-    const regDomain = domain || registerDomain?.domain_name || null;
+    const regDomain = hostname || domain || registerDomain?.hostname || registerDomain?.domain_name || null;
     return {
       ...userWithoutPassword,
-<<<<<<< HEAD
       hostname: regDomain,
       ...(regDomain ? { domain: regDomain, domain_name: regDomain, website_domain: regDomain } : {})
-=======
-      hostname: targetHostname || registerDomain?.domain_name || null,
-      ...(targetHostname ? { hostname: targetHostname, domain: targetHostname, domain_name: targetHostname } : {})
->>>>>>> dd9e6bf (fixed hostname spelling confusion)
     };
   }
 
