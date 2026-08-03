@@ -509,6 +509,21 @@ class MessageModel extends BaseModel {
       .join(counts, 'lm.contact_phone', 'counts.contact_phone')
       .orderBy('lm.created_at', 'desc');
   }
+
+  async getRecentMessages(userId: string, phone: string, limit: number = 10) {
+    const normalizedPhone = (phone || '').replace(/\D/g, '');
+    const last10 = normalizedPhone.slice(-10);
+
+    return this.query()
+      .where({ user_id: userId })
+      .andWhere((builder) => {
+        builder
+          .whereRaw(`RIGHT(REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g'), 10) = ?`, [last10])
+          .orWhereRaw(`RIGHT(REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g'), 10) = ?`, [last10]);
+      })
+      .orderBy('created_at', 'desc')
+      .limit(limit);
+  }
 }
 
 export default new MessageModel();
