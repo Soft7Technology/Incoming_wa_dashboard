@@ -16,48 +16,77 @@ export interface JWTRequest extends Request {
   companyId?: string;
 }
 
+export const extractDomain = (req: Request, reqDomain?: string, email?: string): string => {
+  if (reqDomain && typeof reqDomain === 'string' && reqDomain.trim()) {
+    return reqDomain.trim();
+  }
+  const origin = (req.headers.origin as string) || (req.headers.referer as string);
+  if (origin) {
+    try {
+      const parsedUrl = new URL(origin);
+      if (parsedUrl.hostname) {
+        return parsedUrl.hostname;
+      }
+    } catch {
+      // fallback
+    }
+  }
+  const host = (req.headers['x-forwarded-host'] as string) || req.headers.host || req.get('host');
+  if (host) {
+    return host.split(':')[0];
+  }
+  if (email && email.includes('@')) {
+    return email.split('@')[1];
+  }
+  return '';
+};
+
 class AuthController {
   /**
    * POST /v1/auth/login
    * Login with email or phone
    */
   login = tryCatchAsync(async (req: Request, res: Response) => {
-    const { identifier, password, domain_name } = req.body;
+    const { identifier, password, hostname, domain_name, domain } = req.body;
+    const targetHostname = hostname || domain_name || domain;
 
-    if (!domain_name) {
-      throw new HTTP400Error({ message: 'Domain Name is required' });
+    if (!targetHostname) {
+      throw new HTTP400Error({ message: 'Hostname is required' });
     }
 
-    const existDomain = await companyDomainModel.findByDomain(domain_name)
-    console.log("Company domain", existDomain)
+    let existDomain = await companyDomainModel.findByDomain(targetHostname);
+    if (!existDomain && (targetHostname === 'localhost' || targetHostname === '127.0.0.1')) {
+      existDomain = await companyDomainModel.findOne({ status: 'active' });
+    }
+    console.log("Company domain", existDomain);
     if (!existDomain) {
-      throw new HTTP400Error({ message: 'Domain is not exist ' });
+      throw new HTTP400Error({ message: 'Domain does not exist' });
     }
 
     if (!identifier || !password) {
-      throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
+      throw new HTTP400Error({ message: 'Identifier (email or phone) and password are required' });
     }
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
 
-    const result = await AuthService.login({ identifier, password }, ipAddress);
-    const { data }: any = result
+    const result = await AuthService.login({ identifier, password, hostname: targetHostname }, ipAddress);
+    const { data }: any = result;
 
-    console.log("data", data)
+    console.log("data", data);
 
     await activityLogsModel.create({
       user_id: data?.id,
       company_id: data?.company_id,
-      domain_name: domain_name,
+      domain_name: targetHostname,
       action: 'LOGIN',
       entity_type: 'AUTH',
-      description: `User logged in successfully ${data.name}`,
+      description: `User logged in successfully ${data?.name || ''}`,
       ip_address: ipAddress,
       request_method: 'POST',
       api_endpoint: '/auth/login',
       status: 'SUCCESS',
       read: false
-    })
+    });
 
     return successResponse(req, res, 'Login successful', result);
   });
@@ -153,16 +182,20 @@ class AuthController {
    * Register new company user
    */
   register = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, password,domain_name } = req.body; 
+    const { name, email, phone, password, hostname, domain_name, domain } = req.body; 
+    const targetHostname = hostname || domain_name || domain;
 
-    if(!domain_name){
-      throw new HTTP400Error({ message: 'Domain Name is required' });
+    if (!targetHostname) {
+      throw new HTTP400Error({ message: 'Hostname is required' });
     }
 
-    const existDomain = await companyDomainModel.findByDomain(domain_name)
-    console.log("Company domain",existDomain)
-    if(!existDomain){
-      throw new HTTP400Error({ message: 'Domain is not exist ' });
+    let existDomain = await companyDomainModel.findByDomain(targetHostname);
+    if (!existDomain && (targetHostname === 'localhost' || targetHostname === '127.0.0.1')) {
+      existDomain = await companyDomainModel.findOne({ status: 'active' });
+    }
+    console.log("Company domain", existDomain);
+    if (!existDomain) {
+      throw new HTTP400Error({ message: 'Domain does not exist' });
     }
 
     if (!name || !password) {
@@ -177,17 +210,18 @@ class AuthController {
       name,
       email,
       phone,
-      company_id:existDomain.company_id,
+      company_id: existDomain.company_id,
       password,
       role: 'user',
+      hostname: targetHostname,
     });
 
-    if(user){
+    if (user) {
       await sendEmail(
         email,
-       'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
-      )
+        'Welcome to Our Platform',
+        `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name || targetHostname}`,
+      );
     }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);

@@ -15,6 +15,9 @@ import companyDomainModel from '../models/companyDomain.model';
 interface LoginCredentials {
   identifier: string; // email or phone
   password: string;
+  hostname?: string;
+  domain?: string;
+  domain_name?: string;
 }
 
 interface JWTPayload {
@@ -39,11 +42,13 @@ class AuthService {
    * Login with email or phone number
    */
   async login(credentials: LoginCredentials, ipAddress: string) {
-    const { identifier, password } = credentials;
+    const { identifier, password, domain, domain_name, hostname } = credentials;
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier and password are required' });
     }
+
+    let resolvedDomain = domain || domain_name || hostname || '';
 
     // Find user by email or phone
     const user = await UserModel.findByEmailOrPhone(identifier);
@@ -68,6 +73,16 @@ class AuthService {
     let company = null;
     if (user.company_id) {
       company = await CompanyModel.findById(user.company_id);
+    }
+
+    // Look up company domain if resolvedDomain is missing
+    if (!resolvedDomain && user.company_id) {
+      try {
+        const domainRow = await companyDomainModel.findOne({ company_id: user.company_id, status: 'active' });
+        if (domainRow?.domain_name) {
+          resolvedDomain = domainRow.domain_name;
+        }
+      } catch { /* ignore */ }
     }
 
     // Get active plan status from user_plans table
@@ -123,6 +138,9 @@ class AuthService {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    const domainName = resolvedDomain || null;
+    const domainInfo = domainName ? { hostname: domainName, domain: domainName, domain_name: domainName, website_domain: domainName } : { hostname: null };
+
     return {
       data: {
         ...userWithoutPassword,
@@ -133,10 +151,12 @@ class AuthService {
         // Include team permissions — empty array means no restriction (owner/admin)
         permissions: teamPermissions,
         owner_id: ownerId,
+        ...domainInfo,
       },
       company,
       token,
       expiresIn: this.JWT_EXPIRES_IN,
+      ...domainInfo,
     };
   }
 
@@ -206,9 +226,11 @@ class AuthService {
     company_id?: string;
     password: string;
     role: string;
+    hostname?: string;
     domain?: string;
   }) {
-    const { name, email, phone, company_id, password, domain } = data;
+    const { name, email, phone, company_id, password, hostname, domain } = data;
+    const targetHostname = hostname || domain;
 
     console.log('Registering user with data:', data);
 
@@ -252,7 +274,8 @@ class AuthService {
     const registerDomain = await companyDomainModel.create({
       company_id,
       user_id:user.id,
-      domain_name:'admin.soft7.in',
+      hostname: 'admin.soft7.in',
+      domain_name: 'admin.soft7.in',
       domain_type:'default',
       status:"active",
       ssl_status:"active"
@@ -261,9 +284,11 @@ class AuthService {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    const regDomain = hostname || domain || registerDomain?.hostname || registerDomain?.domain_name || null;
     return {
       ...userWithoutPassword,
-      ...(domain ? { domain, domain_name: domain, website_domain: domain } : {})
+      hostname: regDomain,
+      ...(regDomain ? { domain: regDomain, domain_name: regDomain, website_domain: regDomain } : {})
     };
   }
 

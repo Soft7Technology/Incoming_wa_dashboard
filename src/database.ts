@@ -37,4 +37,24 @@ if (!(global as any).__knex_db__) {
 
 const db = (global as any).__knex_db__;
 
+// Ensure hostname column exists on company_domains table & copy domain_name data
+(async () => {
+  try {
+    const hasHostname = await db.schema.hasColumn('company_domains', 'hostname');
+    if (!hasHostname) {
+      await db.schema.alterTable('company_domains', (table: any) => {
+        table.string('hostname').nullable();
+      });
+      console.log('✅ Added hostname column to company_domains table');
+      const hasDomainName = await db.schema.hasColumn('company_domains', 'domain_name');
+      if (hasDomainName) {
+        await db.raw('UPDATE company_domains SET hostname = domain_name WHERE hostname IS NULL AND domain_name IS NOT NULL');
+        console.log('✅ Migrated domain_name data to hostname column');
+      }
+    }
+  } catch (err) {
+    console.error('Error ensuring hostname column on company_domains:', err);
+  }
+})();
+
 export default db;
