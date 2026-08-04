@@ -1,4 +1,5 @@
 import { BaseModel } from '@surefy/models/base.model';
+import { validate as uuidValidate } from 'uuid';
 
 class PhoneNumberModel extends BaseModel {
   constructor() {
@@ -26,7 +27,17 @@ async findByUserId(userId?: string, companyId?: string) {
 
   async findByPhoneNumberId(phoneNumberId: any) {
     console.log('Finding phone number with ID:', phoneNumberId); // Debug log
-    return this.query().where({ phone_number_id: phoneNumberId }).first();
+    if (!phoneNumberId) return null;
+    const isUuid = typeof phoneNumberId === 'string' && uuidValidate(phoneNumberId);
+    return this.query()
+      .where((qb) => {
+        qb.where('phone_number_id', phoneNumberId);
+        if (isUuid) {
+          qb.orWhere('id', phoneNumberId);
+        }
+      })
+      .andWhere({ deleted_at: null })
+      .first();
   }
 
   async findByPhoneId(phoneNumberId: string) {
