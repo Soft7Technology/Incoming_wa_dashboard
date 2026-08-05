@@ -691,13 +691,21 @@ class CompanyController {
   async createCustomName(req: AuthRequest, res: Response) {
     const { domain_name } = req.body;
 
+    const existingDomain = await companyDomainModel.findByDomain(domain_name)
+    if(existingDomain){
+      return res.status(200).json({
+        success:false,
+        message:"Domain name already exist use some other custom name"
+      })
+    }
+
     const existingCustomDomain =
-      await companyDomainModel.findByDomain(domain_name);
+      await companyDomainModel.findDomainByCompanyId(req.companyId!,domain_name);
 
     if (existingCustomDomain) {
       return res.status(400).json({
         success: false,
-        message: "Domain name already exists",
+        message: "Custom Domain name already exist under your company",
       });
     }
 

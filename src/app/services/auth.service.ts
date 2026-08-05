@@ -228,9 +228,9 @@ class AuthService {
     password: string;
     role: string;
     hostname?: string;
-    domain?: string;
+    domain_name?: string;
   }) {
-    const { name, email, phone, company_id, password, hostname, domain } = data;
+    const { name, email, phone, company_id, password, hostname, domain_name } = data;
 
     console.log('Registering user with data:', data);
 
@@ -265,6 +265,7 @@ class AuthService {
       phone,
       company_id,
       password: hashedPassword,
+      domain_name:domain_name,
       role: data.role,
       status: 'inactive'
     });

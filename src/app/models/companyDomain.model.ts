@@ -17,6 +17,20 @@ class CompanyDomainModel extends BaseModel {
     return this.query().where('company_id',companyId).first()
   }
 
+  async findDomainByCompanyId(company_id:string,domain_name: string) {
+    return this.query()
+      .where('domain_name', domain_name)
+      .andWhere('company_id',company_id)
+      .first();
+  }
+
+  async findByDomain(domain_name: string) {
+    return this.query()
+      .where('domain_name', domain_name)
+      .first();
+  }
+
+
 }
 
  

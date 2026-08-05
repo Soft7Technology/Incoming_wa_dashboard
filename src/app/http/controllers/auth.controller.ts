@@ -9,6 +9,7 @@ import sendEmail from '../../utils';
 import activityLogsModel from '../../models/activityLogs.model';
 import { uploadImage } from '@surefy/config/firebase.config';
 import companyDomainModel from '../../models/companyDomain.model';
+import userModel from '../../models/user.model';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -28,11 +29,16 @@ class AuthController {
       throw new HTTP400Error({ message: 'Domain Name is required' });
     }
 
-    const existDomain = await companyDomainModel.findByDomain(domain_name)
-    console.log("Company domain", existDomain)
-    if (!existDomain) {
-      throw new HTTP400Error({ message: 'Domain is not exist ' });
+    const existUserDomain = await userModel.findByDomainName(identifier,domain_name)
+    if (!existUserDomain){
+      throw new HTTP400Error({ message: 'User Not exist' });
     }
+
+    // const existDomain = await companyDomainModel.findByDomain(domain_name)
+    // console.log("Company domain", existDomain)
+    // if (!existDomain) {
+    //   throw new HTTP400Error({ message: 'Domain is not exist ' });
+    // }
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
@@ -180,6 +186,7 @@ class AuthController {
       company_id:existDomain.company_id,
       password,
       role: 'user',
+      domain_name
     });
 
     if(user){
