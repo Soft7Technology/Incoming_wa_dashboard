@@ -19,6 +19,13 @@ export class BaseModel {
     return this.query().where({ id }).first();
   }
 
+  async findByDomain(hostname: string) {
+    return this.query()
+      .where('hostname', hostname)
+      .orWhere('domain_name', hostname)
+      .first();
+  }
+
   async findOne(conditions: any) {
     return this.query().where(conditions).first();
   }
@@ -40,7 +47,7 @@ export class BaseModel {
     return result;
   }
 
-  async update(id: string | number, data: any) {
+  async update(id: string | number | any, data: any) {
     // Convert arrays and objects to JSON strings for JSONB columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
@@ -59,7 +66,7 @@ export class BaseModel {
     return result;
   }
 
-  async delete(id: string | number) {
+  async delete(id: string | number | any) {
     return this.query().where({ id }).del();
   }
 

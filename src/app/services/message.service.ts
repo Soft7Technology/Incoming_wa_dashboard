@@ -13,6 +13,7 @@ import webhookService from '@surefy/console/services/webhook.service';
 import { bulkMessageSendQueue } from '../../queues/bulkMessageSend.queue';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import messageModel from '@surefy/console/models/message.model';
+import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
 import { downloadImage } from '../utils';
 
@@ -620,6 +621,29 @@ async saveIncomingMessage(data: any) {
 
     console.log("Incoming message stored", message.id);
 
+    // Emit real-time event so WA_Dashboard browser clients get a toast notification
+    const extractedText =
+      typeof content === "object" && content !== null
+        ? ((content as any).text ?? (content as any).body ?? (content as any).caption ?? "")
+        : typeof content === "string"
+        ? content
+        : "";
+
+    await publishSocketEvent("new_message", {
+      id: message.id,
+      contactId: message.user_id,
+      userId: String(phoneNumber.user_id),
+      text: extractedText,
+      direction: "incoming",
+      sentBy: "customer",
+      status: "received",
+      createdAt: new Date().toISOString(),
+      mediaType: ["image", "video", "audio", "document"].includes(type) ? type : null,
+      contactName: data.profile_name || data.from || "New Contact",
+      contactPhone: data.from || "",
+      from: data.from || "",
+    });
+
     return message;
   } catch (error) {
     console.error("Failed to save incoming message", error);
@@ -640,6 +664,8 @@ async saveIncomingMessage(data: any) {
  */
   async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
     console.log('Response', JSON.stringify(response))
+
+    const { type } = response
 
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
     if (!phoneNumber) {
@@ -664,26 +690,12 @@ async saveIncomingMessage(data: any) {
         };
       }
 
-
-      // // ✅ INTERACTIVE BUTTON MESSAGE
-      // if (response.type === "interactive") {
-      //   metaPayload.type = "interactive";
-      //   metaPayload.interactive = {
-      //     type: "button",
-      //     body: {
-      //       text: response.interactive.body.text,
-      //     },
-      //     action: {
-      //       buttons: response.interactive.action.buttons.map((btn: any) => ({
-      //         type: "reply",
-      //         reply: {
-      //           id: btn.reply.id,
-      //           title: btn.reply.title,
-      //         },
-      //       })),
-      //     },
-      //   };
-      // }
+      if(response.type === 'image'){
+        metaPayload.type = 'image',
+        metaPayload.image = {
+          link:response.image.link
+        }
+      }
 
       console.log("Meta Payload Message Service", JSON.stringify(metaPayload))
       const metaResponse = await MetaService.sendMessage(phoneNumberId, metaPayload);

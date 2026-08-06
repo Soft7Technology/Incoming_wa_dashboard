@@ -13,8 +13,8 @@ class chatSessionModel extends BaseModel{
         return this.query().where({id}).first()
     }
 
-    async findByPhoneandBot(phoneNumber:string,botId:any){
-        return this.query().where({phone_number:phoneNumber,chatbot_id:botId}).first()
+    async findByPhoneandBot(phoneNumber:string,phoneNumberId:string,botId:any){
+        return this.query().where({phone_number:phoneNumber,phoneNumberId:phoneNumberId,chatbot_id:botId}).first()
     }
 }
 

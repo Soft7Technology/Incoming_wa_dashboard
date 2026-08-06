@@ -4,6 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { bucket } from '@surefy/config/firebase.config';
 import fs from 'fs';
 import path from 'path';
+import activityLogsModel from '../models/activityLogs.model';
 
 class MetaService {
   private client: AxiosInstance;
@@ -209,16 +210,70 @@ class MetaService {
   /**
    * Subscribe WABA Id
    */
-  async subscribeToWebhooks(wabaId: any) {
+  async subscribeToWebhooks(
+    wabaId: string,
+    options?: {
+      user_id?: string;
+      company_id?: string;
+      company_waba_id?: string;
+    }
+  ) {
     try {
-      const response = await this.client.get(`/${wabaId}/subscribed_apps`, {
-        params: {
-          subscribed_fields: 'messages,message_deliveries,message_reads'
-        }
-      })
+      const response = await this.client.post(`/${wabaId}/subscribed_apps`, {
+        // params: {
+        //   subscribed_fields: 'messages,message_deliveries,message_reads'
+        // }
+      });
+
+      if (!response.data?.success) {
+        throw new Error('Webhook subscription failed');
+      }
+
+
+      console.log("Webhook response", response)
+
+      if (options?.user_id && options?.company_id) {
+        await activityLogsModel.create({
+          company_id: options.company_id,
+          user_id: options.user_id,
+          action: 'SUBSCRIBE',
+          entity_type: 'WEBHOOK',
+          entity_id: options.company_waba_id || wabaId,
+          description: `Subscribed WABA ${wabaId} to Meta webhooks`,
+          new_data: {
+            waba_id: wabaId,
+            response: response.data
+          },
+          status: 'SUCCESS',
+          read: false
+        });
+      }
+
       return response.data;
     } catch (error: any) {
-      console.error('Meta API Error - Failed to subscribe to webhooks', error.response?.data || error.message);
+
+      if (options?.user_id && options?.company_id) {
+        await activityLogsModel.create({
+          company_id: options.company_id,
+          user_id: options.user_id,
+          action: 'SUBSCRIBE',
+          entity_type: 'WEBHOOK',
+          entity_id: options.company_waba_id || wabaId,
+          description: `Failed to subscribe WABA ${wabaId} to Meta webhooks`,
+          new_data: {
+            waba_id: wabaId,
+            error: error.response?.data || error.message
+          },
+          status: 'FAILED',
+          read: false
+        });
+      }
+
+      console.error(
+        'Meta API Error - Failed to subscribe to webhooks',
+        error.response?.data || error.message
+      );
+
       throw new HTTP500Error({
         message: 'Failed to fetch phone number details from Meta API',
         details: error.response?.data || error.message,

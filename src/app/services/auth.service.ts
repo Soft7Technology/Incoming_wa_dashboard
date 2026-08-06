@@ -9,10 +9,15 @@ import passwordResetModel from '../models/passwordReset.model';
 import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
 import userTeamModel from '../models/team.model';
+import db from '@surefy/database';
+import companyDomainModel from '../models/companyDomain.model';
 
 interface LoginCredentials {
   identifier: string; // email or phone
   password: string;
+  hostname?: string;
+  domain?: string;
+  domain_name?: string;
 }
 
 interface JWTPayload {
@@ -37,11 +42,13 @@ class AuthService {
    * Login with email or phone number
    */
   async login(credentials: LoginCredentials, ipAddress: string) {
-    const { identifier, password } = credentials;
+    const { identifier, password, domain, domain_name, hostname } = credentials;
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier and password are required' });
     }
+
+    let resolvedDomain = domain || domain_name || hostname || '';
 
     // Find user by email or phone
     const user = await UserModel.findByEmailOrPhone(identifier);
@@ -50,9 +57,9 @@ class AuthService {
       throw new HTTP401Error({ message: 'Invalid credentials' });
     }
 
-    // Check if user is active
-    if (user.status !== 'active') {
-      throw new HTTP401Error({ message: 'Account is not active' });
+    // // Check if user is active
+    if (user.status === 'suspended') {
+      throw new HTTP401Error({ message: 'Your Account is suspended' });
     }
 
     // Verify password
@@ -66,6 +73,16 @@ class AuthService {
     let company = null;
     if (user.company_id) {
       company = await CompanyModel.findById(user.company_id);
+    }
+
+    // Look up company domain if resolvedDomain is missing
+    if (!resolvedDomain && user.company_id) {
+      try {
+        const domainRow = await companyDomainModel.findOne({ company_id: user.company_id, status: 'active' });
+        if (domainRow?.domain_name) {
+          resolvedDomain = domainRow.domain_name;
+        }
+      } catch { /* ignore */ }
     }
 
     // Get active plan status from user_plans table
@@ -90,6 +107,21 @@ class AuthService {
       }
     } catch { /* ignore — not a team member */ }
 
+    // If the user has assigned contacts, automatically grant contacts navigation permission
+    try {
+      const assignedContactsCount = await db('contacts')
+        .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [user.id])
+        .whereNull('deleted_at')
+        .count('* as count')
+        .first();
+      const hasAssignedContacts = parseInt(String(assignedContactsCount?.count || 0)) > 0;
+      if (hasAssignedContacts && !teamPermissions.includes('contact') && !teamPermissions.includes('contacts')) {
+        teamPermissions.push('contact');
+      }
+    } catch (err) {
+      console.error("Error checking assigned contacts for permissions:", err);
+    }
+
     // Update last login
     await UserModel.updateLastLogin(user.id, ipAddress);
 
@@ -106,6 +138,9 @@ class AuthService {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    const domainName = resolvedDomain || null;
+    const domainInfo = domainName ? { hostname: domainName, domain: domainName, domain_name: domainName, website_domain: domainName } : { hostname: null };
+
     return {
       data: {
         ...userWithoutPassword,
@@ -116,10 +151,12 @@ class AuthService {
         // Include team permissions — empty array means no restriction (owner/admin)
         permissions: teamPermissions,
         owner_id: ownerId,
+        ...domainInfo,
       },
       company,
       token,
       expiresIn: this.JWT_EXPIRES_IN,
+      ...domainInfo,
     };
   }
 
@@ -179,18 +216,21 @@ class AuthService {
     return { resetToken };
   }
 
-  /**
+
+    /**
    * Register new user (company role)
    */
-  async register(data: {
+  async registerUser(data: {
     name: string;
     email?: string;
     phone?: string;
     company_id?: string;
     password: string;
     role: string;
+    hostname?: string;
+    domain?: string;
   }) {
-    const { name, email, phone, company_id, password } = data;
+    const { name, email, phone, company_id, password, hostname, domain } = data;
 
     console.log('Registering user with data:', data);
 
@@ -226,13 +266,103 @@ class AuthService {
       company_id,
       password: hashedPassword,
       role: data.role,
-      status: 'active'
+      status: 'inactive'
     });
+
+    console.log("Domain register",company_id)
+
+    // const registerDomain = await companyDomainModel.create({
+    //   company_id,
+    //   user_id:user.id,
+    //   hostname: 'admin.soft7.in',
+    //   domain_name: 'admin.soft7.in',
+    //   domain_type:'default',
+    //   status:"active",
+    //   ssl_status:"active"
+    // })
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
-    return userWithoutPassword;
+    return {
+      ...userWithoutPassword,
+    };
+  }
+
+  /**
+   * Register new user (company role)
+   */
+  async register(data: {
+    name: string;
+    email?: string;
+    phone?: string;
+    company_id?: string;
+    password: string;
+    role: string;
+    hostname?: string;
+    domain?: string;
+  }) {
+    const { name, email, phone, company_id, password, hostname, domain } = data;
+    const targetHostname = hostname || domain;
+
+    console.log('Registering user with data:', data);
+
+    // Validate
+    if (!email && !phone) {
+      throw new HTTP400Error({ message: 'Either email or phone is required' });
+    }
+
+    // Check existing
+    if (email) {
+      const existingUser = await UserModel.findByEmail(email);
+      if (existingUser) {
+        throw new HTTP400Error({ message: 'Email already registered' });
+      }
+    }
+
+    if (phone) {
+      const existingUser = await UserModel.findByPhone(phone);
+      if (existingUser) {
+        throw new HTTP400Error({ message: 'Phone number already registered' });
+      }
+    }
+
+
+    // Hash password
+    const hashedPassword = await this.hashPassword(password);
+
+    // Create user
+    const user = await UserModel.create({
+      name,
+      email,
+      phone,
+      company_id,
+      password: hashedPassword,
+      role: data.role,
+      status: 'inactive'
+    });
+
+    console.log("Domain register",company_id)
+
+    const registerDomain = await companyDomainModel.create({
+      company_id,
+      user_id:user.id,
+      hostname: 'admin.soft7.in',
+      domain_name: 'admin.soft7.in',
+      domain_type:'default',
+      status:"active",
+      ssl_status:"active"
+    })
+
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = user;
+
+    const regDomain = hostname || domain || registerDomain?.hostname || registerDomain?.domain_name || null;
+    return {
+      ...userWithoutPassword,
+      hostname: regDomain,
+      ...(regDomain ? { domain: regDomain, domain_name: regDomain, website_domain: regDomain } : {})
+    };
   }
 
   /**

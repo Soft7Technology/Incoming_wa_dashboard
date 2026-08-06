@@ -16,6 +16,8 @@ import { uploadImage } from '@surefy/config/firebase.config'
 import creditTransactionModel from '../models/creditTransaction.model';
 import activityLogsModel from '../models/activityLogs.model';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
+import companyDomainModel from '../models/companyDomain.model';
+import axios from 'axios'
 
 class CompanyService {
   /**
@@ -64,6 +66,59 @@ class CompanyService {
       companyKey: companyKey,
       freePlan: freePlan,
     };
+  }
+
+  private async createCustomerName(company_domain: any) {
+    try {
+      const payload = {
+        hostname: company_domain.domain_name,
+        ssl: {
+          method: "txt",
+          type: "dv",
+        },
+      };
+
+      console.log("PAYLOAD:", payload,process.env.CLOUDFARE_API_TOKEN);
+
+      const response = await axios.post(
+        "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
+        payload,
+        {
+          headers: { 
+            Authorization: `Bearer ${process.env.CLOUDFARE_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("Cloudflare Response:", response.data);
+
+      return response.data;
+    } catch (error: any) {
+      console.error("Cloudflare Custom Hostname Error");
+
+      if (error.response) {
+        console.error("Status:", error.response.status);
+        console.error("Response:", error.response.data);
+
+        throw new Error(
+          error.response.data?.errors?.[0]?.message ||
+          "Cloudflare API request failed"
+        );
+      }
+
+      if (error.request) {
+        console.error("No response received:", error.request);
+
+        throw new Error(
+          "No response received from Cloudflare. Check network connectivity."
+        );
+      }
+
+      console.error("Unexpected Error:", error.message);
+
+      throw new Error(error.message || "Unknown error occurred");
+    }
   }
 
   async getCompanyDetails(companyId: string) {
@@ -116,8 +171,8 @@ class CompanyService {
   /**
    * Get all companies
    */
-  async getAllCompanies(status: any = {}) {
-    return CompanyRepository.getAllCompanies(status);
+  async getAllCompanies(companyId: string, filters: any) {
+    return CompanyRepository.getAllCompanies(companyId, filters);
   }
 
   /**
@@ -152,14 +207,13 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string, role?: any) {
-    console.log('Fetching users for companyId:', companyId, 'with role filter:', role); // Debug log
+  async getAllUsers(userId: string, companyId: string, role: string, filters?: any) {
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId, user.role, role);
+    const users = await userModel.findAllUserByCompanyId(companyId, role, filters);
     return users;
   }
 
@@ -233,17 +287,21 @@ class CompanyService {
   async updateCompanyUser(userId: string, data: any) {
     const { assigned_plan } = data;
 
+
     const user = await userModel.findById(userId);
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
+
+    console.log("User", user)
 
     if (!assigned_plan) {
       return await userModel.update(userId, data);
     }
 
     // 1. Get existing plan
-    const existingPlan = await userPlansModel.findPlanByUserId(userId);
+    const existingPlan = await userPlansModel.findUserPlan(user.assigned_plan);
+    console.log("Existing Plan", existingPlan)
 
     // 2. Prevent same plan reassignment
     if (existingPlan && existingPlan.subscription_id === assigned_plan) {
@@ -254,6 +312,7 @@ class CompanyService {
 
     // 3. Get new plan details
     const subscriptionPlanDetails = await subscriptionModel.findPlans(assigned_plan, true);
+    console.log("Subscruption", subscriptionPlanDetails)
 
     if (!subscriptionPlanDetails) {
       throw new HTTP400Error({
@@ -269,17 +328,17 @@ class CompanyService {
 
     // ✅ Case 1: No existing plan
     if (!existingPlan) {
-      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, null, user);
+      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, null);
     }
 
     // ✅ Case 2: Existing FREE plan → replace directly
     else if (existingPlan.billing_cycle === 'Free') {
-      userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails, existingPlan, user);
+      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, existingPlan);
     }
 
     // ✅ Case 3: Existing PAID plan → settle (carry forward)
     else {
-      userPlan = await this.settleUserPlan(existingPlan.id, subscriptionPlanDetails, existingPlan, user.company_id);
+      userPlan = await this.settleUserPlan(existingPlan.id, user, subscriptionPlanDetails, existingPlan);
     }
 
     // =========================
@@ -339,9 +398,9 @@ class CompanyService {
 
   async activateUserPlan(
     userId: string,
-    planData?: any,
+    user: any,
+    planData: any,
     existingUserPlan?: any,
-    user?: any
   ) {
     console.log("User", user)
     if (!planData) {
@@ -349,6 +408,7 @@ class CompanyService {
     }
 
     const { plan_name, price, billing_cycle, features } = planData;
+    console.log("Plan Data", planData)
 
     console.log('User:', userId, 'Company:', user.company_id);
 
@@ -359,9 +419,117 @@ class CompanyService {
     const companyDetails = await companyModel.findById(user.company_id);
 
     if (!companyDetails) {
-      throw new HTTP400Error({
-        message: 'Company not found',
+      // =====================================================
+      // PLAN DATES
+      // =====================================================
+
+      const durationDays =
+        billing_cycle === 'Monthly'
+          ? 30
+          : billing_cycle === 'Yearly'
+            ? 365
+            : 3;
+
+      const { limits, usage } =
+        transformFeatures(features);
+
+      const startDate = new Date();
+      const endDate = new Date(startDate);
+
+      if (billing_cycle === 'Monthly') {
+        endDate.setMonth(endDate.getMonth() + 1);
+      } else if (billing_cycle === 'Yearly') {
+        endDate.setFullYear(endDate.getFullYear() + 1);
+      } else {
+        endDate.setDate(endDate.getDate() + 3);
+      }
+
+      // =====================================================
+      // CREATE USER PLAN
+      // =====================================================
+
+      const superAdmin: any =
+        await userModel.findSuperAdmin('superadmin');
+
+      console.log("Superadmin", superAdmin)
+
+      if (!superAdmin) {
+        throw new HTTP400Error({
+          message: 'Super admin not found',
+        });
+      }
+
+      const balanceBefore =
+        Number(superAdmin.credit_balance || 0);
+
+      console.log("Balance bfore", balanceBefore)
+
+      const balanceAfter =
+        balanceBefore + Number(price);
+
+      await userModel.update(superAdmin.id, {
+        credit_balance: balanceAfter,
       });
+
+      // Credit Transaction
+      await creditTransactionModel.create({
+        user_id: superAdmin.id,
+        company_id: superAdmin.company_id,
+        type: 'credit',
+        amount: Number(price),
+        balance_before: balanceBefore,
+        balance_after: balanceAfter,
+        description: `Subscription purchase (${plan_name}) without company`,
+        created_by: userId,
+        reference_type: 'subscription',
+      });
+
+      // Activity Log
+      await activityLogsModel.create({
+        user_id: superAdmin.id,
+        company_id: superAdmin.company_id,
+
+        action: 'CREDIT',
+        entity_type: 'WALLET',
+        entity_id: superAdmin.id,
+
+        read: false,
+
+        description: `₹${price} credited from subscription purchase (${plan_name})`,
+
+        new_data: {
+          plan_name,
+          price,
+          balance_before: balanceBefore,
+          balance_after: balanceAfter,
+        },
+
+        status: 'SUCCESS',
+      });
+
+      const newUserPlan = await userPlansModel.create({
+        user_id: userId,
+        company_id: user.company_id,
+        plan_name,
+        price,
+        billing_cycle,
+
+        status: 'COMPLETED',
+
+        start_date: startDate,
+        end_date: endDate,
+
+        subscription_id: planData.id,
+
+        active: true,
+
+        limits: JSON.stringify(limits),
+        usage: JSON.stringify(usage),
+
+        duration_days: durationDays,
+      });
+
+      return newUserPlan
     }
 
     // =====================================================
@@ -496,13 +664,13 @@ class CompanyService {
           company_id: superAdmin.company_id,
 
           type: 'credit',
-          amount: superAdminBalanceAfter,
+          amount: commission,
 
           balance_before: superAdminBalanceBefore,
           balance_after: superAdminBalanceAfter,
 
           description: `Platform fee received from ${companyDetails.company_name || companyDetails.name
-            } for assiging ${plan_name} to ${user.name} `,
+            } for assiging ${plan_name} to ${user.name}`,
 
           created_by: userId,
           reference_type: 'subscription_commission',
@@ -532,6 +700,7 @@ class CompanyService {
           },
 
           status: 'SUCCESS',
+
         });
       }
     }
@@ -539,10 +708,14 @@ class CompanyService {
     // =====================================================
     // DEACTIVATE OLD PLAN
     // =====================================================
+    const now = new Date();
 
     if (existingUserPlan) {
+      console.log("Existsing Plan", existingUserPlan)
       await userPlansModel.update(existingUserPlan.id, {
         active: false,
+        status: 'EXPIRED',
+        end_date: now,
       });
     }
 
@@ -578,7 +751,6 @@ class CompanyService {
     const newUserPlan = await userPlansModel.create({
       user_id: userId,
       company_id: user.company_id,
-
       plan_name,
       price,
       billing_cycle,
@@ -603,6 +775,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(userId, {
+      status: 'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -644,73 +817,15 @@ class CompanyService {
     return newUserPlan;
   }
 
-  //   async settleUserPlan(
-  //   userPlanId: string,
-  //   planData: any,
-  //   existingUserPlan: any,
-  //   companyId: string
-  // ) {
-  //   const now = new Date();
-
-  //   // 1. Calculate remaining days
-  //   const endDate = new Date(existingUserPlan.end_date);
-
-  //   let remainingDays = 0;
-  //   if (endDate > now) {
-  //     remainingDays = Math.ceil(
-  //       (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-  //     );
-  //   }
-
-  //   // 2. Calculate remaining value from old plan
-  //   const oldPlanDuration = existingUserPlan.duration_days;
-  //   const oldPlanPrice = existingUserPlan.price;
-
-  //   const oldPerDayPrice = oldPlanPrice / oldPlanDuration;
-  //   const remainingValue = remainingDays * oldPerDayPrice;
-
-  //   // 3. Convert value into new plan days
-  //   const newPlanDuration = planData.duration_days;
-  //   const newPlanPrice = planData.price;
-
-  //   const newPerDayPrice = newPlanPrice / newPlanDuration;
-
-  //   const extraDays = Math.floor(remainingValue / newPerDayPrice);
-
-  //   const finalDays = newPlanDuration + extraDays;
-
-  //   // 4. Deactivate old plan
-  //   await userPlansModel.query().patch({
-  //     is_active: false,
-  //     ended_at: now,
-  //   }).where({ id: userPlanId });
-
-  //   // 5. Create new plan
-  //   const newStartDate = now;
-  //   const newEndDate = new Date();
-  //   newEndDate.setDate(newEndDate.getDate() + finalDays);
-
-  //   const newUserPlan = await userPlansModel.query().insert({
-  //     user_id: existingUserPlan.user_id,
-  //     company_id: companyId,
-  //     subscription_id: planData.id,
-  //     start_date: newStartDate,
-  //     end_date: newEndDate,
-  //     duration_days: finalDays,
-  //     price: planData.price,
-  //     is_active: true,
-  //   });
-
-  //   return newUserPlan;
-  // }
 
   async settleUserPlan(
     userPlanId: string,
+    user: any,
     planData: any,
     existingUserPlan: any,
-    companyId: string
   ) {
     const now = new Date();
+    console.log("Settle Plan", user)
 
     const { plan_name, price, billing_cycle, features } = planData;
 
@@ -718,7 +833,7 @@ class CompanyService {
     // COMPANY VALIDATION
     // =====================================================
 
-    const companyDetails = await companyModel.findById(companyId);
+    const companyDetails = await companyModel.findById(user.company_id);
 
     if (!companyDetails) {
       throw new HTTP400Error({
@@ -765,7 +880,7 @@ class CompanyService {
 
     if (commission > 0) {
       await creditTransactionModel.create({
-        company_id: companyId,
+        company_id: user.company_id,
         user_id: existingUserPlan.user_id,
         company_name:
           companyDetails.company_name || companyDetails.name,
@@ -784,11 +899,11 @@ class CompanyService {
 
       await activityLogsModel.create({
         user_id: existingUserPlan.user_id,
-        company_id: companyId,
+        company_id: user.company_id,
 
         action: 'DEBIT',
         entity_type: 'WALLET',
-        entity_id: companyId,
+        entity_id: user.companyId,
 
         read: false,
 
@@ -929,7 +1044,7 @@ class CompanyService {
 
     const newUserPlan = await userPlansModel.create({
       user_id: existingUserPlan.user_id,
-      company_id: companyId,
+      company_id: user.companyId,
 
       plan_name,
       price,
@@ -955,6 +1070,7 @@ class CompanyService {
     // =====================================================
 
     await userModel.update(existingUserPlan.user_id, {
+      status: 'active',
       assigned_plan: newUserPlan.id,
     });
 
@@ -964,7 +1080,7 @@ class CompanyService {
 
     await activityLogsModel.create({
       user_id: existingUserPlan.user_id,
-      company_id: companyId,
+      company_id: user.companyId,
 
       action: 'UPGRADE',
       entity_type: 'SUBSCRIPTION',
@@ -1039,31 +1155,6 @@ class CompanyService {
       });
     }
 
-    //Company Subscription Plan
-    // if (userData.assigned_plan) {
-    //   const subscriptionPlanDetails = userData.assigned_plan
-    //     ? await subscriptionModel.findPlans(userData.assigned_plan, true)
-    //     : null;
-
-    //   console.log('Subscription Plan Details:', subscriptionPlanDetails);
-    //   if (!subscriptionPlanDetails) {
-    //     throw new HTTP400Error({ message: 'Assigned subscription plan not found' });
-    //   }
-    //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
-    //   if (!activatedUserPlan) {
-    //     throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
-    //   }
-    //   await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
-    // }
-
-    // if (subscriptionPlanDetails) {
-    //   const activatedUserPlan = await this.activateUserPlan(createdUser.id, subscriptionPlanDetails, companyId);
-    //   if (!activatedUserPlan) {
-    //     throw new HTTP400Error({ message: 'Failed to activate subscription plan for the user' });
-    //   }
-    //   await userModel.update(createdUser.id, { assigned_plan: activatedUserPlan.id });
-    // }
-
     return createdUser;
   }
 
@@ -1098,8 +1189,13 @@ class CompanyService {
     return activatedUser;
   }
 
+  async inctiveSingleUser(userId: string) {
+    const inactiveUser = await userModel.update(userId, { status: 'inactive' });
+    return inactiveUser;
+  }
+
   async activateUser(companyId: string) {
-    const companyUser = await userModel.findAllUserByCompanyId(companyId)
+    const companyUser = await userModel.findCompanyUsers(companyId)
     if (!companyUser) {
       throw new HTTP401Error({ message: "Company not have any active user" })
     }
@@ -1112,8 +1208,37 @@ class CompanyService {
     return activeCompany
   }
 
+
+  async inactiveUser(companyId: string) {
+    const companyUser = await userModel.findCompanyUsers(companyId)
+    if (!companyUser) {
+      throw new HTTP401Error({ message: "Company not have any active user" })
+    }
+
+    for (const user of companyUser) {
+      await userModel.update(user.id, { status: "inactive" })
+    }
+
+    const activeCompany = await companyModel.update(companyId, { status: "inactive" })
+    return activeCompany
+  }
+
+  async deleteUser(companyId: string) {
+    const companyUser = await userModel.findCompanyUsers(companyId)
+    if (!companyUser) {
+      throw new HTTP401Error({ message: "Company not have any active user" })
+    }
+
+    for (const user of companyUser) {
+      await userModel.delete(user.id)
+    }
+
+    const deleteCompany = await companyModel.delete(companyId)
+    return deleteCompany
+  }
+
   async suspendCompany(companyId: string) {
-    const companyActiveUser = await userModel.findAllUserByCompanyId(companyId)
+    const companyActiveUser = await userModel.findCompanyUsers(companyId)
     if (!companyActiveUser) {
       throw new HTTP401Error({ message: "Company not have any active user to suspend" })
     }
@@ -1124,6 +1249,19 @@ class CompanyService {
 
     const suspendCompany = await companyModel.update(companyId, { status: 'suspend' })
     return suspendCompany
+  }
+
+  async createCustomName(user_id: string, company_id: string, hostname: string) {
+    const createCustomerName = await companyDomainModel.create({
+      user_id: user_id,
+      company_id: company_id,
+      hostname: hostname,
+      domain_name: hostname,
+      status: "pending",
+      ssl_status: "pending",
+      domain_type:'custom'
+    })
+    return createCustomerName
   }
 
   //   async createUser(
@@ -1168,6 +1306,94 @@ class CompanyService {
 
   //   return createdUser;
   // }
+
+  async getCompanyDomains(userId: string) {
+    const companyDomain = await companyDomainModel.getCompanyDomains(userId)
+    return companyDomain
+  }
+
+  async getCompanyDomainById(custom_domain: string) {
+    const companyDomainDetails = await companyDomainModel.getCompanyDomainById(custom_domain)
+    return companyDomainDetails
+  }
+
+  async approvedCompanyDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      if (response.duplicate) {
+        return {
+          success: false,
+          message: "Domain already exists in Cloudflare"
+        };
+      }
+
+      await companyDomainModel.update(custom_domain, {
+        cloudfare_hostname_id: response.result.id,
+        status: "active",
+        ssl_status:"active",
+      });
+
+      return {
+        success: true
+      };
+    } catch (error: any) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  async inactiveCompanyDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      const inactiveCompanyDomain = await companyDomainModel.update(
+        custom_domain,
+        {
+          cloudfare_hostname_id: response.result.id,
+          status: response.result.status,
+          ssl_status: response.result.ssl?.status || null,
+        }
+      );
+
+      return inactiveCompanyDomain;
+    } catch (error: any) {
+      console.error(
+        "Error inactive company domain:",
+        error?.response?.data || error.message
+      );
+
+      throw new Error(
+        error?.response?.data?.errors?.[0]?.message ||
+        "Failed to inactive company domain"
+      );
+    }
+  }
+
+  async getCompanyCustomDomain(companyId:string){
+    const customDomain = await companyDomainModel.findCompanyDomainByCompanyId(companyId)
+    return customDomain
+  }
 }
 
 export default new CompanyService();
+
+

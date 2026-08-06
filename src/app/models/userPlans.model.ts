@@ -6,12 +6,12 @@ class userPlansModel extends BaseModel {
     super('user_plans');
   }
 
-  async getPlanByUserId(userId: string | number): Promise<any> {
+  async getPlanByUserId(userId: any): Promise<any> {
     return this.query().where({ user_id: userId, active:true }).first();
   }
 
-  async findPlanByUserId(userId: any): Promise<any> {
-    return this.query().where({ user_id: userId }).first();
+  async existingFreePlan(userId:any,billing_cycle:any){
+    return this.query().where({user_id:userId, billing_cycle:billing_cycle}).first()
   }
 
   async incrementUsage(userId: string, feature: 'Contact' | 'Campaign' | 'Chatbot', count = 1) {
@@ -58,21 +58,9 @@ class userPlansModel extends BaseModel {
     return await this.query().where({ user_id: userId, active: true }).first();
   }
 
-  //   async findCompanyActiveSubscriptions(companyId: string) {
-  //   return this.db('user_plans as up')
-  //     .select(
-  //       'up.*',
-  //       'u.name as user_name',
-  //       'u.role as user_role',
-  //       'u.email as user_email'
-  //     )
-  //     .leftJoin('users as u', 'u.id', 'up.user_id')
-  //     .where({
-  //       'up.company_id': companyId,
-  //       'up.active': true
-  //     })
-  //     .orderBy('up.created_at', 'desc');
-  // }
+  async getAllUserPlan(userId:string){
+    return await this.query().where({user_id:userId})
+  }
 
   async findCompanyActiveSubscriptions(userId: string, companyId?: string, role?: string, filters?: any) {
     const isSuperAdmin = role === 'superadmin';
@@ -173,6 +161,10 @@ class userPlansModel extends BaseModel {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async findUserPlan(assigned_plan:any){ 
+    return this.query().where({ id: assigned_plan,active:true }).first();
   }
 }
 

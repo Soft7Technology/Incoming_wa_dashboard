@@ -25,8 +25,9 @@ class WebhookHandlerService {
 
     // Handle incoming messages
     if (value.messages) {
+      const contactProfileName = value.contacts?.[0]?.profile?.name;
       for (const message of value.messages) {
-        await this.handleIncomingMessage(message, value.metadata);
+        await this.handleIncomingMessage(message, value.metadata, contactProfileName);
       }
     }
 
@@ -108,7 +109,7 @@ class WebhookHandlerService {
   /**
    * Handle incoming messages
    */
-  private async handleIncomingMessage(message: any, metadata: any) {
+  private async handleIncomingMessage(message: any, metadata: any, profileName?: string) {
     await MessageService.saveIncomingMessage({
       phone_number_id: metadata.phone_number_id,
       message_id: message.id,
@@ -116,6 +117,7 @@ class WebhookHandlerService {
       type: message.type,
       content: this.extractMessageContent(message),
       context: message.context,
+      profile_name: profileName || message.from,
     });
   }
 

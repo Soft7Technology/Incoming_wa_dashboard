@@ -16,18 +16,18 @@ class chatBotController {
      */
     createChatBot = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
         const { name, description, phoneNumberId } = req.body
-        console.log("Req", req.body)
-        const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(phoneNumberId)
-        console.log("PhoneNumber found:", phoneNumber);
+        // console.log("Req", req.body)
+        // const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(phoneNumberId)
+        // console.log("PhoneNumber found:", phoneNumber);
 
-        if (!phoneNumber || !phoneNumber.phone_number_id) {
-            throw new HTTP400Error({ message: 'Associated WABA account not found for user' });
-        }
+        // if (!phoneNumber || !phoneNumber.phone_number_id) {
+        //     throw new HTTP400Error({ message: 'Associated WABA account not found for user' });
+        // }
 
         // Create under owner's account so the chatbot belongs to the owner's data
         const effectiveUserId = req.ownerId ?? req.userId!;
 
-        const result = await chatBotService.createChatBot({ user_id: effectiveUserId, name, description, status: 'draft', published: false, phoneNumberId: phoneNumber.phone_number_id })
+        const result = await chatBotService.createChatBot({ user_id: effectiveUserId, name, description, status: 'draft', published: false })
         await userPlansModel.incrementUsage(effectiveUserId, 'Chatbot');
 
         const { data }: any = result
@@ -160,7 +160,9 @@ class chatBotController {
     createChatBotFlow = tryCatchAsync(
         async (req: JWTAuthRequest, res: Response) => {
             const { chatBotId } = req.params;
-            const { name, nodes, edges } = req.body;
+            const { name, nodes, edges, phoneNumberIds = [] } = req.body;
+            console.log("Req body",req.body)
+
 
             console.log("Creating chatbot flow:", { chatBotId, name });
 
@@ -171,6 +173,7 @@ class chatBotController {
                 name,
                 nodes,
                 edges,
+                phoneNumberIds
             });
 
             return res.status(200).json({

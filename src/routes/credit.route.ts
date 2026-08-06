@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
 import CreditController from '@surefy/console/http/controllers/credit.controller';
+import creditController from '@surefy/console/http/controllers/credit.controller';
 
 const CreditRoute = Router();
 
@@ -17,6 +18,8 @@ CreditRoute.get('/transactions',CreditController.getTransactionHistory)
 
 // Add credits (admin/superadmin only)
 CreditRoute.post('/add', requireRole('superadmin'), CreditController.addCredit);
+
+CreditRoute.get('/superadmin/transaction', creditController.superAdminTransaction)
 
 // Refund credits (admin/superadmin only)
 CreditRoute.post('/refund', requireRole('admin', 'superadmin'), CreditController.refundCredit);

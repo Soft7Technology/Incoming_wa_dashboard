@@ -1,5 +1,6 @@
 import { BaseModel } from '@surefy/models/base.model';
 import db from '../../database';
+import phoneNumberModel from './phoneNumber.model';
 
 // Helper: build an OR condition for uuid-array column "assigned_to"
 // Postgres requires the @> (contains) operator for uuid[] columns
@@ -107,14 +108,29 @@ class ContactModel extends BaseModel {
     return Promise.all(promises);
   }
 
-  findWithFilters(userId: string, filters: any) {
-    console.log("UserId", userId)
-    let query = this.query()
-      .where(function(this: any) {
+  findWithFilters(userId: string, filters: any, phoneNumberId?: string) {
+    console.log("UserId", userId, phoneNumberId)
+    let query = this.query();
+
+    if (phoneNumberId) {
+      query = query.where('phone_number_id', phoneNumberId)
+    }
+
+    if (filters.onlyAssignedToUserId) {
+      query = query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
+    } else {
+      query = query.where(function (this: any) {
         this.where('user_id', userId);
+
+        if (phoneNumberId) {
+          this.orWhere('phone_number_id', phoneNumberId);
+        }
+
         orAssignedTo(this, userId);
-      })
-      .whereNull('deleted_at');
+      });
+    }
+
+    query = query.whereNull('deleted_at');
 
     if (filters.is_valid !== undefined) {
       query = query.where({ is_valid: filters.is_valid });
@@ -152,6 +168,13 @@ class ContactModel extends BaseModel {
   async getAssignedUser(userId:string){
     let query = this.query()
     return query.where({user_id:userId}).orWhere({assigned_to:userId}).returning("*")
+  }
+
+  async bulkDelete(companyId: string, ids: string[]) {
+    return this.query()
+      .where({ company_id: companyId })
+      .whereIn('id', ids)
+      .del();
   }
 }
 

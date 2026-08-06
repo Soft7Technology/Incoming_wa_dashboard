@@ -17,6 +17,8 @@ import ColumnRoute from './column.route';
 import activityRoute from './activity.route';
 import aiAssistantRoute from './aiAssistant.route';
 import PipelineStageRoute from './pipelineStage.route';
+import cleanupRoute from './cleanup.route';
+import imageUploadRoute from './imageUpload.route';
 
 const AdminRoute = Router();
 
@@ -40,6 +42,8 @@ AdminRoute.use('/team',teamInviteRoute)
 AdminRoute.use('/columns', ColumnRoute);
 AdminRoute.use('/activity', activityRoute);
 AdminRoute.use('/ai-assistant', aiAssistantRoute);
-AdminRoute.use('/pipeline-stages', PipelineStageRoute);
+AdminRoute.use('/pipeline', PipelineStageRoute);
+AdminRoute.use('/cleanup', cleanupRoute);
+AdminRoute.use('/image-upload', imageUploadRoute);
 
 export default AdminRoute;

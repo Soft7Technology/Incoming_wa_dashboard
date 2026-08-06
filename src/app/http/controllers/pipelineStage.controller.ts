@@ -4,7 +4,7 @@ import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
-import PipelineStageModel from '../../models/pipelineStage.model';
+import PipelineStageModel from '@surefy/console/models/pipelineStage.model';
 
 class PipelineStageController {
   /**

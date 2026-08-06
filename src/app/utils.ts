@@ -10,7 +10,6 @@ import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 
 
-
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT),
@@ -24,17 +23,17 @@ export const transporter = nodemailer.createTransport({
 
 
 export const generateInviteTemplate = ({
-    name,
-    email,
-    role,
-    inviteUrl
+  name,
+  email,
+  role,
+  inviteUrl
 }: {
-    name?: string;
-    email: string;
-    role: string;
-    inviteUrl: string;
+  name?: string;
+  email: string;
+  role: string;
+  inviteUrl: string;
 }) => {
-    return `
+  return `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: auto; padding: 20px;">
 
         <h2 style="color: #111;">
@@ -307,11 +306,11 @@ export function replaceVariables(
   obj: any,
   variables: Record<string, any>
 ): any {
-  console.log("Variables", obj,variables)
-  console.log("Typeof",typeof obj)
+  console.log("Variables", obj, variables)
+  console.log("Typeof", typeof obj)
 
   if (typeof obj === "string") {
-     console.log("STRING VALUE:", obj);
+    console.log("STRING VALUE:", obj);
 
     // Entire object injection
     if (obj.trim() === "{{data}}" || "{{variable}}") {
@@ -351,26 +350,26 @@ export function replaceVariables(
 
 
 export const downloadImage = async (mediaId: string) => {
-    console.log("MediaId:", mediaId);
-    try {
-      const mediaUrl = metaService.handleMedia(mediaId)
-      console.log("Media Url",mediaUrl)
-      return mediaUrl
-    } catch (error: any) {
-        console.error(
-            '❌ Error downloading image:',
-            error.response?.status,
-            error.response?.data || error.message
-        );
-        throw error;
-    }
+  console.log("MediaId:", mediaId);
+  try {
+    const mediaUrl = metaService.handleMedia(mediaId)
+    console.log("Media Url", mediaUrl)
+    return mediaUrl
+  } catch (error: any) {
+    console.error(
+      '❌ Error downloading image:',
+      error.response?.status,
+      error.response?.data || error.message
+    );
+    throw error;
+  }
 };
 
 
-export default function sendEmail(to: string, subject: string, text: string,html?: string) {
+export default function sendEmail(to: string, subject: string, text: string, html?: string) {
   console.log(`📧 Sending email to ${to}: ${subject}\n${text}`);
   return transporter.sendMail({
-    from : `"Your App Name" <${process.env.SMTP_USER}>`,
+    from: `"Your App Name" <${process.env.SMTP_USER}>`,
     to,
     subject,
     text,
@@ -398,7 +397,7 @@ export const transformFeatures = (features: any) => {
 
   Object.keys(features).forEach((key) => {
     limits[key] = {
-      limit: features[key].limit_value
+      limit: features[key]?.limit_value ?? null,
     };
 
     usage[key] = 0; // initialize usage
@@ -444,7 +443,7 @@ function parseJSON(data: any) {
 
 export const normalizePhoneNumber = (
   phone: string,
-  countryCode?: string
+  country_code?: string
 ) => {
 
   if (!phone) return null;
@@ -476,7 +475,7 @@ export const normalizePhoneNumber = (
       // Use provided country
       parsed = parsePhoneNumberFromString(
         cleaned,
-        countryCode as any || "IN"
+        country_code as any || "IN"
       );
     }
   }
@@ -488,7 +487,7 @@ export const normalizePhoneNumber = (
   return {
     number: parsed.number,
     country: parsed.country,
-    countryCode: parsed.countryCallingCode,
+    country_code: parsed.countryCallingCode,
   };
 };
 
@@ -511,7 +510,7 @@ export function replaceBodyVariables(
   });
 }
 
-export async function buildResponse(node: any, bot?:any,session?:any) {
+export async function buildResponse(node: any, bot?: any, session?: any) {
   console.log('NextNode', JSON.stringify(node))
   const data = safeJSON(node.data);
 
@@ -547,54 +546,77 @@ export async function buildResponse(node: any, bot?:any,session?:any) {
     };
   }
 
-  // Button Interactive  
-  if (key === "@whatsapp/send-button-message") {
+  if (key === "@whatsapp/send-media-message") {
+    const imageLink =
+      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
+ 
     return {
-      type: "interactive",
-
-      interactive: {
-        type: "button",
-
-        header:{
-          type: "text",
-          text: data?.attributes
-           ? data?.attributes?.message?.interactive?.header?.text || "" 
-           : ""
-        },
-
-        body: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.body?.text
-            : data.text,
-        },
-
-        footer: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.footer?.text || ""
-            : "",
-        },
-
-        action: {
-          buttons: (
-            data?.attributes
-              ? data?.attributes?.message?.interactive?.action?.buttons || []
-              : data.buttons || []
-          ).map((btn: any, i: number) => ({
-            type: "reply",
-
-            reply: {
-              id: btn?.reply?.id || btn.id || `btn_${i}`,
-
-              title:
-                btn?.reply?.title ||
-                btn.title ||
-                btn,
-            },
-          })),
-        },
+      type: data?.attributes?.message.type,
+      image: {
+        link: imageLink,
       },
     };
   }
+
+  // Button Interactive  
+if (key === "@whatsapp/send-button-message") {
+  const interactiveHeader =
+    data?.attributes?.message?.interactive?.header;
+
+  return {
+    type: "interactive",
+
+    interactive: {
+      type: "button",
+
+      header:
+        interactiveHeader?.type === "image"
+          ? {
+              type: "image",
+              image: {
+                link:
+                  interactiveHeader?.image?.link ||
+                  interactiveHeader?.image?.url,
+              },
+            }
+          : {
+              type: "text",
+              text: interactiveHeader?.text || "",
+            },
+
+      body: {
+        text: data?.attributes
+          ? data?.attributes?.message?.interactive?.body?.text
+          : data.text,
+      },
+
+      footer: {
+        text: data?.attributes
+          ? data?.attributes?.message?.interactive?.footer?.text || ""
+          : "",
+      },
+
+      action: {
+        buttons: (
+          data?.attributes
+            ? data?.attributes?.message?.interactive?.action?.buttons || []
+            : data.buttons || []
+        ).map((btn: any, i: number) => ({
+          type: "reply",
+
+          reply: {
+            id: btn?.reply?.id || btn.id || `btn_${i}`,
+
+            title:
+              btn?.reply?.title ||
+              btn.title ||
+              btn,
+          },
+        })),
+      },
+    },
+  };
+}
 
   if (key === "@whatsapp/ask-location") {
     return {

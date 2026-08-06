@@ -106,7 +106,7 @@ class SubscriptionController {
     const { data }: any = updatedSubscription;
 
     await activityLogsModel.create({
-      company_id: data?.companyId,
+      company_id: data?.company_id,
       user_id: data?.userId,
 
       action: 'UPDATE',
@@ -437,7 +437,7 @@ class SubscriptionController {
 
   activateFreeTrial = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { planId } = req.params;
-    const activatedTrial = await subscriptionService.activateFreeTrial(req.userId!, planId);
+    const activatedTrial = await subscriptionService.activateFreeTrial(req.userId!,req.companyId!, planId);
     return successResponse(req, res, 'Free trial activated successfully', activatedTrial, HttpStatusCode.OK);
   })
 

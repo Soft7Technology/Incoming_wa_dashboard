@@ -25,8 +25,8 @@ class CompanyRepository {
     const webhookVerifyToken = crypto.randomBytes(32).toString('hex');
     const initialCredit = data.credit_balance|| 0;
 
-    // Remove initial_credit from data as it's not a database column
-    const { credit_balance, ...companyData } = data;
+    // Remove credit_balance, domain, and logo from data as they may not be direct table columns
+    const { credit_balance, domain, logo, ...companyData } = data as any;
 
     const company = await CompanyModel.create({
       ...companyData,
@@ -95,8 +95,8 @@ class CompanyRepository {
   /**
    * Get all companies
    */
-  async getAllCompanies(status: any = {}) {
-    return CompanyModel.findCompanies(status);
+  async getAllCompanies(companyId:string,filters: any = {}) {
+    return CompanyModel.findCompanies(companyId,filters);
   }
 }
 
