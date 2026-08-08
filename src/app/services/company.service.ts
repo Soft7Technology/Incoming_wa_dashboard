@@ -1397,7 +1397,7 @@ class CompanyService {
         domain_name: result.hostname,
 
         // custom hostname status
-        status: result.status,
+        status: result.status, 
 
         // ssl
         ssl_status: result.ssl?.status,
