@@ -78,13 +78,13 @@ class CompanyService {
         },
       };
 
-      console.log("PAYLOAD:", payload,process.env.CLOUDFARE_API_TOKEN);
+      console.log("PAYLOAD:", payload, process.env.CLOUDFARE_API_TOKEN);
 
       const response = await axios.post(
         "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
         payload,
         {
-          headers: { 
+          headers: {
             Authorization: `Bearer ${process.env.CLOUDFARE_API_TOKEN}`,
             "Content-Type": "application/json",
           },
@@ -1259,8 +1259,24 @@ class CompanyService {
       domain_name: hostname,
       status: "pending",
       ssl_status: "pending",
-      domain_type:'custom'
+      domain_type: 'custom'
     })
+    return createCustomerName
+  }
+
+  async createDomainName(user_id: string, company_id: string, domain_name: string) {
+    const createCustomerName = await companyDomainModel.create({
+      user_id: user_id,
+      company_id: company_id,
+      hostname: domain_name,
+      domain_name: domain_name,
+      status: "pending",
+      ssl_status: "pending",
+      domain_type: 'custom'
+    })
+    console.log("Custom Name", createCustomerName)
+
+    await this.approvedCompanyOwnDomain(createCustomerName.id)
     return createCustomerName
   }
 
@@ -1338,11 +1354,76 @@ class CompanyService {
       await companyDomainModel.update(custom_domain, {
         cloudfare_hostname_id: response.result.id,
         status: "active",
-        ssl_status:"active",
+        ssl_status: "active",
       });
 
       return {
         success: true
+      };
+    } catch (error: any) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  async approvedCompanyOwnDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      if (response.duplicate) {
+        return {
+          success: false,
+          message: "Domain already exists in Cloudflare"
+        };
+      }
+
+      const result = response.result;
+
+      await companyDomainModel.update(custom_domain, {
+        cloudfare_hostname_id: result.id,
+
+        // hostname
+        domain_name: result.hostname,
+
+        // custom hostname status
+        status: result.status,
+
+        // ssl
+        ssl_status: result.ssl?.status,
+        ssl_method: result.ssl?.method,
+        ssl_type: result.ssl?.type,
+        ssl_certificate_authority:
+          result.ssl?.certificate_authority,
+
+        // ownership verification
+        ownership_txt_name:
+          result.ownership_verification?.name,
+
+        ownership_txt_value:
+          result.ownership_verification?.value,
+
+        // http verification
+        verification_http_url:
+          result.ownership_verification_http?.http_url,
+
+        verification_http_body:
+          result.ownership_verification_http?.http_body,
+      });
+
+      return {
+        success: true,
+        data: result
       };
     } catch (error: any) {
       console.error(error);
@@ -1388,7 +1469,7 @@ class CompanyService {
     }
   }
 
-  async getCompanyCustomDomain(companyId:string){
+  async getCompanyCustomDomain(companyId: string) {
     const customDomain = await companyDomainModel.findCompanyDomainByCompanyId(companyId)
     return customDomain
   }

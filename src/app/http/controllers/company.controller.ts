@@ -695,7 +695,43 @@ class CompanyController {
     if(existingDomain){
       return res.status(200).json({
         success:false,
-        message:"Domain name already exist use some other custom name"
+        message:"Domain name already exist use some other name"
+      })
+    }
+
+    const existingCustomDomain =
+      await companyDomainModel.findDomainByCompanyId(req.companyId!,domain_name);
+
+
+    if (existingCustomDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Custom Domain name already exist under your company",
+      });
+    }
+
+    const createCustomerDomain = await companyService.createCustomName(
+      req.userId!,
+      req.companyId!,
+      domain_name
+    );
+
+    return successResponse(
+      req,
+      res,
+      "Domain name sent successfully to superadmin for review",
+      createCustomerDomain
+    );
+  }
+
+  async createOwnDomain(req: AuthRequest, res: Response) {
+    const { domain_name } = req.body;
+
+    const existingDomain = await companyDomainModel.findByDomain(domain_name)
+    if(existingDomain){
+      return res.status(200).json({
+        success:false,
+        message:"Domain name already exist use some other name"
       })
     }
 
@@ -709,7 +745,7 @@ class CompanyController {
       });
     }
 
-    const createCustomerDomain = await companyService.createCustomName(
+    const createCustomerDomain = await companyService.createDomainName(
       req.userId!,
       req.companyId!,
       domain_name
