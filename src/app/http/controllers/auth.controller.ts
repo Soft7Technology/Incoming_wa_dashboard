@@ -3,7 +3,6 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import AuthService from '@surefy/console/services/auth.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
-import companyController from './company.controller';
 import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
 import activityLogsModel from '../../models/activityLogs.model';
@@ -29,10 +28,20 @@ class AuthController {
       throw new HTTP400Error({ message: 'Domain Name is required' });
     }
 
-    const existUserDomain = await userModel.findByDomainName(identifier,domain_name)
-    if (!existUserDomain){
+    const existingUser = await userModel.findByEmail(identifier)
+    if(!existingUser){
+      throw new HTTP400Error({ message: `User with ${existingUser} not exist` });
+    }
+
+    const existUserDomain = await companyDomainModel.findDomainByCompanyId(existingUser.company_id,domain_name)
+    if(!existUserDomain){
       throw new HTTP400Error({ message: 'User Not exist' });
     }
+
+    // const existUserDomain = await userModel.findByDomainName(identifier,domain_name)
+    // if (!existUserDomain){
+    //   throw new HTTP400Error({ message: 'User Not exist' });
+    // }
 
     // const existDomain = await companyDomainModel.findByDomain(domain_name)
     // console.log("Company domain", existDomain)
