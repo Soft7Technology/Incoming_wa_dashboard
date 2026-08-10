@@ -350,7 +350,7 @@ class AuthService {
       user_id:user.id,
       hostname: 'admin.soft7.in',
       domain_name: 'admin.soft7.in',
-      domain_type:'default',
+      domain_type:'',
       status:"active",
       ssl_status:"active"
     })
