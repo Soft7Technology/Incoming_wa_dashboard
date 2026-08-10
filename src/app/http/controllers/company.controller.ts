@@ -822,7 +822,7 @@ class CompanyController {
 
   async getCompanyCustomDomain(req:AuthRequest,res:Response){
     const companyDomain:any = await companyService.getCompanyCustomDomain(req.companyId!)
-    successResponse(req, res, `Company ${companyDomain.company_id} domain retrieve successfully`,companyDomain)
+    successResponse(req, res, `Company domain retrieve successfully`,companyDomain)
   }
 
 

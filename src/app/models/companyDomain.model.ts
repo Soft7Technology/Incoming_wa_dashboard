@@ -14,7 +14,7 @@ class CompanyDomainModel extends BaseModel {
   }
 
   async findCompanyDomainByCompanyId(companyId:string){
-    return this.query().where('company_id',companyId).first()
+    return this.query().where('company_id',companyId).andWhere('domain_type','custom').first()
   }
 
   async findDomainByCompanyId(company_id:string,domain_name: string) {
