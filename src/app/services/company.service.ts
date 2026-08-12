@@ -72,6 +72,11 @@ class CompanyService {
     try {
       const payload = {
         hostname: company_domain.domain_name,
+
+        custom_origin_server: "app.soft7.in",
+
+        custom_origin_sni: "app.soft7.in",
+
         ssl: {
           method: "txt",
           type: "dv",
