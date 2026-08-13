@@ -235,15 +235,7 @@ class MessageModel extends BaseModel {
     };
   }
 
-  async getRecentMessages(userId: string, phone: string, limit: number = 10) {
-    return this.query()
-      .where('user_id', userId)
-      .andWhere(function(qb) {
-        qb.where('from_phone', phone).orWhere('to_phone', phone);
-      })
-      .orderBy('created_at', 'desc')
-      .limit(limit);
-  }
+
 
   async findByWamid(wamid: string) {
     return this.query().where({ wamid }).first();
