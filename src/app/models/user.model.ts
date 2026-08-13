@@ -380,6 +380,10 @@ class UserModel extends BaseModel {
       .first();
   }
 
+  async findByDomainName(email:string,domain_name:string){
+    return this.query().where('email',email).andWhere('domain_name',domain_name).first()
+  }
+
 }
 
 export default new UserModel();

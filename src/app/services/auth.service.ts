@@ -228,9 +228,9 @@ class AuthService {
     password: string;
     role: string;
     hostname?: string;
-    domain?: string;
+    domain_name?: string;
   }) {
-    const { name, email, phone, company_id, password, hostname, domain } = data;
+    const { name, email, phone, company_id, password, hostname, domain_name } = data;
 
     console.log('Registering user with data:', data);
 
@@ -265,6 +265,7 @@ class AuthService {
       phone,
       company_id,
       password: hashedPassword,
+      domain_name:domain_name,
       role: data.role,
       status: 'inactive'
     });
@@ -349,7 +350,7 @@ class AuthService {
       user_id:user.id,
       hostname: 'admin.soft7.in',
       domain_name: 'admin.soft7.in',
-      domain_type:'default',
+      domain_type:'',
       status:"active",
       ssl_status:"active"
     })
