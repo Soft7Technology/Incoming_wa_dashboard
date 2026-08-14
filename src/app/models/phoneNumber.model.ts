@@ -10,19 +10,23 @@ class PhoneNumberModel extends BaseModel {
     return this.query().where({ company_id: companyId, deleted_at: null });
   }
 
-async findByUserId(userId?: string, companyId?: string) {
-  return this.query()
-    .whereNull('deleted_at')
-    .andWhere((qb) => {
-      if (userId && companyId) {
-        qb.where('user_id', userId).orWhere('company_id', companyId);
-      } else if (userId) {
-        qb.where('user_id', userId);
-      } else if (companyId) {
-        qb.where('company_id', companyId);
-      }
-    });
-}
+  async findByUserId(userId?: string, companyId?: string) {
+    const shouldUseCompanyId =
+      companyId &&
+      companyId !== 'ae815512-cf4b-4e7e-8472-16d3c2d4bb18';
+
+    return this.query()
+      .whereNull('deleted_at')
+      .andWhere((qb) => {
+        if (userId && shouldUseCompanyId) {
+          qb.where('user_id', userId).orWhere('company_id', companyId);
+        } else if (userId) {
+          qb.where('user_id', userId);
+        } else if (shouldUseCompanyId) {
+          qb.where('company_id', companyId);
+        }
+      });
+  }
 
 
   async findByPhoneNumberId(phoneNumberId: any) {
