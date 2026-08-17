@@ -10,22 +10,63 @@ class PhoneNumberModel extends BaseModel {
     return this.query().where({ company_id: companyId, deleted_at: null });
   }
 
-  async findByUserId(userId?: string, companyId?: string) {
+  // async findByUserId(userId?: string, companyId?: string) {
+  //   const shouldUseCompanyId =
+  //     companyId &&
+  //     companyId !== 'ae815512-cf4b-4e7e-8472-16d3c2d4bb18';
+
+  //   return this.query()
+  //     .whereNull('deleted_at')
+  //     .andWhere((qb) => {
+  //       if (userId && shouldUseCompanyId) {
+  //         qb.where('user_id', userId).orWhere('company_id', companyId);
+  //       } else if (userId) {
+  //         qb.where('user_id', userId);
+  //       } else if (shouldUseCompanyId) {
+  //         qb.where('company_id', companyId);
+  //       }
+  //     });
+  // }
+
+  async findByUserId(
+    userId?: string,
+    companyId?: string
+  ) {
     const shouldUseCompanyId =
       companyId &&
-      companyId !== 'ae815512-cf4b-4e7e-8472-16d3c2d4bb18';
+      companyId !==
+      "ae815512-cf4b-4e7e-8472-16d3c2d4bb18";
 
     return this.query()
-      .whereNull('deleted_at')
+      .leftJoin(
+        "waba_accounts as wa",
+        "phone_numbers.waba_id",
+        "wa.id"
+      )
+      .whereNull("phone_numbers.deleted_at")
       .andWhere((qb) => {
         if (userId && shouldUseCompanyId) {
-          qb.where('user_id', userId).orWhere('company_id', companyId);
+          qb.where("phone_numbers.user_id", userId)
+            .orWhere(
+              "phone_numbers.company_id",
+              companyId
+            );
         } else if (userId) {
-          qb.where('user_id', userId);
+          qb.where(
+            "phone_numbers.user_id",
+            userId
+          );
         } else if (shouldUseCompanyId) {
-          qb.where('company_id', companyId);
+          qb.where(
+            "phone_numbers.company_id",
+            companyId
+          );
         }
-      });
+      })
+      .select(
+        "phone_numbers.*",
+        "wa.waba_id"
+      );
   }
 
 
