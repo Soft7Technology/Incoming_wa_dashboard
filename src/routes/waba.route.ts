@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import WabaController from '@surefy/console/http/controllers/waba.controller';
+import wabaController from '@surefy/console/http/controllers/waba.controller';
 
 const WabaRoute = Router();
 
@@ -18,6 +19,7 @@ WabaRoute.get('/:wabaId/phone-numbers', WabaController.getWabaPhoneNumbers);
 
 WabaRoute.post('/:wabaId/sync-phone-numbers', WabaController.syncPhoneNumbers);
 WabaRoute.put('/phone-numbers/:id', WabaController.updatePhoneNumber);
+WabaRoute.delete('/:wabaId/waba-account',WabaController.deleteWabaAccount)
 WabaRoute.delete('/phone-numbers/:id', WabaController.deletePhoneNumber);
 WabaRoute.post('/:phoneNumberId/verify-number',WabaController.verifiedPhoneNumber)
 

@@ -9,6 +9,8 @@ import wabaModel from '@surefy/console/models/waba.model';
 import phoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import metaService from '@surefy/console/services/meta.service';
 import activityLogsModel from '../models/activityLogs.model';
+import contactListModel from '../models/contactList.model';
+import ImportJobModel from "../models/importJob.model"
 
 class WabaService {
   /**
@@ -54,7 +56,7 @@ class WabaService {
 
   async onboardWaba(data: CreateWabaDto) {
     try {
-      console.log("Data",data)
+      console.log("Data", data)
       const clientWabaAccount = await this.upsertWaba(data);
 
       await activityLogsModel.create({
@@ -156,8 +158,8 @@ class WabaService {
 
     if (existing) {
       return WabaModel.update(existing.id, {
-        user_id:data.user_id,
-        company_id:data.company_id,
+        user_id: data.user_id,
+        company_id: data.company_id,
         name: wabaDetails.name,
         currency: wabaDetails.currency,
         timezone: wabaDetails.timezone,
@@ -185,9 +187,9 @@ class WabaService {
     waba_id: string;
     company_WABAID: string;
   }) {
-    console.log("Client data",clientData)
+    console.log("Client data", clientData)
     const response = await MetaService.getPhoneNumbers(clientData.waba_id);
-    console.log("Phone number Response",response)
+    console.log("Phone number Response", response)
     const results = [];
 
     for (const phone of response.data || []) {
@@ -196,8 +198,8 @@ class WabaService {
       if (existing) {
         // Update status changes (very important)
         await PhoneNumberModel.update(existing.id, {
-          user_id:clientData.user_id!,
-          company_id:clientData.company_id! || undefined,
+          user_id: clientData.user_id!,
+          company_id: clientData.company_id! || undefined,
           quality_rating: phone.quality_rating,
           meta_data: phone,
           updated_at: new Date(),
@@ -342,8 +344,8 @@ class WabaService {
   /**
    * Get WABA accounts for company
    */
-  async getCompanyWabas(userId: string,companyId:string) {
-    return WabaModel.findByUserId(userId,companyId);
+  async getCompanyWabas(userId: string, companyId: string) {
+    return WabaModel.findByUserId(userId, companyId);
   }
 
   /**
@@ -388,8 +390,8 @@ class WabaService {
   /**
    * Get phone numbers for company
    */
-  async getUserPhoneNumbers(userId: string,companyId?:string) {
-    return PhoneNumberModel.findByUserId(userId,companyId);
+  async getUserPhoneNumbers(userId: string, companyId?: string) {
+    return PhoneNumberModel.findByUserId(userId, companyId);
   }
 
   /**
@@ -451,9 +453,31 @@ class WabaService {
     return PhoneNumberModel.update(id, { deleted_at: new Date() });
   }
 
-  async verifyNumber(phoneNumberId:string){
+  async verifyNumber(phoneNumberId: string) {
     const verifyNumber = await metaService.verifiedPhoneNumbers(phoneNumberId)
     return verifyNumber
+  }
+
+  async deleteWabaAccount(wabaId: string) {
+    // Get all phone numbers belonging to the WABA
+    const phoneNumbers = await phoneNumberModel.findByWabaId(wabaId);
+
+    // Delete dependent contact lists first
+    for (const phoneNumber of phoneNumbers) {
+      await contactListModel.deleteByPhoneNumberId(phoneNumber.id);
+      await ImportJobModel.deleteByPhoneNumberId(phoneNumber.id);
+      await phoneNumberModel.delete(phoneNumber.id);
+    }
+
+    // Delete phone numbers
+    // for (const phoneNumber of phoneNumbers) {
+    //   await phoneNumberModel.delete(phoneNumber.id);
+    // }
+
+    // Finally delete WABA account
+    const deletedWaba = await wabaModel.delete(wabaId);
+
+    return deletedWaba;
   }
 }
 
