@@ -1,39 +1,53 @@
 import { Router } from 'express';
+import CompanyController from '@surefy/console/http/controllers/company.controller';
+import companyController from '@surefy/console/http/controllers/company.controller';
 import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
-import CampaignController from '@surefy/console/http/controllers/campaign.controller';
-import { checkPlanLimit } from "@surefy/console/app/middleware/plan.middleware"
+import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
 
-const CampaignRoute = Router();
+const companyRoute = Router();
 
-// All campaign endpoints require authentication (applied at route group level)
+// All company endpoints - JWT authentication applied at route group level
+// Only admins can create/manage companies
 
-// Campaign CRUD
-CampaignRoute.post('/', checkPlanLimit('Campaign'), CampaignController.createCampaign);
-// CampaignRoute.post('/', CampaignController.createCampaign);
-CampaignRoute.get('/', CampaignController.getCampaigns);
+companyRoute.post('/', uploadMediaMiddleware, CompanyController.onboard);
+companyRoute.put('/:companyId', uploadMediaMiddleware, CompanyController.updateCompany);
+companyRoute.put('/', uploadMediaMiddleware, CompanyController.updateCompany);
+companyRoute.delete('/:companyId', CompanyController.deleteCompany);
+companyRoute.delete('/', CompanyController.deleteCompany);
+companyRoute.put('/:companyId/suspend', requireRole('superadmin'), companyController.suspendCompany);
+companyRoute.put('/:companyId/active', requireRole('superadmin'), companyController.activeCompany);
+companyRoute.put('/:companyId/inactive', requireRole('superadmin'), companyController.inactiveCompany);
+companyRoute.delete('/:companyId/delete', requireRole('superadmin'), companyController.deleteCompany);
+companyRoute.get('/dashboard', CompanyController.getdashboardStats);
+companyRoute.get('/details', companyController.getCompanyDetails);
 
-// User-specific campaigns — MUST come before /:id to avoid route collision
-CampaignRoute.get('/user/:userId', CampaignController.getUsersCampaigns);
+/**
+ * Get All Companies
+ */
+companyRoute.get('/', CompanyController.getAllCompanies);
 
-// Media upload — also before /:id to avoid collision with /upload-media
-CampaignRoute.post('/upload-media', uploadMediaMiddleware, CampaignController.uploadMedia);
+/**
+ * Companies user route
+ */
+companyRoute.post('/user', companyController.createUser);
+companyRoute.get('/user', companyController.getAllUsers);
+companyRoute.put('/user/:userId', CompanyController.updateCompanyUser);
+companyRoute.get('/user/:userId',companyController.getCompanyUser)
+companyRoute.post('/custom-domain', companyController.createCustomName)
+companyRoute.post('/own-domain', companyController.createOwnDomain)
+companyRoute.get('/domain',companyController.getCompanyCustomDomain)
+companyRoute.get('/domain-status/:domainId',companyController.domainStatus)
+companyRoute.get('/company-domain',companyController.getCompanyDomain)
+companyRoute.get('/:company_domain/domain',companyController.getCompanyDomainDetails)
+companyRoute.post('/:company_domain/domain/active',companyController.companyDomainApproved) 
 
-// Parameterized routes
-CampaignRoute.get('/:id', CampaignController.getCampaignById);
-CampaignRoute.delete('/:id', CampaignController.deleteCampaign);
+companyRoute.post('/:company_domain/domain/inactive',companyController.companyDomainInactive)
+companyRoute.get('/subscriptions', CompanyController.getCompaniesSubscription);
 
-// Campaign actions
-CampaignRoute.post('/:id/start', CampaignController.startCampaign);
-CampaignRoute.post('/:id/pause', CampaignController.pauseCampaign);
-CampaignRoute.post('/:id/resume', CampaignController.resumeCampaign);
-CampaignRoute.post('/:id/test', CampaignController.testCampaign);
-CampaignRoute.put('/:campaignId/assigned',CampaignController.assignedCampaignToUser)
+companyRoute.get('/stats', CompanyController.getUserStats);
+companyRoute.get('/user/plan/:userId', companyController.getUserPlan);
+companyRoute.get('/user-details/:userId', companyController.getUserDetails);
+companyRoute.get('/:id', CompanyController.getById);
+companyRoute.post('/:planId/regenerate-keys', CompanyController.regenerateKeys);
 
-// Campaign stats
-CampaignRoute.get('/:id/stats', CampaignController.getCampaignStats);
-CampaignRoute.get('/:id/messages', CampaignController.getCampaignMessagesInfo);
-CampaignRoute.get('/:id/buttonOnClicks', CampaignController.getCampaignButtonClicks);
-CampaignRoute.get('/:id/progress', CampaignController.getCampaignProgress);
-
-
-export default CampaignRoute;
+export default companyRoute;
