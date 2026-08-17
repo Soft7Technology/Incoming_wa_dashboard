@@ -96,7 +96,8 @@ class TemplateService {
       console.log("Phone Number",phoneNumber)
       return TemplateModel.findByCompanyId(userId, companyId,phoneNumber.waba_id, filters);
     }else if(waba_id){
-      return TemplateModel.findByCompanyId(userId, companyId,waba_id, filters);
+      const waba_account = await WabaModel.findByWabaId(waba_id)
+      return TemplateModel.findByCompanyId(userId, companyId,waba_account.id, filters);
     }
 
   }
