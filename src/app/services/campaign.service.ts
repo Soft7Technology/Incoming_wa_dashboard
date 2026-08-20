@@ -868,15 +868,25 @@ class CampaignService {
    * Upload media for campaign template
    */
   async uploadMedia(companyId: string, phoneNumberId: string, file: any, type: string) {
-    // Upload to Meta
+    // Upload to Meta Messages Media API (for campaigns)
     const metaResponse = await MetaService.uploadMedia(phoneNumberId, file, type);
-    const media_url = await uploadImage(file)
+    const media_url = await uploadImage(file);
 
-    console.log("Media Url",media_url)
+    console.log("Media Url", media_url);
+
+    // Upload to Meta Resumable Upload API (for template creation sample handle)
+    let handle = null;
+    try {
+      handle = await MetaService.uploadTemplateMedia(file);
+      console.log("Generated Meta Template Handle:", handle);
+    } catch (error: any) {
+      console.warn("Could not generate template resumable upload handle:", error.response?.data || error.message);
+    }
 
     return {
       media_id: metaResponse.id,
-      media_url:media_url,
+      media_url: media_url,
+      handle: handle,
       type,
     };
   }
