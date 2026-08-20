@@ -128,6 +128,8 @@ class CampaignController {
     return successResponse(req, res, result.message);
   });
 
+  
+
   /**
    * POST /v1/campaigns/:id/pause
    * Pause running campaign
