@@ -5,8 +5,16 @@ class TemplateModel extends BaseModel {
     super('templates');
   }
 
-  async findByCompanyId(userId: string,companyId?:string,wabaId?:string, filters: any = {}) {
-    const query = this.query().where({ user_id: userId, deleted_at: null }).andWhere({ waba_id:wabaId});
+  async findByCompanyId(userId: string, companyId?: string, wabaId?: string, filters: any = {}) {
+    const query = this.query().whereNull('deleted_at');
+
+    if (companyId) {
+      query.where({ company_id: companyId });
+    }
+
+    if (wabaId) {
+      query.where({ waba_id: wabaId });
+    }
 
     if (filters.status) {
       query.where({ status: filters.status });
@@ -16,16 +24,16 @@ class TemplateModel extends BaseModel {
       query.where({ category: filters.category });
     }
 
-    return query;
+    return query.orderBy('created_at', 'desc');
   }
 
   async findByWabaId(wabaId: string) {
     return this.query().where({ waba_id: wabaId, deleted_at: null });
   }
 
-  async findByNameAndLanguage(userId: string, name: string, language: string) {
+  async findByNameAndLanguage(companyId: string, name: string, language: string) {
     return this.query()
-      .where({ user_id: userId, name, language, deleted_at: null })
+      .where({ company_id: companyId, name, language, deleted_at: null })
       .first();
   }
 

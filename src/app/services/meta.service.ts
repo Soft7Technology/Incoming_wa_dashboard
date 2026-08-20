@@ -192,6 +192,55 @@ class MetaService {
   }
 
   /**
+   * Upload sample media for template creation using Meta's Resumable Upload API.
+   * Returns the header handle string (starting with "4::...").
+   */
+  async uploadTemplateMedia(file: Express.Multer.File): Promise<string> {
+    try {
+      const fs = require('fs');
+      const fileStats = fs.statSync(file.path);
+      const fileLength = fileStats.size;
+      const fileType = file.mimetype;
+
+      // 1. Create upload session via Meta App Uploads API
+      const sessionRes = await this.client.post(
+        `/app/uploads`,
+        null,
+        {
+          params: {
+            file_length: fileLength,
+            file_type: fileType,
+            access_token: this.accessToken,
+          },
+        }
+      );
+
+      const uploadSessionId = sessionRes.data.id;
+
+      // 2. Upload file content to the session
+      const fileBuffer = fs.readFileSync(file.path);
+      const uploadRes = await axios.post(
+        `https://graph.facebook.com/${this.apiVersion}/${uploadSessionId}`,
+        fileBuffer,
+        {
+          headers: {
+            Authorization: `OAuth ${this.accessToken}`,
+            file_offset: 0,
+            'Content-Type': fileType,
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        }
+      );
+
+      return uploadRes.data.h;
+    } catch (error: any) {
+      console.error('Meta API Error - Upload Template Media Handle:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  /**
    * Get media URL
    */
   async getMediaUrl(mediaId: string): Promise<any> {
