@@ -130,11 +130,11 @@ class TemplateService {
   /**
    * Get templates for company
    */
+<<<<<<< HEAD
   async getTemplates(userId: string, companyId?: string, waba_id?: any, phone_number_id?: any, filters: any = {}) {
     let targetWabaId = waba_id;
 
     if (phone_number_id) {
-      const phoneNumber = await phoneNumberModel.findByPhoneNumberId(phone_number_id);
       if (phoneNumber?.waba_id) targetWabaId = phoneNumber.waba_id;
     } else if (waba_id) {
       const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(waba_id);
@@ -159,11 +159,11 @@ class TemplateService {
           }
         }
       }
-    }
-
-    return TemplateModel.findByCompanyId(userId, companyId, targetWabaId, filters);
-  }
-
+=======
+  async getTemplates(userId: string,companyId?:string,waba_id?:any,phone_number_id?:any,filters: any = {}) {
+    console.log("Details",phone_number_id,waba_id)
+    if(phone_number_id){
+      const phoneNumber  = await phoneNumberModel.findByPhoneNumberId(phone_number_id)
 
   /**
    * Get template by ID

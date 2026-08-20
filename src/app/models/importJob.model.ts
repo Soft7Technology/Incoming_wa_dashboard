@@ -140,6 +140,12 @@ class ImportJobModel extends BaseModel {
       .orderBy('created_at', 'desc')
       .limit(limit);
   }
+
+  async deleteByPhoneNumberId(phoneNumberId: string) {
+    return this.query()
+      .where({ phone_number_id: phoneNumberId })
+      .del();
+  }
 }
 
 export default new ImportJobModel();

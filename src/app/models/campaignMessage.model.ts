@@ -131,78 +131,170 @@ class CampaignMessageModel extends BaseModel {
   }
 
 
+  // async getCampaignMessageStatus(
+  //   campaignId: string,
+  //   status?: string,
+  //   page: number = 1,
+  //   pageSize: number = 10
+  // ) {
+  //   const offset = (page - 1) * pageSize;
+
+  //   console.log("Details", campaignId, status, page, pageSize)
+
+  //   // ---------- BASE QUERY ----------
+  //   const baseQuery = this.query()
+  //     .from('campaign_messages as cm')
+  //     .leftJoin('messages as m', 'm.id', 'cm.message_id')
+  //     .join('contacts as c', 'c.id', 'cm.contact_id')
+  //     .join('campaigns as ca', 'ca.id', 'cm.campaign_id')
+  //     .join('templates as t', 't.id', 'ca.template_id')
+  //     .where('cm.campaign_id', campaignId);
+
+  //   if (status) {
+  //     baseQuery.andWhereRaw(
+  //       `COALESCE(m.status, cm.status) = ?`,
+  //       [status]
+  //     );
+  //   }
+
+  //   // ---------- TOTAL COUNT ----------
+  //   const [{ count }] = await baseQuery
+  //     .clone()
+  //     .clearSelect()
+  //     .count('* as count');
+
+  //   const total = Number(count);
+
+  //   // ---------- PAGINATED DATA ----------
+  //   const data = await baseQuery
+  //     .clone()
+  //     .select(
+  //       this.db.raw(`c.attributes ->> 'fullName' AS "leadName"`),
+  //       this.db.raw(`REPLACE(c.phone_number, '+', '') AS "phoneNumber"`),
+  //       'm.status as messageStatus',
+  //       'm.from_phone as fromPhone',
+  //       'm.to_phone as toPhone',
+  //       't.name as templateName',
+  //       'cm.template_variables as templateVariables',
+  //       'm.cost as messageCost',
+  //       'm.error_message as messageError',
+  //       'cm.error_message as campaignError',
+  //       'm.error_code as messageErrorCode',
+  //       'm.read_at as readAt',
+  //       'm.delivered_at as deliveredAt',
+  //       'm.failed_at as failedAt',
+  //       'm.created_at as sentAt'
+  //     )
+  //     .limit(pageSize)
+  //     .offset(offset)
+
+  //   // ---------- PAGINATION META ----------
+  //   const totalPages = Math.ceil(total / pageSize);
+
+  //   return {
+  //     data,
+  //     pagination: {
+  //       page,
+  //       pageSize,
+  //       total,
+  //       totalPages,
+  //       hasNextPage: page < totalPages,
+  //       hasPreviousPage: page > 1
+  //     }
+  //   };
+  // }
+
   async getCampaignMessageStatus(
-    campaignId: string,
-    status?: string,
-    page: number = 1,
-    pageSize: number = 10
-  ) {
-    const offset = (page - 1) * pageSize;
+  campaignId: string,
+  status?: string,
+  page: number = 1,
+  pageSize: number = 10
+) {
+  const offset = (page - 1) * pageSize;
 
-    console.log("Details", campaignId, status, page, pageSize)
+  console.log(
+    "Details",
+    campaignId,
+    status,
+    page,
+    pageSize
+  );
 
-    // ---------- BASE QUERY ----------
-    const baseQuery = this.query()
-      .from('campaign_messages as cm')
-      .leftJoin('messages as m', 'm.id', 'cm.message_id')
-      .join('contacts as c', 'c.id', 'cm.contact_id')
-      .join('campaigns as ca', 'ca.id', 'cm.campaign_id')
-      .join('templates as t', 't.id', 'ca.template_id')
-      .where('cm.campaign_id', campaignId);
+  const baseQuery = this.query()
+    .from("campaign_messages as cm")
+    .leftJoin("messages as m", "m.id", "cm.message_id")
+    .join("contacts as c", "c.id", "cm.contact_id")
+    .join("campaigns as ca", "ca.id", "cm.campaign_id")
+    .join("templates as t", "t.id", "ca.template_id")
+    .where("cm.campaign_id", campaignId);
 
-    if (status) {
-      baseQuery.andWhereRaw(
-        `COALESCE(m.status, cm.status) = ?`,
-        [status]
-      );
-    }
-
-    // ---------- TOTAL COUNT ----------
-    const [{ count }] = await baseQuery
-      .clone()
-      .clearSelect()
-      .count('* as count');
-
-    const total = Number(count);
-
-    // ---------- PAGINATED DATA ----------
-    const data = await baseQuery
-      .clone()
-      .select(
-        this.db.raw(`c.attributes ->> 'fullName' AS "leadName"`),
-        this.db.raw(`REPLACE(c.phone_number, '+', '') AS "phoneNumber"`),
-        'm.status as messageStatus',
-        'm.from_phone as fromPhone',
-        'm.to_phone as toPhone',
-        't.name as templateName',
-        'cm.template_variables as templateVariables',
-        'm.cost as messageCost',
-        'm.error_message as messageError',
-        'cm.error_message as campaignError',
-        'm.error_code as messageErrorCode',
-        'm.read_at as readAt',
-        'm.delivered_at as deliveredAt',
-        'm.failed_at as failedAt',
-        'm.created_at as sentAt'
-      )
-      .limit(pageSize)
-      .offset(offset)
-
-    // ---------- PAGINATION META ----------
-    const totalPages = Math.ceil(total / pageSize);
-
-    return {
-      data,
-      pagination: {
-        page,
-        pageSize,
-        total,
-        totalPages,
-        hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1
-      }
-    };
+  if (status) {
+    baseQuery.andWhereRaw(
+      `COALESCE(m.status::text, cm.status::text) = ?`,
+      [status]
+    );
   }
+
+  const totalResult = await baseQuery
+    .clone()
+    .clearSelect()
+    .count("* as count")
+    .first();
+
+  const total = Number(totalResult?.count || 0);
+
+  const data = await baseQuery
+    .clone()
+    .select(
+      this.db.raw(
+        `c.attributes ->> 'fullName' AS "leadName"`
+      ),
+      this.db.raw(
+        `REPLACE(c.phone_number, '+', '') AS "phoneNumber"`
+      ),
+
+      this.db.raw(
+        `COALESCE(m.status::text, cm.status::text) AS "status"`
+      ),
+
+      "m.from_phone as fromPhone",
+      "m.to_phone as toPhone",
+
+      "t.name as templateName",
+
+      "cm.template_variables as templateVariables",
+
+      "m.cost as messageCost",
+
+      this.db.raw(
+        `COALESCE(m.error_message, cm.error_message) AS "errorMessage"`
+      ),
+
+      "m.error_code as messageErrorCode",
+
+      "m.read_at as readAt",
+      "m.delivered_at as deliveredAt",
+      "m.failed_at as failedAt",
+      "m.created_at as sentAt"
+    )
+    .orderBy("cm.created_at", "desc")
+    .limit(pageSize)
+    .offset(offset);
+
+  const totalPages = Math.ceil(total / pageSize);
+
+  return {
+    data,
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1,
+    },
+  };
+}
 
 
 
