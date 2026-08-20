@@ -11,8 +11,27 @@ class TemplateService {
    * Sync templates from Meta
    */
   async syncTemplates(userId: string, wabaId: string, companyId?: string) {
-    const waba = await WabaModel.findByWabaId(wabaId)
-    console.log("WabaId",waba,wabaId)
+    // Add the same UUID check here:
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(wabaId);
+    let waba = null;
+    if (isUUID) {
+      waba = await WabaModel.findById(wabaId);
+      if (!waba) {
+        const phone = await phoneNumberModel.findByPhoneNumberId(wabaId);
+        if (phone?.waba_id) {
+          waba = await WabaModel.findById(phone.waba_id) || await WabaModel.findByWabaId(phone.waba_id);
+        }
+      }
+    }
+    if (!waba) {
+      waba = await WabaModel.findByWabaId(wabaId);
+    }
+    if (!waba) {
+      const phone = await phoneNumberModel.findByPhoneNumberId(wabaId);
+      if (phone?.waba_id) {
+        waba = await WabaModel.findById(phone.waba_id) || await WabaModel.findByWabaId(phone.waba_id);
+      }
+    }
     if (!waba) {
       throw new HTTP404Error({ message: 'WABA account not found' });
     }
@@ -23,7 +42,7 @@ class TemplateService {
     const synced = [];
     for (const template of metaTemplates.data || []) {
       const existing = await TemplateModel.findByNameAndLanguage(
-        userId,
+        companyId || userId,
         template.name,
         template.language,
       );
@@ -58,11 +77,33 @@ class TemplateService {
    * Create new template
    */
   async createTemplate(data: CreateTemplateDto) {
-    // Get WABA to get waba_id for Meta API
-    const waba = await WabaModel.findById(data.waba_id);
+    // 1. Check if waba_id is UUID or Meta WABA ID string
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.waba_id);
+    let waba = null;
+    if (isUUID) {
+      waba = await WabaModel.findById(data.waba_id);
+      // Fallback: Check if the passed UUID is actually a phone_number ID from phone_numbers table
+      if (!waba) {
+        const phone = await phoneNumberModel.findByPhoneNumberId(data.waba_id);
+        if (phone?.waba_id) {
+          waba = await WabaModel.findById(phone.waba_id) || await WabaModel.findByWabaId(phone.waba_id);
+        }
+      }
+    }
+    if (!waba) {
+      waba = await WabaModel.findByWabaId(data.waba_id);
+    }
+    if (!waba) {
+      // Check phone number by phone_number_id string
+      const phone = await phoneNumberModel.findByPhoneNumberId(data.waba_id);
+      if (phone?.waba_id) {
+        waba = await WabaModel.findById(phone.waba_id) || await WabaModel.findByWabaId(phone.waba_id);
+      }
+    }
     if (!waba) {
       throw new HTTP404Error({ message: 'WABA account not found' });
     }
+
 
     // Create template in Meta
     const metaTemplate = await MetaService.createTemplate(waba.waba_id, {
@@ -75,7 +116,7 @@ class TemplateService {
     // Save to database
     return TemplateModel.create({
       company_id: data.company_id,
-      waba_id: data.waba_id,
+      waba_id: waba.id,
       template_id: metaTemplate.id,
       name: data.name,
       language: data.language,
@@ -89,17 +130,38 @@ class TemplateService {
   /**
    * Get templates for company
    */
-  async getTemplates(userId: string,companyId?:string,waba_id?:any,phone_number_id?:any,filters: any = {}) {
-    console.log("Details",phone_number_id,waba_id)
-    if(phone_number_id){
-      const phoneNumber  = await phoneNumberModel.findByPhoneNumberId(phone_number_id)
-      console.log("Phone Number",phoneNumber)
-      return TemplateModel.findByCompanyId(userId, companyId,phoneNumber.waba_id, filters);
-    }else if(waba_id){
-      const waba_account = await WabaModel.findByWabaId(waba_id)
-      return TemplateModel.findByCompanyId(userId, companyId,waba_account.id, filters);
+  async getTemplates(userId: string, companyId?: string, waba_id?: any, phone_number_id?: any, filters: any = {}) {
+    let targetWabaId = waba_id;
+
+    if (phone_number_id) {
+      const phoneNumber = await phoneNumberModel.findByPhoneNumberId(phone_number_id);
+      if (phoneNumber?.waba_id) targetWabaId = phoneNumber.waba_id;
+    } else if (waba_id) {
+      const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(waba_id);
+      if (isUUID) {
+        const waba = await WabaModel.findById(waba_id);
+        if (waba) {
+          targetWabaId = waba.id;
+        } else {
+          const phone = await phoneNumberModel.findByPhoneNumberId(waba_id);
+          if (phone?.waba_id) {
+            targetWabaId = phone.waba_id;
+          }
+        }
+      } else {
+        const waba = await WabaModel.findByWabaId(waba_id);
+        if (waba) {
+          targetWabaId = waba.id;
+        } else {
+          const phone = await phoneNumberModel.findByPhoneNumberId(waba_id);
+          if (phone?.waba_id) {
+            targetWabaId = phone.waba_id;
+          }
+        }
+      }
     }
 
+    return TemplateModel.findByCompanyId(userId, companyId, targetWabaId, filters);
   }
 
   /**
