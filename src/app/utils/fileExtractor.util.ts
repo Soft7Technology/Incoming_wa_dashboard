@@ -1,5 +1,5 @@
 import fs from 'fs';
-import pdf from 'pdf-parse';
+const pdf = require('pdf-parse');
 import csv from 'csv-parser';
 import mammoth from 'mammoth';
 

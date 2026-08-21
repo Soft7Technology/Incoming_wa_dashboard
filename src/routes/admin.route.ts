@@ -19,7 +19,6 @@ import aiAssistantRoute from './aiAssistant.route';
 import PipelineStageRoute from './pipelineStage.route';
 import cleanupRoute from './cleanup.route';
 import imageUploadRoute from './imageUpload.route';
-import aiAssistantRoute from './aiAssistant.route';
 
 const AdminRoute = Router();
 
@@ -46,6 +45,5 @@ AdminRoute.use('/ai-assistant', aiAssistantRoute);
 AdminRoute.use('/pipeline', PipelineStageRoute);
 AdminRoute.use('/cleanup', cleanupRoute);
 AdminRoute.use('/image-upload', imageUploadRoute);
-AdminRoute.use('/ai-assistant', aiAssistantRoute);
 
 export default AdminRoute;

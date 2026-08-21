@@ -3,8 +3,8 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import aiAssistantModel from '../../models/aiAssistant.model';
-import { encryptApiKey, decryptApiKey, maskApiKey } from '../utils/crypto.util';
-import { extractTextFromFile } from '../utils/fileExtractor.util';
+import { encryptApiKey, decryptApiKey, maskApiKey } from '../../utils/crypto.util';
+import { extractTextFromFile } from '../../utils/fileExtractor.util';
 import axios from 'axios';
 import fs from 'fs';
 
@@ -55,7 +55,7 @@ class AIAssistantController {
       custom_prompt: customPrompt || null,
       provider,
       model,
-      api_key: encryptApiKey(apiKey) || null,
+      api_key: encryptApiKey(apiKey) || undefined,
     };
 
     const result = await aiAssistantModel.createAssistant(payload);
@@ -68,7 +68,7 @@ class AIAssistantController {
         const extractedText = await extractTextFromFile(file.path, ext);
 
         await aiAssistantModel.insertKnowledgeFile({
-          ai_assistant_id: assistantId,
+          ai_assistant_id: Number(assistantId),
           file_name: file.originalname,
           file_type: ext,
           file_path: file.path,
@@ -89,6 +89,11 @@ class AIAssistantController {
       throw new HTTP400Error({ message: 'Assistant not found' });
     }
 
+    let finalApiKey = existing.api_key || undefined;
+    if (apiKey && !apiKey.includes('***')) {
+      finalApiKey = encryptApiKey(apiKey) || undefined;
+    }
+
     const payload = {
       name: name ?? existing.name,
       role: role ?? existing.role,
@@ -98,7 +103,7 @@ class AIAssistantController {
       custom_prompt: customPrompt !== undefined ? customPrompt : existing.custom_prompt,
       provider: provider ?? existing.provider,
       model: model ?? existing.model,
-      api_key: apiKey ? encryptApiKey(apiKey) : existing.api_key,
+      api_key: finalApiKey,
       updated_at: new Date().toISOString(),
     };
 
@@ -137,11 +142,20 @@ class AIAssistantController {
   testConnection = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { provider, model, apiKey, assistantId } = req.body;
     let keyToTest = apiKey;
+    
+    // If the frontend sends the masked key back, treat it as empty so we fetch from DB
+    if (keyToTest && keyToTest.includes('***')) {
+      keyToTest = undefined;
+    }
 
     if (!keyToTest && assistantId) {
       const existing = await aiAssistantModel.findById(assistantId);
       if (existing && existing.api_key) {
-        keyToTest = decryptApiKey(existing.api_key);
+        const decrypted = decryptApiKey(existing.api_key);
+        if (decrypted && decrypted.includes('***')) {
+          throw new HTTP400Error({ message: 'Saved API Key is corrupted (masked). Please enter your real API key and save again.' });
+        }
+        keyToTest = decrypted;
       }
     }
 
@@ -157,7 +171,7 @@ class AIAssistantController {
           { headers: { Authorization: `Bearer ${keyToTest}` } }
         );
       } else if (provider.toLowerCase().includes('gemini')) {
-        const geminiModel = model?.toLowerCase().includes('pro') ? 'gemini-1.5-pro' : 'gemini-1.5-flash';
+        const geminiModel = model?.toLowerCase().includes('pro') ? 'gemini-pro-latest' : 'gemini-flash-latest';
         await axios.post(
           `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${keyToTest}`,
           { contents: [{ parts: [{ text: 'hello' }] }] }
