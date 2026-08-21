@@ -14,12 +14,13 @@ const BATCH_SIZE = 50; // Process 50 messages at a time
 const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds delay between batches
 
 async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
-  const { campaignId,userId, companyId } = job.data;
+  const { campaignId,userId,status,error_message, companyId } = job.data;
 
   try {
     console.log(`[Job ${job.id}] Starting campaign execution: ${campaignId}`);
 
     const campaign = await CampaignModel.findById(campaignId);
+    console.log("Campaign",campaign)
     if (!campaign) {
       throw new Error('Campaign not found');
     }
@@ -53,8 +54,8 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
       }
 
       // Get pending messages
-      const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, BATCH_SIZE);
-
+      const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, BATCH_SIZE, status, error_message);
+      console.log("Pending Campaign",pendingMessages)
       if (pendingMessages.length === 0) {
         hasMore = false;
         // Only mark 'completed' if at least some messages were sent.
