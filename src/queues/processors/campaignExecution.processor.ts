@@ -238,14 +238,18 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
       } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
         const media = mediaUploads.find((m: any) => m.type === 'document');
         if (media) {
+          const docObj: any = { link: media.link };
+          if (media.filename || media.name) {
+            docObj.filename = media.filename || media.name;
+          }
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link:  media.link } }],
+            parameters: [{ type: 'document', document: docObj }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link: media.link } }],
+            parameters: [{ type: 'document', document: { link: media?.link || component.example.header_handle[0] } }],
           });
         }
       } else if (component.type === 'BODY' && component.text) {

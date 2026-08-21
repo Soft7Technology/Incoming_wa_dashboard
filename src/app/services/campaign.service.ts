@@ -561,16 +561,23 @@ class CampaignService {
             });
           }
         } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
-          const media = mediaUploads.find((m) => m.type === 'document');
+          const media = mediaUploads.find((m: any) => m.type === 'document');
           if (media) {
+            const docObj: any = {};
+            if (media.media_id) {
+              docObj.id = media.media_id;
+            } else if (media.link || media.url) {
+              docObj.link = media.link || media.url;
+            }
+            if (media.filename || media.name) {
+              docObj.filename = media.filename || media.name;
+            }
             components.push({
               type: 'header',
               parameters: [
                 {
                   type: 'document',
-                  document: {
-                    id: media.media_id,
-                  },
+                  document: docObj,
                 },
               ],
             });
