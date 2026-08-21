@@ -249,6 +249,60 @@ class CampaignService {
   /**
    * Start campaign execution (queued in background)
    */
+  async reBroadcastCampaign(campaignId: string) {
+    const campaign = await CampaignModel.findById(campaignId);
+    console.log('Starting campaign:', campaign);
+    if (!campaign) {
+      throw new HTTP404Error({ message: 'Campaign not found' });
+    }
+
+    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed') {
+      throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
+    }
+
+    // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
+    // If so, skip adding a duplicate to avoid BullMQ errors.
+    try {
+      const existingJob = await campaignExecutionQueue.getJob(campaignId);
+      if (existingJob) {
+        const state = await existingJob.getState();
+        console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
+        return {
+          message: 'Campaign is already queued for execution',
+          campaign_id: campaignId,
+          status: state,
+        };
+      }
+    } catch (_) {
+      // If we can't check the job state, proceed with adding a new job
+    }
+
+    // Queue campaign execution in background worker
+    await campaignExecutionQueue.add(
+      `campaign-retry-${campaignId}`,
+      {
+        campaignId: campaignId,
+        userId: campaign.user_id,
+        status:'failed',
+        error_message:'Failed to send message via Meta API',
+        companyId: campaign.company_id,
+      },
+      {
+        jobId: campaignId, // Use campaign ID as job ID for easy tracking
+      }
+    );
+
+    return {
+      message: 'Campaign queued for execution successfully',
+      campaign_id: campaignId,
+      status: 'queued'
+    };
+  }
+
+
+    /**
+   * Start campaign execution (queued in background)
+   */
   async startCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
     console.log('Starting campaign:', campaign);
@@ -256,7 +310,7 @@ class CampaignService {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
 
-    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused') {
+    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed') {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
@@ -296,6 +350,60 @@ class CampaignService {
       status: 'queued'
     };
   }
+  
+
+
+    /**
+  //  * Start campaign execution (queued in background)
+  //  */
+  // async reBroadcastCampaign(campaignId: string) {
+  //   const campaign = await CampaignModel.findById(campaignId);
+  //   console.log('Starting campaign:', campaign);
+  //   if (!campaign) {
+  //     throw new HTTP404Error({ message: 'Campaign not found' });
+  //   }
+
+  //   if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status === 'failed') {
+  //     throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
+  //   }
+
+  //   // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
+  //   // If so, skip adding a duplicate to avoid BullMQ errors.
+  //   try {
+  //     const existingJob = await campaignExecutionQueue.getJob(campaignId);
+  //     if (existingJob) {
+  //       const state = await existingJob.getState();
+  //       console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
+  //       return {
+  //         message: 'Campaign is already queued for execution',
+  //         campaign_id: campaignId,
+  //         status: state,
+  //       };
+  //     }
+  //   } catch (_) {
+  //     // If we can't check the job state, proceed with adding a new job
+  //   }
+
+  //   // Queue campaign execution in background worker
+  //   await campaignExecutionQueue.add(
+  //     `campaign-${campaignId}`,
+  //     {
+  //       campaignId: campaignId,
+  //       userId: campaign.user_id,
+  //       companyId: campaign.company_id,
+  //     },
+  //     {
+  //       jobId: campaignId, // Use campaign ID as job ID for easy tracking
+  //     }
+  //   );
+
+  //   return {
+  //     message: 'Campaign queued for execution successfully',
+  //     campaign_id: campaignId,
+  //     status: 'queued'
+  //   };
+  // }
+
 
   /**
    * Execute campaign - send messages to all pending contacts

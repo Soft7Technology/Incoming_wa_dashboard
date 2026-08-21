@@ -4,7 +4,9 @@ import redisConfig from '@surefy/config/redis.config';
 export interface CampaignExecutionJobData {
   campaignId: string;
   companyId: string;
-  userId: string;
+    userId: string;
+  status?:string,
+  error_message?:string
 }
 
 export const campaignExecutionQueue = new Queue<CampaignExecutionJobData>('campaign-execution', {
