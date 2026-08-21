@@ -6,6 +6,7 @@ import MessageService from './message.service';
 import MetaService from './meta.service';
 import ContactModel from '../models/contact.model';
 import ContactTagModel from '../models/contactTag.model';
+import PhoneNumberModel from '../models/phoneNumber.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
@@ -875,8 +876,16 @@ class CampaignService {
    * Upload media for campaign template
    */
   async uploadMedia(companyId: string, phoneNumberId: string, file: any, type: string) {
+    let metaPhoneNumberId = phoneNumberId;
+    if (phoneNumberId) {
+      const phoneRecord = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
+      if (phoneRecord?.phone_number_id) {
+        metaPhoneNumberId = phoneRecord.phone_number_id;
+      }
+    }
+
     // Upload to Meta Messages Media API (for campaigns)
-    const metaResponse = await MetaService.uploadMedia(phoneNumberId, file, type);
+    const metaResponse = await MetaService.uploadMedia(metaPhoneNumberId, file, type);
     const media_url = await uploadImage(file);
 
     console.log("Media Url", media_url);
