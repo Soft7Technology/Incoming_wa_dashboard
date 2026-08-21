@@ -32,10 +32,26 @@ class CampaignMessageModel extends BaseModel {
       .where({ contact_id: contactId, status: 'pending' });
   }
 
-  async getPendingMessages(campaignId: string, limit: number) {
-    return this.query()
-      .where({ campaign_id: campaignId, status: 'pending' })
+  async getPendingMessages(
+    campaignId: string,
+    limit: number,
+    status?: string,
+    errorMessage?: string
+  ) {
+    console.log("Status",status,errorMessage)
+    const query = this.query()
+      .where("campaign_id", campaignId)
+      .where("status", status || "pending")
       .limit(limit);
+
+    if (errorMessage) {
+      query.andWhere((qb) => {
+        qb.where("error_message", errorMessage)
+          .orWhereNull("error_message");
+      });
+    }
+
+    return query;
   }
 
   async updateStatus(id: string, status: string, data: any = {}) {

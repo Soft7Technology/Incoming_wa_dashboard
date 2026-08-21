@@ -24,7 +24,7 @@ CampaignRoute.delete('/:id', CampaignController.deleteCampaign);
 
 // Campaign actions
 CampaignRoute.post('/:id/start', CampaignController.startCampaign);
-// CampaignRoute.post('/:id/retry-failed',CampaignController.)
+CampaignRoute.post('/:id/rebroadcast',CampaignController.reBroadcastCampaign)
 CampaignRoute.post('/:id/pause', CampaignController.pauseCampaign);
 CampaignRoute.post('/:id/resume', CampaignController.resumeCampaign);
 CampaignRoute.post('/:id/test', CampaignController.testCampaign);
