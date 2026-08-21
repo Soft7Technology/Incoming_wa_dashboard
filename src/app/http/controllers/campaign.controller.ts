@@ -128,6 +128,18 @@ class CampaignController {
     return successResponse(req, res, result.message);
   });
 
+
+  /**
+   * POST /v1/campaigns/:id/start
+   * Start campaign execution
+   */
+   reBroadcastCampaign = tryCatchAsync(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await CampaignService.reBroadcastCampaign(id);
+    return successResponse(req, res, result.message);
+  });
+  
+
   /**
    * POST /v1/campaigns/:id/pause
    * Pause running campaign

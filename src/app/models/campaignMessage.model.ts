@@ -32,10 +32,26 @@ class CampaignMessageModel extends BaseModel {
       .where({ contact_id: contactId, status: 'pending' });
   }
 
-  async getPendingMessages(campaignId: string, limit: number) {
-    return this.query()
-      .where({ campaign_id: campaignId, status: 'pending' })
+  async getPendingMessages(
+    campaignId: string,
+    limit: number,
+    status?: string,
+    errorMessage?: string
+  ) {
+    console.log("Status",status,errorMessage)
+    const query = this.query()
+      .where("campaign_id", campaignId)
+      .where("status", status || "pending")
       .limit(limit);
+
+    if (errorMessage) {
+      query.andWhere((qb) => {
+        qb.where("error_message", errorMessage)
+          .orWhereNull("error_message");
+      });
+    }
+
+    return query;
   }
 
   async updateStatus(id: string, status: string, data: any = {}) {
@@ -131,6 +147,81 @@ class CampaignMessageModel extends BaseModel {
   }
 
 
+  // async getCampaignMessageStatus(
+  //   campaignId: string,
+  //   status?: string,
+  //   page: number = 1,
+  //   pageSize: number = 10
+  // ) {
+  //   const offset = (page - 1) * pageSize;
+
+  //   console.log("Details", campaignId, status, page, pageSize)
+
+  //   // ---------- BASE QUERY ----------
+  //   const baseQuery = this.query()
+  //     .from('campaign_messages as cm')
+  //     .leftJoin('messages as m', 'm.id', 'cm.message_id')
+  //     .join('contacts as c', 'c.id', 'cm.contact_id')
+  //     .join('campaigns as ca', 'ca.id', 'cm.campaign_id')
+  //     .join('templates as t', 't.id', 'ca.template_id')
+  //     .where('cm.campaign_id', campaignId);
+
+  //   if (status) {
+  //     baseQuery.andWhereRaw(
+  //       `COALESCE(m.status, cm.status) = ?`,
+  //       [status]
+  //     );
+  //   }
+
+  //   // ---------- TOTAL COUNT ----------
+  //   const [{ count }] = await baseQuery
+  //     .clone()
+  //     .clearSelect()
+  //     .count('* as count');
+
+  //   const total = Number(count);
+
+  //   // ---------- PAGINATED DATA ----------
+  //   const data = await baseQuery
+  //     .clone()
+  //     .select(
+  //       this.db.raw(`c.attributes ->> 'fullName' AS "leadName"`),
+  //       this.db.raw(`REPLACE(c.phone_number, '+', '') AS "phoneNumber"`),
+  //       'm.status as messageStatus',
+  //       'm.from_phone as fromPhone',
+  //       'm.to_phone as toPhone',
+  //       't.name as templateName',
+  //       'cm.template_variables as templateVariables',
+  //       'm.cost as messageCost',
+  //       'm.error_message as messageError',
+  //       'cm.error_message as campaignError',
+  //       'm.error_code as messageErrorCode',
+  //       'm.read_at as readAt',
+  //       'm.delivered_at as deliveredAt',
+  //       'm.failed_at as failedAt',
+  //       'm.created_at as sentAt'
+  //     )
+  //     .limit(pageSize)
+  //     .offset(offset)
+
+  //   // ---------- PAGINATION META ----------
+  //   const totalPages = Math.ceil(total / pageSize);
+
+  //   return {
+  //     data,
+  //     pagination: {
+  //       page,
+  //       pageSize,
+  //       total,
+  //       totalPages,
+  //       hasNextPage: page < totalPages,
+  //       hasPreviousPage: page > 1
+  //     }
+  //   };
+  // }
+
+
+
   async getCampaignMessageStatus(
     campaignId: string,
     status?: string,
@@ -139,9 +230,16 @@ class CampaignMessageModel extends BaseModel {
   ) {
     const offset = (page - 1) * pageSize;
 
-    console.log("Details", campaignId, status, page, pageSize)
+    const effectiveStatusSql = `
+    CASE
+      WHEN cm.status::text = 'failed' OR m.status::text = 'failed'
+        THEN 'failed'
+      WHEN m.status IS NOT NULL
+        THEN m.status::text
+      ELSE cm.status::text
+    END
+  `;
 
-    // ---------- BASE QUERY ----------
     const baseQuery = this.query()
       .from('campaign_messages as cm')
       .leftJoin('messages as m', 'm.id', 'cm.message_id')
@@ -150,45 +248,75 @@ class CampaignMessageModel extends BaseModel {
       .join('templates as t', 't.id', 'ca.template_id')
       .where('cm.campaign_id', campaignId);
 
-    if (status) {
-      baseQuery.andWhereRaw(
-        `COALESCE(m.status, cm.status) = ?`,
-        [status]
-      );
+    // Filtering:
+    // status=failed finds failures from campaign_messages OR messages.
+    // Other statuses use the final/effective status.
+    if (status === 'failed') {
+      baseQuery.andWhere((query) => {
+        query
+          .where('cm.status', 'failed')
+          .orWhere('m.status', 'failed');
+      });
+    } else if (status) {
+      baseQuery.andWhereRaw(`${effectiveStatusSql} = ?`, [status]);
     }
 
-    // ---------- TOTAL COUNT ----------
-    const [{ count }] = await baseQuery
+    const totalResult = await baseQuery
       .clone()
       .clearSelect()
-      .count('* as count');
+      .count('* as count')
+      .first();
 
-    const total = Number(count);
+    const total = Number(totalResult?.count || 0);
 
-    // ---------- PAGINATED DATA ----------
     const data = await baseQuery
       .clone()
       .select(
+        'cm.id as campaignMessageId',
+        'cm.campaign_id as campaignId',
+        'cm.contact_id as contactId',
+        'cm.message_id as messageId',
+
         this.db.raw(`c.attributes ->> 'fullName' AS "leadName"`),
         this.db.raw(`REPLACE(c.phone_number, '+', '') AS "phoneNumber"`),
-        'm.status as messageStatus',
+
+        // Helpful for debugging: see each table's actual status.
+        this.db.raw(`cm.status::text AS "campaignMessageStatus"`),
+        this.db.raw(`m.status::text AS "messageStatus"`),
+
+        // Final status returned to frontend.
+        this.db.raw(`${effectiveStatusSql} AS "status"`),
+
         'm.from_phone as fromPhone',
         'm.to_phone as toPhone',
         't.name as templateName',
         'cm.template_variables as templateVariables',
         'm.cost as messageCost',
-        'm.error_message as messageError',
-        'cm.error_message as campaignError',
-        'm.error_code as messageErrorCode',
-        'm.read_at as readAt',
-        'm.delivered_at as deliveredAt',
-        'm.failed_at as failedAt',
-        'm.created_at as sentAt'
-      )
-      .limit(pageSize)
-      .offset(offset)
 
-    // ---------- PAGINATION META ----------
+        // Error can be stored in either table.
+        this.db.raw(`
+        COALESCE(m.error_message, cm.error_message) AS "errorMessage"
+      `),
+        this.db.raw(`
+        COALESCE(m.error_code::text, cm.error_code) AS "errorCode"
+      `),
+
+        'cm.error_message as campaignErrorMessage',
+        'cm.error_code as campaignErrorCode',
+        'm.error_message as messageErrorMessage',
+        'm.error_code as messageErrorCode',
+
+        'cm.failed_at as campaignFailedAt',
+        'm.failed_at as messageFailedAt',
+        'cm.sent_at as campaignSentAt',
+        'm.created_at as sentAt',
+        'm.delivered_at as deliveredAt',
+        'm.read_at as readAt'
+      )
+      .orderBy('cm.created_at', 'desc')
+      .limit(pageSize)
+      .offset(offset);
+
     const totalPages = Math.ceil(total / pageSize);
 
     return {
@@ -199,8 +327,8 @@ class CampaignMessageModel extends BaseModel {
         total,
         totalPages,
         hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1
-      }
+        hasPreviousPage: page > 1,
+      },
     };
   }
 

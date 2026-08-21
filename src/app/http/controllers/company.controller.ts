@@ -825,6 +825,12 @@ class CompanyController {
     successResponse(req, res, `Company domain retrieve successfully`,companyDomain)
   }
 
+  async domainStatus(req:AuthRequest,res:Response){
+    const{domainId} = req.params
+    const domainStatus = await companyService.getDomainStatus(domainId)
+    successResponse(req,res,`Company domain status`,domainStatus)
+  }
+
 
   // async updateCompanyUser(req:AuthRequest,res:Response){
   //   const 

@@ -5,7 +5,7 @@ class ContactListModel extends BaseModel {
     super('contact_lists');
   }
 
-  async findByUserId(userId:string) {
+  async findByUserId(userId: string) {
     return this.query()
       .where({ user_id: userId })
       .whereNull('deleted_at')
@@ -33,6 +33,12 @@ class ContactListModel extends BaseModel {
     return this.query()
       .where({ id: listId })
       .increment(field, amount);
+  }
+
+  async deleteByPhoneNumberId(phoneNumberId: string) {
+    return this.query()
+      .where({ phone_number_id: phoneNumberId })
+      .del();
   }
 }
 

@@ -27,7 +27,7 @@ AdminRoute.use(jwtAuthMiddleware);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
-AdminRoute.use("/support",supportRoute)
+AdminRoute.use('/support',supportRoute)
 AdminRoute.use('/subscription', SubscriptionRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);

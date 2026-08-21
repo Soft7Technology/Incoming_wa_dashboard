@@ -32,6 +32,12 @@ class CompanyDomainModel extends BaseModel {
       .first();
   }
 
+  async domainById(domainId:string){
+    return this.query()
+      .where('id',domainId)
+      .first()
+  }
+
 
 }
 
