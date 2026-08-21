@@ -1,10 +1,12 @@
 // campaign.service.ts
 
 import CampaignModel from "@surefy/console/models/campaign.model";
-import { HTTP404Error, HTTP400Error } from "@surefy/core/errors";
-import { campaignRetryQueue } from "../queues/campaignRetry.queue";
+import CampaignMessageModel from "@surefy/console/models/campaignMessage.model";
+import HTTP404Error from "@surefy/exceptions/HTTP404Error";
+import HTTP400Error from "@surefy/exceptions/HTTP400Error";
+import { campaignRetryQueue } from "../campaignRetry.queue";
 
-async retryFailedCampaign(campaignId: string) {
+export const retryFailedCampaign = async (campaignId: string) => {
     const campaign = await CampaignModel.findById(campaignId);
 
     if (!campaign) {
@@ -14,10 +16,8 @@ async retryFailedCampaign(campaignId: string) {
     }
 
     // Check if there are failed messages
-    const failedCount = await CampaignMessageModel.query()
-        .where("campaign_id", campaignId)
-        .where("status", "failed")
-        .resultSize();
+    const stats = await CampaignMessageModel.getCampaignStats(campaignId);
+    const failedCount = parseInt(stats?.failed_count || "0", 10);
 
     if (failedCount === 0) {
         throw new HTTP400Error({
