@@ -29,28 +29,7 @@ class AIAssistantModel extends BaseModel {
     return this.query().where({ id }).del();
   }
 
-  // --------------------------------------------------
-  // Knowledge Base Files Management
-  // --------------------------------------------------
 
-  async insertKnowledgeFile(payload: {
-    ai_assistant_id: number;
-    file_name: string;
-    file_type: string;
-    file_path: string;
-    extracted_text: string | null;
-  }) {
-    const [id] = await db('ai_knowledge_files').insert(payload);
-    return id;
-  }
-
-  async getKnowledgeFilesByAssistantId(ai_assistant_id: string | number) {
-    return db('ai_knowledge_files').where({ ai_assistant_id });
-  }
-
-  async deleteKnowledgeFile(id: string | number) {
-    return db('ai_knowledge_files').where({ id }).del();
-  }
 }
 
 export default new AIAssistantModel();

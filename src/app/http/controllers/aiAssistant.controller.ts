@@ -4,7 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import aiAssistantModel from '../../models/aiAssistant.model';
 import { encryptApiKey, decryptApiKey, maskApiKey } from '../../utils/crypto.util';
-import { extractTextFromFile } from '../../utils/fileExtractor.util';
+
 import axios from 'axios';
 import fs from 'fs';
 
@@ -61,21 +61,6 @@ class AIAssistantController {
     const result = await aiAssistantModel.createAssistant(payload);
     const assistantId = result.id;
 
-    // Process uploaded files if any
-    if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-      for (const file of req.files) {
-        const ext = file.originalname.split('.').pop()?.toLowerCase() || '';
-        const extractedText = await extractTextFromFile(file.path, ext);
-
-        await aiAssistantModel.insertKnowledgeFile({
-          ai_assistant_id: Number(assistantId),
-          file_name: file.originalname,
-          file_type: ext,
-          file_path: file.path,
-          extracted_text: extractedText,
-        });
-      }
-    }
 
     return successResponse(req, res, 'Assistant created successfully', formatResponse(result));
   });
@@ -109,21 +94,6 @@ class AIAssistantController {
 
     const result = await aiAssistantModel.updateAssistant(id, payload);
 
-    // Process uploaded files if any
-    if (req.files && Array.isArray(req.files) && req.files.length > 0) {
-      for (const file of req.files) {
-        const ext = file.originalname.split('.').pop()?.toLowerCase() || '';
-        const extractedText = await extractTextFromFile(file.path, ext);
-
-        await aiAssistantModel.insertKnowledgeFile({
-          ai_assistant_id: Number(id),
-          file_name: file.originalname,
-          file_type: ext,
-          file_path: file.path,
-          extracted_text: extractedText,
-        });
-      }
-    }
 
     return successResponse(req, res, 'Assistant updated successfully', formatResponse(result));
   });

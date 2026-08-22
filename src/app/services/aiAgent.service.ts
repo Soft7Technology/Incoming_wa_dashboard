@@ -28,17 +28,7 @@ class AIAgentService {
         ? activeAssistant.custom_prompt                                                                                         
         : `You are a helpful assistant acting as a: ${activeAssistant.role}.`;            
 
-      // Fetch knowledge base files
-      const kbFiles = await aiAssistantModel.getKnowledgeFilesByAssistantId(activeAssistant.id as number);
-      if (kbFiles && kbFiles.length > 0) {
-        systemInstruction += '\n\n--- KNOWLEDGE BASE ---\nUse the following information to answer the user accurately:\n';
-        kbFiles.forEach(file => {
-          if (file.extracted_text) {
-            systemInstruction += `\n[Source: ${file.file_name}]\n${file.extracted_text}\n`;
-          }
-        });
-        systemInstruction += '\n--- END KNOWLEDGE BASE ---\n';
-      }
+
 
       const provider = activeAssistant.provider.toLowerCase();
       const apiKey = decryptApiKey(activeAssistant.api_key) || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
