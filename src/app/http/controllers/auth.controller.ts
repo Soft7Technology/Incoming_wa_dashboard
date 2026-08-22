@@ -29,26 +29,17 @@ class AuthController {
       throw new HTTP400Error({ message: 'Domain Name is required' });
     }
 
-    const existingUser = await userModel.findByEmail(identifier)
+    const existingUser = await userModel.findByEmailOrPhone(identifier)
     if(!existingUser){
-      throw new HTTP400Error({ message: `User with ${existingUser} not exist` });
+      throw new HTTP400Error({ message: `User with identifier ${identifier} not exist` });
     }
 
-    const existUserDomain = await companyDomainModel.findDomainByCompanyId(existingUser.company_id,domain_name)
-    if(!existUserDomain){
-      throw new HTTP400Error({ message: 'User Not exist' });
+    if (domain_name !== 'localhost' && domain_name !== '127.0.0.1') {
+      const existUserDomain = await companyDomainModel.findDomainByCompanyId(existingUser.company_id,domain_name)
+      if(!existUserDomain){
+        throw new HTTP400Error({ message: `Domain ${domain_name} is not associated with this user` });
+      }
     }
-
-    // const existUserDomain = await userModel.findByDomainName(identifier,domain_name)
-    // if (!existUserDomain){
-    //   throw new HTTP400Error({ message: 'User Not exist' });
-    // }
-
-    // const existDomain = await companyDomainModel.findByDomain(domain_name)
-    // console.log("Company domain", existDomain)
-    // if (!existDomain) {
-    //   throw new HTTP400Error({ message: 'Domain is not exist ' });
-    // }
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier (email or phone) and password' });
@@ -56,7 +47,8 @@ class AuthController {
 
     const ipAddress = (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '';
 
-    const result = await AuthService.login({ identifier, password }, ipAddress);
+    const result = await AuthService.login({ identifier, password, domain_name }, ipAddress);
+
     const { data }: any = result
 
     console.log("data", data)
