@@ -81,7 +81,10 @@ class MessageService {
     } else if (data.type === 'video' && data.video) {
       metaPayload.video = data.video;
     } else if (data.type === 'document' && data.document) {
-      metaPayload.document = data.document;
+       metaPayload.document = {
+    ...data.document,
+    filename: data.document.filename,
+  };
     } else if (data.type === 'audio' && data.audio) {
       metaPayload.audio = data.audio;
     } else if (data.type === 'interactive' && data.interactive) {
