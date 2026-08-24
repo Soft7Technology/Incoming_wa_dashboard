@@ -241,7 +241,7 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link:  media.link } }],
+            parameters: [{ type: 'document', document: { link:  media.link, filename:media.filename } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({

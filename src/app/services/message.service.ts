@@ -47,6 +47,8 @@ class MessageService {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
+    console.log("Data",JSON.stringify(data.template?.components))
+
     // Verify company has sufficient credits
     // const company = await CompanyModel.findById(data.company_id);
     // if (!company) {
