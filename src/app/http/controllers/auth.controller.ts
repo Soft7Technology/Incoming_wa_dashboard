@@ -29,7 +29,7 @@ class AuthController {
       throw new HTTP400Error({ message: 'Domain Name is required' });
     }
 
-    const existingUser = await userModel.findByEmailOrPhone(identifier)
+    const existingUser = await userModel.findByEmail(identifier)
     if(!existingUser){
       throw new HTTP400Error({ message: `User with identifier ${identifier} not exist` });
     }
@@ -196,13 +196,13 @@ class AuthController {
       domain_name
     });
 
-    if(user){
-      await sendEmail(
-        email,
-       'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
-      )
-    }
+    // if(user){
+    //   await sendEmail(
+    //     email,
+    //    'Welcome to Our Platform',
+    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
+    //   )
+    // }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });
