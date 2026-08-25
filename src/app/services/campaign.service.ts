@@ -255,7 +255,7 @@ class CampaignService {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
 
-    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed' && campaign.status === 'completed') {
+    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed' && campaign.status !== 'completed') {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
