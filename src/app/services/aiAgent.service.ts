@@ -1,6 +1,7 @@
 import axios from 'axios';
 import aiAssistantModel from '../models/aiAssistant.model';
 import messageModel from '../models/message.model';
+import { decryptApiKey } from '../utils/crypto.util';
 
 class AIAgentService {
   /**
@@ -23,12 +24,14 @@ class AIAgentService {
       history.reverse(); // Order from oldest to newest
 
       // 3. Format prompt and system instruction
-      const systemInstruction = activeAssistant.prompt_type === 'custom'                                    
+      let systemInstruction = activeAssistant.prompt_type === 'custom'                                    
         ? activeAssistant.custom_prompt                                                                                         
         : `You are a helpful assistant acting as a: ${activeAssistant.role}.`;            
 
+
+
       const provider = activeAssistant.provider.toLowerCase();
-      const apiKey = activeAssistant.api_key || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
+      const apiKey = decryptApiKey(activeAssistant.api_key) || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
 
       if (!apiKey) {
         console.warn('⚠️ No API Key found for AI Assistant.');

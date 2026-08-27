@@ -1,5 +1,6 @@
 import { BaseModel } from '@surefy/models/base.model';
 import { AIAssistant } from '../interfaces/aiAssistant.interface';
+import db from '@surefy/database';
 
 class AIAssistantModel extends BaseModel {
   constructor() {
@@ -27,6 +28,8 @@ class AIAssistantModel extends BaseModel {
   async deleteAssistant(id: number | string): Promise<number> {
     return this.query().where({ id }).del();
   }
+
+
 }
 
 export default new AIAssistantModel();

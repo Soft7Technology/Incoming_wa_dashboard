@@ -21,6 +21,10 @@ class CompanyModel extends BaseModel {
     return this.query().where({ email }).first();
   }
 
+  async getCompanyDetails(domain_name:string){
+    return this.query().where({domain:domain_name}).first()
+  }
+
   async getUserStats(userId: string) {
     return this.query()
       .select(

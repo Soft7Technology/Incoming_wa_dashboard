@@ -235,6 +235,8 @@ class MessageModel extends BaseModel {
     };
   }
 
+
+
   async findByWamid(wamid: string) {
     return this.query().where({ wamid }).first();
   }
