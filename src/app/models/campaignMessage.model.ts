@@ -44,15 +44,33 @@ class CampaignMessageModel extends BaseModel {
       .where("status", status || "pending")
       .limit(limit);
 
-    if (errorMessage) {
-      query.andWhere((qb) => {
-        qb.where("error_message", errorMessage)
-          .orWhereNull("error_message");
-      });
-    }
+    // if (errorMessage) {
+    //   query.andWhere((qb) => {
+    //     qb.where("error_message", errorMessage)
+    //       .orWhereNull("error_message");
+    //   });
+    // }
 
     return query;
   }
+
+  async getFailedMessages(
+  campaignId: string,
+  BATCH_SIZE:any,
+) {
+  return this.query()
+    .join("messages", "messages.id", "campaign_messages.message_id")
+    .where("campaign_messages.campaign_id", campaignId)
+    .where((qb) => {
+      qb.where("campaign_messages.status", "failed")
+        .orWhere("messages.status", "failed");
+    })
+    .select(
+      "campaign_messages.*",
+      "messages.status as message_status"
+    )
+    .limit(BATCH_SIZE);
+}
 
   async updateStatus(id: string, status: string, data: any = {}) {
     const updateData: any = { status, ...data };
