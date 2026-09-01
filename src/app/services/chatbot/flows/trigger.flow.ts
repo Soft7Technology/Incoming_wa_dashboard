@@ -43,7 +43,10 @@ export const triggerFlow = async ({
 
     if (!nextNode) return null;
 
-    // Create session WITHOUT current node
+    // A new trigger starts a new conversation, so close any previous active session.
+    await chatSessionModel.deactivateActiveByPhoneandBot(phone, phoneNumberId, bot.id);
+
+    // Create the active session for this flow.
     const session = await chatSessionModel.create({
         phone_number: phone,
         variables: {

@@ -25,7 +25,7 @@ export const flowRouter = async ({
 }: FlowRouterParams)=> {
     // Get Session
     console.log("Flow Body",phone,incomingText,incomingId)
-    const session = await chatSessionModel.findByPhoneandBot(phone,phoneNumberId,bot.id)
+    const session = await chatSessionModel.findActiveByPhoneandBot(phone,phoneNumberId,bot.id)
     console.log('Session',session)
 
     if(session){

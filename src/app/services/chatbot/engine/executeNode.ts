@@ -151,6 +151,14 @@ export const executeNode = async ({
     /**
      * NORMAL Message NODES
     */
-    return buildResponse(currentNode)
+    const response = buildResponse(currentNode);
+    const hasNextNode = bot.edges.some((edge: any) => edge.source === currentNode.id);
+
+    // A leaf node is the end of the chatbot flow.
+    if (!hasNextNode) {
+        await chatSessionModel.update(session.id, { active: false });
+    }
+
+    return response;
 
 }

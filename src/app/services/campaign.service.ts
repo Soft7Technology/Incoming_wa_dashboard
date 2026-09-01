@@ -283,7 +283,7 @@ class CampaignService {
         campaignId: campaignId,
         userId: campaign.user_id,
         status:'failed',
-        error_message:'Failed to send message via Meta API',
+        error_message:'This message was not delivered to maintain healthy ecosystem engagement.',
         companyId: campaign.company_id,
       },
       {
@@ -309,7 +309,7 @@ class CampaignService {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
 
-    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed') {
+    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed' && campaign.status !== 'completed') {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 

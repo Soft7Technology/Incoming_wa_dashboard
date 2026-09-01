@@ -14,13 +14,13 @@ const BATCH_SIZE = 50; // Process 50 messages at a time
 const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds delay between batches
 
 async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
-  const { campaignId,userId,status,error_message, companyId } = job.data;
+  const { campaignId, userId, status, error_message, companyId } = job.data;
 
   try {
     console.log(`[Job ${job.id}] Starting campaign execution: ${campaignId}`);
 
     const campaign = await CampaignModel.findById(campaignId);
-    console.log("Campaign",campaign)
+    console.log("Campaign", campaign)
     if (!campaign) {
       throw new Error('Campaign not found');
     }
@@ -52,11 +52,23 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
         console.log(`[Campaign ${campaignId}] Stopped by user, status: ${currentCampaign.status}`);
         break;
       }
+      let pendingMessages: any = [];
+
+      if (status === 'failed') {
+        pendingMessages = await CampaignMessageModel.getFailedMessages(campaignId, BATCH_SIZE);
+      } else {
+        pendingMessages = await CampaignMessageModel.getPendingMessages(
+          campaignId,
+          BATCH_SIZE,
+          status,
+          error_message
+        );
+      }
 
       // Get pending messages
-      const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, BATCH_SIZE, status, error_message);
-      console.log("Pending Campaign",pendingMessages)
-      if (pendingMessages.length === 0) {
+      // const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, BATCH_SIZE, status, error_message);
+      // console.log("Pending Campaign",pendingMessages)
+      if (pendingMessages?.length === 0) {
         hasMore = false;
         // Only mark 'completed' if at least some messages were sent.
         // If EVERY message failed, mark as 'failed' so the dashboard shows the truth.
@@ -70,7 +82,7 @@ async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
 
       // Process messages in batch
       const results = await Promise.allSettled(
-        pendingMessages.map(async (campaignMessage) => {
+        pendingMessages.map(async (campaignMessage: any) => {
           return await sendCampaignMessage(campaign, campaignMessage, template);
         })
       );
@@ -162,10 +174,10 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
     // Send message via MessageService
     const message = await MessageService.sendMessage({
       messageUUID,
-      user_id:campaign.user_id,
-      company_id:campaign.company_id,
+      user_id: campaign.user_id,
+      company_id: campaign.company_id,
       profile_name: contact.name,
-      campaign_id:campaign.id,
+      campaign_id: campaign.id,
       phone_number_id: campaign.phone_number_id,
       to: contact.phone_number,
       type: 'template',
@@ -215,7 +227,7 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: media.link} }],
+            parameters: [{ type: 'image', image: { link: media.link } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
@@ -228,12 +240,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link:  media.link } }],
+            parameters: [{ type: 'video', video: { link: media.link } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link:  media.link } }],
+            parameters: [{ type: 'video', video: { link: media.link } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
@@ -241,7 +253,7 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link:  media.link, filename:media.filename } }],
+            parameters: [{ type: 'document', document: { link: media.link, filename: media.filename } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
