@@ -147,7 +147,7 @@ class CompanyModel extends BaseModel {
 
     // Apply type filter only when type is not "all"
     if (filters?.status && filters.status.toLowerCase() !== 'all') {
-      query = query.whereNot('id',companyId).andWhere('status', filters.status );
+      query = query.andWhere('status', filters.status );
     }
 
     // Get total count
