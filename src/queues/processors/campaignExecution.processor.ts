@@ -10,7 +10,7 @@ import * as os from 'os';
 import { v4 as uuidv4 } from "uuid";
 
 
-const BATCH_SIZE = 50; // Process 50 messages at a time
+const BATCH_SIZE = 2; // Process 50 messages at a time
 const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds delay between batches
 
 async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {

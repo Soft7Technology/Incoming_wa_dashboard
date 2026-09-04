@@ -21,8 +21,8 @@ class CompanyModel extends BaseModel {
     return this.query().where({ email }).first();
   }
 
-  async getCompanyDetails(domain_name:string){
-    return this.query().where({domain:domain_name}).first()
+  async getCompanyDetails(domain_name: string) {
+    return this.query().where({ domain: domain_name }).first()
   }
 
   async getUserStats(userId: string) {
@@ -84,7 +84,7 @@ class CompanyModel extends BaseModel {
       }));
   }
 
-  async userDetails(userId:string){
+  async userDetails(userId: string) {
 
   }
 
@@ -92,43 +92,43 @@ class CompanyModel extends BaseModel {
     return this.query().where({ id: companyId }).increment('credit_balance', amount).returning('*');
   }
 
-    //   const page = parseInt(filters?.page) || 1;
-    // const limit = parseInt(filters?.limit) || 10;
-    // const offset = (page - 1) * limit;
+  //   const page = parseInt(filters?.page) || 1;
+  // const limit = parseInt(filters?.limit) || 10;
+  // const offset = (page - 1) * limit;
 
-    // let query = this.query()
-    //   .where({ company_id: companyId });
+  // let query = this.query()
+  //   .where({ company_id: companyId });
 
-    // // Apply type filter only when type is not "all"
-    // if (filters?.type && filters.type.toLowerCase() !== 'all') {
-    //   query = query.andWhere({ type: filters.type });
-    // }
+  // // Apply type filter only when type is not "all"
+  // if (filters?.type && filters.type.toLowerCase() !== 'all') {
+  //   query = query.andWhere({ type: filters.type });
+  // }
 
-    // // Get total count
-    // const totalResult = await query
-    //   .clone()
-    //   .count('* as total')
-    //   .first();
+  // // Get total count
+  // const totalResult = await query
+  //   .clone()
+  //   .count('* as total')
+  //   .first();
 
-    // const total = Number(totalResult?.total || 0);
+  // const total = Number(totalResult?.total || 0);
 
-    // // Get paginated data
-    // const data = await query
-    //   .orderBy('created_at', 'desc')
-    //   .limit(limit)
-    //   .offset(offset);
+  // // Get paginated data
+  // const data = await query
+  //   .orderBy('created_at', 'desc')
+  //   .limit(limit)
+  //   .offset(offset);
 
-    // return {
-    //   data,
-    //   pagination: {
-    //     page,
-    //     limit,
-    //     total,
-    //     totalPages: Math.ceil(total / limit),
-    //     hasNextPage: page < Math.ceil(total / limit),
-    //     hasPreviousPage: page > 1,
-    //   },
-    // };
+  // return {
+  //   data,
+  //   pagination: {
+  //     page,
+  //     limit,
+  //     total,
+  //     totalPages: Math.ceil(total / limit),
+  //     hasNextPage: page < Math.ceil(total / limit),
+  //     hasPreviousPage: page > 1,
+  //   },
+  // };
 
   // async findCompanies(companyId:string,status:any){
   //   return this.query()
@@ -137,30 +137,37 @@ class CompanyModel extends BaseModel {
   //   .whereNull('deleted_at');
   // }
 
-  async findCompanies(companyId:string,filters:any){
+  async findCompanies(filters: any) {
+    console.log("Hello")
     const page = parseInt(filters?.page) || 1;
     const limit = parseInt(filters?.limit) || 10;
     const offset = (page - 1) * limit;
-    console.log("Filters",filters)
 
-    let query = this.query().whereNull('deleted_at');
+    console.log("Filters:", filters);
 
-    // Apply type filter only when type is not "all"
-    if (filters?.status && filters.status.toLowerCase() !== 'all') {
-      query = query.andWhere('status', filters.status );
+    let query = this.query()
+      .whereNull("deleted_at");
+
+    // Filter by status only if status is provided and not "all"
+    if (
+      filters?.status &&
+      filters.status.toLowerCase() !== "all"
+    ) {
+      query = query.where("status", filters.status);
     }
 
-    // Get total count
+    // Total companies
     const totalResult = await query
       .clone()
-      .count('* as total')
+      .count("* as total")
       .first();
 
     const total = Number(totalResult?.total || 0);
 
-    // Get paginated data
+    // Get companies
     const data = await query
-      .orderBy('created_at', 'desc')
+      .clone()
+      .orderBy("created_at", "desc")
       .limit(limit)
       .offset(offset);
 
@@ -175,7 +182,6 @@ class CompanyModel extends BaseModel {
         hasPreviousPage: page > 1,
       },
     };
-
   }
 
   // async getDashboardStats(companyId: string,userId?:string,role?:string) {
@@ -250,98 +256,98 @@ class CompanyModel extends BaseModel {
   // }
 
   async getDashboardStats(companyId?: string, userId?: string, role?: string) {
-  const isSuperAdmin = role === 'superadmin';
+    const isSuperAdmin = role === 'superadmin';
 
-  // 🔐 Safety: if NOT superadmin, companyId must exist
-  if (!isSuperAdmin && !companyId) {
-    throw new Error("company_id is required for non-superadmin users");
+    // 🔐 Safety: if NOT superadmin, companyId must exist
+    if (!isSuperAdmin && !companyId) {
+      throw new Error("company_id is required for non-superadmin users");
+    }
+
+    const applyCompanyFilter = (query: any) => {
+      if (!isSuperAdmin) {
+        query.where('company_id', companyId);
+      }
+      return query;
+    };
+
+    return this.query()
+      .select(
+        // campaigns
+        applyCompanyFilter(
+          this.query().from('campaigns').count('*')
+        ).as('campaigns_count'),
+
+        // chatbots
+        this.query()
+          .from("chat_bot")
+          .modify((q: any) => {
+            if (!isSuperAdmin) {
+              q.where("user_id", userId); // or company आधारित भी कर सकते हो
+            }
+          })
+          .count("*")
+          .as("chatbot_count"),
+
+        // contacts
+        applyCompanyFilter(
+          this.query().from('contacts').count('*')
+        ).as('contacts_count'),
+
+        // contact_lists
+        applyCompanyFilter(
+          this.query().from('contact_lists').count('*')
+        ).as('contact_lists_count'),
+
+        // users
+        applyCompanyFilter(
+          this.query().from('users').count('*')
+        ).as('users_count'),
+
+        // tags
+        applyCompanyFilter(
+          this.query().from('contact_tags').count('*')
+        ).as('contact_tags_count'),
+
+        // sent
+        applyCompanyFilter(
+          this.query().from('messages').count('*').where('status', 'sent')
+        ).as('sent_count'),
+
+        // failed
+        applyCompanyFilter(
+          this.query().from('messages').count('*').where('status', 'failed')
+        ).as('failed_count'),
+
+        // delivered
+        applyCompanyFilter(
+          this.query().from('messages').count('*').where('status', 'delivered')
+        ).as('delivered_count'),
+
+        // template messages
+        applyCompanyFilter(
+          this.query().from('messages').count('*').where('type', 'template')
+        ).as('message_template_count'),
+
+        // unique contacts
+        applyCompanyFilter(
+          this.query().from('messages').countDistinct('to_phone')
+        ).as('unique_contacts_count'),
+
+        // templates
+        applyCompanyFilter(
+          this.query().from('templates').count('*')
+        ).as('templates_count'),
+      )
+      .first()
+      .then((res: any) => ({
+        ...res,
+        total_messages:
+          Number(res.sent_count) +
+          Number(res.failed_count) +
+          Number(res.delivered_count),
+      }));
   }
 
-  const applyCompanyFilter = (query: any) => {
-    if (!isSuperAdmin) {
-      query.where('company_id', companyId);
-    }
-    return query;
-  };
-
-  return this.query()
-    .select(
-      // campaigns
-      applyCompanyFilter(
-        this.query().from('campaigns').count('*')
-      ).as('campaigns_count'),
-
-      // chatbots
-      this.query()
-        .from("chat_bot")
-        .modify((q: any) => {
-          if (!isSuperAdmin) {
-            q.where("user_id", userId); // or company आधारित भी कर सकते हो
-          }
-        })
-        .count("*")
-        .as("chatbot_count"),
-
-      // contacts
-      applyCompanyFilter(
-        this.query().from('contacts').count('*')
-      ).as('contacts_count'),
-
-      // contact_lists
-      applyCompanyFilter(
-        this.query().from('contact_lists').count('*')
-      ).as('contact_lists_count'),
-
-      // users
-      applyCompanyFilter(
-        this.query().from('users').count('*')
-      ).as('users_count'),
-
-      // tags
-      applyCompanyFilter(
-        this.query().from('contact_tags').count('*')
-      ).as('contact_tags_count'),
-
-      // sent
-      applyCompanyFilter(
-        this.query().from('messages').count('*').where('status', 'sent')
-      ).as('sent_count'),
-
-      // failed
-      applyCompanyFilter(
-        this.query().from('messages').count('*').where('status', 'failed')
-      ).as('failed_count'),
-
-      // delivered
-      applyCompanyFilter(
-        this.query().from('messages').count('*').where('status', 'delivered')
-      ).as('delivered_count'),
-
-      // template messages
-      applyCompanyFilter(
-        this.query().from('messages').count('*').where('type', 'template')
-      ).as('message_template_count'),
-
-      // unique contacts
-      applyCompanyFilter(
-        this.query().from('messages').countDistinct('to_phone')
-      ).as('unique_contacts_count'),
-
-      // templates
-      applyCompanyFilter(
-        this.query().from('templates').count('*')
-      ).as('templates_count'),
-    )
-    .first()
-    .then((res: any) => ({
-      ...res,
-      total_messages:
-        Number(res.sent_count) +
-        Number(res.failed_count) +
-        Number(res.delivered_count),
-    }));
-}
-  
 }
 
 export default new CompanyModel();
