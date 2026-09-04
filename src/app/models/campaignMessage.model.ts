@@ -38,7 +38,7 @@ class CampaignMessageModel extends BaseModel {
     status?: string,
     errorMessage?: string
   ) {
-    console.log("Status",status,errorMessage,limit)
+    console.log("Status", status, errorMessage,limit)
     const query = this.query()
       .where("campaign_id", campaignId)
       .where("status", status || "pending")
@@ -55,22 +55,22 @@ class CampaignMessageModel extends BaseModel {
   }
 
   async getFailedMessages(
-  campaignId: string,
-  BATCH_SIZE:any,
-) {
-  return this.query()
-    .join("messages", "messages.id", "campaign_messages.message_id")
-    .where("campaign_messages.campaign_id", campaignId)
-    .where((qb) => {
-      qb.where("campaign_messages.status", "failed")
-        .orWhere("messages.status", "failed");
-    })
-    .select(
-      "campaign_messages.*",
-      "messages.status as message_status"
-    )
-    .limit(BATCH_SIZE);
-}
+    campaignId: string,
+    BATCH_SIZE: any,
+  ) {
+    return this.query()
+      .join("messages", "messages.id", "campaign_messages.message_id")
+      .where("campaign_messages.campaign_id", campaignId)
+      .where((qb) => {
+        qb.where("campaign_messages.status", "failed")
+          .orWhere("messages.status", "failed");
+      })
+      .select(
+        "campaign_messages.*",
+        "messages.status as message_status"
+      )
+      .limit(BATCH_SIZE);
+  }
 
   async updateStatus(id: string, status: string, data: any = {}) {
     const updateData: any = { status, ...data };
