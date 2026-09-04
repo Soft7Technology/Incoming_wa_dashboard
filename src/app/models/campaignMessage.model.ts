@@ -38,7 +38,7 @@ class CampaignMessageModel extends BaseModel {
     status?: string,
     errorMessage?: string
   ) {
-    console.log("Status",status,errorMessage)
+    console.log("Status",status,errorMessage,limit)
     const query = this.query()
       .where("campaign_id", campaignId)
       .where("status", status || "pending")
