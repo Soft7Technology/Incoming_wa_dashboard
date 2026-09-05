@@ -426,15 +426,15 @@ class ContactController {
 
     const effectiveUserId = req.ownerId ?? req.userId!;
     const tag = await ContactService.createTag(effectiveUserId, req.companyId!, { name, color, description });
-    const { data }: any = tag;
+    console.log("Tag",tag)
     await activityLogsModel.create({
       company_id: req.companyId,
       user_id: effectiveUserId,
       action: 'TAG_ADD',
       entity_type: 'TAGS',
-      entity_id: data.id,
+      entity_id: tag.id,
       read: false,
-      description: `Added tag(s) to ${data.name}`,
+      description: `Added tag(s) to ${tag.name}`,
       ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
       user_agent: req.headers['user-agent'] || '',
       request_method: req.method,
