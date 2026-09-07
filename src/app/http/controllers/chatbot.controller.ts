@@ -68,68 +68,34 @@ class chatBotController {
     );
 
     publishedChatBot = tryCatchAsync(
-        async (req: JWTAuthRequest, res: Response) => {
+        async (req: AuthRequest, res: Response) => {
             const { chatBotId } = req.params;
-            const effectiveUserId = req.ownerId ?? req.userId!;
+            // const {status, published} = req.body
 
-            const result = await chatBotService.publishedChatBot(effectiveUserId, chatBotId);
-            const { data }: any = result
-            await activityLogsModel.create({
-                company_id: data?.companyId,
-                user_id: effectiveUserId,
-                action: 'PUBLISH',
-                entity_type: 'CHATBOT',
-                entity_id: chatBotId,
-                description: `Published chatbot "${data?.name}"`,
-                new_data: {
-                    chatbot_name: data?.name,
-                    status: data?.status,
-                    published: data?.published
-                },
-                ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
-                user_agent: req.headers['user-agent'] || '',
-                request_method: req.method,
-                api_endpoint: req.originalUrl,
-                status: 'SUCCESS',
-                read: false
-            });
+            const result = await chatBotService.publishedChatBot(req.userId!, chatBotId);
             return successResponse(req, res, 'ChatBot published successfully', result);
         }
     )
 
+
     unpublishedChatBot = tryCatchAsync(
-        async (req: JWTAuthRequest, res: Response) => {
+        async (
+            req: AuthRequest,
+            res: Response
+        ) => {
             const { chatBotId } = req.params;
-            const effectiveUserId = req.ownerId ?? req.userId!;
 
-            const result = await chatBotService.unpublishedChatBot(
-                effectiveUserId,
-                chatBotId,
-                'unpublished',
-                false
+            const result =
+                await chatBotService.unpublishedChatBot(
+                    chatBotId
+                );
+
+            return successResponse(
+                req,
+                res,
+                "ChatBot unpublished successfully",
+                result
             );
-
-            await activityLogsModel.create({
-                company_id: req.companyId,
-                user_id: effectiveUserId,
-                read: false,
-                action: 'UNPUBLISH',
-                entity_type: 'CHATBOT',
-                entity_id: chatBotId,
-                description: `Unpublished chatbot "${ result.name}"`,
-                new_data: {
-                    chatbot_name:  result.name,
-                    status:  result.status,
-                    published:  result.published
-                },
-                ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
-                user_agent: req.headers['user-agent'] || '',
-                request_method: req.method,
-                api_endpoint: req.originalUrl,
-                status: 'SUCCESS'
-            });
-
-            return successResponse(req, res, 'ChatBot unpublished successfully', result);
         }
     );
 
