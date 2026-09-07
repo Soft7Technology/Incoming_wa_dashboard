@@ -41,30 +41,51 @@ class chatBotService {
     return result;
   }
 
-  async publishedChatBot(userId: string, chatBotId: string) {
-    // ✅ 1. Check chatbot exists
-    const chatBot_phonenumber: any = await chatBotPhoneNumberModel.getByChatBotId(chatBotId)
-    const bot = await chatBotModel.findById(chatBotId);
-    console.log("Chatbot", chatBot_phonenumber)
-    for (const chatBotPhone of chatBot_phonenumber) {
-      console.log("Updating:", chatBotPhone);
+  async publishedChatBot(
+    userId: string,
+    chatBotId: string
+  ) {
+    const bot: any = await chatBotModel.findById(
+      chatBotId
+    );
 
-      await chatBotPhoneNumberModel.update(
-        chatBotPhone.id,
-        { published: true }
-      );
-    }
     if (!bot) {
-      throw new HTTP400Error({ message: 'ChatBot not exists' });
+      throw new HTTP400Error({
+        message: "ChatBot not exists",
+      });
     }
 
-    const existingPublishedBot: any = await chatBotModel.getPublishedBotByUser(userId);
-    console.log("Existing published bot:", existingPublishedBot ? existingPublishedBot.name : "No published bot"); // Debug log
+    // Check already published bot for same phone number
+    const existingPublishedBot =
+      await chatBotModel.getPublishedBotByPhoneNumber(
+        bot.phoneNumberId,
+        chatBotId // exclude current
+      );
+
     if (existingPublishedBot) {
-      throw new HTTP400Error({ message: "Another chatbot is already published for this phone number. Unpublish it before publishing a new one." });
+      throw new HTTP400Error({
+        message:
+          "Another chatbot is already published for this phone number.",
+      });
     }
-    const publishedChatBot = await chatBotModel.update(chatBotId, { status: "published", published: "true" });
-    return publishedChatBot;
+
+    // Publish chatbot
+    await chatBotModel.update(chatBotId, {
+      status: "published",
+      published: true,
+    });
+
+    // Activate triggers
+    await chatbotTriggerModel.updateByChatBot(
+      chatBotId,
+      {
+        active: true,
+      }
+    );
+
+    return {
+      success: true,
+    };
   }
 
   async getChatBotById(chatBotId: string) {
@@ -86,25 +107,33 @@ class chatBotService {
 
 
 
-  async unpublishedChatBot(userId: string, chatBotId: string, status: string, published: boolean) {
-    // ✅ 1. Check chatbot exists
-    const chatBot_phonenumber: any = await chatBotPhoneNumberModel.getByChatBotId(chatBotId)
-    const bot = await chatBotModel.findById(chatBotId);
+  async unpublishedChatBot(
+    chatBotId: string
+  ) {
+    const bot =
+      await chatBotModel.findById(chatBotId);
 
     if (!bot) {
-      throw new HTTP400Error({ message: 'ChatBot not exists' });
+      throw new HTTP400Error({
+        message: "ChatBot not exists",
+      });
     }
-        console.log("Chatbot", chatBot_phonenumber)
-    for (const chatBotPhone of chatBot_phonenumber) {
-      console.log("Updating:", chatBotPhone);
 
-      await chatBotPhoneNumberModel.update(
-        chatBotPhone.id,
-        { published: false }
-      );
-    }
-    const unpublishedChatBot = await chatBotModel.update(chatBotId, { published, status });
-    return unpublishedChatBot;
+    await chatBotModel.update(chatBotId, {
+      status: "draft",
+      published: false,
+    });
+
+    await chatbotTriggerModel.updateByChatBot(
+      chatBotId,
+      {
+        active: false,
+      }
+    );
+
+    return {
+      success: true,
+    };
   }
 
   async assignedChatBotToUser(assigned_to: string, chatBotId: string) {
