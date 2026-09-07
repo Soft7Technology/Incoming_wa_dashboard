@@ -22,7 +22,7 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
-export async function endSession(sessionId:string){
+export async function endSession(sessionId: string) {
   return await chatSessionModel.update(sessionId, {
     active: false,
     current_node_id: null,
@@ -224,7 +224,7 @@ export const generateInviteTemplate = ({
 //             : `91${cleanNumber}`;
 
 //       console.log("Phone Number",phoneNumber)
-      
+
 //       fpo_info = await userModel.findByPhone(phoneNumber)
 //     }
 
@@ -532,7 +532,7 @@ export async function matchTrigger(
     (keyword: string) =>
       keyword &&
       keyword.toString().trim().toLowerCase() ===
-        normalizedText
+      normalizedText
   );
 }
 
@@ -677,6 +677,40 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
     return {
       type: "text",
       text: data?.attributes?.message?.text?.body || "Please enter value"
+    };
+  }
+
+  if (data.key === "@whatsapp/send-cta-message") {
+    const attrs = data.attributes || {};
+
+    return {
+      type: "interactive",
+      interactive: {
+        type: "cta_url",
+        header: {
+          type:
+            attrs.message?.interactive?.header?.type || "none",
+        },
+        body: {
+          text:
+            attrs.message?.interactive?.body?.text || "",
+        },
+        footer: {
+          text:
+            attrs.message?.interactive?.footer?.text || "",
+        },
+        action: {
+          name: "cta_url",
+          parameters: {
+            display_text:
+              attrs.message?.interactive?.action?.parameters
+                ?.display_text || "",
+            url:
+              attrs.message?.interactive?.action?.parameters
+                ?.url || "",
+          },
+        },
+      },
     };
   }
 
@@ -880,6 +914,18 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
             },
           })),
         },
+      },
+    };
+  }
+
+  if (key === "@whatsapp/send-media-message") {
+    const imageLink =
+      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
+ 
+    return {
+      type: data?.attributes?.message.type,
+      image: {
+        link: imageLink,
       },
     };
   }
