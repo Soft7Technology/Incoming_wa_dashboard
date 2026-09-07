@@ -174,51 +174,15 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids, status, phone_number, assigned_to } = req.body;
+    const { name, email, attributes, notes, tag_ids,assigned_to } = req.body;
 
-    const contact = await ContactService.updateContact(id, {
+    const contact = await ContactService.updateContact(id,req.userId!, {
       name,
-      phone_number,
       email,
       attributes,
       notes,
-      status,
       tag_ids,
-      assigned_to: assigned_to ?? undefined,
-    });
-
-    console.log("Contact",contact)
-
-    await activityLogsModel.create({
-      company_id: req.companyId,
-      user_id: req.userId,
-
-      action: 'UPDATE',
-      entity_type: 'CONTACT',
-      entity_id: id,
-      read:false,
-
-      description: `Updated contact ${contact?.name || contact?.phone_number}`,
-
-      new_data: {
-        name: contact?.name,
-        phone_number: contact?.phone_number,
-        email: contact?.email,
-        status: contact?.status,
-        tag_ids: contact?.tag_ids,
-      },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
-      user_agent: req.headers['user-agent'] || '',
-
-      request_method: req.method,
-      api_endpoint: req.originalUrl,
-
-      status: 'SUCCESS',
+      assigned_to
     });
 
     return successResponse(req, res, 'Contact updated successfully', contact);
@@ -392,8 +356,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'tag_ids array is required' });
     }
 
-    const tags = await ContactService.addTagsToContact(id, tag_ids);
-    const{data}:any = tags
+    await ContactService.addTagsToContact(req.userId!,id, tag_ids);
     return successResponse(req, res, 'Tags added successfully');
   });
 

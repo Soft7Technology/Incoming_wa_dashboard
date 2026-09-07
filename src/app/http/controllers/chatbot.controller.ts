@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
-import chatBotService from '../../services/chatbot.service';
+import chatBotService from "../../services/chatbot.service"
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
