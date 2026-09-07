@@ -35,7 +35,7 @@ class ContactTagRelationModel extends BaseModel {
     const relations = tagIds.map((tagId) => ({
       user_id:userId,
       contact_id: contactId,
-      tag_id: tagIds,
+      tag_id: tagId,
     }));
 
     return this.query()
