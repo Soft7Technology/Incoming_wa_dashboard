@@ -10,6 +10,7 @@ import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
 import contactModel from './models/contact.model';
 import userModel from './models/user.model';
+import chatbotTriggerModel from './models/chatbotTrigger.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -322,77 +323,77 @@ export const generateInviteTemplate = ({
 
 
 
-function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
-  incomingText = incomingText.toLowerCase().trim();
-  console.log("Incoming Id", incomingId, bot)
+// function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
+//   incomingText = incomingText.toLowerCase().trim();
+//   console.log("Incoming Id", incomingId, bot)
 
-  // 1️⃣ Trigger
-  const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
+//   // 1️⃣ Trigger
+//   const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
 
-  if (triggerNode) {
-    const triggerData = safeJSON(triggerNode.data);
-    const isMatch = matchTrigger(triggerData, incomingText);
+//   if (triggerNode) {
+//     const triggerData = safeJSON(triggerNode.data);
+//     const isMatch = matchTrigger(triggerData, incomingText);
 
-    if (isMatch) {
-      const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
-      if (!edge) return null;
+//     if (isMatch) {
+//       const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
+//       if (!edge) return null;
 
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-  // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
-  if (incomingText) {
-    const edge = bot.edges.find((e: any) => {
-      const label = (e.label || "").toLowerCase().trim();
-      const text = incomingText.toLowerCase().trim();
+//   // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
+//   if (incomingText) {
+//     const edge = bot.edges.find((e: any) => {
+//       const label = (e.label || "").toLowerCase().trim();
+//       const text = incomingText.toLowerCase().trim();
 
-      console.log("🔍 Matching:", { label, text });
+//       console.log("🔍 Matching:", { label, text });
 
-      return label === text;
-    });
+//       return label === text;
+//     });
 
-    if (edge) {
-      console.log("✅ Matched Edge:", edge);
+//     if (edge) {
+//       console.log("✅ Matched Edge:", edge);
 
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-  // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
-  if (incomingId) {
-    const edge = bot.edges.find((e: any) => {
-      const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
-      const label = (e.label || "").toLowerCase();
+//   // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
+//   if (incomingId) {
+//     const edge = bot.edges.find((e: any) => {
+//       const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
+//       const label = (e.label || "").toLowerCase();
 
-      console.log("BOT", handle, label)
+//       console.log("BOT", handle, label)
 
-      return (
-        handle === incomingId ||             // preferred
-        label === incomingId.toLowerCase()   // fallback
-      );
-    });
+//       return (
+//         handle === incomingId ||             // preferred
+//         label === incomingId.toLowerCase()   // fallback
+//       );
+//     });
 
-    if (edge) {
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     if (edge) {
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-  // 3️⃣ LAST fallback → text (not recommended but okay)
-  for (const edge of bot.edges) {
-    const label = (edge.label || "").toLowerCase().trim();
+//   // 3️⃣ LAST fallback → text (not recommended but okay)
+//   for (const edge of bot.edges) {
+//     const label = (edge.label || "").toLowerCase().trim();
 
-    if (label === incomingText) {
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     if (label === incomingText) {
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-  return null;
-}
+//   return null;
+// }
 
 
 export function safeJSON(data: any) {
@@ -509,16 +510,30 @@ export default function sendEmail(to: string, subject: string, text: string, htm
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
 
-export function matchTrigger(data: any, text: string) {
-  const keywords = data?.keywords || data?.attributes.keywords;
-  console.log("Matching Trigger:", { keywords, text });
-  const logic = data?.matchingLogic || "contains";
+export async function matchTrigger(
+  phoneNumberId: string,
+  text: string
+) {
+  const triggerWords =
+    await chatbotTriggerModel.getActiveTriggers(
+      phoneNumberId
+    );
 
-  if (logic === "exact") {
-    return keywords.some((k: string) => k.toLowerCase() === text);
+  if (!text) {
+    return false;
   }
 
-  return keywords.some((k: string) => text.includes(k.toLowerCase()));
+  const normalizedText = text
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  return triggerWords.some(
+    (keyword: string) =>
+      keyword &&
+      keyword.toString().trim().toLowerCase() ===
+        normalizedText
+  );
 }
 
 
