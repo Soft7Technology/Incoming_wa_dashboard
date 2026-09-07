@@ -4,9 +4,9 @@ import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
 import chatBotEdgeModel from '@surefy/console/models/chatBotEdge.model';
 import messageService from "@surefy/console/services/message.service"
 import nodemailer from "nodemailer";
-import { flowRouter } from  './flow.route'
+import { flowRouter } from './flow.route'
 import contactModel from '@surefy/console/models/contact.model';
-import chatBotPhoneNumberModel from '../../models/chatBotPhoneNumber.model';
+import userModel from '../../models/user.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -43,20 +43,38 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     // 1️⃣ Get bot
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
-    // const bot: any = await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
-    // const 
-    // const bot:any = await chatbo
-    const chatbot:any= await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
-    if (!chatbot) return null;
+    const bot: any = await chatBotModel.getPublishedBotByPhoneNumber(phoneNumberId);
 
-    const bot: any = await chatBotModel.findById(chatbot.chat_bot_id)
+    const numberMatch = incomingText.match(/\d{10,13}/);
+    let fpo_info
+
+    if(numberMatch){
+      const fpoNumber = numberMatch[0];
+      const cleanNumber = fpoNumber.replace(/\D/g, "");
+
+      // Add 91 if not already present
+      const phoneNumber = cleanNumber.startsWith("91")
+            ? cleanNumber
+            : `91${cleanNumber}`;
+
+      console.log("Phone Number",phoneNumber)
+      
+      fpo_info = await userModel.findByPhone(phoneNumber)
+    }
+
+    console.log("Fpo Info",fpo_info)
+
     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+    if (!bot) return null;
+
+    const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
 
     //check exist contact
-    const existContact = await contactModel.findByPhone(bot.user_id,message.from)
+    const existContact = await contactModel.findByUserPhoneNumber(message.from)
     console.log("Existing Contant",existContact)
     if(!existContact){
       const newContact = await contactModel.create({
+        // user_id: mappedUserId,
         user_id: bot.user_id,
         company_id:bot.company_id,
         phone_number:message.from,
@@ -64,10 +82,19 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       })
       console.log("New Contact", newContact)
     }
+  //   else{
+  //       // Update contact mapping if FPO user found
+  // if (existContact.user_id !== mappedUserId) {
+  //   await contactModel.update(existContact.id, {
+  //     name:profile_name
+  //   });
+  // }
+  //   }
+
 
     // 2️⃣ Load nodes + edges
-    const rawNodes = await chatBotNodeModel.findByChatBotId(bot.id) || [];
-    const rawEdges = await chatBotEdgeModel.findByChatBotId(bot.id) || [];
+    const rawNodes = await chatBotNodeModel.findByChatBotId(bot?.id) || [];
+    const rawEdges = await chatBotEdgeModel.findByChatBotId(bot?.id) || [];
 
     bot.nodes = rawNodes.map((n: any) => ({
       ...n,
@@ -102,6 +129,21 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     if (response) {
       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
     } else {
+      const chatSession = await chatSessionModel.findByPhoneNumber(phone)
+      if (!chatSession) {
+        return null
+      }
+      await chatSessionModel.update(chatSession.id, {
+        active: false,
+        current_node_id: null,
+        // completed_at: new Date(),
+        updated_at: new Date(),
+      })
+      //       await chatSessionModel.deactivateActiveSession({
+      //   phoneNumber: phone,
+      //   chatbotId: bot.id,
+      //   phoneNumberId,
+      // });
       console.log("⚠️ No response generated to send");
     }
 
@@ -109,7 +151,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
   } catch (error) {
     console.error("❌ Chatbot Error:", error);
-    return null;
+    return;
   }
 }
 

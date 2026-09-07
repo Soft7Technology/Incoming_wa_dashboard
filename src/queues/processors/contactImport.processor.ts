@@ -111,7 +111,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
 
           // Add tags if specified
           if (options.tagIds && options.tagIds.length > 0) {
-            await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
+            await ContactTagRelationModel.bulkAddTags(userId,contact.id, options.tagIds);
 
             // Update tag counts
             for (const tagId of options.tagIds) {

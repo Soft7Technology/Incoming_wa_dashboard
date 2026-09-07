@@ -176,6 +176,13 @@ class ContactModel extends BaseModel {
       .whereIn('id', ids)
       .del();
   }
+
+    async findByUserPhoneNumber(phoneNumber: any) {
+    return this.query()
+      .where({ phone_number: phoneNumber })
+      .whereNull('deleted_at')
+      .first();
+  }
 }
 
 export default new ContactModel();

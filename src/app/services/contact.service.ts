@@ -129,7 +129,7 @@ class ContactService {
   /**
    * Update contact
    */
-  async updateContact(contactId: string, data: any) {
+  async updateContact(userId:string,contactId: string, data: any) {
     const contact = await ContactModel.findById(contactId);
     if (!contact) {
       throw new HTTP404Error({ message: 'Contact not found' });
@@ -138,16 +138,14 @@ class ContactService {
     const updated = await ContactModel.update(contactId, {
       name: data.name,
       email: data.email,
-      phone_number: data.phone_number,
-      status: data.status,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
-      ...(data.assigned_to !== undefined && { assigned_to: data.assigned_to }),
+      assigned_to: data.assigned_to
     });
 
     // Update tags if provided
     if (data.tag_ids !== undefined) {
-      await this.syncContactTags(contactId, data.tag_ids);
+      await this.syncContactTags(userId,contactId, data.tag_ids);
     }
 
     return updated;
@@ -395,8 +393,8 @@ class ContactService {
   /**
    * Add tags to contact
    */
-  async addTagsToContact(contactId: string, tagIds: string[]) {
-    await ContactTagRelationModel.bulkAddTags(contactId, tagIds);
+  async addTagsToContact(userId:string,contactId: string, tagIds: string[]) {
+    await ContactTagRelationModel.bulkAddTags(userId,contactId, tagIds);
 
     // Update tag counts
     for (const tagId of tagIds) {
@@ -419,7 +417,7 @@ class ContactService {
   /**
    * Sync contact tags (replace all tags)
    */
-  async syncContactTags(contactId: string, tagIds: string[]) {
+  async syncContactTags(userId:string,contactId: string, tagIds: string[]) {
     // Get existing tags
     const existing = await ContactTagRelationModel.findByContact(contactId);
     const existingTagIds = existing.map((r) => r.tag_id);
@@ -430,7 +428,7 @@ class ContactService {
 
     // Add new tags
     if (toAdd.length > 0) {
-      await this.addTagsToContact(contactId, toAdd);
+      await this.addTagsToContact(userId,contactId, toAdd);
     }
 
     // Remove old tags
