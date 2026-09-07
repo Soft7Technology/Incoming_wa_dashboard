@@ -511,6 +511,7 @@ export default function sendEmail(to: string, subject: string, text: string, htm
 
 export function matchTrigger(data: any, text: string) {
   const keywords = data?.keywords || data?.attributes.keywords;
+  console.log("Matching Trigger:", { keywords, text });
   const logic = data?.matchingLogic || "contains";
 
   if (logic === "exact") {
