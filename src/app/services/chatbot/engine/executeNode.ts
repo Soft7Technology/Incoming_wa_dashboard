@@ -389,7 +389,7 @@ export const executeNode = async ({
                 return null;
             }
 
-            const phone = session?.variables?.phone_number;
+            const phone = session?.phone_number;
 
             if (!phone) {
                 console.log(
