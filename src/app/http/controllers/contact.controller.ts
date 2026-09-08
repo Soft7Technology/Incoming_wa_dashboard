@@ -92,6 +92,8 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
+    console.log('Filters',filters)
+
     const contacts = await ContactService.getContacts(effectiveUserId, filters);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
