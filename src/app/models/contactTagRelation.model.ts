@@ -61,6 +61,7 @@ class ContactTagRelationModel extends BaseModel {
   }
 
   async getContactIdsByTags(tagIds: string[]) {
+    console.log('Tag Id',tagIds)
     return this.query()
       .whereIn('tag_id', tagIds)
       .select('contact_id')
