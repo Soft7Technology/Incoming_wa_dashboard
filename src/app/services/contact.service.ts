@@ -41,6 +41,7 @@ class ContactService {
       status: data.status,
       attributes: data.attributes || {},
       notes: data.notes,
+      country_code: data.country_code
     });
 
     return contact;
@@ -51,6 +52,7 @@ class ContactService {
    */
   async getContacts(userId: string, filters: any = {},phoneNumberId?:string) {
     let query = ContactModel.findWithFilters(userId, filters,phoneNumberId);
+    console.log("Filters",filters)
 
     // Filter by tags
     if (filters.tag_ids && filters.tag_ids.length > 0) {
