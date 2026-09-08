@@ -921,7 +921,7 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
   if (key === "@whatsapp/send-media-message") {
     const imageLink =
       data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
- 
+
     return {
       type: data?.attributes?.message.type,
       image: {
@@ -952,6 +952,7 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
 
 
   // 📋 LIST MESSAGE BUILDER
+  // 📋 LIST MESSAGE BUILDER
   if (key === "@whatsapp/send-list-message") {
     const interactiveData =
       data.attributes?.message?.interactive || {};
@@ -959,13 +960,11 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
     const sections =
       interactiveData.action?.sections || [];
 
-    const interactive = {
+    const interactive: any = {
       type: "list",
 
-      header: interactiveData.header,
-
       body: interactiveData.body || {
-        text: "Choose an option"
+        text: "Choose an option",
       },
 
       footer: interactiveData.footer,
@@ -981,15 +980,25 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
           rows: (section.rows || []).map((row: any) => ({
             id: row.id,
             title: row.title,
-            description: row.description || ""
-          }))
-        }))
-      }
+            description: row.description || "",
+          })),
+        })),
+      },
     };
+
+    if (
+      interactiveData.header &&
+      interactiveData.header.type &&
+      ["text", "image", "video", "document"].includes(
+        interactiveData.header.type
+      )
+    ) {
+      interactive.header = interactiveData.header;
+    }
 
     return {
       type: "interactive",
-      interactive
+      interactive,
     };
   }
 
