@@ -177,7 +177,7 @@ class ContactController {
     const { id } = req.params;
     const { name, email, attributes, notes, tag_ids,assigned_to } = req.body;
 
-    const contact = await ContactService.updateContact(id,req.userId!, {
+    const contact = await ContactService.updateContact(req.userId!,id, {
       name,
       email,
       attributes,

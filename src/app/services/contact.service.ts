@@ -137,6 +137,8 @@ class ContactService {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
 
+    console.log('data',data.tag_ids)
+
     const updated = await ContactModel.update(contactId, {
       name: data.name,
       email: data.email,
@@ -396,6 +398,7 @@ class ContactService {
    * Add tags to contact
    */
   async addTagsToContact(userId:string,contactId: string, tagIds: string[]) {
+    console.log('Tag contact',tagIds)
     await ContactTagRelationModel.bulkAddTags(userId,contactId, tagIds);
 
     // Update tag counts
