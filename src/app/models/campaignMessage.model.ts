@@ -131,13 +131,15 @@ class CampaignMessageModel extends BaseModel {
       .from('campaign_messages as cm')
       .leftJoin('messages as m', 'm.id', 'cm.message_id')
       .where('cm.campaign_id', campaignId)
-      .whereRaw(`( m.status = \'failed\')`)
+      .where((query) => {
+        query.where('cm.status', 'failed').orWhere('m.status', 'failed');
+      })
       .select(
-        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text) AS error_message`),
+        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text, cm.error_code::text) AS error_message`),
         this.db.raw(`COUNT(*) AS total`)
       )
       .groupBy(
-        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text)`)
+        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text, cm.error_code::text)`)
       )
       .orderBy('total', 'desc')
   }

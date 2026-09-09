@@ -5,6 +5,20 @@ class CampaignModel extends BaseModel {
     super('campaigns');
   }
 
+  async findDetailsById(campaignId: string) {
+    const phoneIdMatch = this.db.raw('pn.id::text = c.phone_number_id::text');
+    return this.query()
+      .from('campaigns as c')
+      .leftJoin('templates as t', 't.id', 'c.template_id')
+      .leftJoin('phone_numbers as pn', function () {
+        this.on('pn.phone_number_id', '=', 'c.phone_number_id')
+          .orOn(phoneIdMatch);
+      })
+      .where('c.id', campaignId)
+      .select('c.*', 't.name as template_name', 'pn.display_phone_number as phone_number')
+      .first();
+  }
+
   async findByUserId(userId: string, filters: any = {}) {
     let query = this.query()
       .whereNull('deleted_at')

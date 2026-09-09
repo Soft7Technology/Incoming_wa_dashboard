@@ -158,6 +158,12 @@ class ContactModel extends BaseModel {
     query.whereNull("deleted_at");
 
     // Valid / Invalid filter
+    if (filters.country_code !== undefined) {
+      query.whereIn('contacts.country_code', Array.isArray(filters.country_code)
+        ? filters.country_code
+        : [filters.country_code]);
+    }
+
     if (filters.is_valid !== undefined) {
       query.where("is_valid", filters.is_valid);
     }

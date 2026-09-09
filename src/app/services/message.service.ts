@@ -1,3 +1,4 @@
+import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import CompanyModel from '@surefy/console/models/company.model';
@@ -257,8 +258,7 @@ class MessageService {
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
-        error_message: error.message,
-        error_code: error.code,
+        ...getMessageError(error),
       });
 
       throw error;
@@ -465,8 +465,7 @@ class MessageService {
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
-        error_message: error.message,
-        error_code: error.code,
+        ...getMessageError(error),
       });
 
       throw error;

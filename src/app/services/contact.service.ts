@@ -62,6 +62,20 @@ class ContactService {
     filters: any = {},
     phoneNumberId?: string
   ) {
+    if (filters.country_code !== undefined) {
+      const countryCodes = Array.isArray(filters.country_code)
+        ? filters.country_code
+        : [filters.country_code];
+      if (!countryCodes.length || countryCodes.some(
+        (code: unknown) => typeof code !== 'string' || !code.trim()
+      )) {
+        throw new HTTP400Error({ message: 'country_code must contain non-empty strings' });
+      }
+      filters = {
+        ...filters,
+        country_code: [...new Set(countryCodes.map((code: string) => code.trim()))],
+      };
+    }
     console.log("=================================");
     console.log("GET CONTACTS START");
     console.log("User ID:", userId);
