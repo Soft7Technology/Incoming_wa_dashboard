@@ -126,7 +126,7 @@ class AuthController {
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
     const { name, email, phone, user } = req.body;
-
+    console.log('Onboarding company with data:', { name, email, phone, user});
 
     if (!name || !email) {
       throw new HTTP400Error({ message: 'Name and email are required' });
@@ -157,10 +157,7 @@ class AuthController {
         email,
        'Welcome to Our Platform',
        `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
-      ).catch((error: unknown) => {
-        console.error('Registration saved, but welcome email failed:',
-          error instanceof Error ? error.message : error);
-      });
+    )
 
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
@@ -205,15 +202,12 @@ class AuthController {
       domain_name
     });
 
-    if(user && email){
+    if(user){
       await sendEmail(
         email,
        'Welcome to Our Platform',
        `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
-      ).catch((error: unknown) => {
-        console.error('Registration saved, but welcome email failed:',
-          error instanceof Error ? error.message : error);
-      });
+      )
     }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
