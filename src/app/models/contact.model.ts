@@ -13,6 +13,16 @@ class ContactModel extends BaseModel {
     super('contacts');
   }
 
+  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null) {
+    const digits = phoneNumber.replace(/\D/g, '');
+    return this.query()
+      .where('user_id', userId)
+      .where('phone_number_id', phoneNumberId ?? null)
+      .whereNull('deleted_at')
+      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [digits])
+      .first();
+  }
+
   async findByPhone(userId: string, phoneNumber: string) {
     return this.query()
       .where(function (this: any) {
@@ -164,6 +174,15 @@ class ContactModel extends BaseModel {
         : [filters.country_code]);
     }
 
+    // Match contacts.id to tag relations in SQL, without loading all IDs into memory.
+    if (filters.tag_ids?.length) {
+      query.whereIn('contacts.id', (builder) => {
+        builder.select('ctr.contact_id')
+          .from('contact_tag_relations as ctr')
+          .whereIn('ctr.tag_id', filters.tag_ids);
+      });
+    }
+
     if (filters.is_valid !== undefined) {
       query.where("is_valid", filters.is_valid);
     }
@@ -220,9 +239,10 @@ class ContactModel extends BaseModel {
       .del();
   }
 
-  async findByUserPhoneNumber(phoneNumber: any) {
+  async findByUserPhoneNumber(userId: string, phoneNumber: string) {
     return this.query()
-      .where({ phone_number: phoneNumber })
+      .where({ user_id: userId })
+      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [phoneNumber.replace(/\D/g, '')])
       .whereNull('deleted_at')
       .first();
   }

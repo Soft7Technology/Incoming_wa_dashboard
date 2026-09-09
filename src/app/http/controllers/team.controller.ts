@@ -9,6 +9,7 @@ import teamService from '@surefy/console/services/team.service';
 import userModel from '../../models/user.model';
 import userTeamModel from '../../models/team.model';
 import db from '@surefy/database';
+import { sendResponse } from '@surefy/utils/Response';
 
 class teamController{
     /**
@@ -37,14 +38,27 @@ class teamController{
             }
 
             const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray })
-            successResponse(req, res, `Invite send ${email} successfully`, inviteTeam)
+            if (!inviteTeam.success) {
+                const reason = inviteTeam.error || inviteTeam.message || 'Failed to send invite email';
+                return sendResponse(
+                    res,
+                    inviteTeam.error ? HttpStatusCode.INTERNAL_SERVER_ERROR : HttpStatusCode.BAD_REQUEST,
+                    false,
+                    'Failed to send team invite',
+                    { error: reason }
+                );
+            }
+            return successResponse(req, res, `Invite sent to ${email} successfully`, inviteTeam.data);
         } catch (error: any) {
             console.error('Create Ticket Error:', error);
 
-            return res.status(500).json({
-                success: false,
-                message: error?.message || 'Internal Server Error',
-            });
+            return sendResponse(
+                res,
+                error?.statusCode || HttpStatusCode.INTERNAL_SERVER_ERROR,
+                false,
+                'Failed to send team invite',
+                { error: error?.message || 'Internal Server Error' }
+            );
         }
     })
 

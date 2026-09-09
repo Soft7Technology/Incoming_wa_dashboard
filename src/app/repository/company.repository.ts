@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import CompanyModel from '@surefy/console/models/company.model';
 import CreditTransactionModel from '@surefy/console/models/creditTransaction.model';
 import { CreateCompanyDto, UpdateCompanyDto } from '@surefy/console/interfaces/company.interface';
@@ -20,7 +21,7 @@ class CompanyRepository {
   /**
    * Create new company
    */
-  async create(data: CreateCompanyDto) {
+  async create(data: CreateCompanyDto, trx?: Knex.Transaction) {
     const apiKey = this.generateApiKey();
     const webhookVerifyToken = crypto.randomBytes(32).toString('hex');
     const initialCredit = data.credit_balance|| 0;
@@ -33,7 +34,7 @@ class CompanyRepository {
       api_key: apiKey,
       webhook_verify_token: webhookVerifyToken,
       credit_balance: initialCredit,
-    });
+    }, trx);
 
     // Create initial credit transaction if credits provided
     if (initialCredit > 0) {
@@ -45,7 +46,7 @@ class CompanyRepository {
         balance_after: initialCredit,
         description: 'Initial credit',
         created_by: 'system',
-      });
+      }, trx);
     }
 
     return company;

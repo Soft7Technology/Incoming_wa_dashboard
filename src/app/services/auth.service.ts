@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import UserModel from '../models/user.model';
 import CompanyModel from '../models/company.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -302,11 +303,11 @@ class AuthService {
     role: string;
     hostname?: string;
     domain?: string;
-  }) {
+  }, trx?: Knex.Transaction) {
     const { name, email, phone, company_id, password, hostname, domain } = data;
     const targetHostname = hostname || domain;
 
-    console.log('Registering user with data:', data);
+
 
     // Validate
     if (!email && !phone) {
@@ -315,14 +316,14 @@ class AuthService {
 
     // Check existing
     if (email) {
-      const existingUser = await UserModel.findByEmail(email);
+      const existingUser = await (trx ? trx('users').where({ email }).whereNull('deleted_at').first() : UserModel.findByEmail(email));
       if (existingUser) {
         throw new HTTP400Error({ message: 'Email already registered' });
       }
     }
 
     if (phone) {
-      const existingUser = await UserModel.findByPhone(phone);
+      const existingUser = await (trx ? trx('users').where({ phone }).whereNull('deleted_at').first() : UserModel.findByPhone(phone));
       if (existingUser) {
         throw new HTTP400Error({ message: 'Phone number already registered' });
       }
@@ -341,7 +342,7 @@ class AuthService {
       password: hashedPassword,
       role: data.role,
       status: 'inactive'
-    });
+    }, trx);
 
     console.log("Domain register",company_id)
 
@@ -353,7 +354,7 @@ class AuthService {
       domain_type:'',
       status:"active",
       ssl_status:"active"
-    })
+    }, trx)
 
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;

@@ -64,7 +64,7 @@ class teamService{
             })
 
             return{
-                sucess:true,
+                success:true,
                 message:"Team Invite send sucessfully",
                 data:createInvite
             }
