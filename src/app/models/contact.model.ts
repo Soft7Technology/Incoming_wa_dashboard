@@ -174,6 +174,15 @@ class ContactModel extends BaseModel {
         : [filters.country_code]);
     }
 
+    // Match contacts.id to tag relations in SQL, without loading all IDs into memory.
+    if (filters.tag_ids?.length) {
+      query.whereIn('contacts.id', (builder) => {
+        builder.select('ctr.contact_id')
+          .from('contact_tag_relations as ctr')
+          .whereIn('ctr.tag_id', filters.tag_ids);
+      });
+    }
+
     if (filters.is_valid !== undefined) {
       query.where("is_valid", filters.is_valid);
     }

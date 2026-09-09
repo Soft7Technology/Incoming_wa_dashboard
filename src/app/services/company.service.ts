@@ -1,3 +1,4 @@
+import db from '@surefy/database';
 import CompanyRepository from '@surefy/console/repository/company.repository';
 import { CreateCompanyDto, UpdateCompanyDto } from '@surefy/console/interfaces/company.interface';
 import { generateCompanyKey } from '@surefy/middleware/auth.middleware';
@@ -24,48 +25,53 @@ class CompanyService {
    * Onboard new company with initial user
    */
   async onboardCompany(data: CreateCompanyDto) {
-    // Check if email already exists
-    console.log("Data", data)
-    const existingCompany = await CompanyRepository.findByEmail(data.email);
-    if (existingCompany) {
-      throw new HTTP400Error({ message: 'Company with this email already exists' });
+    if (!data.user) {
+      throw new HTTP400Error({ message: 'Initial user is required' });
     }
+    return db.transaction(async (trx) => {
+      // Check if email already exists
 
-    // Extract user data before creating company
-    const userData = data.user;
-    const { user, ...companyData } = data;
+      const existingCompany = await trx('companies').where({ email: data.email }).first();
+      if (existingCompany) {
+        throw new HTTP400Error({ message: 'Company with this email already exists' });
+      }
 
-    // Create company (without user field)
-    const company = await CompanyRepository.create(companyData);
+      // Extract user data before creating company
+      const userData = data.user;
+      const { user, ...companyData } = data;
 
-    // Generate company key for secure authentication
-    const companyKey = generateCompanyKey(company.id, process.env.API_KEY_SALT || '');
+      // Create company (without user field)
+      const company = await CompanyRepository.create(companyData, trx);
 
-    // Create initial user if user data is provided
-    let createdUser = null;
-    if (userData) {
-      createdUser = await AuthService.register({
-        name: userData.name,
-        company_id: company.id,
-        email: userData.email,
-        phone: userData.phone,
-        password: userData.password,
-        role: 'admin',
-      });
-    }
+      // Generate company key for secure authentication
+      const companyKey = generateCompanyKey(company.id, process.env.API_KEY_SALT || '');
 
-    const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id);
+      // Create initial user if user data is provided
+      let createdUser = null;
+      if (userData) {
+        createdUser = await AuthService.register({
+          name: userData.name,
+          company_id: company.id,
+          email: userData.email,
+          phone: userData.phone,
+          password: userData.password,
+          role: 'admin',
+        }, trx);
+      }
 
-    // Return company with key and user (only returned once during onboarding)
-    return {
-      company: {
-        ...company,
-      },
-      user: createdUser,
-      apiKey: company.api_key,
-      companyKey: companyKey,
-      freePlan: freePlan,
-    };
+      const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id, trx);
+
+      // Return company with key and user (only returned once during onboarding)
+      return {
+        company: {
+          ...company,
+        },
+        user: createdUser,
+        apiKey: company.api_key,
+        companyKey: companyKey,
+        freePlan: freePlan,
+      };
+    });
   }
 
   private async createCustomerName(company_domain: any) {

@@ -101,50 +101,7 @@ class ContactService {
       query.clone().toSQL().toNative()
     );
 
-    // -------------------------
-    // TAG FILTER
-    // -------------------------
-    if (filters.tag_ids?.length) {
-      console.log("Tag IDs:", filters.tag_ids);
-
-      const tagContactIds =
-        await ContactTagRelationModel.getContactIdsByTags(
-          filters.tag_ids
-        );
-
-      //   const testContacts = await ContactModel.query()
-      // .whereIn("id", tagContactIds);
-
-      // console.log("TEST CONTACTS:", testContacts);
-
-      console.log(
-        "Contact IDs from Tags:",
-        tagContactIds
-      );
-
-      if (!tagContactIds.length) {
-        console.log(
-          "No contacts found for supplied tags"
-        );
-
-        return {
-          contacts: [],
-          pagination: {
-            total: 0,
-            page,
-            limit,
-            total_pages: 0,
-          },
-        };
-      }
-
-      query.whereIn("id", tagContactIds);
-
-      console.log(
-        "Query After Tag Filter:",
-        query.clone().toSQL().toNative()
-      );
-    }
+    // Country and tag filters are applied together by ContactModel.findWithFilters.
 
     // -------------------------
     // LIST FILTER
