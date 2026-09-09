@@ -426,16 +426,41 @@ export const executeNode = async ({
                 return null;
             }
 
-            // Add tags to contact
-            await contactTagRelationModel.bulkAddTags(
-                contact.user_id,
-                contact.id,
-                tags
+            // Saved flows can reference tags that have since been deleted.
+            // Only assign existing, non-deleted tags available to this contact.
+            const tagIds = [...new Set<string>(tags.filter(
+                (tag: unknown): tag is string => typeof tag === "string" &&
+                    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tag)
+            ).map((tag: string) => tag.toLowerCase()))];
+            const existingTags = tagIds.length
+                ? await contactTagModel.findByIds(tagIds)
+                : [];
+            const validTagIds = existingTags.filter((tag: any) =>
+                !tag.deleted_at && (contact.company_id
+                    ? tag.company_id === contact.company_id
+                    : tag.user_id === contact.user_id)
+            ).map((tag: any) => tag.id);
+            const validIds = new Set(validTagIds);
+            const skippedTags = tags.filter((tag: any) =>
+                typeof tag !== "string" || !validIds.has(tag.toLowerCase())
             );
 
-            console.log(
-                "Tags updated successfully"
-            );
+            if (skippedTags.length) {
+                console.warn("UPDATE TAG: Skipping missing, deleted, or unavailable tags. Reselect tags in the saved flow.", {
+                    chatbotId: bot.id,
+                    nodeId: currentNode.id,
+                    tagIds: skippedTags,
+                });
+            }
+
+            if (validTagIds.length) {
+                await contactTagRelationModel.bulkAddTags(
+                    contact.user_id,
+                    contact.id,
+                    validTagIds
+                );
+                console.log("Tags updated successfully", { tagIds: validTagIds });
+            }
 
             // ----------------------------------------
             // Continue to next node
