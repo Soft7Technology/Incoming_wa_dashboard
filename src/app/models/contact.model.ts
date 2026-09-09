@@ -15,7 +15,7 @@ class ContactModel extends BaseModel {
 
   async findByPhone(userId: string, phoneNumber: string) {
     return this.query()
-      .where(function(this: any) {
+      .where(function (this: any) {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
       })
@@ -94,7 +94,7 @@ class ContactModel extends BaseModel {
     return this.query().insert(contacts).returning('*');
   }
 
-  async bulkUpsert(userId:string, contacts: any[]) {
+  async bulkUpsert(userId: string, contacts: any[]) {
     const promises = contacts.map(async (contact) => {
       const existing = await this.findByPhone(userId, contact.phone_number);
       if (existing) {
@@ -108,56 +108,93 @@ class ContactModel extends BaseModel {
     return Promise.all(promises);
   }
 
-  findWithFilters(userId: string, filters: any, phoneNumberId?: string) {
-    console.log("UserId", userId, phoneNumberId)
+  findWithFilters(
+    userId: string,
+    filters: any = {},
+    phoneNumberId?: string
+  ) {
+    console.log("=================================");
+    console.log("findWithFilters");
+    console.log("User ID:", userId);
+    console.log("Phone Number ID:", phoneNumberId);
+    console.log("Filters:", JSON.stringify(filters, null, 2));
+    console.log("=================================");
+
     let query = this.query();
 
+    // Filter by phone number
     if (phoneNumberId) {
-      query = query.where('phone_number_id', phoneNumberId)
+      query.where("phone_number_id", phoneNumberId);
     }
 
+    // Ownership / Assignment Filter
     if (filters.onlyAssignedToUserId) {
-      query = query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
+      console.log(
+        "Filtering by assigned user:",
+        filters.onlyAssignedToUserId
+      );
+
+      query.whereRaw(
+        "assigned_to @> ARRAY[?]::uuid[]",
+        [filters.onlyAssignedToUserId]
+      );
     } else {
-      query = query.where(function (this: any) {
-        this.where('user_id', userId);
+      query.where((builder: any) => {
+        builder.where("user_id", userId);
 
         if (phoneNumberId) {
-          this.orWhere('phone_number_id', phoneNumberId);
+          builder.orWhere("phone_number_id", phoneNumberId);
         }
 
-        orAssignedTo(this, userId);
+        // Contacts assigned to current user
+        builder.orWhereRaw(
+          "assigned_to @> ARRAY[?]::uuid[]",
+          [userId]
+        );
       });
     }
 
-    query = query.whereNull('deleted_at');
+    // Ignore deleted contacts
+    query.whereNull("deleted_at");
 
+    // Valid / Invalid filter
     if (filters.is_valid !== undefined) {
-      query = query.where({ is_valid: filters.is_valid });
+      query.where("is_valid", filters.is_valid);
     }
 
+    // Search filter
     if (filters.search) {
-      query = query.where((builder: any) => {
+      query.where((builder: any) => {
         builder
-          .where('name', 'ilike', `%${filters.search}%`)
-          .orWhere('phone_number', 'like', `%${filters.search}%`)
-          .orWhere('email', 'ilike', `%${filters.search}%`);
+          .where("name", "ilike", `%${filters.search}%`)
+          .orWhere("phone_number", "ilike", `%${filters.search}%`)
+          .orWhere("email", "ilike", `%${filters.search}%`);
       });
     }
 
-    // Filter by custom attributes
+    // Custom attributes filter
     if (filters.attributes) {
-      for (const [key, value] of Object.entries(filters.attributes)) {
-        query = query.whereRaw(`attributes->>'${key}' = ?`, [value]);
-      }
+      Object.entries(filters.attributes).forEach(
+        ([key, value]) => {
+          query.whereRaw(
+            `attributes->>? = ?`,
+            [key, value]
+          );
+        }
+      );
     }
+
+    console.log(
+      "Generated Query:",
+      query.clone().toSQL().toNative()
+    );
 
     return query;
   }
 
   async findByUserId(userId: string) {
     return this.query()
-      .where(function(this: any) {
+      .where(function (this: any) {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
       })
@@ -165,9 +202,9 @@ class ContactModel extends BaseModel {
       .orderBy('created_at', 'desc');
   }
 
-  async getAssignedUser(userId:string){
+  async getAssignedUser(userId: string) {
     let query = this.query()
-    return query.where({user_id:userId}).orWhere({assigned_to:userId}).returning("*")
+    return query.where({ user_id: userId }).orWhere({ assigned_to: userId }).returning("*")
   }
 
   async bulkDelete(companyId: string, ids: string[]) {
@@ -177,7 +214,7 @@ class ContactModel extends BaseModel {
       .del();
   }
 
-    async findByUserPhoneNumber(phoneNumber: any) {
+  async findByUserPhoneNumber(phoneNumber: any) {
     return this.query()
       .where({ phone_number: phoneNumber })
       .whereNull('deleted_at')

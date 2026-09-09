@@ -1,11 +1,12 @@
 export interface chatBot{
     id?:string;
     user_id:string;
+    company_id:string;
     description:string;
     name:string;
     published:boolean;
     status:string
-    // phoneNumberId:string;
+    phoneNumberId:string;
     createdAt?:string
 }
 
@@ -20,6 +21,7 @@ export interface chatBotEdge{
     data:JSON;
     createdAt:string
 }
+
 // id,chatbotId,type,data,position,createAt
 export interface chatBotNode{
     id:string;
@@ -30,3 +32,8 @@ export interface chatBotNode{
     position:string;
     createdAt:string
 }
+
+
+// npx knex migrate:make create_chatBot_table
+// npx knex migrate:make create_chatBot_edge
+// npx knex migrate:make create_chatBot_node

@@ -389,7 +389,10 @@ export const executeNode = async ({
                 return null;
             }
 
+            console.log('Sessions variable',session)
+
             const phone = session?.phone_number;
+            const userId = session?.variables?.user_id ?? bot?.user_id;
 
             if (!phone) {
                 console.log(
@@ -404,8 +407,14 @@ export const executeNode = async ({
             });
 
             // Get the contact
+            if (!userId) {
+                console.log("Bot owner user_id not found");
+                return null;
+            }
+
             const contact =
-                await contactModel.findByUserPhoneNumber(
+                await contactModel.findByPhone(
+                    userId,
                     phone
                 );
 
