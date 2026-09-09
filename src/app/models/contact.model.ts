@@ -13,6 +13,16 @@ class ContactModel extends BaseModel {
     super('contacts');
   }
 
+  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null) {
+    const digits = phoneNumber.replace(/\D/g, '');
+    return this.query()
+      .where('user_id', userId)
+      .where('phone_number_id', phoneNumberId ?? null)
+      .whereNull('deleted_at')
+      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [digits])
+      .first();
+  }
+
   async findByPhone(userId: string, phoneNumber: string) {
     return this.query()
       .where(function (this: any) {
@@ -220,9 +230,10 @@ class ContactModel extends BaseModel {
       .del();
   }
 
-  async findByUserPhoneNumber(phoneNumber: any) {
+  async findByUserPhoneNumber(userId: string, phoneNumber: string) {
     return this.query()
-      .where({ phone_number: phoneNumber })
+      .where({ user_id: userId })
+      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [phoneNumber.replace(/\D/g, '')])
       .whereNull('deleted_at')
       .first();
   }

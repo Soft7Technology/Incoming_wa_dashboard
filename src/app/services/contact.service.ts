@@ -18,17 +18,17 @@ class ContactService {
    * Create a new contact
    */
   async createContact(userId: string, companyId: string, data: any) {
-    let phone = data.phone_number?.toString().trim();
-
-    // Add + if not present
-    if (phone && !phone.startsWith('+')) {
-      phone = '+' + phone;
+    const rawPhone = data.phone_number?.toString().trim();
+    const digits = rawPhone?.replace(/[+\s()-]/g, '');
+    if (!digits || !/^\d+$/.test(digits)) {
+      throw new HTTP400Error({ message: 'A valid phone number is required' });
     }
+    const phone = '+' + digits;
 
     // Check if contact already exists
-    const existing = await ContactModel.findByPhone(userId, phone);
+    const existing = await ContactModel.findOwnedByPhone(userId, phone, data.phone_number_id);
     if (existing) {
-      throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
+      throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
     }
 
     const contact = await ContactModel.create({

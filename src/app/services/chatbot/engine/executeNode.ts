@@ -528,14 +528,20 @@ export const executeNode = async ({
                 return null;
             }
 
-            const phone = session?.variables?.phone_number;
+            const phone = session?.phone_number;
 
             if (!phone) {
                 console.log("Phone number not found");
                 return null;
             }
 
-            const contact = await contactModel.findByUserPhoneNumber(phone);
+            const userId = bot?.user_id ?? session?.user_id ?? session?.variables?.user_id;
+            if (!userId) {
+                console.log("Bot owner user_id not found");
+                return null;
+            }
+
+            const contact = await contactModel.findByUserPhoneNumber(userId, phone);
 
             if (!contact) {
                 console.log("Contact not found");
