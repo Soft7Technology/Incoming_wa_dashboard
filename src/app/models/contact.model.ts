@@ -167,19 +167,23 @@ class ContactModel extends BaseModel {
     // Ignore deleted contacts
     query.whereNull("deleted_at");
 
-    // Valid / Invalid filter
-    if (filters.country_code !== undefined) {
-      query.whereIn('contacts.country_code', Array.isArray(filters.country_code)
-        ? filters.country_code
-        : [filters.country_code]);
-    }
-
-    // Match contacts.id to tag relations in SQL, without loading all IDs into memory.
-    if (filters.tag_ids?.length) {
-      query.whereIn('contacts.id', (builder) => {
-        builder.select('ctr.contact_id')
-          .from('contact_tag_relations as ctr')
-          .whereIn('ctr.tag_id', filters.tag_ids);
+    // Keep the union of country/tag matches inside the ownership and deletion scope.
+    // An IN subquery returns each contact once, even if it has multiple matching tags.
+    if (filters.country_code !== undefined || filters.tag_ids?.length) {
+      query.where((matching) => {
+        if (filters.country_code !== undefined) {
+          matching.whereIn('contacts.country_code', Array.isArray(filters.country_code)
+            ? filters.country_code : [filters.country_code]);
+        }
+        if (filters.tag_ids?.length) {
+          const method = filters.countryTagMatch === 'any' && filters.country_code !== undefined
+            ? 'orWhereIn' : 'whereIn';
+          matching[method]('contacts.id', (builder) => {
+            builder.select('ctr.contact_id')
+              .from('contact_tag_relations as ctr')
+              .whereIn('ctr.tag_id', filters.tag_ids);
+          });
+        }
       });
     }
 
