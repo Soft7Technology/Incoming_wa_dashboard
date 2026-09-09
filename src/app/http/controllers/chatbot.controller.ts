@@ -8,9 +8,15 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
 import userPlansModel from '../../models/userPlans.model';
-import chatbotModel from '../../models/chatbot.model';
 
 class chatBotController {
+    updateChatBotName = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+        const result = await chatBotService.updateChatBotName(
+            req.userId!, req.params.chatBotId, req.body?.name
+        );
+        return successResponse(req, res, 'ChatBot name updated successfully', result);
+    });
+
     /**
      * POST /v1/chatbot
      * Create New Chatbot
@@ -105,17 +111,6 @@ class chatBotController {
             const { name, nodes, edges, phoneNumberIds } = req.body;
 
             console.log("Creating chatbot flow:", { chatBotId, name }); // Debug log
-
-            //Logic should be if thier is more then 4messages type will be consider as form
-            const messageCount = nodes.filter(
-                (n: any) => n.type === 'message'
-            ).length
-
-            console.log('Message Count', messageCount)
-
-            const flowType = messageCount >= 3 ? "form" : "menu"
-
-            await chatbotModel.update(chatBotId, { flow_type: flowType })
 
             const result = await chatBotService.createFlow(req.userId!, {
                 chatBotId,

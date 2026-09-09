@@ -18,6 +18,14 @@ class chatBotModel extends BaseModel {
         return this.query().where({ user_id: userId })
     }
 
+    async updateName(userId: string, chatBotId: string, name: string) {
+        const [bot] = await this.query()
+            .where({ id: chatBotId, user_id: userId })
+            .update({ name, updated_at: new Date() })
+            .returning('*');
+        return bot;
+    }
+
     async getPublishedBotByUser(userId: string) {
         return this.query().where({ user_id: userId, status: 'published', published: true }).first()
     }

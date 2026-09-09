@@ -14,6 +14,22 @@ import { v4 as uuidv4 } from 'uuid';
 import { values } from 'lodash';
 
 class chatBotService {
+  private normalizeName(name: unknown): string {
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new HTTP400Error({ message: 'ChatBot name must be a non-empty string' });
+    }
+    return name.trim();
+  }
+
+  async updateChatBotName(userId: string, chatBotId: string, name: unknown) {
+    const normalizedName = this.normalizeName(name);
+    const bot = await chatBotModel.updateName(userId, chatBotId, normalizedName);
+    if (!bot) {
+      throw new HTTP400Error({ message: 'ChatBot not found or does not belong to this user' });
+    }
+    return bot;
+  }
+
   async createChatBot(data: chatBot) {
     console.log('Creating chatbot with data:', data); // Debug log
     const result = await chatBotModel.create(data);
@@ -139,6 +155,10 @@ class chatBotService {
         message: "ChatBot flow not exists",
       });
     }
+    if (bot.user_id !== userId) {
+      throw new HTTP400Error({ message: 'ChatBot does not belong to this user' });
+    }
+    const normalizedName = name === undefined ? undefined : this.normalizeName(name);
     // ---------------------------------
     // Get Trigger Node
     // ---------------------------------
@@ -315,6 +335,9 @@ class chatBotService {
 
     return {
       chatBotId,
+      name: normalizedName === undefined
+        ? bot.name
+        : (await this.updateChatBotName(userId, chatBotId, normalizedName)).name,
       triggerWords,
       phoneNumberIds,
     };
