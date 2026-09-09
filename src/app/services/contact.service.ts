@@ -92,7 +92,7 @@ class ContactService {
 
     let query = ContactModel.findWithFilters(
       userId,
-      filters,
+      { ...filters, countryTagMatch: 'any' },
       phoneNumberId
     );
 
