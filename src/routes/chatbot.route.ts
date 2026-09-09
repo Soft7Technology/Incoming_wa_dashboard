@@ -12,8 +12,6 @@ chatBotRoute.put('/:chatBotId/publish', chatBotController.publishedChatBot)
 chatBotRoute.put('/:chatBotId/unpublish', chatBotController.unpublishedChatBot)
 chatBotRoute.get('/:chatBotId', chatBotController.getChatBotById)
 chatBotRoute.delete('/:chatBotId', chatBotController.deleteChatBot)
-chatBotRoute.put('/:chatBotId/assigned',chatBotController.assigndChatBot)
-
 
 export default chatBotRoute
 

@@ -17,6 +17,20 @@ class chatSessionModel extends BaseModel {
         return this.query().where({ phone_number: phoneNumber, chatbot_id: botId, active: true }).first()
     }
 
+    async findActiveByPhoneNumberId(phone: string, phoneNumberId: string) {
+        return this.query()
+            .where({ phone_number: phone, phoneNumberId, active: true })
+            .orderBy("updated_at", "desc")
+            .first();
+    }
+
+    async deactivateOtherBots(phone: string, phoneNumberId: string, chatbotId: string) {
+        return this.query()
+            .where({ phone_number: phone, phoneNumberId, active: true })
+            .whereNot("chatbot_id", chatbotId)
+            .update({ active: false, current_node_id: null, completed_at: new Date(), updated_at: new Date() });
+    }
+
     async findByPhoneNumber(phone_number: any) {
         return this.query().where({ phone_number: phone_number, active: true }).first()
     }

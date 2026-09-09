@@ -31,9 +31,8 @@ class ContactTagRelationModel extends BaseModel {
       .delete();
   }
 
-  async bulkAddTags(userId:string,contactId: string, tagIds: string[]) {
+  async bulkAddTags(userId: string, contactId: string, tagIds: string[]) {
     const relations = tagIds.map((tagId) => ({
-      user_id:userId,
       contact_id: contactId,
       tag_id: tagId,
     }));
@@ -61,18 +60,28 @@ class ContactTagRelationModel extends BaseModel {
   }
 
   async getContactIdsByTags(tagIds: string[]) {
-    console.log('Tag Id',tagIds)
-    return this.query()
-      .whereIn('tag_id', tagIds)
-      .select('contact_id')
-      .then((rows: any[]) => rows.map((r) => r.contact_id));
-  }
+  const rows = await this.query()
+    .select("contact_id")
+    .whereIn("tag_id", tagIds);
+
+  return rows.map((row: any) => row.contact_id);
+}
+
+  // async getContactIdsByTags(tagIds: string[]) {
+  //   console.log('Tag Id',tagIds)
+  //   return this.query()
+  //     .whereIn('tag_id', tagIds)
+  //     .select('contact_id')
+  //     .then((rows: any[]) => rows.map((r) => r.contact_id));
+  // }
 
   async deleteByTagId(tagId: string) {
     return this.query()
       .where({ tag_id: tagId })
       .delete();
   }
+
+
 }
 
 export default new ContactTagRelationModel();

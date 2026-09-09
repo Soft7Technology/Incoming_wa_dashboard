@@ -44,56 +44,208 @@ class ContactService {
       country_code: data.country_code
     });
 
+    // Tags live in contact_tag_relations; they are not columns on contacts.
+    // Create those relations after the contact has an id so tag filters can
+    // find contacts created with tag_ids as well.
+    if (Array.isArray(data.tag_ids) && data.tag_ids.length > 0) {
+      await this.addTagsToContact(userId, contact.id, data.tag_ids);
+    }
+
     return contact;
   }
 
   /**
    * Get all contacts for a company
    */
-  async getContacts(userId: string, filters: any = {},phoneNumberId?:string) {
-    let query = ContactModel.findWithFilters(userId, filters,phoneNumberId);
-    console.log("Filters",filters)
+  async getContacts(
+    userId: string,
+    filters: any = {},
+    phoneNumberId?: string
+  ) {
+    console.log("=================================");
+    console.log("GET CONTACTS START");
+    console.log("User ID:", userId);
+    console.log("Phone Number ID:", phoneNumberId);
+    console.log("Filters:", JSON.stringify(filters, null, 2));
+    console.log("=================================");
 
-    // Filter by tags
-    if (filters.tag_ids && filters.tag_ids.length > 0) {
-      const contactIds = await ContactTagRelationModel.getContactIdsByTags(filters.tag_ids);
-      query = query.whereIn('id', contactIds);
-    }
-
-    // Filter by lists
-    if (filters.list_ids && filters.list_ids.length > 0) {
-      const contactIds = await ContactListRelationModel.getContactIdsByLists(filters.list_ids);
-      query = query.whereIn('id', contactIds);
-    }
-
-    // Get total count before pagination
-    const countQuery = query.clone();
-    const totalResult = await countQuery.count('* as count').first();
-    const total = parseInt(String(totalResult?.count || 0));
-
-    // Pagination
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 20;
+    const page = Number(filters.page) || 1;
+    const limit = Number(filters.limit) || 20;
     const offset = (page - 1) * limit;
-    const sortBy = filters.sortBy || 'created_at';
-    const sortOrder = filters.sortOrder || 'desc';
 
-    const contacts = await query.orderBy(sortBy, sortOrder).limit(limit).offset(offset);
+    const sortBy = filters.sortBy || "created_at";
+    const sortOrder = filters.sortOrder || "desc";
 
-    // Get tags for each contact
+    let query = ContactModel.findWithFilters(
+      userId,
+      filters,
+      phoneNumberId
+    );
+
+    console.log(
+      "Initial Query:",
+      query.clone().toSQL().toNative()
+    );
+
+    // -------------------------
+    // TAG FILTER
+    // -------------------------
+    if (filters.tag_ids?.length) {
+      console.log("Tag IDs:", filters.tag_ids);
+
+      const tagContactIds =
+        await ContactTagRelationModel.getContactIdsByTags(
+          filters.tag_ids
+        );
+
+      //   const testContacts = await ContactModel.query()
+      // .whereIn("id", tagContactIds);
+
+      // console.log("TEST CONTACTS:", testContacts);
+
+      console.log(
+        "Contact IDs from Tags:",
+        tagContactIds
+      );
+
+      if (!tagContactIds.length) {
+        console.log(
+          "No contacts found for supplied tags"
+        );
+
+        return {
+          contacts: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            total_pages: 0,
+          },
+        };
+      }
+
+      query.whereIn("id", tagContactIds);
+
+      console.log(
+        "Query After Tag Filter:",
+        query.clone().toSQL().toNative()
+      );
+    }
+
+    // -------------------------
+    // LIST FILTER
+    // -------------------------
+    if (filters.list_ids?.length) {
+      console.log("List IDs:", filters.list_ids);
+
+      const listContactIds =
+        await ContactListRelationModel.getContactIdsByLists(
+          filters.list_ids
+        );
+
+      console.log(
+        "Contact IDs from Lists:",
+        listContactIds
+      );
+
+      if (!listContactIds.length) {
+        console.log(
+          "No contacts found for supplied lists"
+        );
+
+        return {
+          contacts: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            total_pages: 0,
+          },
+        };
+      }
+
+      query.whereIn("id", listContactIds);
+
+      console.log(
+        "Query After List Filter:",
+        query.clone().toSQL().toNative()
+      );
+    }
+
+    console.log(
+      "Final Query Before Count:",
+      query.clone().toSQL().toNative()
+    );
+
+    // -------------------------
+    // COUNT
+    // -------------------------
+    const totalResult = await query
+      .clone()
+      .count("* as count")
+      .first();
+
+    console.log("Total Result:", totalResult);
+
+    const total = Number(totalResult?.count || 0);
+
+    // -------------------------
+    // FETCH CONTACTS
+    // -------------------------
+    const contacts = await query
+      .orderBy(sortBy, sortOrder)
+      .limit(limit)
+      .offset(offset);
+
+    console.log(
+      "Contacts Found:",
+      contacts.length
+    );
+
+    console.log(
+      "Contacts:",
+      JSON.stringify(contacts, null, 2)
+    );
+
+    // -------------------------
+    // FETCH TAGS
+    // -------------------------
     if (contacts.length > 0) {
-      const contactIds = contacts.map((c: any) => c.id);
-      const tagsData = await ContactTagRelationModel.getContactsWithTags(contactIds);
+      const contactIds = contacts.map(
+        (contact: any) => contact.id
+      );
+
+      console.log(
+        "Contact IDs for Tag Lookup:",
+        contactIds
+      );
+
+      const tagsData =
+        await ContactTagRelationModel.getContactsWithTags(
+          contactIds
+        );
+
+      console.log(
+        "Tags Data:",
+        JSON.stringify(tagsData, null, 2)
+      );
 
       const tagsMap = new Map();
+
       tagsData.forEach((item: any) => {
         tagsMap.set(item.contact_id, item.tags);
       });
 
       contacts.forEach((contact: any) => {
-        contact.tags = tagsMap.get(contact.id) || [];
+        contact.tags =
+          tagsMap.get(contact.id) || [];
       });
     }
+
+    console.log(
+      "Final Contacts Response:",
+      JSON.stringify(contacts, null, 2)
+    );
 
     return {
       contacts,

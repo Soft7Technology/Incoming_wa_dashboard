@@ -683,36 +683,98 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
   if (data.key === "@whatsapp/send-cta-message") {
     const attrs = data.attributes || {};
 
-    return {
-      type: "interactive",
-      interactive: {
-        type: "cta_url",
-        header: {
-          type:
-            attrs.message?.interactive?.header?.type || "none",
-        },
-        body: {
-          text:
-            attrs.message?.interactive?.body?.text || "",
-        },
-        footer: {
-          text:
-            attrs.message?.interactive?.footer?.text || "",
-        },
-        action: {
-          name: "cta_url",
-          parameters: {
-            display_text:
-              attrs.message?.interactive?.action?.parameters
-                ?.display_text || "",
-            url:
-              attrs.message?.interactive?.action?.parameters
-                ?.url || "",
-          },
+    const interactiveData = attrs.message?.interactive || {};
+
+    const header = interactiveData.header || {};
+    const body = interactiveData.body || {};
+    const footer = interactiveData.footer || {};
+    const parameters = interactiveData.action?.parameters || {};
+
+    const interactive: any = {
+      type: "cta_url",
+
+      body: {
+        text: body.text || "",
+      },
+
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: parameters.display_text || "Open",
+          url: parameters.url || "",
         },
       },
     };
+
+    // -----------------------------------------
+    // Add header ONLY if type is valid
+    // Meta does NOT support "none"
+    // -----------------------------------------
+    const validHeaderTypes = [
+      "text",
+      "image",
+      "video",
+      "document",
+    ];
+
+    if (
+      header.type &&
+      validHeaderTypes.includes(header.type)
+    ) {
+      if (header.type === "text") {
+        interactive.header = {
+          type: "text",
+          text: header.text || "",
+        };
+      }
+
+      if (
+        header.type === "image" &&
+        header.image
+      ) {
+        interactive.header = {
+          type: "image",
+          image: header.image,
+        };
+      }
+
+      if (
+        header.type === "video" &&
+        header.video
+      ) {
+        interactive.header = {
+          type: "video",
+          video: header.video,
+        };
+      }
+
+      if (
+        header.type === "document" &&
+        header.document
+      ) {
+        interactive.header = {
+          type: "document",
+          document: header.document,
+        };
+      }
+    }
+
+    // -----------------------------------------
+    // Footer is optional
+    // Don't send footer.text = ""
+    // -----------------------------------------
+    if (footer.text?.trim()) {
+      interactive.footer = {
+        text: footer.text,
+      };
+    }
+
+    return {
+      type: "interactive",
+      interactive,
+    };
   }
+
 
   if (key === "@whatsapp/stop-chatbot") {
     if (session?.id) {
