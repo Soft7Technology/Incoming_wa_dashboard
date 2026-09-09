@@ -26,7 +26,8 @@ const createBaseApp = (routes: RouteConfig[] = []): Application => {
   }));
   
   app.use(cors());
-  app.use(hpp());
+  // Contact filters accept multiple country codes in repeated query parameters.
+  app.use(hpp({ whitelist: ['country_code'] }));
   app.use(compression());
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));

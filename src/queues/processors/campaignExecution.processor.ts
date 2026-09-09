@@ -1,3 +1,4 @@
+import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job } from 'bullmq';
 import redisConfig from '@surefy/config/redis.config';
 import { CampaignExecutionJobData } from '../campaignExecution.queue';
@@ -201,8 +202,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
     console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
     await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-      error_message: error?.message || 'Unknown error',
-      error_code: error?.code || 'UNKNOWN',
+      ...getMessageError(error),
     });
 
     await CampaignModel.incrementCount(campaign.id, 'failed_count');

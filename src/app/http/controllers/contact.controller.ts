@@ -81,6 +81,7 @@ class ContactController {
 
     const filters = {
       is_valid: req.query.is_valid,
+      country_code: req.query.country_code,
       search: req.query.search,
       tag_ids: req.query.tag_ids ? String(req.query.tag_ids).split(',') : undefined,
       list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
@@ -114,6 +115,7 @@ class ContactController {
 
     const filters = {
       is_valid: req.query.is_valid,
+      country_code: req.query.country_code,
       search: req.query.search,
       tag_ids: req.query.tag_ids ? String(req.query.tag_ids).split(',') : undefined,
       list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,

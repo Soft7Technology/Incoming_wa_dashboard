@@ -1,3 +1,4 @@
+import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
 import ContactService from './contact.service';
@@ -217,7 +218,7 @@ class CampaignService {
    * Get campaign by ID
    */
   async getCampaignById(campaignId: string) {
-    const campaign = await CampaignModel.findById(campaignId);
+    const campaign = await CampaignModel.findDetailsById(campaignId);
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
@@ -588,8 +589,7 @@ class CampaignService {
       console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-        error_message: error?.message || 'Unknown error',
-        error_code: error?.code || 'UNKNOWN',
+        ...getMessageError(error),
       });
 
       await CampaignModel.incrementCount(campaign.id, 'failed_count');
