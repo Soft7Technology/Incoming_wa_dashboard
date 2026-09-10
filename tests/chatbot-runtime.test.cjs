@@ -3,8 +3,9 @@ const assert = require('node:assert/strict');
 const ts = require('typescript');
 const fs = require('node:fs');
 const vm = require('node:vm');
-function runtime(mapping, owner = 'user') {
+function runtime(mapping, owner = 'user', creatorCompany = 'other-company') {
   const dependencies = {
+    '../../models/user.model': { findById: async () => ({ company_id: creatorCompany }) },
     '../../models/chatbotTrigger.model': { findRuntimeMapping: async () => mapping },
     '../../models/phoneNumber.model': { findByPhoneNumberId: async () => ({ user_id:'user', company_id:'company' }) },
     '../../models/chatBotEdge.model': { findByChatBotId: async () => [{source:'trigger',target:'reply'}] },
@@ -24,4 +25,9 @@ test('inactive/unmapped bots do not run', async () => {
 });
 test('phone mapping cannot run another owners flow', async () => {
   assert.equal(await runtime({chatbot_id:'bot'},'another-user')('phone'),null);
+});
+
+test('company member flow can run on the company receiving number', async () => {
+  const bot = await runtime({chatbot_id:'bot'}, 'member', 'company')('meta-id');
+  assert.equal(bot.id, 'bot');
 });

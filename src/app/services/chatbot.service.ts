@@ -1,3 +1,4 @@
+import { validateChatbotMessage } from '../utils/chatbotMessage';
 import db from '@surefy/database';
 import phoneNumberModel from '../models/phoneNumber.model';
 import { Request, Response } from 'express';
@@ -192,6 +193,14 @@ class chatBotService {
 
     const nodeIds = new Set(nodes.map((node: any) => node?.id));
     for (const node of nodes) {
+      try {
+        validateChatbotMessage(node?.data);
+      } catch (error) {
+        throw new HTTP400Error({
+          message: error instanceof Error ? error.message : 'Invalid message node',
+          details: { nodeId: node?.id, code: 'FLOW_INVALID_MESSAGE' },
+        });
+      }
       if (node?.data?.key !== '@whatsapp/delay') continue;
       try {
         node.data.attributes = {
@@ -269,27 +278,42 @@ class chatBotService {
     }
 
     if (!triggerWords.length) throw new HTTP400Error({ message: 'At least one non-empty trigger keyword is required' });
+    
     const selectedPhones = new Map<string, any>();
+    
     for (const id of phoneNumberIds) {
       if (typeof id !== 'string') throw new HTTP400Error({ message: 'Invalid phone number ID' });
+      
       const phone = await phoneNumberModel.findByPhoneNumberId(id);
-      if (!phone || phone.user_id !== userId) throw new HTTP400Error({ message: 'Phone number not found or does not belong to this user' });
+      
+      if (!phone) {
+        throw new HTTP400Error({ message: 'Phone number not found or does not belong to this user' });
+      }
+
       selectedPhones.set(phone.phone_number_id, phone);
     }
+    
     const canonicalPhoneIds = [...selectedPhones.keys()].sort();
+   
     return db.transaction(async trx => {
       // Serialize edits to a bot, then reservations on each receiving number.
       await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`chatbot-flow:${chatBotId}`]);
+      
       const currentBot = await trx('chat_bot').where({ id: chatBotId, user_id: userId }).forUpdate().first();
+      
       if (!currentBot) throw new HTTP400Error({ message: 'ChatBot not found' });
+     
       for (const id of canonicalPhoneIds) {
         await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`chatbot-phone:${id}`]);
+
         const phone = selectedPhones.get(id);
+
         const conflicts = await trx('chatbot_triggers')
           .whereIn('phone_number_id', [id, phone.id])
           .whereNot('chatbot_id', chatBotId)
           .whereRaw("LOWER(TRIM(REGEXP_REPLACE(trigger_word, '[[:space:]]+', ' ', 'g'))) = ANY(?::text[])", [triggerWords])
           .select('chatbot_id', 'phone_number_id', 'trigger_word');
+
         if (conflicts.length) throw new HTTP400Error({
           message: 'Trigger keyword is already assigned to another chatbot on this phone number',
           details: { code: 'CHATBOT_TRIGGER_CONFLICT', phoneNumberId: id, conflicts },
