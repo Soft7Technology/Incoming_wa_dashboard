@@ -157,7 +157,7 @@ class MessageController {
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
 
-    console.log("Entry",JSON.stringify(entry))
+    // console.log("Entry",JSON.stringify(entry))
 
     for (const item of entry || []) {
       for (const change of item.changes || []) {
