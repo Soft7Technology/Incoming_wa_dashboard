@@ -1,5 +1,6 @@
 {
   "watch": ["src", "library"],
   "ext": "ts,json",
+  "delay": "1000",
   "ignore": ["src/**/*.spec.ts"]
 }

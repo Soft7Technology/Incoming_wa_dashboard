@@ -4,6 +4,7 @@ import CampaignService from './campaign.service';
 
 class CampaignSchedulerService {
   private isRunning: boolean = false;
+  private task?: cron.ScheduledTask;
 
   /**
    * Start the campaign scheduler
@@ -19,7 +20,7 @@ class CampaignSchedulerService {
     this.isRunning = true;
 
     // Run every minute
-    cron.schedule('* * * * *', async () => {
+    this.task = cron.schedule('* * * * *', async () => {
       await this.checkScheduledCampaigns();
     });
 
@@ -63,6 +64,9 @@ class CampaignSchedulerService {
    * Stop the scheduler (for graceful shutdown)
    */
   stop() {
+    this.task?.stop();
+    this.task?.destroy();
+    this.task = undefined;
     this.isRunning = false;
     console.log('Campaign scheduler stopped');
   }
