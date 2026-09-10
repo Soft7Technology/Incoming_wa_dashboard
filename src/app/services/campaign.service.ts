@@ -43,7 +43,8 @@ class CampaignService {
   async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
-    if (!template || template.user_id !== userId) {
+    console.log('Template',template)
+    if (!template) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
