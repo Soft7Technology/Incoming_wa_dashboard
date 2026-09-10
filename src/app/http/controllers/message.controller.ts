@@ -193,6 +193,7 @@ class MessageController {
             await contactModel.findOrCreateIncoming({
               user_id: phoneNumber.user_id,
               company_id: phoneNumber.company_id,
+              phone_number_id: phoneNumber.id,
               phone_number: message.from,
               name: value.contacts?.[0]?.profile?.name || "",
             });

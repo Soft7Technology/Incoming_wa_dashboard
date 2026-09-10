@@ -49,7 +49,7 @@ class ContactModel extends BaseModel {
   }
 
   async findOrCreateIncoming(data: any) {
-    const existing = await this.findByPhone(data.user_id, data.phone_number);
+    const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id);
     if (existing) return existing;
     try {
       return await this.create(data);

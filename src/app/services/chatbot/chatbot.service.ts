@@ -7,6 +7,7 @@ import nodemailer from "nodemailer";
 import { flowRouter } from './flow.route'
 import contactModel from '@surefy/console/models/contact.model';
 import userModel from '../../models/user.model';
+import phoneNumberModel from '../../models/phoneNumber.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -47,6 +48,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       ? await chatBotModel.getPublishedBotByTrigger(phoneNumberId, incomingText)
       : null;
 
+    const triggerMatched = Boolean(bot);
+
     if (bot) {
       await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
     } else {
@@ -80,9 +83,12 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
 
+    const receivingPhoneNumber = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
+    if (!receivingPhoneNumber) return null;
     await contactModel.findOrCreateIncoming({
       user_id: bot.user_id,
       company_id: bot.company_id,
+      phone_number_id: receivingPhoneNumber.id,
       phone_number: message.from,
       name: profile_name,
     });
@@ -122,6 +128,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       incomingText,
       incomingId,
       message,
+      triggerMatched,
       phoneNumberId
     })
 
@@ -130,6 +137,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     // console.log("Response", JSON.stringify(response))
 
     // 4️⃣ Send message
+    if (response?.ignoreMessage) return null;
+
     if (response) {
       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
     } else {

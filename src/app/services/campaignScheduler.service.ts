@@ -5,6 +5,7 @@ import CampaignService from './campaign.service';
 class CampaignSchedulerService {
   private isRunning: boolean = false;
   private task?: cron.ScheduledTask;
+  private checking = false;
 
   /**
    * Start the campaign scheduler
@@ -20,7 +21,7 @@ class CampaignSchedulerService {
     this.isRunning = true;
 
     // Run every minute
-    this.task = cron.schedule('* * * * *', async () => {
+    this.task = cron.schedule('*/5 * * * * *', async () => {
       await this.checkScheduledCampaigns();
     });
 
@@ -31,6 +32,8 @@ class CampaignSchedulerService {
    * Check for campaigns that are scheduled to run now
    */
   private async checkScheduledCampaigns() {
+    if (this.checking) return;
+    this.checking = true;
     try {
       const now = new Date();
       console.log(`[Campaign Scheduler] Checking for scheduled campaigns at ${now.toISOString()}`);
@@ -52,11 +55,13 @@ class CampaignSchedulerService {
         } catch (error: any) {
           console.error(`[Campaign Scheduler] Failed to start campaign ${campaign.id}:`, error.message);
           // Mark campaign as failed
-          await CampaignModel.updateStatus(campaign.id, 'failed');
+          // Leave scheduled work available for the next scan if queueing fails.
         }
       }
     } catch (error: any) {
       console.error('[Campaign Scheduler] Error checking scheduled campaigns:', error.message);
+    } finally {
+      this.checking = false;
     }
   }
 

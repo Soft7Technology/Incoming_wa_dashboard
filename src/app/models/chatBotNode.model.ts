@@ -15,6 +15,7 @@ class chatBotNodeModel extends BaseModel {
   }
 
   async createNodes(data: any[]) {
+    if (!data.length) return [];
     return this.query().insert(data).returning('*'); // ✅
   }
 

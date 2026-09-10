@@ -12,6 +12,7 @@ export const menuFlow = async ({
 }: any) => {
 
   console.log("Menu Incoming ID",incomingId,incomingText)
+  if (session?.variables?.chatbot_delay_token) return { ignoreMessage: true };
 
   // =========================================
   // 1. START FLOW
@@ -214,7 +215,7 @@ export const menuFlow = async ({
 
   if (!matchedEdge) {
     console.log("❌ No matched edge");
-    return null;
+    return { ignoreMessage: true };
   }
 
   const nextNode = bot.nodes.find(

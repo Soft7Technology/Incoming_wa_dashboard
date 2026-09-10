@@ -17,6 +17,7 @@ console.log(`⚙️  Worker modes: ${process.env.WORKER_MODE === 'true' ? 'ENABL
 import '../queues/processors/contactImport.processor';
 import '../queues/processors/campaignExecution.processor';
 import '../queues/processors/bulkMessageSend.processor';
+import '../queues/processors/chatbotDelay.processor';
 
 console.log('✅ Background workers started successful');
 console.log('📦 Active worker:');
