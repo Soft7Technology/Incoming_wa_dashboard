@@ -7,6 +7,7 @@ import nodemailer from "nodemailer";
 import { flowRouter } from './flow.route'
 import contactModel from '@surefy/console/models/contact.model';
 import userModel from '../../models/user.model';
+import phoneNumberModel from '../../models/phoneNumber.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -80,9 +81,12 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
 
+    const receivingPhoneNumber = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
+    if (!receivingPhoneNumber) return null;
     await contactModel.findOrCreateIncoming({
       user_id: bot.user_id,
       company_id: bot.company_id,
+      phone_number_id: receivingPhoneNumber.id,
       phone_number: message.from,
       name: profile_name,
     });
