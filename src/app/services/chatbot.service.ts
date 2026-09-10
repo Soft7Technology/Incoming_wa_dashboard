@@ -33,7 +33,9 @@ class chatBotService {
 
   async createChatBot(data: chatBot) {
     console.log('Creating chatbot with data:', data); // Debug log
-    const result = await chatBotModel.create(data);
+    const { user_id, company_id, name, description, status, published } = data;
+    const result = await chatBotModel.create({ user_id, company_id,
+      name: this.normalizeName(name), description, status, published });
     return result;
   }
 

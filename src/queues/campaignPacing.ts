@@ -17,10 +17,12 @@ return 0
 export async function waitForCampaignPermit(sender: string, recipient: string) {
   const redis = await campaignExecutionQueue.client;
   const prefix = `campaign-send:{${sender}}`;
+  const deadline = Date.now() + 1000;
   for (;;) {
     const wait = Number(await redis.eval(pacingScript, 2, prefix, `${prefix}:${recipient.replace(/\D/g, '')}`,
       Math.ceil(1000 / campaignCapacity.messagesPerSecond), campaignCapacity.pairIntervalMs));
-    if (wait <= 0) return;
+    if (wait <= 0) return true;
+    if (Date.now() + wait > deadline) return false;
     await new Promise(resolve => setTimeout(resolve, Math.min(wait, 6000)));
   }
 }

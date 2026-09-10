@@ -1,38 +1,26 @@
-/**
- * Background Worker Process
- * This process handles all background job processing including:
- * - Contact imports
- * - Campaign executions
- * - Bulk message sending
- *
- * To run: npm run worker
- *
- * NOTE: WORKER_MODE environment variable is set via package.json script
- */
+import { contactImportWorker } from '../queues/processors/contactImport.processor';
+import { campaignExecutionWorker } from '../queues/processors/campaignExecution.processor';
+import { bulkMessageSendWorker } from '../queues/processors/bulkMessageSend.processor';
+import { chatbotDelayWorker } from '../queues/processors/chatbotDelay.processor';
+import db from '../../library/surefy/src/database';
 
-console.log('🚀 Startings background workers...');
-console.log(`⚙️  Worker modes: ${process.env.WORKER_MODE === 'true' ? 'ENABLED' : 'DISABLED'}`);
-
-// Import the worker processors (this will start the BullMQ workers)
-import '../queues/processors/contactImport.processor';
-import '../queues/processors/campaignExecution.processor';
-import '../queues/processors/bulkMessageSend.processor';
-import '../queues/processors/chatbotDelay.processor';
-
-console.log('✅ Background workers started successful');
-console.log('📦 Active worker:');
-console.log('  - Contact Import Worker (concurrency: 2)');
-console.log('  - Campaign Execution Worker (concurrency: 1)');
-console.log('  - Bulk Message Send Worker (concurrency: 2)');
-console.log('\nPress Ctrl+C to stop workers');
-
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('\n⏳ Shutting down workers gracefully...');
-  process.exit(0);
-});
-
-process.on('SIGINT', async () => {
-  console.log('\n⏳ Shutting down workers gracefully...');
-  process.exit(0);
-});
+const workers = [contactImportWorker, campaignExecutionWorker, bulkMessageSendWorker, chatbotDelayWorker];
+console.info('[Workers] Started', { pid: process.pid, workerMode: process.env.WORKER_MODE,
+  workers: workers.map(worker => ({ name: worker.name, concurrency: worker.opts.concurrency })) });
+let stopping = false;
+async function shutdown(signal: string) {
+  if (stopping) return;
+  stopping = true;
+  console.info('[Workers] Draining active jobs', { signal, pid: process.pid });
+  try {
+    await Promise.all(workers.map(worker => worker.close()));
+    await db.destroy();
+    console.info('[Workers] Shutdown complete');
+    process.exit(0);
+  } catch (error) {
+    console.error('[Workers] Shutdown failed', error);
+    process.exit(1);
+  }
+}
+process.once('SIGTERM', () => { void shutdown('SIGTERM'); });
+process.once('SIGINT', () => { void shutdown('SIGINT'); });

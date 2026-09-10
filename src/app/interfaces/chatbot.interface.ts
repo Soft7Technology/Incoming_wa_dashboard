@@ -6,7 +6,6 @@ export interface chatBot{
     name:string;
     published:boolean;
     status:string
-    phoneNumberId:string;
     createdAt?:string
 }
 

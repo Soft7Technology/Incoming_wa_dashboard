@@ -22,15 +22,7 @@ class chatBotController {
      * Create New Chatbot
      */
     createChatBot = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-        const { name, description, phoneNumberId } = req.body
-        console.log("Req", req.body)
-        const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(phoneNumberId)
-        console.log("PhoneNumber found:", phoneNumber); // Debug log
-
-        if (!phoneNumber || !phoneNumber.phone_number_id) {
-            throw new HTTP400Error({ message: 'Associated WABA account not found for user' });
-        }
-
+        const { name, description } = req.body;
         const result = await chatBotService.createChatBot({
             user_id: req.userId!,
             company_id: req.companyId!,
@@ -38,7 +30,6 @@ class chatBotController {
             description,
             status: 'draft',
             published: false,
-            phoneNumberId: phoneNumber.phone_number_id
         })
         // await userPlansModel.incrementUsage(req.userId!, 'Chatbot');
 

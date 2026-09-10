@@ -11,14 +11,20 @@ import CampaignMessageModel from '@surefy/console/models/campaignMessage.model';
 import ContactModel from '@surefy/console/models/contact.model';
 import TemplateModel from '@surefy/console/models/template.model';
 import MessageService from '@surefy/console/services/message.service';
-import * as os from 'os';
 import { v4 as uuidv4 } from "uuid";
 
 
+class CampaignInfrastructureError extends Error {}
 const capacitySampler = createCapacitySampler();
+const healthTimer = setInterval(() => {
+  capacitySampler.sample();
+  console.info('[Campaign Worker] Health', { ...capacitySampler.metrics(), concurrency: campaignCapacity.concurrency, messagesPerSecond: campaignCapacity.messagesPerSecond });
+}, 15000);
+healthTimer.unref();
 
 export async function processCampaignExecution(job: Job<CampaignExecutionJobData>, token?: string) {
   const { campaignId, companyId } = job.data;
+  const batchStartedAt = Date.now();
   const redis = await campaignExecutionQueue.client;
   const lockKey = `campaign-execution-lock:${campaignId}`;
   const lockOwner = uuidv4();
@@ -39,7 +45,8 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (campaign.company_id !== companyId) throw new Error('Campaign does not belong to company');
     if (['paused', 'completed'].includes(campaign.status)) return { status: campaign.status };
     if (campaign.status === 'scheduled' && campaign.scheduled_at && new Date(campaign.scheduled_at).getTime() > Date.now()) {
-      return defer(new Date(campaign.scheduled_at).getTime() - Date.now());
+      console.info('[Campaign Worker] Waiting for schedule', { campaignId, scheduledAt: campaign.scheduled_at });
+      return await defer(new Date(campaign.scheduled_at).getTime() - Date.now());
     }
     if (campaign.status !== 'running') {
       await CampaignModel.updateStatus(campaignId, 'running', { started_at: campaign.started_at || new Date() });
@@ -50,6 +57,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (!phone) throw new Error('Business phone number not found');
     campaign.phone_number_id = phone.phone_number_id;
     const batchSize = capacitySampler.sample();
+    console.info('[Campaign Worker] Batch starting', { campaignId, jobId: job.id, attempt: job.attemptsMade + 1, ...capacitySampler.metrics() });
     const pending = job.data.status === 'failed'
       ? await CampaignMessageModel.getFailedMessages(campaignId, batchSize, new Date(job.timestamp))
       : await CampaignMessageModel.getPendingMessages(campaignId, batchSize, job.data.status, job.data.error_message);
@@ -58,6 +66,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       const finalStatus = Number(counts.failed_count) > 0 && Number(counts.sent_count) + Number(counts.delivered_count) + Number(counts.read_count) === 0
         ? 'failed' : 'completed';
       await CampaignModel.updateStatus(campaignId, finalStatus, { completed_at: new Date() });
+      console.info('[Campaign Worker] Finished', { campaignId, status: finalStatus, counts });
       return { status: finalStatus };
     }
     const results = await Promise.allSettled(pending.map(async (message: any) => {
@@ -68,6 +77,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     let pause = false;
     for (const result of results) {
       if (result.status !== 'rejected') continue;
+      if (result.reason instanceof CampaignInfrastructureError) throw result.reason;
       const failure = getMessageError(result.reason);
       const key = JSON.stringify([failure.error_code, failure.error_message]);
       errors[key] = (errors[key] || 0) + 1;
@@ -79,26 +89,34 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const counts = await CampaignMessageModel.getCampaignStats(campaignId);
     const progress = Math.min(100, Math.round((campaign.total_recipients - Number(counts.pending_count)) / Math.max(1,campaign.total_recipients) * 100));
     await job.updateProgress(progress);
-    await job.log(`Batch size ${batchSize}; completed ${pending.length}; progress ${progress}%`);
+    console.info('[Campaign Worker] Batch finished', { campaignId, durationMs: Date.now() - batchStartedAt, selected: pending.length, rejected: results.filter(r => r.status === 'rejected').length, progress, counts, ...capacitySampler.metrics() });
+    await job.log(`Batch size ${batchSize}; selected ${pending.length}; progress ${progress}%`);
     const current = await CampaignModel.findById(campaignId);
     if (current?.status !== 'running') return { status: current?.status };
     if (pause) {
       await CampaignModel.updateStatus(campaignId, 'paused');
+      console.warn('[Campaign Worker] Paused: provider limit or repeated errors', { campaignId, errorCounts });
       await job.log('Paused for provider rate limit or more than 10 matching errors. Inspect failed recipient details before resuming.');
       return { status: 'paused' };
     }
     return await defer(campaignCapacity.yieldMs);
   } catch (error) {
     if (error instanceof DelayedError) throw error;
-    // Let BullMQ retry infrastructure errors; pending recipients remain available.
+    console.error('[Campaign Worker] Execution error', { campaignId, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error) });
+    if (job.attemptsMade + 1 >= (job.opts.attempts || 1)) {
+      const current = await CampaignModel.findById(campaignId);
+      if (current?.company_id === companyId && current.status === 'running') await CampaignModel.updateStatus(campaignId, 'failed');
+    }
     throw error;
   } finally {
     clearInterval(heartbeat);
-    await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end", 1, lockKey, lockOwner);
+    await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end", 1, lockKey, lockOwner)
+      .catch(error => console.error('[Campaign Worker] Lock release failed; expires automatically', { campaignId, message: error.message }));
   }
 }
 
 async function sendCampaignMessage(campaign: any, campaignMessage: any, template: any, ownsLock: () => boolean) {
+  let infrastructureOperation = false;
   try {
     // Get contact
     const contact = await ContactModel.findById(campaignMessage.contact_id);
@@ -127,11 +145,13 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
 
     const messageUUID = uuidv4();
 
-    await waitForCampaignPermit(campaign.phone_number_id, contact.phone_number);
-    if (!ownsLock()) throw new Error('Campaign execution lock lost');
+    infrastructureOperation = true;
+    if (!await waitForCampaignPermit(campaign.phone_number_id, contact.phone_number)) return;
+    if (!ownsLock()) return;
     const current = await CampaignModel.findById(campaign.id);
     if (current?.status !== 'running') return;
 
+    infrastructureOperation = false;
     // Send message via MessageService
     const message = await MessageService.sendMessage({
       messageUUID,
@@ -147,6 +167,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
 
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
+    if (infrastructureOperation) throw new CampaignInfrastructureError(error.message);
     console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
     await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
@@ -270,7 +291,8 @@ campaignExecutionWorker.on('completed', (job) => {
   console.log(`✅ Campaign job ${job.id} completed successfully`);
 });
 
-campaignExecutionWorker.on('closed', () => capacitySampler.close());
+campaignExecutionWorker.on('closed', () => { clearInterval(healthTimer); capacitySampler.close(); });
+campaignExecutionWorker.on('stalled', jobId => console.warn('[Campaign Worker] Job stalled; BullMQ will recover it', { jobId }));
 
 campaignExecutionWorker.on('failed', (job, err) => {
   console.error(`❌ Campaign job ${job?.id} failed:`, err.message);

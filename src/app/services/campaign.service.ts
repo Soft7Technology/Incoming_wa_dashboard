@@ -252,12 +252,12 @@ class CampaignService {
    */
   async reBroadcastCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
-    console.log('Starting campaign:', campaign);
+    console.info('[Campaign] Rebroadcast requested', { campaignId, status: campaign?.status });
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
 
-    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed' && campaign.status !== 'completed') {
+    if (!['scheduled', 'draft', 'paused', 'failed', 'completed'].includes(campaign.status)) {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
@@ -306,12 +306,12 @@ class CampaignService {
    */
   async startCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
-    console.log('Starting campaign:', campaign);
+    console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
 
-    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status !== 'failed' && campaign.status !== 'completed') {
+    if (!['scheduled', 'draft', 'paused', 'failed', 'completed', 'running'].includes(campaign.status)) {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
@@ -323,10 +323,22 @@ class CampaignService {
       if (state === 'completed' || state === 'failed') {
         await existingJob.remove();
       } else {
-        return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
+        // A paused campaign may still have its yielded job waiting in Redis.
+        if (campaign.status === 'paused') {
+          if (state === 'active') throw new HTTP400Error({ message: 'Campaign is finishing its current batch; retry start shortly' });
+          await existingJob.remove();
+        } else {
+          if (campaign.status === 'scheduled' && state === 'delayed') {
+            await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
+            await existingJob.promote();
+            return { message: 'Campaign queued to start now', campaign_id: campaignId, status: 'waiting' };
+          }
+          console.info('[Campaign] Existing job', { campaignId, state });
+          return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
+        }
       }
     }
-    await CampaignModel.updateStatus(campaignId, 'scheduled');
+    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
 
     // Queue campaign execution in background worker
     await campaignExecutionQueue.add(
@@ -355,7 +367,7 @@ class CampaignService {
   //  */
   // async reBroadcastCampaign(campaignId: string) {
   //   const campaign = await CampaignModel.findById(campaignId);
-  //   console.log('Starting campaign:', campaign);
+  //   console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
   //   if (!campaign) {
   //     throw new HTTP404Error({ message: 'Campaign not found' });
   //   }

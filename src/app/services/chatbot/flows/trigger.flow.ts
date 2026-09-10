@@ -227,7 +227,7 @@
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
 import userModel from "@surefy/console/app/models/user.model";
 import { executeNode } from "../engine/executeNode";
-import chatBotModel from "@surefy/console/app/models/chatbot.model";
+import { getRuntimeBot } from "../runtimeBot";
 
 export const triggerFlow = async ({
   bot,
@@ -278,9 +278,9 @@ export const triggerFlow = async ({
   console.log("Trigger Node:", triggerNode.id);
 
   // Check trigger words
-  const matchedBot = await chatBotModel.getPublishedBotByTrigger(
+  const matchedBot = await getRuntimeBot(
     phoneNumberId,
-    incomingText
+    undefined, incomingText
   );
 
   if (!matchedBot || matchedBot.id !== bot.id) {
