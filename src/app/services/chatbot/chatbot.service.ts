@@ -53,6 +53,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     if (bot) {
       await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
     } else {
+      console.info('[Chatbot Routing] No keyword flow selected; checking active session', { phoneNumberId });
       const activeSession = await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId);
       if (!activeSession) return null;
       bot = await getRuntimeBot(phoneNumberId, activeSession.chatbot_id);
@@ -78,7 +79,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     console.log("Fpo Info",fpo_info)
 
-    console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+    console.log("🤖 Found bot:", bot ? bot.id : "No bot");
     if (!bot) return null;
 
     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
@@ -101,26 +102,6 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
   // }
   //   }
 
-
-    // 2️⃣ Load nodes + edges
-    const rawNodes = await chatBotNodeModel.findByChatBotId(bot?.id) || [];
-    const rawEdges = await chatBotEdgeModel.findByChatBotId(bot?.id) || [];
-
-    bot.nodes = rawNodes.map((n: any) => ({
-      ...n,
-      data: safeJSON(n.data),
-    }));
-
-    bot.edges = rawEdges.map((e: any) => ({
-      ...e,
-      data: safeJSON(e.data),
-    }));
-
-    console.log("📦 Nodes:", bot.nodes.length);
-    console.log("🔗 Edges:", bot.edges.length);
-
-    // console.log("Nodes", JSON.stringify(bot.nodes))
-    // console.log("Edges", JSON.stringify(bot.edges))
 
     const response = await flowRouter({
       bot,
