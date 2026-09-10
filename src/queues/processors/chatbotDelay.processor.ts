@@ -2,7 +2,7 @@ import { Worker } from 'bullmq';
 import redisConfig from '@surefy/config/redis.config';
 import { ChatbotDelayJob } from '../chatbotDelay.queue';
 import sessions from '../../app/models/chatSession.model';
-import bots from '../../app/models/chatbot.model';
+import { getRuntimeBot } from '../../app/services/chatbot/runtimeBot';
 import nodes from '../../app/models/chatBotNode.model';
 import edges from '../../app/models/chatBotEdge.model';
 import { executeNode, endSession } from '../../app/services/chatbot/engine/executeNode';
@@ -12,8 +12,8 @@ export async function resumeChatbotDelay(data: ChatbotDelayJob) {
   const session = await sessions.findById(data.sessionId);
   if (!session?.active || session.current_node_id !== data.nodeId ||
       session.variables?.chatbot_delay_token !== data.token) return;
-  const bot = await bots.findById(session.chatbot_id);
-  if (!bot?.published) return;
+  const bot = await getRuntimeBot(session.phoneNumberId, session.chatbot_id);
+  if (!bot) return;
   const decode = (row: any) => ({ ...row, data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data });
   bot.nodes = (await nodes.findByChatBotId(bot.id)).map(decode);
   bot.edges = (await edges.findByChatBotId(bot.id)).map(decode);

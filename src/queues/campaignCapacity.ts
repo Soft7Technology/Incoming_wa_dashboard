@@ -29,6 +29,8 @@ export function createCapacitySampler() {
   let previous = snapshot();
   let batch = Math.min(2, campaignCapacity.maxBatch);
   let sampledAt = Date.now();
+  let processCpu = process.cpuUsage();
+  let metrics = { hostCpuPercent: 0, processCpuPercent: 0, memoryPercent: 0, rssMB: 0, eventLoopP95Ms: 0 };
   const loop = monitorEventLoopDelay({ resolution: 20 });
   loop.enable();
   return {
@@ -37,12 +39,22 @@ export function createCapacitySampler() {
       const now = snapshot();
       const elapsed = now.total - previous.total;
       const cpu = elapsed > 0 ? 1 - (now.idle - previous.idle) / elapsed : 1;
+      const usage = process.cpuUsage(processCpu);
+      processCpu = process.cpuUsage();
+      metrics = {
+        hostCpuPercent: Math.round(cpu * 100),
+        processCpuPercent: Math.round((usage.user + usage.system) / ((Date.now() - sampledAt) * 10)),
+        memoryPercent: Math.round((1 - os.freemem() / os.totalmem()) * 100),
+        rssMB: Math.round(process.memoryUsage().rss / 1048576),
+        eventLoopP95Ms: Math.round(loop.percentile(95) / 1e6),
+      };
       batch = nextBatchSize(batch, cpu, 1 - os.freemem() / os.totalmem(), loop.percentile(95) / 1e6, campaignCapacity.maxBatch);
       previous = now;
       sampledAt = Date.now();
       loop.reset();
       return batch;
     },
+    metrics() { return { ...metrics, batchSize: batch, pid: process.pid }; },
     close() { loop.disable(); },
   };
 }

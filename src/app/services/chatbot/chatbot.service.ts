@@ -1,5 +1,5 @@
 import chatSessionModel from '@surefy/console/app/models/chatSession.model';
-import chatBotModel from '@surefy/console/models/chatbot.model';
+import { getRuntimeBot } from './runtimeBot';
 import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
 import chatBotEdgeModel from '@surefy/console/models/chatBotEdge.model';
 import messageService from "@surefy/console/services/message.service"
@@ -45,7 +45,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     // 1️⃣ Get bot
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
     let bot: any = message?.text?.body
-      ? await chatBotModel.getPublishedBotByTrigger(phoneNumberId, incomingText)
+      ? await getRuntimeBot(phoneNumberId, undefined, incomingText)
       : null;
 
     const triggerMatched = Boolean(bot);
@@ -55,8 +55,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     } else {
       const activeSession = await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId);
       if (!activeSession) return null;
-      bot = await chatBotModel.findById(activeSession.chatbot_id);
-      if (!bot?.published) return null;
+      bot = await getRuntimeBot(phoneNumberId, activeSession.chatbot_id);
+      if (!bot) return null;
     }
 
     const numberMatch = incomingText.match(/\d{10,13}/);

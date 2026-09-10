@@ -9,7 +9,7 @@ class CampaignSchedulerService {
 
   /**
    * Start the campaign scheduler
-   * Checks for scheduled campaigns every minute
+   * Checks for scheduled campaigns every five seconds
    */
   start() {
     if (this.isRunning) {
@@ -20,7 +20,7 @@ class CampaignSchedulerService {
     console.log('Starting campaign scheduler...');
     this.isRunning = true;
 
-    // Run every minute
+    // Run every five seconds
     this.task = cron.schedule('*/5 * * * * *', async () => {
       await this.checkScheduledCampaigns();
     });
@@ -54,7 +54,6 @@ class CampaignSchedulerService {
           console.log(`[Campaign Scheduler] Campaign ${campaign.id} queued successfully:`, result);
         } catch (error: any) {
           console.error(`[Campaign Scheduler] Failed to start campaign ${campaign.id}:`, error.message);
-          // Mark campaign as failed
           // Leave scheduled work available for the next scan if queueing fails.
         }
       }
