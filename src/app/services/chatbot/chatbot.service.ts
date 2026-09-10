@@ -80,19 +80,12 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
 
-    //check exist contact
-    const existContact = await contactModel.findByPhone(bot.user_id, message.from)
-    console.log("Existing Contant",existContact)
-    if(!existContact){
-      const newContact = await contactModel.create({
-        // user_id: mappedUserId,
-        user_id: bot.user_id,
-        company_id:bot.company_id,
-        phone_number:message.from,
-        name:profile_name
-      })
-      console.log("New Contact", newContact)
-    }
+    await contactModel.findOrCreateIncoming({
+      user_id: bot.user_id,
+      company_id: bot.company_id,
+      phone_number: message.from,
+      name: profile_name,
+    });
   //   else{
   //       // Update contact mapping if FPO user found
   // if (existContact.user_id !== mappedUserId) {

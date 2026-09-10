@@ -157,6 +157,8 @@ class MessageController {
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
 
+    console.log("Entry",JSON.stringify(entry))
+
     for (const item of entry || []) {
       for (const change of item.changes || []) {
         if (change.field === 'messages') {
@@ -188,18 +190,12 @@ class MessageController {
             const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(value.metadata.phone_number_id)
 
             
-            //check exist contact
-            const existContact = await contactModel.findByPhone(phoneNumber.user_id,message.from)
-            console.log("Existing Contant",existContact)
-            if(!existContact){
-                  const newContact = await contactModel.create({
-                    user_id: phoneNumber.user_id,
-                    company_id:phoneNumber.company_id,
-                    phone_number:message.from,
-                    name:value.contacts?.[0]?.profile?.name || ""
-              })
-                  console.log("New Contact", newContact)
-                }
+            await contactModel.findOrCreateIncoming({
+              user_id: phoneNumber.user_id,
+              company_id: phoneNumber.company_id,
+              phone_number: message.from,
+              name: value.contacts?.[0]?.profile?.name || "",
+            });
 
             await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,value.contacts?.[0]?.profile?.name)
           }

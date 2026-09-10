@@ -1,6 +1,16 @@
 import { BaseModel } from '@surefy/models/base.model';
 import db from '../../database';
 import phoneNumberModel from './phoneNumber.model';
+import { Knex } from 'knex';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+
+export function normalizeContactPhone(value: unknown): string {
+  const digits = String(value ?? '').trim().replace(/[+\s()-]/g, '');
+  if (!/^\d+$/.test(digits)) {
+    throw new HTTP400Error({ message: 'A valid phone number is required' });
+  }
+  return `+${digits}`;
+}
 
 // Helper: build an OR condition for uuid-array column "assigned_to"
 // Postgres requires the @> (contains) operator for uuid[] columns
@@ -11,6 +21,46 @@ function orAssignedTo(query: any, userId: string) {
 class ContactModel extends BaseModel {
   constructor() {
     super('contacts');
+  }
+
+  async create(data: any, trx?: Knex.Transaction): Promise<any> {
+    const normalized = { ...data, phone_number: normalizeContactPhone(data.phone_number) };
+    const insert = async (transaction: Knex.Transaction) => {
+      // Serialize creates for the same owner, business number and normalized phone.
+      const key = JSON.stringify([data.user_id, data.phone_number_id ?? null, normalized.phone_number]);
+      await transaction.raw('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [key]);
+      const existing = await transaction('contacts')
+        .where({ user_id: data.user_id, phone_number_id: data.phone_number_id ?? null })
+        .whereNull('deleted_at')
+        .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [normalized.phone_number.slice(1)])
+        .first();
+      if (existing) {
+        throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
+      }
+      return super.create(normalized, transaction);
+    };
+    return trx ? insert(trx) : this.db.transaction(insert);
+  }
+
+  async update(id: any, data: any) {
+    return super.update(id, data.phone_number === undefined ? data : {
+      ...data, phone_number: normalizeContactPhone(data.phone_number),
+    });
+  }
+
+  async findOrCreateIncoming(data: any) {
+    const existing = await this.findByPhone(data.user_id, data.phone_number);
+    if (existing) return existing;
+    try {
+      return await this.create(data);
+    } catch (error) {
+      // Another incoming request may have inserted this contact while we waited.
+      if (error instanceof HTTP400Error) {
+        const concurrent = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id);
+        if (concurrent) return concurrent;
+      }
+      throw error;
+    }
   }
 
   async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null) {
@@ -29,7 +79,7 @@ class ContactModel extends BaseModel {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
       })
-      .where({ phone_number: phoneNumber })
+      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [normalizeContactPhone(phoneNumber).slice(1)])
       .whereNull('deleted_at')
       .first();
   }
@@ -101,7 +151,9 @@ class ContactModel extends BaseModel {
   }
 
   async bulkCreate(contacts: any[]) {
-    return this.query().insert(contacts).returning('*');
+    return this.query().insert(contacts.map(contact => ({
+      ...contact, phone_number: normalizeContactPhone(contact.phone_number),
+    }))).returning('*');
   }
 
   async bulkUpsert(userId: string, contacts: any[]) {

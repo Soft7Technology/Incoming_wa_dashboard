@@ -16,7 +16,10 @@ interface RouteConfig {
   route: Router;
 }
 
-const createBaseApp = (routes: RouteConfig[] = []): Application => {
+const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
+  onListening?: () => void;
+  onShutdown?: () => void;
+} = {}): Application => {
   const app: Application = express();
   const PORT = process.env.PORT || 5000;
 
@@ -79,12 +82,33 @@ const createBaseApp = (routes: RouteConfig[] = []): Application => {
 
   // Start server only if not in worker mode
   if (process.env.WORKER_MODE !== 'true') {
-    app.listen(PORT, () => {
+    const server = app.listen(PORT, () => {
+      lifecycle.onListening?.();
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`📦 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 Health check: http://localhost:${PORT}/health`);
       console.log(`📚 API Documentation: http://localhost:${PORT}/api-docs`);
     });
+    server.on('error', (error: NodeJS.ErrnoException) => {
+      console.error(error.code === 'EADDRINUSE'
+        ? `Port ${PORT} is already in use. Stop the existing API instance before starting another.`
+        : `Server startup failed: ${error.message}`);
+      lifecycle.onShutdown?.();
+      process.exit(1);
+    });
+
+    let stopping = false;
+    const shutdown = () => {
+      if (stopping) return;
+      stopping = true;
+      lifecycle.onShutdown?.();
+      server.close(() => process.exit(0));
+      server.closeIdleConnections();
+      setTimeout(() => process.exit(0), 5000).unref();
+    };
+    process.once('SIGINT', shutdown);
+    process.once('SIGTERM', shutdown);
+    process.once('SIGUSR2', shutdown);
   }
 
   return app;
