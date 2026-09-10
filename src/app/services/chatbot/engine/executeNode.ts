@@ -1,4 +1,7 @@
 import axios from 'axios';
+import { parseChatbotDelay } from '../../../utils/chatbotDelay';
+import { randomUUID } from 'crypto';
+import { chatbotDelayQueue } from '../../../../queues/chatbotDelay.queue';
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
 import { buildResponse } from "@surefy/console/utils";
 import { replaceVariables } from '@surefy/console/utils';
@@ -27,6 +30,23 @@ export const executeNode = async ({
 
     const data = currentNode.data
     const key = data?.key
+
+    if (key === '@whatsapp/delay') {
+        const delay = parseChatbotDelay(data?.attributes?.delay);
+        const token = randomUUID();
+        await chatSessionModel.update(session.id, {
+            current_node_id: currentNode.id,
+            variables: { ...(session.variables || {}), chatbot_delay_token: token },
+        });
+        try {
+            await chatbotDelayQueue.add('resume', { sessionId: session.id, nodeId: currentNode.id, token },
+                { delay, jobId: token });
+        } catch (error) {
+            await endSession(session.id);
+            throw error;
+        }
+        return { ignoreMessage: true };
+    }
 
     console.log("EXECUTING NODE:", key, data, session)
 
@@ -641,6 +661,6 @@ export const executeNode = async ({
         currentNode: nextNode,
     });
 
-    const messages = (result: any) => result?.messages || (result ? [result] : []);
+    const messages = (result: any) => result?.ignoreMessage ? [] : result?.messages || (result ? [result] : []);
     return { messages: [...messages(response), ...messages(nextResponse)] };
 }

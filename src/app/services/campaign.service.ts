@@ -316,20 +316,16 @@ class CampaignService {
 
     // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
     // If so, skip adding a duplicate to avoid BullMQ errors.
-    try {
-      const existingJob = await campaignExecutionQueue.getJob(campaignId);
-      if (existingJob) {
-        const state = await existingJob.getState();
-        console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
-        return {
-          message: 'Campaign is already queued for execution',
-          campaign_id: campaignId,
-          status: state,
-        };
+    const existingJob = await campaignExecutionQueue.getJob(campaignId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'completed' || state === 'failed') {
+        await existingJob.remove();
+      } else {
+        return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
       }
-    } catch (_) {
-      // If we can't check the job state, proceed with adding a new job
     }
+    await CampaignModel.updateStatus(campaignId, 'scheduled');
 
     // Queue campaign execution in background worker
     await campaignExecutionQueue.add(
@@ -767,21 +763,16 @@ class CampaignService {
       throw new HTTP400Error({ message: 'Only paused campaigns can be resumed' });
     }
 
-    // Update status before queueing so the worker sees 'running'
-    await CampaignModel.updateStatus(campaignId, 'running');
-
-    // Re-queue campaign execution through BullMQ (not fire-and-forget)
-    await campaignExecutionQueue.add(
-      `campaign-${campaignId}`,
-      {
-        campaignId,
-        userId: campaign.user_id,
-        companyId: campaign.company_id,
-      },
-      {
-        jobId: `${campaignId}-resume-${Date.now()}`, // unique job ID for resume
-      }
-    );
+    const existingJob = await campaignExecutionQueue.getJob(campaignId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'active') throw new HTTP400Error({ message: 'Campaign is still finishing its current batch. Retry resume shortly.' });
+      await existingJob.remove();
+    }
+    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
+    await campaignExecutionQueue.add(`campaign-${campaignId}`, {
+      campaignId, userId: campaign.user_id, companyId: campaign.company_id,
+    }, { jobId: campaignId });
 
     return {
       message: 'Campaign queued for resumption successfully',

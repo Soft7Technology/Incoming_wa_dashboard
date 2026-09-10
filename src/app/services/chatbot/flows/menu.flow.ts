@@ -12,6 +12,7 @@ export const menuFlow = async ({
 }: any) => {
 
   console.log("Menu Incoming ID",incomingId,incomingText)
+  if (session?.variables?.chatbot_delay_token) return { ignoreMessage: true };
 
   // =========================================
   // 1. START FLOW

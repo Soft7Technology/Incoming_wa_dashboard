@@ -1,4 +1,5 @@
 import { Request, Response } from 'express';
+import { parseChatbotDelay } from '../utils/chatbotDelay';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -159,6 +160,18 @@ class chatBotService {
       throw new HTTP400Error({ message: 'ChatBot does not belong to this user' });
     }
     const normalizedName = name === undefined ? undefined : this.normalizeName(name);
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: add at least one node.',
+        details: { field: 'nodes', code: 'FLOW_NODES_REQUIRED' },
+      });
+    }
+    if (!Array.isArray(edges) || edges.length === 0) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: connect the trigger to a message or action node.',
+        details: { field: 'edges', code: 'FLOW_CONNECTION_REQUIRED' },
+      });
+    }
     // ---------------------------------
     // Get Trigger Node
     // ---------------------------------
@@ -170,6 +183,34 @@ class chatBotService {
     if (!triggerNode) {
       throw new HTTP400Error({
         message: "Flow must contain a trigger node",
+      });
+    }
+
+    const nodeIds = new Set(nodes.map((node: any) => node?.id));
+    for (const node of nodes) {
+      if (node?.data?.key !== '@whatsapp/delay') continue;
+      try {
+        node.data.attributes = {
+          ...node.data.attributes,
+          delay: parseChatbotDelay(node.data.attributes?.delay),
+        };
+      } catch (error) {
+        throw new HTTP400Error({
+          message: error instanceof Error ? error.message : 'Invalid chatbot delay.',
+          details: { field: 'nodes', nodeId: node.id, code: 'FLOW_INVALID_DELAY' },
+        });
+      }
+    }
+    if (edges.some((edge: any) => !edge || !nodeIds.has(edge.source) || !nodeIds.has(edge.target))) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: a connection references a node that does not exist.',
+        details: { field: 'edges', code: 'FLOW_INVALID_CONNECTION' },
+      });
+    }
+    if (!edges.some((edge: any) => edge.source === triggerNode.id && edge.target !== triggerNode.id)) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: connect the trigger to a message or action node.',
+        details: { field: 'edges', code: 'FLOW_CONNECTION_REQUIRED' },
       });
     }
 
