@@ -1,3 +1,4 @@
+import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
@@ -666,10 +667,17 @@ async saveIncomingMessage(data: any) {
   /**
  * Handle Send ChatBot message
  */
-  async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
+  async sendChatBotMessage(phoneNumberId: string, to: string, response: any): Promise<any> {
     console.log('Response', JSON.stringify(response))
 
-    const { type } = response
+    if (Array.isArray(response?.messages)) {
+      return sendChatbotResponseBatch(response, message => this.sendChatBotMessage(phoneNumberId, to, message));
+    }
+    response = normalizeChatbotResponse(response);
+    if (!response) {
+      console.warn('[Chatbot Send] Skipped empty or non-message response', { phoneNumberId });
+      return null;
+    }
 
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
     if (!phoneNumber) {
