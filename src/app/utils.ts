@@ -1,3 +1,4 @@
+import { validateChatbotMessage } from './utils/chatbotMessage';
 import chatSessionModel from '../app/models/chatSession.model';
 import chatBotModel from '../app/models/chatbot.model';
 import chatBotNodeModel from './models/chatBotNode.model';
@@ -661,6 +662,7 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
   console.log('NextNode', JSON.stringify(node))
   console.log()
   const data = safeJSON(node.data);
+  validateChatbotMessage(data);
 
 
   // if (node.type === "message") {
@@ -1029,7 +1031,7 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
         text: "Choose an option",
       },
 
-      footer: interactiveData.footer,
+      ...(interactiveData.footer?.text?.trim() ? { footer: interactiveData.footer } : {}),
 
       action: {
         button:

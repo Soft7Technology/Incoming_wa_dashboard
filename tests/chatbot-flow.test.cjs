@@ -7,7 +7,7 @@ function setup(conflicts) {
   const writes=[]; const bot={id:'bot',user_id:'user',published:false,name:'Bot'};
   function trx(table) { const q={where(){return q},whereIn(){return q},whereNot(){return q},whereRaw(){return q},forUpdate(){return q},first:async()=>bot,select:async()=>conflicts,update:async data=>writes.push({table,data}),delete:async()=>writes.push({table,deleted:true}),insert:async data=>writes.push({table,data})}; return q; }
   trx.raw=async()=>{};
-  const deps={'@surefy/database':{transaction:async fn=>fn(trx)},'../models/chatbot.model':{findById:async()=>bot},'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'uuid',phone_number_id:'meta',user_id:'user'})},'uuid':{v4:()=> 'generated'},'@surefy/exceptions/HTTP400Error':class extends Error{constructor(data){super(data.message);this.details=data.details}}};
+  const deps={'../utils/chatbotMessage':{validateChatbotMessage(){}},'@surefy/database':{transaction:async fn=>fn(trx)},'../models/chatbot.model':{findById:async()=>bot},'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'uuid',phone_number_id:'meta',user_id:'user'})},'uuid':{v4:()=> 'generated'},'@surefy/exceptions/HTTP400Error':class extends Error{constructor(data){super(data.message);this.details=data.details}}};
   const exports={};
   const js=ts.transpileModule(fs.readFileSync('src/app/services/chatbot.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
   vm.runInNewContext(js,{exports,require:id=>deps[id]||{},console:{log(){}},Date});
