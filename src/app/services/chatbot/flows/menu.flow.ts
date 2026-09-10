@@ -214,7 +214,7 @@ export const menuFlow = async ({
 
   if (!matchedEdge) {
     console.log("❌ No matched edge");
-    return null;
+    return { ignoreMessage: true };
   }
 
   const nextNode = bot.nodes.find(

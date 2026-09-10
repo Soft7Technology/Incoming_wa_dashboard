@@ -48,6 +48,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       ? await chatBotModel.getPublishedBotByTrigger(phoneNumberId, incomingText)
       : null;
 
+    const triggerMatched = Boolean(bot);
+
     if (bot) {
       await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
     } else {
@@ -126,6 +128,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       incomingText,
       incomingId,
       message,
+      triggerMatched,
       phoneNumberId
     })
 
@@ -134,6 +137,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     // console.log("Response", JSON.stringify(response))
 
     // 4️⃣ Send message
+    if (response?.ignoreMessage) return null;
+
     if (response) {
       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
     } else {
