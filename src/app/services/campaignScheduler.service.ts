@@ -1,3 +1,4 @@
+import { reconcileFailedCampaignJobs } from './campaignRecovery';
 import * as cron from 'node-cron';
 import CampaignModel from '../models/campaign.model';
 import CampaignService from './campaign.service';
@@ -38,6 +39,7 @@ class CampaignSchedulerService {
       const now = new Date();
       console.log(`[Campaign Scheduler] Checking for scheduled campaigns at ${now.toISOString()}`);
 
+      await reconcileFailedCampaignJobs();
       const campaigns = await CampaignModel.getScheduledCampaigns();
 
       console.log(`[Campaign Scheduler] Found ${campaigns.length} scheduled campaign(s) ready to execute`);
