@@ -92,6 +92,11 @@ class CampaignModel extends BaseModel {
       .whereNull('deleted_at');
   }
 
+  async markRunningJobFailed(id: string) {
+    return this.query().where({ id, status: 'running' })
+      .update({ status: 'failed', updated_at: new Date() });
+  }
+
   async getRunningCampaigns() {
     return this.query()
       .where({ status: 'running' })

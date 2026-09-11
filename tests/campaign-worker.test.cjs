@@ -52,3 +52,18 @@ test('pacing leaves a recipient pending when wait would occupy a worker too long
   assert.equal(await waitForCampaignPermit('sender','+919999999999'), false);
   assert.equal(calls, 1);
 });
+for (const [status,state] of [['completed','completed'],['failed','failed'],['paused','delayed']]) {
+  test(`rebroadcast replaces ${state} job for ${status} campaign`,async()=>{
+    const {api,writes}=service(status,state);
+    await api.reBroadcastCampaign('c');
+    assert.equal(writes[0],'remove'); assert.equal(writes[1].status,'scheduled'); assert.equal(writes[2],'add');
+  });
+}
+test('recovery marks only terminal failed jobs, leaving active and delayed retries alone',async()=>{
+  const marked=[];
+  const {reconcileFailedCampaignJobs}=load('src/app/services/campaignRecovery.ts',{
+    '../models/campaign.model':{getRunningCampaigns:async()=>['failed','active','delayed'].map(id=>({id})),markRunningJobFailed:async id=>marked.push(id)},
+    '../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async id=>({getState:async()=>id})}}
+  });
+  await reconcileFailedCampaignJobs(); assert.deepEqual(marked,['failed']);
+});
