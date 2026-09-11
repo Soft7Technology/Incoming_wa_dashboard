@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
-import aiAssistantModel from '../../models/aiAssistant.model';
+import aiAssistantModel from '../models/aiAssistant.model';
 
 const formatResponse = (assistant: any) => {
   if (!assistant) return null;
