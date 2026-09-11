@@ -1,3 +1,5 @@
+import { resolveImportColumn } from '../utils/importColumn';
+import { parseImportedPhone } from '../utils/importPhone';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
 // import { COUNTRY_PHONE_LENGTHS } from '../utils';
@@ -36,7 +38,7 @@ class XLSXParserService {
   ): Promise<ParseResult> {
     try {
       // Read file
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
       const sheetName = workbook.SheetNames[0]; // Use first sheet
       const worksheet = workbook.Sheets[sheetName];
 
@@ -49,6 +51,10 @@ class XLSXParserService {
 
       // Get headers
       const headers = Object.keys(rawData[0]);
+
+      phoneColumn = resolveImportColumn(headers, phoneColumn);
+      nameColumn = resolveImportColumn(headers, nameColumn);
+      emailColumn = resolveImportColumn(headers, emailColumn);
 
       // Auto-detect phone column if not provided
       if (!phoneColumn) {
@@ -67,24 +73,12 @@ class XLSXParserService {
       // Process each row
       rawData.forEach((row, index) => {
         try {
-          const phoneNumber = this.normalizePhoneNumber(row[phoneColumn!], country_code);
-
-          if (!phoneNumber) {
-            invalidCount++;
-            errors.push({ row: index + 2, error: 'Missing or invalid phone number' });
-            return;
-          }
-
-          // Validate phone number format
-          if (!this.validatePhoneByCountry(phoneNumber, country_code)) {
-            invalidCount++;
-            errors.push({ row: index + 2, error: `Invalid phone format: ${phoneNumber}` });
-            return;
-          }
+          const codeColumn = headers.find(header => ['country_code', 'country code', 'calling_code'].includes(header.trim().toLowerCase()));
+          const parsedPhone = parseImportedPhone(row[phoneColumn!], String((codeColumn && row[codeColumn]) || country_code || ''));
 
           // Build contact object
           const contact: ParsedContact = {
-            phone_number: phoneNumber,
+            ...parsedPhone,
             attributes: {},
           };
 
@@ -322,7 +316,7 @@ class XLSXParserService {
   async getFilePreview(filePath: string, rows: number = 5): Promise<any> {
     try {
       console.log(`Generating preview for file: ${filePath}`);
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
@@ -352,7 +346,7 @@ class XLSXParserService {
         return { valid: false, errors };
       }
 
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
 
       if (workbook.SheetNames.length === 0) {
         errors.push('No sheets found in XLSX file');
