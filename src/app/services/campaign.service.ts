@@ -261,22 +261,16 @@ class CampaignService {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
-    // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
-    // If so, skip adding a duplicate to avoid BullMQ errors.
-    try {
-      const existingJob = await campaignExecutionQueue.getJob(campaignId);
-      if (existingJob) {
-        const state = await existingJob.getState();
-        console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
-        return {
-          message: 'Campaign is already queued for execution',
-          campaign_id: campaignId,
-          status: state,
-        };
+    const existingJob = await campaignExecutionQueue.getJob(campaignId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'completed' || state === 'failed' || (campaign.status === 'paused' && state !== 'active')) {
+        await existingJob.remove();
+      } else {
+        return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
       }
-    } catch (_) {
-      // If we can't check the job state, proceed with adding a new job
     }
+    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date(), completed_at: null });
 
     // Queue campaign execution in background worker
     await campaignExecutionQueue.add(

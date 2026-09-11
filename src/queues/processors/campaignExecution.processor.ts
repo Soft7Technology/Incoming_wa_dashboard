@@ -70,7 +70,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       return { status: finalStatus };
     }
     const results = await Promise.allSettled(pending.map(async (message: any) => {
-      if (lockLost) throw new Error('Campaign execution lock lost');
+      if (lockLost) throw new CampaignInfrastructureError('Campaign execution lock lost');
       return sendCampaignMessage(campaign, message, template, () => !lockLost);
     }));
     const errors = { ...(job.data.errorCounts || {}) };
@@ -116,7 +116,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
 }
 
 async function sendCampaignMessage(campaign: any, campaignMessage: any, template: any, ownsLock: () => boolean) {
-  let infrastructureOperation = false;
+  let infrastructureOperation = true;
   try {
     // Get contact
     const contact = await ContactModel.findById(campaignMessage.contact_id);
@@ -136,6 +136,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
       return;
     }
 
+    infrastructureOperation = false;
     // Build template payload
     const templatePayload = buildTemplatePayload(
       template,
