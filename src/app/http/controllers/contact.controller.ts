@@ -267,9 +267,7 @@ class ContactController {
 
     console.log("Request file", req.body)
 
-    if(!country_code){
-      throw new HTTP400Error({ message: 'Country_code is required' });
-    }
+
 
     if(!phone_number_id){
       throw new HTTP400Error({ message: 'Phone Number Id is required' });
@@ -302,7 +300,7 @@ class ContactController {
     fs.copyFileSync(file.path, filePath);
     fs.unlinkSync(file.path);
 
-    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!,phone_number_id,country_code, filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!,phone_number_id,country_code || '', filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,

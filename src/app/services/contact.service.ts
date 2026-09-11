@@ -1,3 +1,4 @@
+import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
 import ContactTagModel from '../models/contactTag.model';
@@ -319,6 +320,16 @@ class ContactService {
     // Get basic file info for job tracking
     const preview = await XLSXParserService.getFilePreview(filePath);
     console.log(`File preview for import job: ${JSON.stringify(preview)}`);
+
+    try {
+      options = { ...options,
+        phoneColumn: resolveImportColumn(preview.headers, options.phoneColumn),
+        nameColumn: resolveImportColumn(preview.headers, options.nameColumn),
+        emailColumn: resolveImportColumn(preview.headers, options.emailColumn),
+      };
+    } catch (error) {
+      throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Invalid import column' });
+    }
 
     // Create import job record in database
     const importJob = await ImportJobModel.create({
