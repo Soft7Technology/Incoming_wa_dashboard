@@ -1,3 +1,4 @@
+import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
 import ContactTagModel from '../models/contactTag.model';
 import ContactTagRelationModel from '../models/contactTagRelation.model';
@@ -63,19 +64,13 @@ class ContactService {
     phoneNumberId?: string
   ) {
     if (filters.country_code !== undefined) {
-      const countryCodes = Array.isArray(filters.country_code)
-        ? filters.country_code
-        : [filters.country_code];
-      if (!countryCodes.length || countryCodes.some(
-        (code: unknown) => typeof code !== 'string' || !code.trim()
-      )) {
-        throw new HTTP400Error({ message: 'country_code must contain non-empty strings' });
+      try {
+        filters = { ...filters, country_code: normalizeCountryCodes(filters.country_code) };
+      } catch (error) {
+        throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Invalid country_code' });
       }
-      filters = {
-        ...filters,
-        country_code: [...new Set(countryCodes.map((code: string) => code.trim()))],
-      };
     }
+
     console.log("=================================");
     console.log("GET CONTACTS START");
     console.log("User ID:", userId);

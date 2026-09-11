@@ -1,3 +1,4 @@
+import { countryCodeFilterValues } from '../utils/countryCode';
 import { BaseModel } from '@surefy/models/base.model';
 import db from '../../database';
 import phoneNumberModel from './phoneNumber.model';
@@ -224,8 +225,7 @@ class ContactModel extends BaseModel {
     if (filters.country_code !== undefined || filters.tag_ids?.length) {
       query.where((matching) => {
         if (filters.country_code !== undefined) {
-          matching.whereIn('contacts.country_code', Array.isArray(filters.country_code)
-            ? filters.country_code : [filters.country_code]);
+          matching.whereIn('contacts.country_code', countryCodeFilterValues(filters.country_code));
         }
         if (filters.tag_ids?.length) {
           const method = filters.countryTagMatch === 'any' && filters.country_code !== undefined
