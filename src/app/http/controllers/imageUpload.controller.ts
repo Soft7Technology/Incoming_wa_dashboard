@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
+import MediaGalleryModel from '@surefy/console/models/mediaGallery.model';
 import * as admin from 'firebase-admin';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -15,7 +16,7 @@ export interface ImageManifestItem {
   size: string;
   mimetype: string;
   createdAt: string;
-  companyId?: string;
+  userId: string;
 }
 
 const MANIFEST_PATH = path.join(process.cwd(), 'uploads', 'firebase-images-manifest.json');
@@ -23,9 +24,11 @@ const MANIFEST_PATH = path.join(process.cwd(), 'uploads', 'firebase-images-manif
 // Helper to format file size
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
+
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
+
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
@@ -35,10 +38,13 @@ async function getManifest(): Promise<ImageManifestItem[]> {
     if (!fs.existsSync(MANIFEST_PATH)) {
       return [];
     }
+
     const content = await fs.promises.readFile(MANIFEST_PATH, 'utf-8');
+
     return JSON.parse(content);
   } catch (err) {
     console.error('Error reading firebase images manifest:', err);
+
     return [];
   }
 }
@@ -47,10 +53,11 @@ async function getManifest(): Promise<ImageManifestItem[]> {
 async function saveManifest(items: ImageManifestItem[]) {
   try {
     const dir = path.dirname(MANIFEST_PATH);
+
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    await fs.promises.readFile(MANIFEST_PATH, 'utf-8').catch(() => {});
+
     await fs.promises.writeFile(MANIFEST_PATH, JSON.stringify(items, null, 2), 'utf-8');
   } catch (err) {
     console.error('Error saving firebase images manifest:', err);
@@ -58,18 +65,31 @@ async function saveManifest(items: ImageManifestItem[]) {
 }
 
 // Upload image to Firebase Storage
-async function uploadToFirebase(file: Express.Multer.File, customName?: string): Promise<{ firebaseUrl: string; fileName: string }> {
-  const bucketName = process.env.FIREBASE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || 'soft7-wa-dashboard.appspot.com';
+async function uploadToFirebase(
+  file: Express.Multer.File,
+  userId: string,
+  customName?: string,
+): Promise<{
+  firebaseUrl: string;
+  fileName: string;
+}> {
+  const bucketName =
+    process.env.FIREBASE_BUCKET || process.env.FIREBASE_STORAGE_BUCKET || 'soft7-wa-dashboard.appspot.com';
+
   const token = crypto.randomUUID();
+
   const ext = path.extname(file.originalname) || '.png';
+
   const timestamp = Date.now();
+
   const sanitizedName = (customName || path.basename(file.originalname, ext))
     .toLowerCase()
     .replace(/[^a-z0-9]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
 
-  const fileName = `uploads/${timestamp}_${sanitizedName}${ext}`;
+  // User-specific Firebase folder
+  const fileName = `uploads/${userId}/${timestamp}_${sanitizedName}${ext}`;
 
   if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY) {
     try {
@@ -88,6 +108,7 @@ async function uploadToFirebase(file: Express.Multer.File, customName?: string):
       const firebaseFile = bucket.file(fileName);
 
       let fileBuffer: Buffer;
+
       if (file.buffer) {
         fileBuffer = file.buffer;
       } else if (file.path && fs.existsSync(file.path)) {
@@ -108,15 +129,23 @@ async function uploadToFirebase(file: Express.Multer.File, customName?: string):
       await firebaseFile.makePublic().catch(() => {});
 
       const firebaseUrl = `https://firebasestorage.googleapis.com/v0/b/${bucket.name}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
-      return { firebaseUrl, fileName };
+
+      return {
+        firebaseUrl,
+        fileName,
+      };
     } catch (err) {
       console.error('Firebase Admin storage upload error, using fallback URL format:', err);
     }
   }
 
-  // Fallback Firebase Storage URL format if Firebase credentials are not set
+  // Fallback Firebase Storage URL format
   const firebaseUrl = `https://firebasestorage.googleapis.com/v0/b/${bucketName}/o/${encodeURIComponent(fileName)}?alt=media&token=${token}`;
-  return { firebaseUrl, fileName };
+
+  return {
+    firebaseUrl,
+    fileName,
+  };
 }
 
 class ImageUploadController {
@@ -128,43 +157,53 @@ class ImageUploadController {
     const file = req.file;
     const { name } = req.body;
 
-    if (!file) {
-      throw new HTTP400Error({ message: 'Image file is required' });
+    // IMPORTANT:
+    // Use authenticated user's ID, NOT companyId
+    const userId = req.userId;
+
+    if (!userId) {
+      throw new HTTP400Error({
+        message: 'Authenticated user ID is required',
+      });
     }
 
-    const { firebaseUrl, fileName } = await uploadToFirebase(file, name);
+    if (!file) {
+      throw new HTTP400Error({
+        message: 'Image file is required',
+      });
+    }
 
-    const id = crypto.randomUUID();
-    const item: ImageManifestItem = {
-      id,
+    const { firebaseUrl, fileName } = await uploadToFirebase(file, userId, name);
+
+    const item = await MediaGalleryModel.create({
+      user_id: userId,
       name: name?.trim() || file.originalname,
-      originalName: file.originalname,
-      firebaseUrl,
+      original_name: file.originalname,
+      firebase_url: firebaseUrl,
+      firebase_file_name: fileName,
       size: formatBytes(file.size),
       mimetype: file.mimetype || 'image/png',
-      createdAt: new Date().toISOString(),
-      companyId: req.companyId,
-    };
-
-    const manifest = await getManifest();
-    manifest.unshift(item);
-    await saveManifest(manifest);
+    });
 
     return successResponse(req, res, 'Image uploaded to Firebase successfully', item);
   });
 
   /**
    * GET /v1/admin/image-upload/list
-   * Get list of uploaded images
+   * Get list of uploaded images for current user
    */
   getUploadedImages = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const manifest = await getManifest();
-    let filtered = manifest;
-    if (req.companyId) {
-      filtered = manifest.filter((item) => !item.companyId || item.companyId === req.companyId);
+    const userId = req.userId;
+
+    if (!userId) {
+      throw new HTTP400Error({
+        message: 'Authenticated user ID is required',
+      });
     }
 
-    return successResponse(req, res, 'Uploaded images retrieved successfully', filtered);
+    const images = await MediaGalleryModel.findByUserId(userId);
+
+    return successResponse(req, res, 'Uploaded images retrieved successfully', images);
   });
 
   /**
@@ -173,11 +212,27 @@ class ImageUploadController {
    */
   deleteUploadedImage = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { id } = req.params;
-    const manifest = await getManifest();
-    const updated = manifest.filter((item) => item.id !== id);
-    await saveManifest(updated);
+    const userId = req.userId;
 
-    return successResponse(req, res, 'Uploaded image record deleted successfully', { id });
+    if (!userId) {
+      throw new HTTP400Error({
+        message: 'Authenticated user ID is required',
+      });
+    }
+
+    const image = await MediaGalleryModel.findByIdAndUserId(id, userId);
+
+    if (!image) {
+      throw new HTTP400Error({
+        message: 'Image not found',
+      });
+    }
+
+    await MediaGalleryModel.update(id, {
+      deleted_at: new Date(),
+    });
+
+    return successResponse(req, res, 'Image deleted successfully', { id });
   });
 }
 

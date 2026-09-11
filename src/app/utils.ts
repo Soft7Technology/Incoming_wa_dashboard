@@ -482,12 +482,12 @@ export function replaceVariables(
 }
 
 
-export const downloadImage = async (mediaId: string) => {
+export const downloadMedia = async (mediaId: string) => {
   console.log("MediaId:", mediaId);
   try {
-    const mediaUrl = metaService.handleMedia(mediaId)
-    console.log("Media Url", mediaUrl)
-    return mediaUrl
+    const media = await metaService.handleMedia(mediaId)
+    console.log("Media", media)
+    return media;
   } catch (error: any) {
     console.error(
       '❌ Error downloading image:',
