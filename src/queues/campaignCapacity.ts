@@ -19,8 +19,8 @@ export const campaignCapacity = {
 
 export function nextBatchSize(current: number, cpu: number, memory: number, lagMs: number, max: number): number {
   // Batch size controls selection overhead; messageConcurrency bounds active sends.
-  if (cpu >= 0.8 || memory >= 0.85 || lagMs >= 100) return Math.max(Math.min(current, 2, max), Math.floor(current / 2));
-  if (cpu < 0.6 && memory < 0.75 && lagMs < 40) return Math.min(max, current + 1);
+  if (cpu >= 0.8 || memory >= 0.95 || lagMs >= 100) return Math.max(Math.min(current, 2, max), Math.floor(current / 2));
+  if (cpu < 0.6 && memory < 0.9 && lagMs < 40) return Math.min(max, current + 1);
   return Math.max(1, Math.min(current, max));
 }
 

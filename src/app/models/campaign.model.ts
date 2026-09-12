@@ -98,7 +98,22 @@ class CampaignModel extends BaseModel {
 
   async markRunningJobFailed(id: string, reason: string) {
     return this.query().where({ id, status: 'running' })
+      .whereExists(this.db('campaign_messages')
+        .select(this.db.raw('1'))
+        .where('campaign_messages.campaign_id', id)
+        .where('campaign_messages.status', 'pending'))
       .update({ status: 'failed', failure_reason: reason, completed_at: new Date(), updated_at: new Date() });
+  }
+
+  async completeIfNoPendingMessages(id: string): Promise<boolean> {
+    const updated = await this.query()
+      .where({ id, status: 'running' })
+      .whereNotExists(this.db('campaign_messages')
+        .select(this.db.raw('1'))
+        .where('campaign_messages.campaign_id', id)
+        .where('campaign_messages.status', 'pending'))
+      .update({ status: 'completed', failure_reason: null, completed_at: new Date(), updated_at: new Date() });
+    return updated > 0;
   }
 
   async getRunningCampaigns() {
