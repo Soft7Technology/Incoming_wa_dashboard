@@ -11,11 +11,17 @@ CAMPAIGN_MESSAGE_CONCURRENCY=2
 CAMPAIGN_MAX_RUNNING_PER_USER=2
 CAMPAIGN_MESSAGES_PER_SECOND=10
 DB_POOL_MAX=5
+BULK_MESSAGE_CONCURRENCY=2
 ```
 
 The batch size starts at 4 and adapts to sampled host CPU, memory pressure and event-loop delay. Each campaign processes at most `CAMPAIGN_MESSAGE_CONCURRENCY` recipients at once; batch size controls how many are selected, not how many database operations start together. Redis limits active campaigns per owner with `CAMPAIGN_MAX_RUNNING_PER_USER` across worker replicas; excess jobs stay delayed until a slot is free. A slot has a renewable lease, so a worker crash releases it after two minutes. Database connection-acquisition timeouts delay the current batch by 30 seconds without failing pending recipients or exhausting BullMQ attempts. Each campaign yields between batches. Redis pacing shares the configured sender limit across campaign workers; the default is at most 600 messages per minute per business phone. Recipient pairs are spaced by six seconds. These are application limits, not a guarantee of Meta entitlement. Direct messages, chatbot traffic and other senders using the account are outside this campaign limiter: leave headroom and configure according to your account allowance. `DB_POOL_MAX` caps connections per Node process, defaults to 15, and should be set on both API and worker processes. Count every API and worker replica when setting it; for example, four processes at `DB_POOL_MAX=5` can use up to 20 PostgreSQL connections, before other clients.
 
 Provider rate-limit responses keep the affected campaign recipient pending and retry after a cooldown. Throughput limits cool down the shared business phone; pair-limit responses cool down only that sender-recipient pair. Set CAMPAIGN_MAX_RUNNING_PER_USER=2 or higher on the VPS if multiple campaigns for one owner should progress together; an explicit value of 1 serializes them. Keep CAMPAIGN_CONCURRENCY and DB_POOL_MAX within the database connection budget.
+
+Apply the `add_campaign_message_retry_after` migration before deploying the current worker. A blocked recipient receives its own `campaign_messages.retry_after` time, so the campaign continues sending to other recipients and only waits if every remaining recipient is deferred. Worker logs show `Waiting for deferred recipients` in that case.
+Meta pair-limit responses are retried up to ten times for that recipient; if they persist, that recipient is recorded as failed so it cannot hold the campaign open indefinitely.
+
+The combined worker process also runs bulk-message jobs. They now use one job with at most two concurrent sends by default; `BULK_MESSAGE_CONCURRENCY` can be set from 1 to 10. This prevents a 50-message bulk batch from monopolizing the same Knex pool used by campaign jobs. The campaign progress endpoint reports `pending_count` and `deferred_count` to distinguish queued recipients from those waiting for cooldown.
 
 The scheduler checks due campaigns every five seconds. Queue contention, provider restrictions and infrastructure outages can delay execution. CPU and available memory are host metrics; container limits may require a lower configured maximum batch size.
 

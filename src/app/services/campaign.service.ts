@@ -882,7 +882,8 @@ class CampaignService {
       read_count: campaign.read_count || 0,
       failed_count: campaign.failed_count || 0,
       invalid_numbers_count: campaign.invalid_numbers_count || 0,
-      pending_count: stats.pending || 0,
+      pending_count: Number(stats.pending_count || 0),
+      deferred_count: await CampaignMessageModel.getDeferredCount(campaignId),
       stats,
     };
   }

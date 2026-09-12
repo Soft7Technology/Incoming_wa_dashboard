@@ -37,6 +37,11 @@ export async function getCampaignSenderCooldown(sender: string): Promise<number>
   return Math.max(0, await redis.pttl(`campaign-send:{${sender}}:cooldown`));
 }
 
+export async function getCampaignPairCooldown(sender: string, recipient: string): Promise<number> {
+  const redis = await campaignExecutionQueue.client;
+  return Math.max(0, await redis.pttl(`campaign-send:{${sender}}:${recipient.replace(/\D/g, '')}:cooldown`));
+}
+
 export async function setCampaignSenderCooldown(sender: string, delayMs: number): Promise<void> {
   const redis = await campaignExecutionQueue.client;
   const key = `campaign-send:{${sender}}:cooldown`;
