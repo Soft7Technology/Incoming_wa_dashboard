@@ -67,3 +67,10 @@ test('recovery marks only terminal failed jobs, leaving active and delayed retri
   });
   await reconcileFailedCampaignJobs(); assert.deepEqual(marked,[{id:'failed',reason:'Redis lock lost'}]);
 });
+test('database pool exhaustion is classified as retryable infrastructure pressure', () => {
+  const {isConnectionAcquireError} = load('src/queues/campaignDatabaseError.ts', {});
+  assert.equal(isConnectionAcquireError(new Error('Knex: Timeout acquiring a connection. The pool is probably full.')), true);
+  assert.equal(isConnectionAcquireError(new Error('Unable to acquire a connection')), true);
+  assert.equal(isConnectionAcquireError({code:'53300',message:'too many clients already'}), true);
+  assert.equal(isConnectionAcquireError(new Error('Template not found')), false);
+});
