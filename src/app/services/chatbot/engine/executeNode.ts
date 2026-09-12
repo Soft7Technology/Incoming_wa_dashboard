@@ -41,6 +41,7 @@ export const executeNode = async ({
         try {
             await chatbotDelayQueue.add('resume', { sessionId: session.id, nodeId: currentNode.id, token },
                 { delay, jobId: token });
+            console.info('[Chatbot Delay] Queued', { sessionId: session.id, nodeId: currentNode.id, delayMs: delay, jobId: token });
         } catch (error) {
             await endSession(session.id);
             throw error;
