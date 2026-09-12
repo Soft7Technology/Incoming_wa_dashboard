@@ -47,13 +47,12 @@ class MessageService {
   /**
    * Send messages
    */
-  async sendMessage(data: SendMessageDto) {
-    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any }) {
+    const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
-    console.log('Data', JSON.stringify(data.template?.components));
 
     // Verify company has sufficient credits
     // const company = await CompanyModel.findById(data.company_id);
@@ -125,7 +124,7 @@ class MessageService {
     let templateDefinitionComponents: any[] | null = null;
 
     if (data.type === 'template' && data.template?.name && templateLanguage) {
-      const template = await TemplateModel.findByNameAndLanguage(data.user_id, data.template.name, templateLanguage);
+      const template = resolved?.templateRecord || await TemplateModel.findByNameAndLanguage(data.company_id || data.user_id, data.template.name, templateLanguage);
       if (template) {
         templateRecordId = template.id;
         // Save template definition components for display (BODY, HEADER, FOOTER with text)
@@ -136,7 +135,7 @@ class MessageService {
     }
 
     // If template not found in DB, try to fetch from Meta API using the phone number
-    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents) {
+    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents && !resolved?.templateRecord) {
       try {
         // Get phone number details to access waba_id for Meta API call
         const pn = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);

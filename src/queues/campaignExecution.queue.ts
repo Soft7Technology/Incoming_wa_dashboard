@@ -6,6 +6,7 @@ export interface CampaignExecutionJobData {
   companyId: string;
     userId: string;
   errorCounts?: Record<string, number>;
+  progressCheckedAt?: number;
   status?:string,
   error_message?:string
 }
