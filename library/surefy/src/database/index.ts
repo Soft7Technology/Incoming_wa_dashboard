@@ -9,6 +9,8 @@ pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (val: string) => {
 
 const environment = process.env.NODE_ENV || 'development';
 const config = knexConfig[environment];
+const poolMax = Number(process.env.DB_POOL_MAX ?? 15);
+if (!Number.isInteger(poolMax) || poolMax < 1) throw new Error('DB_POOL_MAX must be a positive integer');
 
 let db: Knex;
 
@@ -17,8 +19,8 @@ if (!(global as any).__knex_db__) {
   (global as any).__knex_db__ = knex({
     ...config,
     pool: {
-      min: 2,
-      max: 15,
+      min: 0,
+      max: poolMax,
       acquireTimeoutMillis: 30000,
       idleTimeoutMillis: 30000,
       afterCreate: (conn: any, done: any) => {

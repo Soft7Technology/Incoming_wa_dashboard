@@ -5,12 +5,14 @@ Run the API and `npm run worker` in development. Production: apply database migr
 Configuration (same values across replicas):
 
 ```
-CAMPAIGN_CONCURRENCY=4
+CAMPAIGN_CONCURRENCY=2
 CAMPAIGN_MAX_BATCH_SIZE=10
+CAMPAIGN_MESSAGE_CONCURRENCY=2
 CAMPAIGN_MESSAGES_PER_SECOND=10
+DB_POOL_MAX=5
 ```
 
-The batch size starts at 2 and adapts to sampled host CPU, memory pressure and event-loop delay. Each campaign yields between batches. Redis pacing shares the configured sender limit across campaign workers; the default is at most 600 messages per minute per business phone. Recipient pairs are spaced by six seconds. These are application limits, not a guarantee of Meta entitlement. Direct messages, chatbot traffic and other senders using the account are outside this campaign limiter: leave headroom and configure according to your account allowance. More worker replicas increase total database connections; cap replicas to database capacity.
+The batch size starts at 2 and adapts to sampled host CPU, memory pressure and event-loop delay. Each campaign processes at most `CAMPAIGN_MESSAGE_CONCURRENCY` recipients at once; batch size controls how many are selected, not how many database operations start together. Each campaign yields between batches. Redis pacing shares the configured sender limit across campaign workers; the default is at most 600 messages per minute per business phone. Recipient pairs are spaced by six seconds. These are application limits, not a guarantee of Meta entitlement. Direct messages, chatbot traffic and other senders using the account are outside this campaign limiter: leave headroom and configure according to your account allowance. `DB_POOL_MAX` caps connections per Node process, defaults to 15, and should be set on both API and worker processes. Count every API and worker replica when setting it; for example, four processes at `DB_POOL_MAX=5` can use up to 20 PostgreSQL connections, before other clients.
 
 The scheduler checks due campaigns every five seconds. Queue contention, provider restrictions and infrastructure outages can delay execution. CPU and available memory are host metrics; container limits may require a lower configured maximum batch size.
 
