@@ -24,7 +24,15 @@ const providerLimitCodes = new Set(['130429', '131056', '80007', '80008', '4', '
 const capacitySampler = createCapacitySampler();
 const healthTimer = setInterval(() => {
   capacitySampler.sample();
-  console.info('[Campaign Worker] Health', { ...capacitySampler.metrics(), concurrency: campaignCapacity.concurrency, messageConcurrency: campaignCapacity.messageConcurrency, maxRunningPerUser: campaignCapacity.maxRunningPerUser, messagesPerSecond: campaignCapacity.messagesPerSecond });
+  void campaignExecutionQueue.getJobCounts('active', 'waiting', 'delayed', 'failed')
+    .then(queue => console.info('[Campaign Worker] Health', {
+      ...capacitySampler.metrics(), queue,
+      concurrency: campaignCapacity.concurrency,
+      messageConcurrency: campaignCapacity.messageConcurrency,
+      maxRunningPerUser: campaignCapacity.maxRunningPerUser,
+      messagesPerSecond: campaignCapacity.messagesPerSecond,
+    }))
+    .catch(error => console.error('[Campaign Worker] Health queue inspection failed', getMessageError(error)));
 }, 15000);
 healthTimer.unref();
 
@@ -102,7 +110,12 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       phase = 'completing campaign';
       const counts = await CampaignMessageModel.getCampaignStats(campaignId);
       // Recipient failures are reported in the counts; they do not fail the execution.
-      await CampaignModel.updateStatus(campaignId, 'completed', { completed_at: new Date() });
+      if (!await CampaignModel.completeIfNoPendingMessages(campaignId)) {
+        const current = await CampaignModel.findById(campaignId);
+        if (current?.status === 'running') return await defer(250);
+        releaseSlot = true;
+        return { status: current?.status };
+      }
       releaseSlot = true;
       console.info('[Campaign Worker] Finished', { campaignId, status: 'completed', counts, errorCounts: job.data.errorCounts });
       return { status: 'completed' };
@@ -174,11 +187,14 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (job.attemptsMade + 1 >= (job.opts.attempts || 1)) {
       const current = await CampaignModel.findById(campaignId);
       if (current?.company_id === companyId && current.status === 'running') {
+        if (await CampaignModel.completeIfNoPendingMessages(campaignId)) {
+          releaseSlot = true;
+          console.info('[Campaign Worker] Completed after execution error because no recipients remain pending', { campaignId, jobId: job.id, phase });
+          return { status: 'completed' };
+        }
         console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
         const failure = getMessageError(error);
-        await CampaignModel.updateStatus(campaignId, 'failed', {
-          failure_reason: `${phase}: ${failure.error_code}: ${failure.error_message}`,
-        });
+        await CampaignModel.markRunningJobFailed(campaignId, `${phase}: ${failure.error_code}: ${failure.error_message}`);
         releaseSlot = true;
       }
     }

@@ -44,6 +44,8 @@ test('high load reduces batch and low load respects maximum', () => {
   assert.equal(nextBatchSize(1,.9,.9,200,10),1);
   assert.equal(nextBatchSize(10,.2,.3,10,10),10);
   assert.equal(nextBatchSize(2,.2,.3,10,10),3);
+  assert.equal(nextBatchSize(4,.2,.84,10,10),5);
+  assert.equal(nextBatchSize(10,.2,.96,10,10),5);
 });
 test('pacing leaves a recipient pending when wait would occupy a worker too long', async () => {
   let calls = 0;
@@ -75,11 +77,35 @@ for (const [status,state] of [['completed','completed'],['failed','failed'],['pa
 test('recovery marks only terminal failed jobs, leaving active and delayed retries alone',async()=>{
   const marked=[];
   const {reconcileFailedCampaignJobs}=load('src/app/services/campaignRecovery.ts',{
-    '../models/campaign.model':{getRunningCampaigns:async()=>['failed','active','delayed'].map(id=>({id})),markRunningJobFailed:async (id,reason)=>marked.push({id,reason})},
+    '../models/campaign.model':{getRunningCampaigns:async()=>['failed','active','delayed'].map(id=>({id})),completeIfNoPendingMessages:async()=>false,markRunningJobFailed:async (id,reason)=>marked.push({id,reason})},
     '../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async id=>({getState:async()=>id,failedReason:'Redis lock lost'})}}
   });
   await reconcileFailedCampaignJobs(); assert.deepEqual(marked,[{id:'failed',reason:'Redis lock lost'}]);
 });
+test('recovery requeues a running campaign whose BullMQ job is missing',async()=>{
+  const added=[];
+  const {reconcileFailedCampaignJobs}=load('src/app/services/campaignRecovery.ts',{
+    '../models/campaign.model':{getRunningCampaigns:async()=>[{id:'c',user_id:'u',company_id:'co'}]},
+    '../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async()=>null,add:async(name,data,options)=>added.push({name,data,options})}}
+  });
+  await reconcileFailedCampaignJobs();
+  assert.deepEqual(JSON.parse(JSON.stringify(added)),[{name:'campaign-c',data:{campaignId:'c',userId:'u',companyId:'co'},options:{jobId:'c'}}]);
+});
+
+test('recovery completes a campaign with no pending messages even when its job failed',async()=>{
+  const writes=[];
+  const {reconcileFailedCampaignJobs}=load('src/app/services/campaignRecovery.ts',{
+    '../models/campaign.model':{
+      getRunningCampaigns:async()=>[{id:'c'}],
+      completeIfNoPendingMessages:async id=>{writes.push(['complete',id]);return true;},
+      markRunningJobFailed:async()=>writes.push(['failed']),
+    },
+    '../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async()=>({id:'c',getState:async()=> 'failed'})}}
+  });
+  await reconcileFailedCampaignJobs();
+  assert.deepEqual(writes,[['complete','c']]);
+});
+
 test('database pool exhaustion is classified as retryable infrastructure pressure', () => {
   const {isConnectionAcquireError} = load('src/queues/campaignDatabaseError.ts', {});
   assert.equal(isConnectionAcquireError(new Error('Knex: Timeout acquiring a connection. The pool is probably full.')), true);
