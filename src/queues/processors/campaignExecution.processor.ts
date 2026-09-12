@@ -2,7 +2,7 @@ import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
 import { campaignCapacity, createCapacitySampler } from '../campaignCapacity';
-import { waitForCampaignPermit, getCampaignSenderCooldown, setCampaignSenderCooldown, setCampaignPairCooldown } from '../campaignPacing';
+import { waitForCampaignPermit, getCampaignSenderCooldown, getCampaignPairCooldown, setCampaignSenderCooldown, setCampaignPairCooldown } from '../campaignPacing';
 import { acquireCampaignUserSlot, refreshCampaignUserSlot, releaseCampaignUserSlot } from '../campaignUserSlots';
 import { isConnectionAcquireError } from '../campaignDatabaseError';
 import PhoneNumberModel from '../../app/models/phoneNumber.model';
@@ -89,6 +89,16 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       ? await CampaignMessageModel.getFailedMessages(campaignId, batchSize, new Date(job.timestamp))
       : await CampaignMessageModel.getPendingMessages(campaignId, batchSize, job.data.status, job.data.error_message);
     if (!pending.length) {
+      const retryAt = await CampaignMessageModel.getNextRetryAt(campaignId, job.data.status === 'failed' ? new Date(job.timestamp) : undefined);
+      if (retryAt) {
+        const delayMs = Math.max(250, new Date(retryAt).getTime() - Date.now());
+        console.info('[Campaign Worker] Waiting for deferred recipients', { campaignId, delayMs });
+        return await defer(delayMs);
+      }
+      const stillPending = job.data.status === 'failed'
+        ? (await CampaignMessageModel.getFailedMessages(campaignId, 1, new Date(job.timestamp))).length > 0
+        : await CampaignMessageModel.getPendingCount(campaignId) > 0;
+      if (stillPending) return await defer(250);
       phase = 'completing campaign';
       const counts = await CampaignMessageModel.getCampaignStats(campaignId);
       // Recipient failures are reported in the counts; they do not fail the execution.
@@ -214,7 +224,11 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     const messageUUID = uuidv4();
 
     infrastructureOperation = true;
-    if (!await waitForCampaignPermit(campaign.phone_number_id, contact.phone_number)) return;
+    if (!await waitForCampaignPermit(campaign.phone_number_id, contact.phone_number)) {
+      const pairCooldown = await getCampaignPairCooldown(campaign.phone_number_id, contact.phone_number);
+      await CampaignMessageModel.deferRetry(campaignMessage.id, Math.max(1000, pairCooldown));
+      return;
+    }
     if (!ownsLock()) return;
 
     infrastructureOperation = false;
@@ -240,6 +254,25 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     }
     if (!infrastructureOperation) {
       const failure = getMessageError(error);
+      if (failure.error_code === '131056') {
+        console.warn('[Campaign Worker] Pair limit; retrying only this recipient later', { campaignId: campaign.id, campaignMessageId: campaignMessage.id });
+        await setCampaignPairCooldown(campaign.phone_number_id, recipientPhone, 6000);
+        try {
+          const attempts = await CampaignMessageModel.deferRetry(campaignMessage.id, 6000, true);
+          if (attempts >= 10) {
+            await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
+              ...failure,
+              error_message: `Pair rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
+            });
+            await CampaignModel.incrementCount(campaign.id, 'failed_count');
+            await ContactModel.incrementFailedCount(campaignMessage.contact_id);
+            console.error('[Campaign Worker] Recipient exhausted pair-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, attempts });
+          }
+        } catch (retryError) {
+          throw new CampaignInfrastructureError(retryError instanceof Error ? retryError.message : String(retryError));
+        }
+        return;
+      }
       if (providerLimitCodes.has(failure.error_code)) {
         console.warn('[Campaign Worker] Provider temporarily rejected send; recipient remains pending', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, reason: failure.error_message });
         throw new CampaignProviderLimitError(failure.error_code, failure.error_message, recipientPhone);

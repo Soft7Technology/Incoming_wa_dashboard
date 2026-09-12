@@ -38,10 +38,10 @@ class CampaignMessageModel extends BaseModel {
     status?: string,
     errorMessage?: string
   ) {
-    console.log("Status", status, errorMessage,limit)
     const query = this.query()
       .where("campaign_id", campaignId)
       .where("status", status || "pending")
+      .where(builder => builder.whereNull('retry_after').orWhere('retry_after', '<=', new Date()))
       .limit(limit);
 
     // if (errorMessage) {
@@ -62,6 +62,37 @@ class CampaignMessageModel extends BaseModel {
     return Number(row?.count || 0);
   }
 
+  async getDeferredCount(campaignId: string): Promise<number> {
+    const row = await this.query()
+      .where({ campaign_id: campaignId, status: 'pending' })
+      .where('retry_after', '>', new Date())
+      .count('* as count')
+      .first();
+    return Number(row?.count || 0);
+  }
+
+  async deferRetry(id: string, delayMs: number, countAttempt = false): Promise<number> {
+    const updateData: any = { retry_after: new Date(Date.now() + delayMs) };
+    if (countAttempt) updateData.retry_attempts = this.db.raw('COALESCE(retry_attempts, 0) + 1');
+    const [row] = await this.query().where({ id }).update(updateData).returning('retry_attempts');
+    return Number(row?.retry_attempts || 0);
+  }
+
+  async getNextRetryAt(campaignId: string, failedBefore?: Date): Promise<Date | null> {
+    const query = this.query()
+      .where('campaign_messages.campaign_id', campaignId)
+      .where('campaign_messages.retry_after', '>', new Date());
+    if (failedBefore) {
+      query.leftJoin('messages', 'messages.id', 'campaign_messages.message_id')
+        .where(builder => builder.where('campaign_messages.status', 'failed').orWhere('messages.status', 'failed'))
+        .where(builder => builder.whereNull('campaign_messages.failed_at').orWhere('campaign_messages.failed_at', '<', failedBefore));
+    } else {
+      query.where('campaign_messages.status', 'pending');
+    }
+    const row = await query.min('campaign_messages.retry_after as retry_after').first();
+    return row?.retry_after || null;
+  }
+
   async getFailedMessages(
     campaignId: string,
     BATCH_SIZE: any,
@@ -74,6 +105,7 @@ class CampaignMessageModel extends BaseModel {
         qb.where("campaign_messages.status", "failed")
           .orWhere("messages.status", "failed");
       })
+      .where(builder => builder.whereNull('campaign_messages.retry_after').orWhere('campaign_messages.retry_after', '<=', new Date()))
       .select(
         "campaign_messages.*",
         "messages.status as message_status"
@@ -87,7 +119,7 @@ class CampaignMessageModel extends BaseModel {
     return this.db.transaction(async trx => {
       await trx('campaign_messages').where({ id }).update({
         status: 'sent', message_id: messageId, sent_at: new Date(),
-        error_message: null, error_code: null, failed_at: null,
+        error_message: null, error_code: null, failed_at: null, retry_after: null, retry_attempts: 0,
       });
       await trx('campaigns').where({ id: campaignId }).update({
         sent_count: trx.raw('COALESCE(sent_count, 0) + 1'),
@@ -116,6 +148,7 @@ class CampaignMessageModel extends BaseModel {
 
     if (status === 'failed' && !data.failed_at) {
       updateData.failed_at = new Date();
+      updateData.retry_after = null;
     }
 
     return this.update(id, updateData);

@@ -8,6 +8,10 @@ import userModel from '@surefy/console/app/models/user.model';
 
 const BATCH_SIZE = 50; // Process 50 messages at a time
 const DELAY_BETWEEN_BATCHES = 1000; // 1 second delay between batches
+const MAX_PARALLEL_SENDS = Number(process.env.BULK_MESSAGE_CONCURRENCY ?? 2);
+if (!Number.isInteger(MAX_PARALLEL_SENDS) || MAX_PARALLEL_SENDS < 1 || MAX_PARALLEL_SENDS > 10) {
+  throw new Error('BULK_MESSAGE_CONCURRENCY must be an integer from 1 to 10');
+}
 
 async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
   const { userId, messages } = job.data;
@@ -34,9 +38,12 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 
       console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}, messages ${i + 1} to ${Math.min(i + BATCH_SIZE, messages.length)}`);
 
-      // Process batch in parallel
-      const batchResults = await Promise.allSettled(
-        batch.map(async (messageData) => {
+      // Bound active sends so bulk jobs do not exhaust the pool used by campaigns.
+      const batchResults: PromiseSettledResult<{ success: boolean; to: string; message?: any; error?: string }>[] = [];
+      for (let offset = 0; offset < batch.length; offset += MAX_PARALLEL_SENDS) {
+        const chunk = batch.slice(offset, offset + MAX_PARALLEL_SENDS);
+        batchResults.push(...await Promise.allSettled(
+          chunk.map(async (messageData) => {
           try {
             const message = await MessageService.sendMessage({
               user_id: userId,
@@ -62,8 +69,9 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
               error: error.message,
             };
           }
-        })
-      );
+          })
+        ));
+      }
 
       // Count results
       batchResults.forEach((result) => {
@@ -116,7 +124,7 @@ export const bulkMessageSendWorker = new Worker<BulkMessageSendJobData>(
   },
   {
     connection: redisConfig,
-    concurrency: 2, // Process 2 bulk jobs at a time
+    concurrency: 1, // Keep bulk sends from starving campaign jobs sharing this DB pool
     limiter: {
       max: 10, // Max 10 jobs
       duration: 1000, // per second
