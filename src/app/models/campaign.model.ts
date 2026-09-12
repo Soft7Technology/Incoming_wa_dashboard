@@ -56,6 +56,10 @@ class CampaignModel extends BaseModel {
   async updateStatus(campaignId: string, status: string, additionalData: any = {}) {
     const updateData: any = { status, ...additionalData };
 
+    if (status === 'scheduled' || status === 'running' || status === 'completed') {
+      updateData.failure_reason = null;
+    }
+
     if (status === 'running' && !additionalData.started_at) {
       updateData.started_at = new Date();
     }
@@ -92,9 +96,9 @@ class CampaignModel extends BaseModel {
       .whereNull('deleted_at');
   }
 
-  async markRunningJobFailed(id: string) {
+  async markRunningJobFailed(id: string, reason: string) {
     return this.query().where({ id, status: 'running' })
-      .update({ status: 'failed', updated_at: new Date() });
+      .update({ status: 'failed', failure_reason: reason, completed_at: new Date(), updated_at: new Date() });
   }
 
   async getRunningCampaigns() {

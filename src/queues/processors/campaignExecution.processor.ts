@@ -85,11 +85,12 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     // Preserve counters across yielded batches without unbounded unique error storage.
     const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
     await job.updateData({ ...job.data, errorCounts });
-    const counts = await CampaignMessageModel.getCampaignStats(campaignId);
-    const progress = Math.min(100, Math.round((campaign.total_recipients - Number(counts.pending_count)) / Math.max(1,campaign.total_recipients) * 100));
-    await job.updateProgress(progress);
-    console.info('[Campaign Worker] Batch finished', { campaignId, durationMs: Date.now() - batchStartedAt, selected: pending.length, rejected: results.filter(r => r.status === 'rejected').length, progress, counts, ...capacitySampler.metrics() });
-    await job.log(`Batch size ${batchSize}; selected ${pending.length}; progress ${progress}%`);
+    // The full stats join grows with the campaign and is only needed at completion.
+    const pendingCount = job.data.status === 'failed' ? undefined : await CampaignMessageModel.getPendingCount(campaignId);
+    const progress = pendingCount === undefined ? undefined : Math.min(100, Math.round((campaign.total_recipients - pendingCount) / Math.max(1, campaign.total_recipients) * 100));
+    if (progress !== undefined) await job.updateProgress(progress);
+    console.info('[Campaign Worker] Batch finished', { campaignId, jobId: job.id, durationMs: Date.now() - batchStartedAt, selected: pending.length, rejected: results.filter(r => r.status === 'rejected').length, pendingCount, progress, errorCounts, ...capacitySampler.metrics() });
+    await job.log(`Batch size ${batchSize}; selected ${pending.length}; pending ${pendingCount ?? 'retry'}; progress ${progress ?? 'retry'}%`);
     const current = await CampaignModel.findById(campaignId);
     if (current?.status !== 'running') return { status: current?.status };
     if (providerRateLimited) {
@@ -104,7 +105,10 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       const current = await CampaignModel.findById(campaignId);
       if (current?.company_id === companyId && current.status === 'running') {
         console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
-        await CampaignModel.updateStatus(campaignId, 'failed');
+        const failure = getMessageError(error);
+        await CampaignModel.updateStatus(campaignId, 'failed', {
+          failure_reason: `${failure.error_code}: ${failure.error_message}`,
+        });
       }
     }
     throw error;
