@@ -62,8 +62,8 @@ for (const [status,state] of [['completed','completed'],['failed','failed'],['pa
 test('recovery marks only terminal failed jobs, leaving active and delayed retries alone',async()=>{
   const marked=[];
   const {reconcileFailedCampaignJobs}=load('src/app/services/campaignRecovery.ts',{
-    '../models/campaign.model':{getRunningCampaigns:async()=>['failed','active','delayed'].map(id=>({id})),markRunningJobFailed:async id=>marked.push(id)},
-    '../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async id=>({getState:async()=>id})}}
+    '../models/campaign.model':{getRunningCampaigns:async()=>['failed','active','delayed'].map(id=>({id})),markRunningJobFailed:async (id,reason)=>marked.push({id,reason})},
+    '../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async id=>({getState:async()=>id,failedReason:'Redis lock lost'})}}
   });
-  await reconcileFailedCampaignJobs(); assert.deepEqual(marked,['failed']);
+  await reconcileFailedCampaignJobs(); assert.deepEqual(marked,[{id:'failed',reason:'Redis lock lost'}]);
 });

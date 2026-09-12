@@ -54,6 +54,14 @@ class CampaignMessageModel extends BaseModel {
     return query;
   }
 
+  async getPendingCount(campaignId: string): Promise<number> {
+    const row = await this.query()
+      .where({ campaign_id: campaignId, status: 'pending' })
+      .count('* as count')
+      .first();
+    return Number(row?.count || 0);
+  }
+
   async getFailedMessages(
     campaignId: string,
     BATCH_SIZE: any,

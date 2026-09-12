@@ -856,12 +856,13 @@ class CampaignService {
 
     // Get job progress from BullMQ if campaign is running
     let jobProgress = null;
-    if (campaign.status === 'running' || campaign.status === 'queued') {
+    if (campaign.status === 'running' || campaign.status === 'queued' || campaign.status === 'failed') {
       const job = await campaignExecutionQueue.getJob(campaignId);
       if (job) {
         jobProgress = {
           progress: await job.progress,
           state: await job.getState(),
+          failed_reason: job.failedReason || null,
         };
       }
     }
@@ -873,6 +874,8 @@ class CampaignService {
       status: campaign.status,
       progress_percentage: jobProgress?.progress || 0,
       job_state: jobProgress?.state || null,
+      failure_reason: campaign.failure_reason || jobProgress?.failed_reason || null,
+      job_failed_reason: jobProgress?.failed_reason || null,
       total_recipients: campaign.total_recipients,
       sent_count: campaign.sent_count || 0,
       delivered_count: campaign.delivered_count || 0,
@@ -947,6 +950,7 @@ class CampaignService {
       campaign_id: campaignId,
       name: campaign.name,
       status: campaign.status,
+      failure_reason: campaign.failure_reason || null,
       total_recipients: campaign.total_recipients,
       sent_count: stats.sent_count,
       delivered_count: stats.delivered_count,
