@@ -137,6 +137,33 @@ test('campaign waits for deferred recipients instead of completing early', async
   assert.equal(updates.length,0);
   assert.ok(delayed[0]>Date.now());
 });
+
+test('a recipient exhausting ten pair-limit retries does not stop the next send', async () => {
+  class DelayedError extends Error {}
+  class Worker { on() { return this; } }
+  const sent=[]; const statuses=[];
+  const redis={set:async()=> 'OK',eval:async()=>1};
+  const {processCampaignExecution}=load('src/queues/processors/campaignExecution.processor.ts',{
+    'bullmq':{Worker,DelayedError},
+    '../campaignExecution.queue':{campaignExecutionQueue:{client:Promise.resolve(redis)}},
+    '../campaignCapacity':{campaignCapacity:{concurrency:1,messageConcurrency:2,maxRunningPerUser:1,messagesPerSecond:10,yieldMs:250},createCapacitySampler:()=>({sample:()=>2,metrics:()=>({}),close(){}})},
+    '../campaignPacing':{getCampaignSenderCooldown:async()=>0,waitForCampaignPermit:async()=>true,setCampaignPairCooldown:async()=>{}},
+    '../campaignUserSlots':{acquireCampaignUserSlot:async()=>true,releaseCampaignUserSlot:async()=>{}},
+    '../campaignDatabaseError':{isConnectionAcquireError:()=>false},
+    '../../app/models/phoneNumber.model':{findByPhoneNumberId:async()=>({phone_number_id:'p'})},
+    '@surefy/console/models/campaign.model':{findById:async()=>({id:'c',company_id:'co',user_id:'u',status:'running',template_id:'t',phone_number_id:'p'}),incrementCount:async()=>{throw new Error('counter unavailable');}},
+    '@surefy/console/models/campaignMessage.model':{getPendingMessages:async()=>[{id:'one',contact_id:'one'},{id:'two',contact_id:'two'}],deferRetry:async()=>10,updateStatus:async(id,status)=>statuses.push([id,status]),recordSent:async()=>{}},
+    '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+111',is_valid:true},{id:'two',phone_number:'+222',is_valid:true}],incrementFailedCount:async()=>{throw new Error('counter unavailable');}},
+    '@surefy/console/models/template.model':{findById:async()=>({id:'t'})},
+    '@surefy/console/services/message.service':{sendMessage:async data=>{sent.push(data.to);if(data.to==='+111')throw {code:131056,message:'pair limit'};return {id:'message'};}},
+    '@surefy/console/app/utils/messageError':{getMessageError:error=>({error_code:String(error.code||'UNKNOWN'),error_message:error.message||'error'})},
+    '@surefy/config/redis.config':{},
+    'uuid':{v4:()=> 'lock-owner'}
+  });
+  await assert.rejects(processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co',progressCheckedAt:Date.now()},opts:{attempts:3},timestamp:Date.now(),updateData:async()=>{},log:async()=>{},moveToDelayed:async()=>{}}),DelayedError);
+  assert.deepEqual(sent,['+111','+222']);
+  assert.deepEqual(statuses,[['one','failed']]);
+});
 test('bulk sends cannot flood the shared campaign database pool', async () => {
   let active=0, peak=0;
   class Worker { constructor(_,processJob){this.processJob=processJob;} on(){return this;} }

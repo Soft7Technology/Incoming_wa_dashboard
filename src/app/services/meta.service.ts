@@ -143,7 +143,7 @@ class MetaService {
     try {
       const response = await this.client.get(`/${phoneNumberId}`, {
         params: {
-          fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status',
+          fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,whatsapp_business_manager_messaging_limit',
         },
       });
       console.log('Response', response.data);

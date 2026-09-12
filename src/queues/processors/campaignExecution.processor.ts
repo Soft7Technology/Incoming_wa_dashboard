@@ -280,8 +280,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
               ...failure,
               error_message: `Pair rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
             });
-            await CampaignModel.incrementCount(campaign.id, 'failed_count');
-            await ContactModel.incrementFailedCount(campaignMessage.contact_id);
+            await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
             console.error('[Campaign Worker] Recipient exhausted pair-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, attempts });
           }
         } catch (retryError) {
@@ -303,15 +302,20 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
       ...getMessageError(error),
     });
+    await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+    // The recipient is terminally failed. Continue with the rest of the campaign.
+    return;
+  }
+}
 
-    await CampaignModel.incrementCount(campaign.id, 'failed_count');
-
-    // Update contact failed count
-    if (campaignMessage.contact_id) {
-      await ContactModel.incrementFailedCount(campaignMessage.contact_id);
+async function recordRecipientFailureCounts(campaignId: string, contactId?: string) {
+  const updates = [CampaignModel.incrementCount(campaignId, 'failed_count')];
+  if (contactId) updates.push(ContactModel.incrementFailedCount(contactId));
+  const results = await Promise.allSettled(updates);
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error('[Campaign Worker] Failed to update recipient failure counter', { campaignId, contactId, error: result.reason });
     }
-
-    throw error; // Re-throw to mark as failed in batch results
   }
 }
 
