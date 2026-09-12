@@ -63,25 +63,24 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       : await CampaignMessageModel.getPendingMessages(campaignId, batchSize, job.data.status, job.data.error_message);
     if (!pending.length) {
       const counts = await CampaignMessageModel.getCampaignStats(campaignId);
-      const finalStatus = Number(counts.failed_count) > 0 && Number(counts.sent_count) + Number(counts.delivered_count) + Number(counts.read_count) === 0
-        ? 'failed' : 'completed';
-      await CampaignModel.updateStatus(campaignId, finalStatus, { completed_at: new Date() });
-      console.info('[Campaign Worker] Finished', { campaignId, status: finalStatus, counts });
-      return { status: finalStatus };
+      // Recipient failures are reported in the counts; they do not fail the execution.
+      await CampaignModel.updateStatus(campaignId, 'completed', { completed_at: new Date() });
+      console.info('[Campaign Worker] Finished', { campaignId, status: 'completed', counts, errorCounts: job.data.errorCounts });
+      return { status: 'completed' };
     }
     const results = await Promise.allSettled(pending.map(async (message: any) => {
       if (lockLost) throw new CampaignInfrastructureError('Campaign execution lock lost');
       return sendCampaignMessage(campaign, message, template, () => !lockLost);
     }));
     const errors = { ...(job.data.errorCounts || {}) };
-    let pause = false;
+    let providerRateLimited = false;
     for (const result of results) {
       if (result.status !== 'rejected') continue;
       if (result.reason instanceof CampaignInfrastructureError) throw result.reason;
       const failure = getMessageError(result.reason);
       const key = JSON.stringify([failure.error_code, failure.error_message]);
       errors[key] = (errors[key] || 0) + 1;
-      if (errors[key] > 10 || ['130429', '131056', '80007', '80008', '4', '17', '32', '613'].includes(failure.error_code)) pause = true;
+      if (['130429', '131056', '80007', '80008', '4', '17', '32', '613'].includes(failure.error_code)) providerRateLimited = true;
     }
     // Preserve counters across yielded batches without unbounded unique error storage.
     const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
@@ -93,19 +92,20 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     await job.log(`Batch size ${batchSize}; selected ${pending.length}; progress ${progress}%`);
     const current = await CampaignModel.findById(campaignId);
     if (current?.status !== 'running') return { status: current?.status };
-    if (pause) {
-      await CampaignModel.updateStatus(campaignId, 'paused');
-      console.warn('[Campaign Worker] Paused: provider limit or repeated errors', { campaignId, errorCounts });
-      await job.log('Paused for provider rate limit or more than 10 matching errors. Inspect failed recipient details before resuming.');
-      return { status: 'paused' };
+    if (providerRateLimited) {
+      console.warn('[Campaign Worker] Provider rate limit; delaying next batch', { campaignId, delayMs: 30000, errorCounts });
+      await job.log('Provider rate limit encountered; delaying the next batch for 30 seconds.');
     }
-    return await defer(campaignCapacity.yieldMs);
+    return await defer(providerRateLimited ? 30000 : campaignCapacity.yieldMs);
   } catch (error) {
     if (error instanceof DelayedError) throw error;
-    console.error('[Campaign Worker] Execution error', { campaignId, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error) });
+    console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
     if (job.attemptsMade + 1 >= (job.opts.attempts || 1)) {
       const current = await CampaignModel.findById(campaignId);
-      if (current?.company_id === companyId && current.status === 'running') await CampaignModel.updateStatus(campaignId, 'failed');
+      if (current?.company_id === companyId && current.status === 'running') {
+        console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
+        await CampaignModel.updateStatus(campaignId, 'failed');
+      }
     }
     throw error;
   } finally {
@@ -166,10 +166,14 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
       template: templatePayload,
     });
 
+    infrastructureOperation = true;
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
-    if (infrastructureOperation) throw new CampaignInfrastructureError(error.message);
-    console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
+    if (infrastructureOperation) {
+      console.error('[Campaign Worker] Recipient infrastructure error', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, error });
+      throw new CampaignInfrastructureError(error instanceof Error ? error.message : String(error));
+    }
+    console.error('[Campaign Worker] Recipient send failed', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, contactId: campaignMessage.contact_id, reason: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
 
     await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
       ...getMessageError(error),
@@ -197,12 +201,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: media.link } }],
+            parameters: [{ type: 'image', image: media.media_id ? { id: media.media_id } : { link: media.link || media.url } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: media.link } }],
+            parameters: [{ type: 'image', image: { link: component.example.header_handle[0] } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'VIDEO') {
@@ -210,18 +214,18 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link: media.link } }],
+            parameters: [{ type: 'video', video: media.media_id ? { id: media.media_id } : { link: media.link || media.url } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link: media.link } }],
+            parameters: [{ type: 'video', video: { link: component.example.header_handle[0] } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
         const media = mediaUploads.find((m: any) => m.type === 'document');
         if (media) {
-          const docObj: any = { link: media.link };
+          const docObj: any = media.media_id ? { id: media.media_id } : { link: media.link || media.url };
           if (media.filename || media.name) {
             docObj.filename = media.filename || media.name;
           }
@@ -300,6 +304,7 @@ campaignExecutionWorker.on('closed', () => { clearInterval(healthTimer); capacit
 campaignExecutionWorker.on('stalled', jobId => console.warn('[Campaign Worker] Job stalled; BullMQ will recover it', { jobId }));
 
 campaignExecutionWorker.on('failed', (job, err) => {
+  console.error('[Campaign Worker] Job attempt failed', { jobId: job?.id, campaignId: job?.data.campaignId, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, reason: getMessageError(err), stack: err.stack });
   console.error(`❌ Campaign job ${job?.id} failed:`, err.message);
   console.error('Stack:', err.stack);
 });
