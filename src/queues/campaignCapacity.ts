@@ -11,6 +11,7 @@ export const campaignCapacity = {
   concurrency: setting('CAMPAIGN_CONCURRENCY', 2, 32),
   maxBatch: setting('CAMPAIGN_MAX_BATCH_SIZE', 10, 100),
   messageConcurrency: setting('CAMPAIGN_MESSAGE_CONCURRENCY', 2, 32),
+  maxRunningPerUser: setting('CAMPAIGN_MAX_RUNNING_PER_USER', 1, 32),
   messagesPerSecond: setting('CAMPAIGN_MESSAGES_PER_SECOND', 10, 1000),
   pairIntervalMs: 6000,
   yieldMs: 250,
