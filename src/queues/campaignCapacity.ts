@@ -8,8 +8,9 @@ function setting(name: string, fallback: number, max: number): number {
 }
 
 export const campaignCapacity = {
-  concurrency: setting('CAMPAIGN_CONCURRENCY', 4, 32),
+  concurrency: setting('CAMPAIGN_CONCURRENCY', 2, 32),
   maxBatch: setting('CAMPAIGN_MAX_BATCH_SIZE', 10, 100),
+  messageConcurrency: setting('CAMPAIGN_MESSAGE_CONCURRENCY', 2, 32),
   messagesPerSecond: setting('CAMPAIGN_MESSAGES_PER_SECOND', 10, 1000),
   pairIntervalMs: 6000,
   yieldMs: 250,

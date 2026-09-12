@@ -18,7 +18,7 @@ class CampaignInfrastructureError extends Error {}
 const capacitySampler = createCapacitySampler();
 const healthTimer = setInterval(() => {
   capacitySampler.sample();
-  console.info('[Campaign Worker] Health', { ...capacitySampler.metrics(), concurrency: campaignCapacity.concurrency, messagesPerSecond: campaignCapacity.messagesPerSecond });
+  console.info('[Campaign Worker] Health', { ...capacitySampler.metrics(), concurrency: campaignCapacity.concurrency, messageConcurrency: campaignCapacity.messageConcurrency, messagesPerSecond: campaignCapacity.messagesPerSecond });
 }, 15000);
 healthTimer.unref();
 
@@ -68,15 +68,21 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       console.info('[Campaign Worker] Finished', { campaignId, status: 'completed', counts, errorCounts: job.data.errorCounts });
       return { status: 'completed' };
     }
-    const results = await Promise.allSettled(pending.map(async (message: any) => {
-      if (lockLost) throw new CampaignInfrastructureError('Campaign execution lock lost');
-      return sendCampaignMessage(campaign, message, template, () => !lockLost);
-    }));
+    const results: PromiseSettledResult<void>[] = [];
+    for (let offset = 0; offset < pending.length; offset += campaignCapacity.messageConcurrency) {
+      const chunk = pending.slice(offset, offset + campaignCapacity.messageConcurrency);
+      const settled = await Promise.allSettled(chunk.map(async (message: any) => {
+        if (lockLost) throw new CampaignInfrastructureError('Campaign execution lock lost');
+        return sendCampaignMessage(campaign, message, template, () => !lockLost);
+      }));
+      results.push(...settled);
+      const infrastructureFailure = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignInfrastructureError);
+      if (infrastructureFailure?.status === 'rejected') throw infrastructureFailure.reason;
+    }
     const errors = { ...(job.data.errorCounts || {}) };
     let providerRateLimited = false;
     for (const result of results) {
       if (result.status !== 'rejected') continue;
-      if (result.reason instanceof CampaignInfrastructureError) throw result.reason;
       const failure = getMessageError(result.reason);
       const key = JSON.stringify([failure.error_code, failure.error_message]);
       errors[key] = (errors[key] || 0) + 1;
