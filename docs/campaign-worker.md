@@ -18,9 +18,9 @@ Look for these console events:
 - `Start requested` / `Existing job`: campaign ID and BullMQ state. An active job is not duplicated.
 - `Health` every 15 seconds: PID, host CPU percentage, process CPU percentage (100 means one core), host memory percentage, process RSS MB, event-loop p95 milliseconds, batch size, concurrency and sender rate limit.
 - `Batch starting` / `Batch finished`: campaign/job ID, attempt, selected recipient count, rejected count, elapsed milliseconds, progress and database status counts. Selected is not the count of successful sends; rate-limited recipients can remain pending.
-- `Waiting for schedule`, `Finished`, `Execution error`, `Paused` and `Job stalled`: lifecycle and recovery details.
+- `Waiting for schedule`, `Finished`, `Execution error`, `Provider rate limit` and `Job stalled`: lifecycle and recovery details.
 
-More than ten matching errors, or a recognized provider rate-limit error, pauses a campaign for inspection. Infrastructure execution errors use BullMQ retries; exhausted execution retries mark a running campaign failed. The start endpoint can recover a running campaign with a missing or failed job and replaces a paused waiting job. Starting does not resend recipients already marked sent; retry-failed uses the rebroadcast path.
+Individual recipient failures remain visible in the failed count and recipient details while the campaign continues. A provider rate-limit response delays the next batch for 30 seconds; repeated recipient errors do not pause the campaign. Once every pending recipient has been processed, the campaign is completed even if some or all recipients failed. Infrastructure execution errors use BullMQ retries; exhausted execution retries still mark a running campaign failed. The start endpoint can recover a running campaign with a missing or failed job and replaces a paused waiting job. Starting does not resend recipients already marked sent; retry-failed uses the rebroadcast path.
 
 Workers drain active jobs before closing the database on SIGINT/SIGTERM. Give your process manager sufficient termination grace for outbound requests. Abrupt termination after Meta accepts a message but before its database status is saved still risks a duplicate on recovery; this implementation does not provide exactly-once delivery.
 
