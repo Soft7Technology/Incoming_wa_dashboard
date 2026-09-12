@@ -24,6 +24,13 @@ class ContactModel extends BaseModel {
     super('contacts');
   }
 
+  async findCampaignRecipients(ids: string[]) {
+    if (!ids.length) return [];
+    return this.query()
+      .whereIn('id', ids)
+      .select('id', 'name', 'phone_number', 'is_valid', 'invalid_reason');
+  }
+
   async create(data: any, trx?: Knex.Transaction): Promise<any> {
     const normalized = { ...data, phone_number: normalizeContactPhone(data.phone_number) };
     const insert = async (transaction: Knex.Transaction) => {

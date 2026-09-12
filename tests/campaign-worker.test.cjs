@@ -39,18 +39,31 @@ test('start does not duplicate an active campaign', async () => {
 test('high load reduces batch and low load respects maximum', () => {
   const {nextBatchSize} = load('src/queues/campaignCapacity.ts', {});
   assert.equal(nextBatchSize(10,.9,.3,10,10),5);
+  assert.equal(nextBatchSize(4,.9,.3,10,10),2);
+  assert.equal(nextBatchSize(2,.9,.3,10,10),2);
   assert.equal(nextBatchSize(1,.9,.9,200,10),1);
   assert.equal(nextBatchSize(10,.2,.3,10,10),10);
   assert.equal(nextBatchSize(2,.2,.3,10,10),3);
 });
 test('pacing leaves a recipient pending when wait would occupy a worker too long', async () => {
   let calls = 0;
+  let keyCount;
   const {waitForCampaignPermit} = load('src/queues/campaignPacing.ts', {
-    './campaignExecution.queue': { campaignExecutionQueue: { client: Promise.resolve({ eval: async () => { calls++; return 6000; } }) } },
+    './campaignExecution.queue': { campaignExecutionQueue: { client: Promise.resolve({ eval: async (_, count) => { calls++; keyCount=count; return 6000; } }) } },
     './campaignCapacity': { campaignCapacity: { messagesPerSecond:10, pairIntervalMs:6000 } }
   });
   assert.equal(await waitForCampaignPermit('sender','+919999999999'), false);
   assert.equal(calls, 1);
+  assert.equal(keyCount, 4);
+});
+test('pair cooldown uses a recipient-specific Redis key', async () => {
+  let key;
+  const {setCampaignPairCooldown} = load('src/queues/campaignPacing.ts', {
+    './campaignExecution.queue': {campaignExecutionQueue:{client:Promise.resolve({set:async value => {key=value;}})}},
+    './campaignCapacity': {campaignCapacity:{}}
+  });
+  await setCampaignPairCooldown('sender','+91 99999 99999',6000);
+  assert.equal(key,'campaign-send:{sender}:919999999999:cooldown');
 });
 for (const [status,state] of [['completed','completed'],['failed','failed'],['paused','delayed']]) {
   test(`rebroadcast replaces ${state} job for ${status} campaign`,async()=>{

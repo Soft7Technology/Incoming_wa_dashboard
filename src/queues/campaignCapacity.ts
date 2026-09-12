@@ -11,14 +11,15 @@ export const campaignCapacity = {
   concurrency: setting('CAMPAIGN_CONCURRENCY', 2, 32),
   maxBatch: setting('CAMPAIGN_MAX_BATCH_SIZE', 10, 100),
   messageConcurrency: setting('CAMPAIGN_MESSAGE_CONCURRENCY', 2, 32),
-  maxRunningPerUser: setting('CAMPAIGN_MAX_RUNNING_PER_USER', 1, 32),
+  maxRunningPerUser: setting('CAMPAIGN_MAX_RUNNING_PER_USER', 2, 32),
   messagesPerSecond: setting('CAMPAIGN_MESSAGES_PER_SECOND', 10, 1000),
   pairIntervalMs: 6000,
   yieldMs: 250,
 };
 
 export function nextBatchSize(current: number, cpu: number, memory: number, lagMs: number, max: number): number {
-  if (cpu >= 0.8 || memory >= 0.85 || lagMs >= 100) return Math.max(1, Math.floor(current / 2));
+  // Batch size controls selection overhead; messageConcurrency bounds active sends.
+  if (cpu >= 0.8 || memory >= 0.85 || lagMs >= 100) return Math.max(Math.min(current, 2, max), Math.floor(current / 2));
   if (cpu < 0.6 && memory < 0.75 && lagMs < 40) return Math.min(max, current + 1);
   return Math.max(1, Math.min(current, max));
 }
@@ -29,7 +30,7 @@ export function createCapacitySampler() {
     total: total.total + Object.values(core.times).reduce((sum, value) => sum + value, 0),
   }), { idle: 0, total: 0 });
   let previous = snapshot();
-  let batch = Math.min(2, campaignCapacity.maxBatch);
+  let batch = Math.min(4, campaignCapacity.maxBatch);
   let sampledAt = Date.now();
   let processCpu = process.cpuUsage();
   let metrics = { hostCpuPercent: 0, processCpuPercent: 0, memoryPercent: 0, rssMB: 0, eventLoopP95Ms: 0 };

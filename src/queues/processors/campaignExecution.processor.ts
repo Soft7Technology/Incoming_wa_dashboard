@@ -2,7 +2,7 @@ import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
 import { campaignCapacity, createCapacitySampler } from '../campaignCapacity';
-import { waitForCampaignPermit } from '../campaignPacing';
+import { waitForCampaignPermit, getCampaignSenderCooldown, setCampaignSenderCooldown, setCampaignPairCooldown } from '../campaignPacing';
 import { acquireCampaignUserSlot, refreshCampaignUserSlot, releaseCampaignUserSlot } from '../campaignUserSlots';
 import { isConnectionAcquireError } from '../campaignDatabaseError';
 import PhoneNumberModel from '../../app/models/phoneNumber.model';
@@ -17,6 +17,10 @@ import { v4 as uuidv4 } from "uuid";
 
 
 class CampaignInfrastructureError extends Error {}
+class CampaignProviderLimitError extends Error {
+  constructor(public readonly code: string, message: string, public readonly recipient: string) { super(message); }
+}
+const providerLimitCodes = new Set(['130429', '131056', '80007', '80008', '4', '17', '32', '613']);
 const capacitySampler = createCapacitySampler();
 const healthTimer = setInterval(() => {
   capacitySampler.sample();
@@ -38,6 +42,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
   let lockLost = false;
   let slotUserId: string | undefined;
   let releaseSlot = false;
+  let phase = 'loading campaign';
   const heartbeat = setInterval(() => {
     void redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], 120000) else return 0 end",
       1, lockKey, lockOwner).then(value => { if (!value) lockLost = true; }).catch(() => { lockLost = true; });
@@ -57,11 +62,13 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       console.info('[Campaign Worker] Waiting for schedule', { campaignId, scheduledAt: campaign.scheduled_at });
       return await defer(new Date(campaign.scheduled_at).getTime() - Date.now());
     }
+    phase = 'acquiring user slot';
     if (!await acquireCampaignUserSlot(campaign.user_id, campaignId)) {
       console.info('[Campaign Worker] Waiting for user campaign slot', { campaignId, userId: campaign.user_id, limit: campaignCapacity.maxRunningPerUser });
       return await defer(5000);
     }
     slotUserId = campaign.user_id;
+    phase = 'loading campaign configuration';
     if (campaign.status !== 'running') {
       await CampaignModel.updateStatus(campaignId, 'running', { started_at: campaign.started_at || new Date() });
     }
@@ -70,12 +77,19 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
     if (!phone) throw new Error('Business phone number not found');
     campaign.phone_number_id = phone.phone_number_id;
+    const senderCooldown = await getCampaignSenderCooldown(campaign.phone_number_id);
+    if (senderCooldown > 0) {
+      console.info('[Campaign Worker] Waiting for sender cooldown', { campaignId, phoneNumberId: campaign.phone_number_id, delayMs: senderCooldown });
+      return await defer(senderCooldown);
+    }
     const batchSize = capacitySampler.sample();
     console.info('[Campaign Worker] Batch starting', { campaignId, jobId: job.id, attempt: job.attemptsMade + 1, ...capacitySampler.metrics() });
+    phase = 'selecting recipients';
     const pending = job.data.status === 'failed'
       ? await CampaignMessageModel.getFailedMessages(campaignId, batchSize, new Date(job.timestamp))
       : await CampaignMessageModel.getPendingMessages(campaignId, batchSize, job.data.status, job.data.error_message);
     if (!pending.length) {
+      phase = 'completing campaign';
       const counts = await CampaignMessageModel.getCampaignStats(campaignId);
       // Recipient failures are reported in the counts; they do not fail the execution.
       await CampaignModel.updateStatus(campaignId, 'completed', { completed_at: new Date() });
@@ -83,33 +97,52 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       console.info('[Campaign Worker] Finished', { campaignId, status: 'completed', counts, errorCounts: job.data.errorCounts });
       return { status: 'completed' };
     }
+    const contacts = await ContactModel.findCampaignRecipients(pending.map((message: any) => message.contact_id));
+    const contactsById = new Map(contacts.map((contact: any) => [contact.id, contact]));
     const results: PromiseSettledResult<void>[] = [];
+    phase = 'sending recipients';
     for (let offset = 0; offset < pending.length; offset += campaignCapacity.messageConcurrency) {
+      const currentCampaign = await CampaignModel.findById(campaignId);
+      if (currentCampaign?.status !== 'running') {
+        releaseSlot = true;
+        return { status: currentCampaign?.status };
+      }
       const chunk = pending.slice(offset, offset + campaignCapacity.messageConcurrency);
       const settled = await Promise.allSettled(chunk.map(async (message: any) => {
         if (lockLost) throw new CampaignInfrastructureError('Campaign execution lock lost');
-        return sendCampaignMessage(campaign, message, template, () => !lockLost);
+        return sendCampaignMessage(campaign, message, contactsById.get(message.contact_id), template, phone, () => !lockLost);
       }));
       results.push(...settled);
       const infrastructureFailure = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignInfrastructureError);
       if (infrastructureFailure?.status === 'rejected') throw infrastructureFailure.reason;
+      const providerLimit = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignProviderLimitError);
+      if (providerLimit?.status === 'rejected') {
+        const delayMs = providerLimit.reason.code === '131056' ? 6000 : 30000;
+        if (providerLimit.reason.code === '131056') {
+          await setCampaignPairCooldown(campaign.phone_number_id, providerLimit.reason.recipient, delayMs);
+        } else {
+          await setCampaignSenderCooldown(campaign.phone_number_id, delayMs);
+        }
+        console.warn('[Campaign Worker] Provider limit; recipients remain pending', { campaignId, phoneNumberId: campaign.phone_number_id, code: providerLimit.reason.code, delayMs });
+        return await defer(delayMs);
+      }
     }
     const errors = { ...(job.data.errorCounts || {}) };
-    let providerRateLimited = false;
     for (const result of results) {
       if (result.status !== 'rejected') continue;
       const failure = getMessageError(result.reason);
       const key = JSON.stringify([failure.error_code, failure.error_message]);
       errors[key] = (errors[key] || 0) + 1;
-      if (['130429', '131056', '80007', '80008', '4', '17', '32', '613'].includes(failure.error_code)) providerRateLimited = true;
     }
     // Preserve counters across yielded batches without unbounded unique error storage.
     const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
-    await job.updateData({ ...job.data, errorCounts });
-    // The full stats join grows with the campaign and is only needed at completion.
-    const pendingCount = job.data.status === 'failed' ? undefined : await CampaignMessageModel.getPendingCount(campaignId);
+    phase = 'updating progress';
+    // Counting every pending row after every small batch becomes quadratic for large campaigns.
+    const checkProgress = job.data.status !== 'failed' && Date.now() - (job.data.progressCheckedAt || 0) >= 20000;
+    const pendingCount = checkProgress ? await CampaignMessageModel.getPendingCount(campaignId) : undefined;
     const progress = pendingCount === undefined ? undefined : Math.min(100, Math.round((campaign.total_recipients - pendingCount) / Math.max(1, campaign.total_recipients) * 100));
     if (progress !== undefined) await job.updateProgress(progress);
+    await job.updateData({ ...job.data, errorCounts, progressCheckedAt: checkProgress ? Date.now() : job.data.progressCheckedAt });
     console.info('[Campaign Worker] Batch finished', { campaignId, jobId: job.id, durationMs: Date.now() - batchStartedAt, selected: pending.length, rejected: results.filter(r => r.status === 'rejected').length, pendingCount, progress, errorCounts, ...capacitySampler.metrics() });
     await job.log(`Batch size ${batchSize}; selected ${pending.length}; pending ${pendingCount ?? 'retry'}; progress ${progress ?? 'retry'}%`);
     const current = await CampaignModel.findById(campaignId);
@@ -117,28 +150,24 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       releaseSlot = true;
       return { status: current?.status };
     }
-    if (providerRateLimited) {
-      console.warn('[Campaign Worker] Provider rate limit; delaying next batch', { campaignId, delayMs: 30000, errorCounts });
-      await job.log('Provider rate limit encountered; delaying the next batch for 30 seconds.');
-    }
-    return await defer(providerRateLimited ? 30000 : campaignCapacity.yieldMs);
+    return await defer(campaignCapacity.yieldMs);
   } catch (error) {
     if (error instanceof DelayedError) throw error;
     if (isConnectionAcquireError(error)) {
       console.warn('[Campaign Worker] Database pool exhausted; retrying batch without failing campaign', {
-        campaignId, jobId: job.id, userId: slotUserId, delayMs: 30000,
+        campaignId, jobId: job.id, userId: slotUserId, phase, delayMs: 30000,
         reason: error instanceof Error ? error.message : String(error),
       });
       return await defer(30000);
     }
-    console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
+    console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, phase, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
     if (job.attemptsMade + 1 >= (job.opts.attempts || 1)) {
       const current = await CampaignModel.findById(campaignId);
       if (current?.company_id === companyId && current.status === 'running') {
         console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
         const failure = getMessageError(error);
         await CampaignModel.updateStatus(campaignId, 'failed', {
-          failure_reason: `${failure.error_code}: ${failure.error_message}`,
+          failure_reason: `${phase}: ${failure.error_code}: ${failure.error_message}`,
         });
         releaseSlot = true;
       }
@@ -153,17 +182,17 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
   }
 }
 
-async function sendCampaignMessage(campaign: any, campaignMessage: any, template: any, ownsLock: () => boolean) {
+async function sendCampaignMessage(campaign: any, campaignMessage: any, contact: any, template: any, phone: any, ownsLock: () => boolean) {
   let infrastructureOperation = true;
+  let recipientPhone = '';
   try {
-    // Get contact
-    const contact = await ContactModel.findById(campaignMessage.contact_id);
     if (!contact) {
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
         error_message: 'Contact not found',
       });
       return;
     }
+    recipientPhone = contact.phone_number;
 
     // Skip invalid numbers
     if (!contact.is_valid) {
@@ -187,8 +216,6 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
     infrastructureOperation = true;
     if (!await waitForCampaignPermit(campaign.phone_number_id, contact.phone_number)) return;
     if (!ownsLock()) return;
-    const current = await CampaignModel.findById(campaign.id);
-    if (current?.status !== 'running') return;
 
     infrastructureOperation = false;
     // Send message via MessageService
@@ -202,7 +229,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
       to: contact.phone_number,
       type: 'template',
       template: templatePayload,
-    });
+    }, { phoneNumber: phone, templateRecord: template });
 
     infrastructureOperation = true;
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
@@ -210,6 +237,13 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
     if (isConnectionAcquireError(error)) {
       console.warn('[Campaign Worker] Recipient database connection unavailable', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: error.message });
       throw new CampaignInfrastructureError(error.message);
+    }
+    if (!infrastructureOperation) {
+      const failure = getMessageError(error);
+      if (providerLimitCodes.has(failure.error_code)) {
+        console.warn('[Campaign Worker] Provider temporarily rejected send; recipient remains pending', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, reason: failure.error_message });
+        throw new CampaignProviderLimitError(failure.error_code, failure.error_message, recipientPhone);
+      }
     }
     if (infrastructureOperation) {
       console.error('[Campaign Worker] Recipient infrastructure error', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, error });
