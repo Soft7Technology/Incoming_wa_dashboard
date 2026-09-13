@@ -228,6 +228,16 @@ class CampaignService {
     // Get stats
     const stats = await CampaignMessageModel.getCampaignStats(campaignId);
     campaign.stats = stats;
+    campaign.sent_count = Number(stats.sent_count || 0);
+    campaign.delivered_count = Number(stats.delivered_count || 0);
+    campaign.read_count = Number(stats.read_count || 0);
+    campaign.failed_count = Number(stats.failed_count || 0);
+
+    if (campaign.status === 'running') {
+      const job = await campaignExecutionQueue.getJob(campaignId);
+      campaign.job_state = job ? await job.getState() : null;
+      campaign.job_failed_reason = job?.failedReason || null;
+    }
 
     return campaign;
   }
@@ -877,10 +887,10 @@ class CampaignService {
       failure_reason: campaign.failure_reason || jobProgress?.failed_reason || null,
       job_failed_reason: jobProgress?.failed_reason || null,
       total_recipients: campaign.total_recipients,
-      sent_count: campaign.sent_count || 0,
-      delivered_count: campaign.delivered_count || 0,
-      read_count: campaign.read_count || 0,
-      failed_count: campaign.failed_count || 0,
+      sent_count: Number(stats.sent_count || 0),
+      delivered_count: Number(stats.delivered_count || 0),
+      read_count: Number(stats.read_count || 0),
+      failed_count: Number(stats.failed_count || 0),
       invalid_numbers_count: campaign.invalid_numbers_count || 0,
       pending_count: Number(stats.pending_count || 0),
       deferred_count: await CampaignMessageModel.getDeferredCount(campaignId),

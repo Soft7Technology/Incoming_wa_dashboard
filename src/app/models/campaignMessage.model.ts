@@ -42,6 +42,8 @@ class CampaignMessageModel extends BaseModel {
       .where("campaign_id", campaignId)
       .where("status", status || "pending")
       .where(builder => builder.whereNull('retry_after').orWhere('retry_after', '<=', new Date()))
+      .orderBy('created_at')
+      .orderBy('id')
       .limit(limit);
 
     // if (errorMessage) {
@@ -215,7 +217,6 @@ class CampaignMessageModel extends BaseModel {
         this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'pending')  AS pending_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'delivered') AS delivered_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'read')    AS read_count`),
-        this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'failed' OR cm.status = 'failed')  AS failed_count`),
         this.db.raw(`
            COUNT(*) FILTER(
              WHERE cm.status = 'failed' OR m.status = 'failed'
