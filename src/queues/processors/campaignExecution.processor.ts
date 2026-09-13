@@ -38,7 +38,6 @@ healthTimer.unref();
 
 export async function processCampaignExecution(job: Job<CampaignExecutionJobData>, token?: string) {
   const { campaignId, companyId } = job.data;
-  const batchStartedAt = Date.now();
   const redis = await campaignExecutionQueue.client;
   const lockKey = `campaign-execution-lock:${campaignId}`;
   const lockOwner = uuidv4();
@@ -85,6 +84,8 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
     if (!phone) throw new Error('Business phone number not found');
     campaign.phone_number_id = phone.phone_number_id;
+    while (true) {
+    const batchStartedAt = Date.now();
     const senderCooldown = await getCampaignSenderCooldown(campaign.phone_number_id);
     if (senderCooldown > 0) {
       console.info('[Campaign Worker] Waiting for sender cooldown', { campaignId, phoneNumberId: campaign.phone_number_id, delayMs: senderCooldown });
@@ -157,7 +158,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       const key = JSON.stringify([failure.error_code, failure.error_message]);
       errors[key] = (errors[key] || 0) + 1;
     }
-    // Preserve counters across yielded batches without unbounded unique error storage.
+    // Preserve counters across batches without unbounded unique error storage.
     const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
     phase = 'updating progress';
     // Counting every pending row after every small batch becomes quadratic for large campaigns.
@@ -173,7 +174,9 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       releaseSlot = true;
       return { status: current?.status };
     }
-    return await defer(campaignCapacity.yieldMs);
+    // Continue immediately with the next batch. Only provider or infrastructure
+    // cooldowns, deferred recipients, and an explicit pause delay this job.
+    }
   } catch (error) {
     if (error instanceof DelayedError) throw error;
     if (isConnectionAcquireError(error)) {

@@ -14,7 +14,6 @@ export const campaignCapacity = {
   maxRunningPerUser: setting('CAMPAIGN_MAX_RUNNING_PER_USER', 4, 32),
   messagesPerSecond: setting('CAMPAIGN_MESSAGES_PER_SECOND', 10, 1000),
   pairIntervalMs: 6000,
-  yieldMs: 250,
 };
 
 export function nextBatchSize(current: number, cpu: number, memory: number, lagMs: number, max: number): number {
