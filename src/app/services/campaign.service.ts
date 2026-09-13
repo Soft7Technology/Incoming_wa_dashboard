@@ -124,7 +124,7 @@ class CampaignService {
     let scheduledAt: Date | null = null;
     let status = 'draft';
 
-    // send_immediately === true  →  schedule 1 minute from now
+    // Immediate campaigns are due as soon as their recipient rows are saved.
     if (data.send_immediately) {
       scheduledAt = new Date();
       status = 'scheduled';
@@ -168,10 +168,8 @@ class CampaignService {
 
     await CampaignMessageModel.bulkCreate(campaignMessages);
 
-    // ── AUTO-QUEUE: If send_immediately is true, push the campaign into the
-    // BullMQ execution queue right now so it runs without needing a separate
-    // POST /start call. This is a server-side safety net on top of the
-    // frontend's /start call.
+    // All recipient writes above have completed, so the worker can start now.
+    // This also avoids waiting for the scheduled-campaign scan or a separate /start call.
     if (data.send_immediately || data.scheduled_at === 'now') {
       console.log(`[Campaign] Auto-queueing campaign ${campaign.id} for immediate execution`);
       await campaignExecutionQueue.add(
@@ -181,13 +179,8 @@ class CampaignService {
           userId,
           companyId,
         },
-        {
-          jobId: campaign.id,
-          delay: 3000, // 3-second delay so the DB write fully commits first
-        }
+        { jobId: campaign.id }
       );
-      // Update status to 'running' so the worker can start processing
-      await CampaignModel.updateStatus(campaign.id, 'scheduled');
     }
 
     return campaign;
