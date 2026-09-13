@@ -289,7 +289,25 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
         return;
       }
       if (providerLimitCodes.has(failure.error_code)) {
-        console.warn('[Campaign Worker] Provider temporarily rejected send; recipient remains pending', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, reason: failure.error_message });
+        const delayMs = 30000;
+        let attempts: number;
+        try {
+          attempts = await CampaignMessageModel.deferRetry(campaignMessage.id, delayMs, true);
+          if (attempts >= 10) {
+            await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
+              ...failure,
+              error_message: `Provider rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
+            });
+          }
+        } catch (retryError) {
+          throw new CampaignInfrastructureError(retryError instanceof Error ? retryError.message : String(retryError));
+        }
+        if (attempts >= 10) {
+          await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+          console.error('[Campaign Worker] Recipient exhausted provider-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, attempts });
+          return;
+        }
+        console.warn('[Campaign Worker] Provider temporarily rejected send; recipient deferred', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, attempts, delayMs, reason: failure.error_message });
         throw new CampaignProviderLimitError(failure.error_code, failure.error_message, recipientPhone);
       }
     }

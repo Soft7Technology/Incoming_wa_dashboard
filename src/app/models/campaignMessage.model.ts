@@ -42,6 +42,8 @@ class CampaignMessageModel extends BaseModel {
       .where("campaign_id", campaignId)
       .where("status", status || "pending")
       .where(builder => builder.whereNull('retry_after').orWhere('retry_after', '<=', new Date()))
+      .orderBy('created_at')
+      .orderBy('id')
       .limit(limit);
 
     // if (errorMessage) {
