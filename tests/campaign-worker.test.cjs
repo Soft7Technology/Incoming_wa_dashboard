@@ -141,7 +141,7 @@ test('campaign waits for deferred recipients instead of completing early', async
 test('a recipient exhausting ten pair-limit retries does not stop the next send', async () => {
   class DelayedError extends Error {}
   class Worker { on() { return this; } }
-  const sent=[]; const statuses=[];
+  const sent=[]; const statuses=[]; let selected=false;
   const redis={set:async()=> 'OK',eval:async()=>1};
   const {processCampaignExecution}=load('src/queues/processors/campaignExecution.processor.ts',{
     'bullmq':{Worker,DelayedError},
@@ -151,8 +151,8 @@ test('a recipient exhausting ten pair-limit retries does not stop the next send'
     '../campaignUserSlots':{acquireCampaignUserSlot:async()=>true,releaseCampaignUserSlot:async()=>{}},
     '../campaignDatabaseError':{isConnectionAcquireError:()=>false},
     '../../app/models/phoneNumber.model':{findByPhoneNumberId:async()=>({phone_number_id:'p'})},
-    '@surefy/console/models/campaign.model':{findById:async()=>({id:'c',company_id:'co',user_id:'u',status:'running',template_id:'t',phone_number_id:'p'}),incrementCount:async()=>{throw new Error('counter unavailable');}},
-    '@surefy/console/models/campaignMessage.model':{getPendingMessages:async()=>[{id:'one',contact_id:'one'},{id:'two',contact_id:'two'}],deferRetry:async()=>10,updateStatus:async(id,status)=>statuses.push([id,status]),recordSent:async()=>{}},
+    '@surefy/console/models/campaign.model':{findById:async()=>({id:'c',company_id:'co',user_id:'u',status:'running',template_id:'t',phone_number_id:'p'}),incrementCount:async()=>{throw new Error('counter unavailable');},completeIfNoPendingMessages:async()=>true},
+    '@surefy/console/models/campaignMessage.model':{getPendingMessages:async()=>{if(selected)return [];selected=true;return [{id:'one',contact_id:'one'},{id:'two',contact_id:'two'}];},getNextRetryAt:async()=>null,getPendingCount:async()=>0,getCampaignStats:async()=>({}),deferRetry:async()=>10,updateStatus:async(id,status)=>statuses.push([id,status]),recordSent:async()=>{}},
     '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+111',is_valid:true},{id:'two',phone_number:'+222',is_valid:true}],incrementFailedCount:async()=>{throw new Error('counter unavailable');}},
     '@surefy/console/models/template.model':{findById:async()=>({id:'t'})},
     '@surefy/console/services/message.service':{sendMessage:async data=>{sent.push(data.to);if(data.to==='+111')throw {code:131056,message:'pair limit'};return {id:'message'};}},
@@ -160,7 +160,7 @@ test('a recipient exhausting ten pair-limit retries does not stop the next send'
     '@surefy/config/redis.config':{},
     'uuid':{v4:()=> 'lock-owner'}
   });
-  await assert.rejects(processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co',progressCheckedAt:Date.now()},opts:{attempts:3},timestamp:Date.now(),updateData:async()=>{},log:async()=>{},moveToDelayed:async()=>{}}),DelayedError);
+  assert.equal((await processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co',progressCheckedAt:Date.now()},opts:{attempts:3},timestamp:Date.now(),updateData:async()=>{},log:async()=>{},moveToDelayed:async()=>{}})).status,'completed');
   assert.deepEqual(sent,['+111','+222']);
   assert.deepEqual(statuses,[['one','failed']]);
 });
@@ -168,7 +168,7 @@ test('a recipient exhausting ten pair-limit retries does not stop the next send'
 test('sender rate limit defers its recipient so a later pending recipient can run', async () => {
   class DelayedError extends Error {}
   class Worker { on() { return this; } }
-  const sent=[]; const deferred=[]; const rows=[{id:'one',contact_id:'one'},{id:'two',contact_id:'two'}];
+  const sent=[]; const deferred=[]; const completed=[]; const rows=[{id:'one',contact_id:'one'},{id:'two',contact_id:'two'}];
   const redis={set:async()=> 'OK',eval:async()=>1};
   const {processCampaignExecution}=load('src/queues/processors/campaignExecution.processor.ts',{
     'bullmq':{Worker,DelayedError},
@@ -180,8 +180,9 @@ test('sender rate limit defers its recipient so a later pending recipient can ru
     '../../app/models/phoneNumber.model':{findByPhoneNumberId:async()=>({phone_number_id:'p'})},
     '@surefy/console/models/campaign.model':{findById:async()=>({id:'c',company_id:'co',user_id:'u',status:'running',template_id:'t',phone_number_id:'p'})},
     '@surefy/console/models/campaignMessage.model':{
-      getPendingMessages:async()=>rows.filter(row=>!deferred.includes(row.id)).slice(0,1),
-      deferRetry:async id=>{deferred.push(id);return 1;},recordSent:async()=>{},
+      getPendingMessages:async()=>rows.filter(row=>!deferred.includes(row.id)&&!completed.includes(row.id)).slice(0,1),
+      getNextRetryAt:async()=>new Date(Date.now()+30000),
+      deferRetry:async id=>{deferred.push(id);return 1;},recordSent:async id=>{completed.push(id);},
     },
     '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+111',is_valid:true},{id:'two',phone_number:'+222',is_valid:true}]},
     '@surefy/console/models/template.model':{findById:async()=>({id:'t'})},

@@ -11,6 +11,7 @@ import PhoneNumberModel from '../models/phoneNumber.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
+import { getCampaignSenderCooldown } from '../../queues/campaignPacing';
 import * as fs from 'fs';
 import campaignModel from '../models/campaign.model';
 import { v4 as uuidv4 } from "uuid";
@@ -859,24 +860,36 @@ class CampaignService {
 
     // Get job progress from BullMQ if campaign is running
     let jobProgress = null;
-    if (campaign.status === 'running' || campaign.status === 'queued' || campaign.status === 'failed') {
+    if (campaign.status === 'scheduled' || campaign.status === 'running' || campaign.status === 'queued' || campaign.status === 'failed') {
       const job = await campaignExecutionQueue.getJob(campaignId);
       if (job) {
         jobProgress = {
           progress: await job.progress,
           state: await job.getState(),
           failed_reason: job.failedReason || null,
+          queued_at: new Date(job.timestamp).toISOString(),
+          first_processed_at: job.processedOn ? new Date(job.processedOn).toISOString() : null,
+          attempts_made: job.attemptsMade,
         };
       }
     }
 
     const stats = await CampaignMessageModel.getCampaignStats(campaignId);
+    const pendingCount = Number(stats.pending_count || 0);
+    const deferredCount = await CampaignMessageModel.getDeferredCount(campaignId);
+    const [nextRetryAt, senderCooldownMs] = await Promise.all([
+      deferredCount > 0 ? CampaignMessageModel.getNextRetryAt(campaignId) : Promise.resolve(null),
+      campaign.status === 'running' ? getCampaignSenderCooldown(campaign.phone_number_id) : Promise.resolve(0),
+    ]);
 
     return {
       campaign_id: campaignId,
       status: campaign.status,
       progress_percentage: jobProgress?.progress || 0,
       job_state: jobProgress?.state || null,
+      job_queued_at: jobProgress?.queued_at || null,
+      job_first_processed_at: jobProgress?.first_processed_at || null,
+      job_attempts_made: jobProgress?.attempts_made ?? null,
       failure_reason: campaign.failure_reason || jobProgress?.failed_reason || null,
       job_failed_reason: jobProgress?.failed_reason || null,
       total_recipients: campaign.total_recipients,
@@ -885,8 +898,11 @@ class CampaignService {
       read_count: Number(stats.read_count || 0),
       failed_count: Number(stats.failed_count || 0),
       invalid_numbers_count: campaign.invalid_numbers_count || 0,
-      pending_count: Number(stats.pending_count || 0),
-      deferred_count: await CampaignMessageModel.getDeferredCount(campaignId),
+      pending_count: pendingCount,
+      pending_ready_count: Math.max(0, pendingCount - deferredCount),
+      deferred_count: deferredCount,
+      next_retry_at: nextRetryAt,
+      sender_cooldown_ms: senderCooldownMs,
       stats,
     };
   }
