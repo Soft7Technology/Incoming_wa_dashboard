@@ -257,13 +257,18 @@ class ContactService {
 
     console.log('data',data.tag_ids)
 
-    const updated = await ContactModel.update(contactId, {
+    const updatePayload: any = {
       name: data.name,
       email: data.email,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
-      assigned_to: data.assigned_to
-    });
+      assigned_to: data.assigned_to,
+    };
+    if (data.status !== undefined) {
+      updatePayload.status = data.status;
+    }
+
+    const updated = await ContactModel.update(contactId, updatePayload);
 
     // Update tags if provided
     if (data.tag_ids !== undefined) {
