@@ -29,6 +29,23 @@ class ImportJobModel extends BaseModel {
     super('import_jobs');
   }
 
+  async update(jobId: string, data: Partial<ImportJobData>) {
+    const jsonColumns = ['file_headers', 'import_options', 'errors', 'result'] as const;
+    const updateData: any = { ...data };
+
+    // BaseModel.update leaves arrays untouched because some tables use native
+    // PostgreSQL array columns. These import_jobs columns are JSONB, so arrays
+    // must be serialized explicitly before Knex sends them to PostgreSQL.
+    for (const column of jsonColumns) {
+      const value = updateData[column];
+      if (value !== undefined && value !== null && typeof value !== 'string') {
+        updateData[column] = JSON.stringify(value);
+      }
+    }
+
+    return super.update(jobId, updateData);
+  }
+
   async findByCompany(companyId: string, filters: any = {}) {
     let query = this.query()
       .where({ company_id: companyId })
