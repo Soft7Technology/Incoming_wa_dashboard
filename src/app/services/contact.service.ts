@@ -14,6 +14,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { filter } from 'lodash';
 import db from '@surefy/database';
+import { parseContactCustomFields } from '../utils/contactCustomFields';
 
 class ContactService {
   /**
@@ -256,12 +257,20 @@ class ContactService {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
 
-    console.log('data',data.tag_ids)
+    const currentCustomFields = parseContactCustomFields(
+      contact.custom_fields ?? contact.attributes ?? {},
+      'stored custom fields'
+    ) || {};
+    const attributes = parseContactCustomFields(data.attributes, 'attributes');
+    const customFields = parseContactCustomFields(data.custom_fields, 'custom_fields');
+    const hasCustomFieldUpdate = attributes !== undefined || customFields !== undefined;
 
     const updated = await ContactModel.update(contactId, {
       name: data.name,
       email: data.email,
-      attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
+      custom_fields: hasCustomFieldUpdate
+        ? { ...currentCustomFields, ...(attributes || {}), ...(customFields || {}) }
+        : currentCustomFields,
       notes: data.notes,
       assigned_to: data.assigned_to,
       status:data.status
