@@ -42,7 +42,10 @@ const shutdown = async () => {
   }
 };
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+// Workers drain active jobs before closing their database pool.
+if (process.env.WORKER_MODE !== 'true') {
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
+}
 
 export default db;

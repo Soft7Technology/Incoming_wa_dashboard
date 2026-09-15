@@ -1,74 +1,451 @@
+// import chatSessionModel from "@surefy/console/app/models/chatSession.model";
+// import userModel from "@surefy/console/app/models/user.model";
+// import { executeNode } from "../engine/executeNode";
+// import { matchTrigger } from "@surefy/console/utils";
+
+// export const triggerFlow = async ({
+//     bot,
+//     phone,
+//     incomingText,
+//     phoneNumberId
+// }: {
+//     bot: any;
+//     phone: string;
+//     incomingText: string;
+//     phoneNumberId: string;
+// }) => {
+
+//     console.log("Trigger Flow", phone, incomingText);
+
+//     let session;
+
+//     // Find trigger node
+//     const triggerNode = bot.nodes.find(
+//         (n: any) => n.type === "trigger"
+//     );
+
+//     if (!triggerNode) {
+//         console.log("Trigger node not found");
+//         return null;
+//     }
+
+//     // Find edge after trigger
+//     const edge = bot.edges.find(
+//         (e: any) => e.source === triggerNode.id
+//     );
+
+//     if (!edge) {
+//         console.log("No edge found from trigger");
+//         return null;
+//     }
+
+//     // Find next node
+//     const nextNode = bot.nodes.find(
+//         (n: any) => n.id === edge.target
+//     );
+
+//     if (!nextNode) {
+//         console.log("Next node not found");
+//         return null;
+//     }
+
+//     console.log("Trigger Node:", triggerNode.id);
+
+//     // Check trigger words
+//     const isMatch = matchTrigger(
+//         triggerNode.data,
+//         incomingText
+//     );
+
+//     if (!isMatch) {
+//         console.log("Trigger not matched");
+//         return null;
+//     }
+
+//     /**
+//      * Check if message contains a phone/FPO number
+//      *
+//      * Examples:
+//      * "Hi I want to register under 8888888888"
+//      * "register 919876543210"
+//      */
+//     const numberMatch = incomingText.match(/\d{10,13}/);
+//     console.log("Number Match", numberMatch)
+
+//     if (numberMatch) {
+
+//         const fpoNumber = numberMatch[0];
+//         const cleanNumber = fpoNumber.replace(/\D/g, "");
+
+//         // Add 91 if not already present
+//         const phoneNumber = cleanNumber.startsWith("91")
+//             ? cleanNumber
+//             : `91${cleanNumber}`;
+
+//         console.log("FPO Number Found:", fpoNumber);
+
+//         const fpo = await userModel.findByPhone(phoneNumber);
+//         console.log("Fpo details", fpo)
+
+//         if (!fpo) {
+
+//             console.log("FPO Not Found");
+
+//             await chatSessionModel.create({
+//                 phone_number: phone,
+//                 phoneNumberId,
+//                 chatbot_id: bot.id,
+//                 active: false,
+//                 current_flow: bot.flow_type,
+//                 last_message: incomingText,
+//                 variables: {
+//                     phone_number: phone,
+//                     requested_fpo: fpoNumber,
+//                     fpo_id: fpo.user_id,
+//                     created_by: "fpo",
+//                 }
+//             });
+
+//             return {
+//                 messages: [
+//                     {
+//                         type: "text",
+//                         text: "FPO does not exist."
+//                     }
+//                 ]
+//             };
+//         }
+
+//         session = await chatSessionModel.create({
+//             phone_number: phone,
+//             phoneNumberId,
+//             chatbot_id: bot.id,
+//             active: true,
+//             current_node_id: nextNode.id,
+//             current_flow: bot.flow_type,
+//             last_message: incomingText,
+//             variables: {
+//                 phone_number: phone,
+//                 requested_fpo: fpoNumber,
+//                 fpo_id: fpo.user_id,
+//                 created_by: "fpo",
+//                 parent_user_id:fpo.id,
+//             }
+//         });
+
+//         console.log("FPO Found:", fpo.id);
+//     }
+
+//     // Find edge after trigger
+//     // const edge = bot.edges.find(
+//     //     (e: any) => e.source === triggerNode.id
+//     // );
+
+//     // if (!edge) {
+//     //     console.log("No edge found from trigger");
+//     //     return null;
+//     // }
+
+//     // // Find next node
+//     // const nextNode = bot.nodes.find(
+//     //     (n: any) => n.id === edge.target
+//     // );
+
+//     // if (!nextNode) {
+//     //     console.log("Next node not found");
+//     //     return null;
+//     // }
+
+//     // const existingSession = await chatSessionModel.findByPhoneNumber(phone)
+//     // if (!existingSession) {
+//     //     // Create active session
+//     //     session = await chatSessionModel.create({
+//     //         phone_number: phone,
+//     //         phoneNumberId,
+//     //         chatbot_id: bot.id,
+//     //         active: true,
+//     //         current_node_id: nextNode.id,
+//     //         current_flow: bot.flow_type,
+//     //         last_message: incomingText,
+//     //         variables: {
+//     //             phone_number: phone,
+
+//     //         }
+//     //     });
+//     // }
+
+//     const existingSession = await chatSessionModel.findActiveSession({
+//         phoneNumber:phone,
+//         chatbotId:bot.id,
+//         phoneNumberId
+//     })
+
+//     if (existingSession) {
+//   session = existingSession;
+// } else {
+//     await chatSessionModel.deactivateActiveSession({
+//   phoneNumber: phone,
+//   chatbotId: bot.id,
+//   phoneNumberId,
+// });
+//         session = await chatSessionModel.create({
+//             phone_number: phone,
+//             phoneNumberId,
+//             chatbot_id: bot.id,
+//             active: true,
+//             current_node_id: nextNode.id,
+//             current_flow: bot.flow_type,
+//             last_message: incomingText,
+//             variables: {
+//                 phone_number: phone,
+
+//             }
+//         });
+// }
+
+
+//     console.log("Session Created:", session.id);
+
+//     return await executeNode({
+//         bot,
+//         session: {
+//             ...session,
+//             current_node_id: nextNode.id,
+//             variables: {
+//                 ...(session.variables || {}),
+//                 phone_number: phone
+//             }
+//         },
+//         currentNode: nextNode
+//     });
+// };
+
+
+
+
+
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
+import userModel from "@surefy/console/app/models/user.model";
 import { executeNode } from "../engine/executeNode";
-import { buildResponse, matchTrigger } from "@surefy/console/utils";
+import { getRuntimeBot } from "../runtimeBot";
 
 export const triggerFlow = async ({
-    bot,
-    phone,
-    incomingText,
-    phoneNumberId
+  bot,
+  phone,
+  incomingText,
+  phoneNumberId
 }: {
-    bot: any,
-    phone: string,
-    incomingText: string,
-    phoneNumberId:string
+  bot: any;
+  phone: string;
+  incomingText: string;
+  phoneNumberId: string;
 }) => {
 
-    console.log("Trigger Flow", phone, incomingText);
+  console.log("Trigger Flow", phone, incomingText);
 
-    const triggerNode = bot.nodes.find(
-        (n: any) => n.type === "trigger"
-    );
-    console.log('Trigger Node', triggerNode)
+  let session;
 
-    if (!triggerNode) return null;
+  // Find trigger node
+  const triggerNode = bot.nodes.find(
+    (n: any) => n.type === "trigger"
+  );
 
-    const isMatch = matchTrigger(
-        triggerNode.data,
-        incomingText
-    );
+  if (!triggerNode) {
+    console.log("Trigger node not found");
+    return null;
+  }
 
-    if (!isMatch) return null;
+  // Find edge after trigger
+  const edge = bot.edges.find(
+    (e: any) => e.source === triggerNode.id
+  );
 
-    // Find first node after trigger
-    const edge = bot.edges.find(
-        (e: any) => e.source === triggerNode.id
-    );
+  if (!edge) {
+    console.log("No edge found from trigger");
+    return null;
+  }
 
-    if (!edge) return null;
+  // Find next node
+  const nextNode = bot.nodes.find(
+    (n: any) => n.id === edge.target
+  );
 
-    const nextNode = bot.nodes.find(
-        (n: any) => n.id === edge.target
-    );
+  if (!nextNode) {
+    console.log("Next node not found");
+    return null;
+  }
 
-    if (!nextNode) return null;
+  console.log("Trigger Node:", triggerNode.id);
 
-    // Create session WITHOUT current node
-    const session = await chatSessionModel.create({
+  // Check trigger words
+  const matchedBot = await getRuntimeBot(
+    phoneNumberId,
+    undefined, incomingText
+  );
+
+  if (!matchedBot || matchedBot.id !== bot.id) {
+    console.log("Trigger not matched");
+    return null;
+  }
+
+  /**
+   * Check if message contains a phone/FPO number
+   *
+   * Examples:
+   * "Hi I want to register under 8888888888"
+   * "register 919876543210"
+   */
+  const numberMatch = incomingText.match(/\d{10,13}/);
+  console.log("Number Match", numberMatch)
+
+  if (numberMatch) {
+
+    const fpoNumber = numberMatch[0];
+    const cleanNumber = fpoNumber.replace(/\D/g, "");
+
+    // Add 91 if not already present
+    const phoneNumber = cleanNumber.startsWith("91")
+      ? cleanNumber
+      : `91${cleanNumber}`;
+
+    console.log("FPO Number Found:", fpoNumber);
+
+    const fpo = await userModel.findByPhone(phoneNumber);
+    console.log("Fpo details", fpo)
+
+    if (!fpo) {
+
+      console.log("FPO Not Found");
+
+      await chatSessionModel.create({
         phone_number: phone,
-        variables: {
-            phone_number: phone
-        },
-        phoneNumberId:phoneNumberId,
-        active: true,
+        phoneNumberId,
         chatbot_id: bot.id,
-        current_node_id: nextNode.id,
+        active: false,
         current_flow: bot.flow_type,
         last_message: incomingText,
+        variables: {
+          phone_number: phone,
+          user_id: bot.user_id,
+          requested_fpo: fpoNumber,
+          created_by: "fpo",
+        }
+      });
+
+      return {
+        messages: [
+          {
+            type: "text",
+            text: "FPO does not exist."
+          }
+        ]
+      };
+    }
+
+    session = await chatSessionModel.create({
+      phone_number: phone,
+      phoneNumberId,
+      chatbot_id: bot.id,
+      active: true,
+      current_node_id: nextNode.id,
+      current_flow: bot.flow_type,
+      last_message: incomingText,
+      variables: {
+        phone_number: phone,
+        user_id: bot.user_id,
+        requested_fpo: fpoNumber,
+        fpo_id: fpo.user_id,
+        created_by: "fpo",
+        parent_user_id: fpo.id,
+      }
     });
 
-    return await executeNode({
-        bot,
-        session: {
-            ...session,
-            current_node_id: nextNode.id,
-            variables: {
-                phone_number: phone
-            }
-        },
-        currentNode: nextNode
-    });
-    // ONLY send response
-    // return buildResponse(nextNode,bot);
+    console.log("FPO Found:", fpo.id);
+  }
 
+  // Find edge after trigger
+  // const edge = bot.edges.find(
+  //     (e: any) => e.source === triggerNode.id
+  // );
+
+  // if (!edge) {
+  //     console.log("No edge found from trigger");
+  //     return null;
+  // }
+
+  // // Find next node
+  // const nextNode = bot.nodes.find(
+  //     (n: any) => n.id === edge.target
+  // );
+
+  // if (!nextNode) {
+  //     console.log("Next node not found");
+  //     return null;
+  // }
+
+  // const existingSession = await chatSessionModel.findByPhoneNumber(phone)
+  // if (!existingSession) {
+  //     // Create active session
+  //     session = await chatSessionModel.create({
+  //         phone_number: phone,
+  //         phoneNumberId,
+  //         chatbot_id: bot.id,
+  //         active: true,
+  //         current_node_id: nextNode.id,
+  //         current_flow: bot.flow_type,
+  //         last_message: incomingText,
+  //         variables: {
+  //             phone_number: phone,
+
+  //         }
+  //     });
+  // }
+
+  const existingSession = await chatSessionModel.findActiveSession({
+    phoneNumber: phone,
+    chatbotId: bot.id,
+    phoneNumberId
+  })
+
+  if (existingSession) {
+    session = existingSession;
+  } else {
+    await chatSessionModel.deactivateActiveSession({
+      phoneNumber: phone,
+      chatbotId: bot.id,
+      phoneNumberId,
+    });
+    session = await chatSessionModel.create({
+      phone_number: phone,
+      user_id: bot.user_id,
+      phoneNumberId,
+      chatbot_id: bot.id,
+      active: true,
+      current_node_id: nextNode.id,
+      current_flow: bot.flow_type,
+      last_message: incomingText,
+      variables: {
+        phone_number: phone,
+        // user_id: bot.user_id,
+      }
+    });
+  }
+
+
+  console.log("Session Created:", session.id);
+
+  return await executeNode({
+    bot,
+    session: {
+      ...session,
+      current_node_id: nextNode.id,
+      variables: {
+        ...(session.variables || {}),
+        phone_number: phone,
+        user_id: bot.user_id,
+      }
+    },
+    currentNode: nextNode
+  });
 };
+

@@ -1,12 +1,13 @@
 import chatSessionModel from '@surefy/console/app/models/chatSession.model';
-import chatBotModel from '@surefy/console/models/chatbot.model';
+import { getRuntimeBot } from './runtimeBot';
 import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
 import chatBotEdgeModel from '@surefy/console/models/chatBotEdge.model';
 import messageService from "@surefy/console/services/message.service"
 import nodemailer from "nodemailer";
-import { flowRouter } from  './flow.route'
+import { flowRouter } from './flow.route'
 import contactModel from '@surefy/console/models/contact.model';
-import chatBotPhoneNumberModel from '../../models/chatBotPhoneNumber.model';
+import userModel from '../../models/user.model';
+import phoneNumberModel from '../../models/phoneNumber.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -43,47 +44,64 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     // 1️⃣ Get bot
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
-    // const bot: any = await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
-    // const 
-    // const bot:any = await chatbo
-    const chatbot:any= await chatBotPhoneNumberModel.getPublishedBotByPhoneNumberId(phoneNumberId)
-    if (!chatbot) return null;
+    let bot: any = message?.text?.body
+      ? await getRuntimeBot(phoneNumberId, undefined, incomingText)
+      : null;
 
-    const bot: any = await chatBotModel.findById(chatbot.chat_bot_id)
-    console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+    const triggerMatched = Boolean(bot);
 
-    //check exist contact
-    const existContact = await contactModel.findByPhone(bot.user_id,message.from)
-    console.log("Existing Contant",existContact)
-    if(!existContact){
-      const newContact = await contactModel.create({
-        user_id: bot.user_id,
-        company_id:bot.company_id,
-        phone_number:message.from,
-        name:profile_name
-      })
-      console.log("New Contact", newContact)
+    if (bot) {
+      await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
+    } else {
+      console.info('[Chatbot Routing] No keyword flow selected; checking active session', { phoneNumberId });
+      const activeSession = await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId);
+      if (!activeSession) return null;
+      bot = await getRuntimeBot(phoneNumberId, activeSession.chatbot_id);
+      if (!bot) return null;
     }
 
-    // 2️⃣ Load nodes + edges
-    const rawNodes = await chatBotNodeModel.findByChatBotId(bot.id) || [];
-    const rawEdges = await chatBotEdgeModel.findByChatBotId(bot.id) || [];
+    const numberMatch = incomingText.match(/\d{10,13}/);
+    let fpo_info
 
-    bot.nodes = rawNodes.map((n: any) => ({
-      ...n,
-      data: safeJSON(n.data),
-    }));
+    if(numberMatch){
+      const fpoNumber = numberMatch[0];
+      const cleanNumber = fpoNumber.replace(/\D/g, "");
 
-    bot.edges = rawEdges.map((e: any) => ({
-      ...e,
-      data: safeJSON(e.data),
-    }));
+      // Add 91 if not already present
+      const phoneNumber = cleanNumber.startsWith("91")
+            ? cleanNumber
+            : `91${cleanNumber}`;
 
-    console.log("📦 Nodes:", bot.nodes.length);
-    console.log("🔗 Edges:", bot.edges.length);
+      console.log("Phone Number",phoneNumber)
+      
+      fpo_info = await userModel.findByPhone(phoneNumber)
+    }
 
-    // console.log("Nodes", JSON.stringify(bot.nodes))
-    // console.log("Edges", JSON.stringify(bot.edges))
+    console.log("Fpo Info",fpo_info)
+
+    console.log("🤖 Found bot:", bot ? bot.id : "No bot");
+    if (!bot) return null;
+
+    const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
+
+    const receivingPhoneNumber = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
+    if (!receivingPhoneNumber) return null;
+    await contactModel.findOrCreateIncoming({
+      user_id: bot.user_id,
+      company_id: bot.company_id,
+      phone_number_id: receivingPhoneNumber.id,
+      phone_number: message.from,
+      name: profile_name,
+    });
+  //   else{
+  //       // Update contact mapping if FPO user found
+  // if (existContact.user_id !== mappedUserId) {
+  //   await contactModel.update(existContact.id, {
+  //     name:profile_name
+  //   });
+  // }
+  //   }
+
 
     const response = await flowRouter({
       bot,
@@ -91,6 +109,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       incomingText,
       incomingId,
       message,
+      triggerMatched,
       phoneNumberId
     })
 
@@ -99,9 +118,26 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     // console.log("Response", JSON.stringify(response))
 
     // 4️⃣ Send message
+    if (response?.ignoreMessage) return null;
+
     if (response) {
       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
     } else {
+      const chatSession = await chatSessionModel.findActiveSession({ phoneNumber: phone, chatbotId: bot.id, phoneNumberId })
+      if (!chatSession) {
+        return null
+      }
+      await chatSessionModel.update(chatSession.id, {
+        active: false,
+        current_node_id: null,
+        // completed_at: new Date(),
+        updated_at: new Date(),
+      })
+      //       await chatSessionModel.deactivateActiveSession({
+      //   phoneNumber: phone,
+      //   chatbotId: bot.id,
+      //   phoneNumberId,
+      // });
       console.log("⚠️ No response generated to send");
     }
 
@@ -109,83 +145,9 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
   } catch (error) {
     console.error("❌ Chatbot Error:", error);
-    return null;
+    return;
   }
 }
-
-
-// function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
-//   incomingText = incomingText.toLowerCase().trim();
-//   console.log("Incoming Id", incomingId, bot)
-
-//   // 1️⃣ Trigger
-//   const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
-
-//   if (triggerNode) {
-//     const triggerData = safeJSON(triggerNode.data);
-//     const isMatch = matchTrigger(triggerData, incomingText);
-
-//     if (isMatch) {
-//       const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
-//       if (!edge) return null;
-
-//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-//       return buildResponse(nextNode);
-//     }
-//   }
-
-//   // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
-//   if (incomingText) {
-//     const edge = bot.edges.find((e: any) => {
-//       const label = (e.label || "").toLowerCase().trim();
-//       const text = incomingText.toLowerCase().trim();
-
-//       console.log("🔍 Matching:", { label, text });
-
-//       return label === text;
-//     });
-
-//     if (edge) {
-//       console.log("✅ Matched Edge:", edge);
-
-//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-//       return buildResponse(nextNode);
-//     }
-//   }
-
-//   // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
-//   if (incomingId) {
-//     const edge = bot.edges.find((e: any) => {
-//       const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
-//       const label = (e.label || "").toLowerCase();
-
-//       console.log("BOT", handle, label)
-
-//       return (
-//         handle === incomingId ||             // preferred
-//         label === incomingId.toLowerCase()   // fallback
-//       );
-//     });
-
-//     if (edge) {
-//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-//       return buildResponse(nextNode);
-//     }
-//   }
-
-//   // 3️⃣ LAST fallback → text (not recommended but okay)
-//   for (const edge of bot.edges) {
-//     const label = (edge.label || "").toLowerCase().trim();
-
-//     if (label === incomingText) {
-//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-//       return buildResponse(nextNode);
-//     }
-//   }
-
-//   return null;
-// }
-
 
 function safeJSON(data: any) {
   try {

@@ -1,3 +1,5 @@
+import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
+import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import CompanyModel from '@surefy/console/models/company.model';
@@ -47,6 +49,8 @@ class MessageService {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
+    console.log("Data",JSON.stringify(data.template?.components))
+
     // Verify company has sufficient credits
     // const company = await CompanyModel.findById(data.company_id);
     // if (!company) {
@@ -81,7 +85,10 @@ class MessageService {
     } else if (data.type === 'video' && data.video) {
       metaPayload.video = data.video;
     } else if (data.type === 'document' && data.document) {
-      metaPayload.document = data.document;
+       metaPayload.document = {
+    ...data.document,
+    filename: data.document.filename,
+  };
     } else if (data.type === 'audio' && data.audio) {
       metaPayload.audio = data.audio;
     } else if (data.type === 'interactive' && data.interactive) {
@@ -252,8 +259,7 @@ class MessageService {
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
-        error_message: error.message,
-        error_code: error.code,
+        ...getMessageError(error),
       });
 
       throw error;
@@ -460,8 +466,7 @@ class MessageService {
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
-        error_message: error.message,
-        error_code: error.code,
+        ...getMessageError(error),
       });
 
       throw error;
@@ -662,10 +667,17 @@ async saveIncomingMessage(data: any) {
   /**
  * Handle Send ChatBot message
  */
-  async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
+  async sendChatBotMessage(phoneNumberId: string, to: string, response: any): Promise<any> {
     console.log('Response', JSON.stringify(response))
 
-    const { type } = response
+    if (Array.isArray(response?.messages)) {
+      return sendChatbotResponseBatch(response, message => this.sendChatBotMessage(phoneNumberId, to, message));
+    }
+    response = normalizeChatbotResponse(response);
+    if (!response) {
+      console.warn('[Chatbot Send] Skipped empty or non-message response', { phoneNumberId });
+      return null;
+    }
 
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
     if (!phoneNumber) {

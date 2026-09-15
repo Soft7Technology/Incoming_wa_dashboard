@@ -30,6 +30,7 @@ class MetaService {
    */
   async sendMessage(phoneNumberId: string, payload: any): Promise<any> {
     try {
+      console.log()
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {

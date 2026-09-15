@@ -38,20 +38,57 @@ class CampaignMessageModel extends BaseModel {
     status?: string,
     errorMessage?: string
   ) {
-    console.log("Status",status,errorMessage)
+    console.log("Status", status, errorMessage,limit)
     const query = this.query()
       .where("campaign_id", campaignId)
       .where("status", status || "pending")
       .limit(limit);
 
-    if (errorMessage) {
-      query.andWhere((qb) => {
-        qb.where("error_message", errorMessage)
-          .orWhereNull("error_message");
-      });
-    }
+    // if (errorMessage) {
+    //   query.andWhere((qb) => {
+    //     qb.where("error_message", errorMessage)
+    //       .orWhereNull("error_message");
+    //   });
+    // }
 
     return query;
+  }
+
+  async getFailedMessages(
+    campaignId: string,
+    BATCH_SIZE: any,
+    before?: Date,
+  ) {
+    const query = this.query()
+      .leftJoin("messages", "messages.id", "campaign_messages.message_id")
+      .where("campaign_messages.campaign_id", campaignId)
+      .where((qb) => {
+        qb.where("campaign_messages.status", "failed")
+          .orWhere("messages.status", "failed");
+      })
+      .select(
+        "campaign_messages.*",
+        "messages.status as message_status"
+      )
+      .limit(BATCH_SIZE);
+    if (before) query.where(builder => builder.whereNull('campaign_messages.failed_at').orWhere('campaign_messages.failed_at', '<', before));
+    return query.orderBy('campaign_messages.created_at').orderBy('campaign_messages.id');
+  }
+
+  async recordSent(id: string, campaignId: string, contactId: string, messageId: string, cost: number) {
+    return this.db.transaction(async trx => {
+      await trx('campaign_messages').where({ id }).update({
+        status: 'sent', message_id: messageId, sent_at: new Date(),
+        error_message: null, error_code: null, failed_at: null,
+      });
+      await trx('campaigns').where({ id: campaignId }).update({
+        sent_count: trx.raw('COALESCE(sent_count, 0) + 1'),
+        total_cost: trx.raw('COALESCE(total_cost, 0) + ?', [cost]),
+      });
+      await trx('contacts').where({ id: contactId }).update({
+        message_count: trx.raw('COALESCE(message_count, 0) + 1'), last_contacted_at: new Date(),
+      });
+    });
   }
 
   async updateStatus(id: string, status: string, data: any = {}) {
@@ -113,13 +150,15 @@ class CampaignMessageModel extends BaseModel {
       .from('campaign_messages as cm')
       .leftJoin('messages as m', 'm.id', 'cm.message_id')
       .where('cm.campaign_id', campaignId)
-      .whereRaw(`( m.status = \'failed\')`)
+      .where((query) => {
+        query.where('cm.status', 'failed').orWhere('m.status', 'failed');
+      })
       .select(
-        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text) AS error_message`),
+        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text, cm.error_code::text) AS error_message`),
         this.db.raw(`COUNT(*) AS total`)
       )
       .groupBy(
-        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text)`)
+        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text, cm.error_code::text)`)
       )
       .orderBy('total', 'desc')
   }

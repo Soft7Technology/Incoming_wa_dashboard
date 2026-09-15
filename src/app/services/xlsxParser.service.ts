@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
+// import { COUNTRY_PHONE_LENGTHS } from '../utils';
 
 interface ParsedContact {
   phone_number: string;
@@ -75,7 +76,7 @@ class XLSXParserService {
           }
 
           // Validate phone number format
-          if (!this.isValidPhoneNumber(phoneNumber)) {
+          if (!this.validatePhoneByCountry(phoneNumber, country_code)) {
             invalidCount++;
             errors.push({ row: index + 2, error: `Invalid phone format: ${phoneNumber}` });
             return;
@@ -193,6 +194,24 @@ class XLSXParserService {
     return `+${normalized}`;
   }
 
+  private validatePhoneByCountry(
+    phoneNumber: string,
+    countryCode: string
+  ): any {
+    const cleanCountryCode = countryCode.replace('+', '')
+
+    const expectedLength = this.COUNTRY_PHONE_LENGTHS[cleanCountryCode]
+
+    if (!expectedLength) {
+      return true; // Skip validation if country not configured
+    }
+
+    const nationalNumber = phoneNumber.replace('+', '').slice(cleanCountryCode.length)
+
+    return /^\d+$/.test(nationalNumber) &&
+      nationalNumber.length === expectedLength;
+  }
+
   /**
    * Validate phone number format
    * Must be international format (+[country_code][number])
@@ -213,6 +232,89 @@ class XLSXParserService {
 
     return true;
   }
+
+
+  private COUNTRY_PHONE_LENGTHS: any = {
+    // Asia
+    '91': 10, // India
+    '92': 10, // Pakistan
+    '93': 9, // Afghanistan
+    '94': 9, // Sri Lanka
+    '95': 8, // Myanmar
+    '60': 9, // Malaysia
+    '62': 10, // Indonesia
+    '63': 10, // Philippines
+    '65': 8, // Singapore
+    '66': 9, // Thailand
+    '81': 10, // Japan
+    '82': 10, // South Korea
+    '84': 9, // Vietnam
+    '86': 11, // China
+    '852': 8, // Hong Kong
+    '853': 8, // Macau
+    '886': 9, // Taiwan
+
+    // Middle East
+    '971': 9, // UAE
+    '966': 9, // Saudi Arabia
+    '965': 8, // Kuwait
+    '974': 8, // Qatar
+    '973': 8, // Bahrain
+    '968': 8, // Oman
+    '962': 9, // Jordan
+    '961': 8, // Lebanon
+    '972': 9, // Israel
+    '964': 10, // Iraq
+    '98': 10, // Iran
+
+    // North America
+    '1': 10, // USA/Canada
+
+    // Europe
+    '44': 10, // UK
+    '33': 9, // France
+    '49': 10, // Germany
+    '39': 10, // Italy
+    '34': 9, // Spain
+    '31': 9, // Netherlands
+    '32': 9, // Belgium
+    '41': 9, // Switzerland
+    '43': 10, // Austria
+    '45': 8, // Denmark
+    '46': 9, // Sweden
+    '47': 8, // Norway
+    '48': 9, // Poland
+    '351': 9, // Portugal
+    '30': 10, // Greece
+    '353': 9, // Ireland
+    '420': 9, // Czech Republic
+    '36': 9, // Hungary
+    '40': 9, // Romania
+    '380': 9, // Ukraine
+    '7': 10, // Russia/Kazakhstan
+
+    // Oceania
+    '61': 9, // Australia
+    '64': 9, // New Zealand
+
+    // Africa
+    '20': 10, // Egypt
+    '27': 9, // South Africa
+    '234': 10, // Nigeria
+    '254': 9, // Kenya
+    '255': 9, // Tanzania
+    '233': 9, // Ghana
+    '251': 9, // Ethiopia
+    '212': 9, // Morocco
+
+    // South America
+    '55': 11, // Brazil
+    '54': 10, // Argentina
+    '56': 9, // Chile
+    '57': 10, // Colombia
+    '51': 9, // Peru
+    '58': 10, // Venezuela,
+  };
 
   /**
    * Get preview of XLSX file (first N rows)

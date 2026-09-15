@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { BaseModel } from '@surefy/models/base.model';
 import { subscriptionPlans } from '../interfaces/subscription.interface';
 import subscriptionModel from './subscription.model';
@@ -75,7 +76,7 @@ class SubscriptionModel extends BaseModel {
     return this.query().where({ id: planId, active: true }).first();
   }
 
-  async createFreePlan(userId: string, companyId: string) {
+  async createFreePlan(userId: string, companyId: string, trx?: Knex.Transaction) {
     let data: subscriptionPlans = {} as subscriptionPlans;
     data.plan_name = 'Free Trial';
     data.price = 0;
@@ -99,7 +100,7 @@ class SubscriptionModel extends BaseModel {
       ...data,
       user_id: userId,
       company_id: companyId,
-    });
+    }, trx);
     return newUserPlan;
   }
 

@@ -12,6 +12,7 @@ AuthRoute.post('/login', AuthController.login);
 AuthRoute.post('/register', AuthController.register); 
 // AuthRoute.post('/register-user', AuthController.register); 
 AuthRoute.post('/register-company', AuthController.onboard);
+AuthRoute.get('/company-details',AuthController.getCompanyDetails)
 AuthRoute.post('/setup-password', teamController.setUpPassword )
 AuthRoute.post('/media', uploadMediaMiddleware, AuthController.uploadMedia);
 

@@ -1,3 +1,4 @@
+import { validateChatbotMessage } from './utils/chatbotMessage';
 import chatSessionModel from '../app/models/chatSession.model';
 import chatBotModel from '../app/models/chatbot.model';
 import chatBotNodeModel from './models/chatBotNode.model';
@@ -8,7 +9,9 @@ import aiAgentService from './services/aiAgent.service';
 import nodemailer from "nodemailer";
 import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
-
+import contactModel from './models/contact.model';
+import userModel from './models/user.model';
+import chatbotTriggerModel from './models/chatbotTrigger.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -20,7 +23,96 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
+export async function endSession(sessionId: string) {
+  return await chatSessionModel.update(sessionId, {
+    active: false,
+    current_node_id: null,
+    updated_at: new Date(),
+  });
+}
 
+
+export const COUNTRY_PHONE_LENGTHS: any = {
+  // Asia
+  '91': 10, // India
+  '92': 10, // Pakistan
+  '93': 9, // Afghanistan
+  '94': 9, // Sri Lanka
+  '95': 8, // Myanmar
+  '60': 9, // Malaysia
+  '62': 10, // Indonesia
+  '63': 10, // Philippines
+  '65': 8, // Singapore
+  '66': 9, // Thailand
+  '81': 10, // Japan
+  '82': 10, // South Korea
+  '84': 9, // Vietnam
+  '86': 11, // China
+  '852': 8, // Hong Kong
+  '853': 8, // Macau
+  '886': 9, // Taiwan
+
+  // Middle East
+  '971': 9, // UAE
+  '966': 9, // Saudi Arabia
+  '965': 8, // Kuwait
+  '974': 8, // Qatar
+  '973': 8, // Bahrain
+  '968': 8, // Oman
+  '962': 9, // Jordan
+  '961': 8, // Lebanon
+  '972': 9, // Israel
+  '964': 10, // Iraq
+  '98': 10, // Iran
+
+  // North America
+  '1': 10, // USA/Canada
+
+  // Europe
+  '44': 10, // UK
+  '33': 9, // France
+  '49': 10, // Germany
+  '39': 10, // Italy
+  '34': 9, // Spain
+  '31': 9, // Netherlands
+  '32': 9, // Belgium
+  '41': 9, // Switzerland
+  '43': 10, // Austria
+  '45': 8, // Denmark
+  '46': 9, // Sweden
+  '47': 8, // Norway
+  '48': 9, // Poland
+  '351': 9, // Portugal
+  '30': 10, // Greece
+  '353': 9, // Ireland
+  '420': 9, // Czech Republic
+  '36': 9, // Hungary
+  '40': 9, // Romania
+  '380': 9, // Ukraine
+  '7': 10, // Russia/Kazakhstan
+
+  // Oceania
+  '61': 9, // Australia
+  '64': 9, // New Zealand
+
+  // Africa
+  '20': 10, // Egypt
+  '27': 9, // South Africa
+  '234': 10, // Nigeria
+  '254': 9, // Kenya
+  '255': 9, // Tanzania
+  '233': 9, // Ghana
+  '251': 9, // Ethiopia
+  '212': 9, // Morocco
+
+  // South America
+  '55': 11, // Brazil
+  '54': 10, // Argentina
+  '56': 9, // Chile
+  '57': 10, // Colombia
+  '51': 9, // Peru
+  '58': 10, // Venezuela,
+};
 
 export const generateInviteTemplate = ({
   name,
@@ -93,175 +185,216 @@ export const generateInviteTemplate = ({
 };
 
 
-export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
-  try {
-    console.log("📥 Incoming:", phoneNumberId, message);
+// export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any, profile_name:any) {
+//   try {
 
-    const phone = message.from;
+//     console.log("📥 Incoming:", phoneNumberId, message);
 
-    const incomingId =
-      message?.interactive?.button_reply?.id ||
-      message?.interactive?.list_reply?.id ||
-      null;
-
-    const incomingText = (
-      message?.text?.body ||
-      message?.interactive?.button_reply?.title ||
-      message?.interactive?.list_reply?.title ||
-      ""
-    ).toLowerCase().trim();
-
-    // 1️⃣ Get bot
-    console.log("🔍 Finding bot for phone number:", phoneNumberId);
-    const bot: any = await chatBotModel.getPublishedBotByPhoneNumberId(phoneNumberId);
-    console.log("🤖 Found bot:", bot ? bot.name : "No bot");
-    
-    if (!bot) {
-      // Fallback to active AI Assistant if no flow-based bot is published
-      const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
-      if (phoneNumber) {
-        console.log(`🤖 Checking for active AI Assistant for user: ${phoneNumber.user_id}`);
-        const aiResponse = await aiAgentService.runAssistant(
-          phoneNumber.user_id,
-          phoneNumber.company_id,
-          phone,
-          incomingText
-        );
-        
-        if (aiResponse) {
-          console.log(`🤖 AI Response generated: "${aiResponse}"`);
-          const responsePayload = {
-            type: 'text',
-            text: aiResponse
-          };
-          
-          await messageService.sendChatBotMessage(phoneNumberId, phone, responsePayload);
-          
-          await messageService.saveIncomingMessage({
-            phone_number_id: phoneNumberId,
-            message_id: `ai_${Date.now()}`,
-            from: 'SYSTEM',
-            type: 'text',
-            content: { body: aiResponse },
-            direction: 'outbound'
-          });
-          
-          return responsePayload;
-        }
-      }
-      return null;
-    }
-
-    console.log("📩 Parsed:", { phone, incomingText });
-
-    // 2️⃣ Load nodes + edges
-    const rawNodes = await chatBotNodeModel.findByChatBotId(bot.id) || [];
-    const rawEdges = await chatBotEdgeModel.findByChatBotId(bot.id) || [];
-
-    bot.nodes = rawNodes.map((n: any) => ({
-      ...n,
-      data: safeJSON(n.data),
-    }));
-
-    bot.edges = rawEdges.map((e: any) => ({
-      ...e,
-      data: safeJSON(e.data),
-    }));
-
-    console.log("📦 Nodes:", bot.nodes.length);
-    console.log("🔗 Edges:", bot.edges.length);
-
-    // 3️⃣ Resolve flow WITHOUT session
-    const response = resolveFlow(bot, incomingText,incomingId);
-    console.log("Response", JSON.stringify(response))
-
-    // 4️⃣ Send message
-    if (response) {
-      await messageService.sendChatBotMessage(phoneNumberId, phone, response);
-    } else {
-      console.log("⚠️ No response generated");
-    }
-
-    return response;
-
-  } catch (error) {
-    console.error("❌ Chatbot Error:", error);
-    return null;
-  }
-}
+//     const phone = message.from;
 
 
-function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
-  incomingText = incomingText.toLowerCase().trim();
-  console.log("Incoming Id", incomingId, bot)
+//     const incomingId =
+//       message?.interactive?.button_reply?.id ||
+//       message?.interactive?.list_reply?.id ||
+//       null;
 
-  // 1️⃣ Trigger
-  const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
+//     const incomingText = (
+//       message?.text?.body ||
+//       message?.interactive?.button_reply?.title ||
+//       message?.interactive?.list_reply?.title ||
+//       ""
+//     ).toLowerCase().trim();
 
-  if (triggerNode) {
-    const triggerData = safeJSON(triggerNode.data);
-    const isMatch = matchTrigger(triggerData, incomingText);
+//     console.log("📩 Parsed:", { phone, incomingText });
+//     console.log("Incoming Id",incomingId)
 
-    if (isMatch) {
-      const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
-      if (!edge) return null;
+//     // 1️⃣ Get bot
+//     console.log("🔍 Finding bot for phone number:", phoneNumberId);
+//     const bot: any = await chatBotModel.getPublishedBotByPhoneNumber(phoneNumberId);
 
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     const numberMatch = incomingText.match(/\d{10,13}/);
+//     let fpo_info
 
-  // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
-  if (incomingText) {
-    const edge = bot.edges.find((e: any) => {
-      const label = (e.label || "").toLowerCase().trim();
-      const text = incomingText.toLowerCase().trim();
+//     if(numberMatch){
+//       const fpoNumber = numberMatch[0];
+//       const cleanNumber = fpoNumber.replace(/\D/g, "");
 
-      console.log("🔍 Matching:", { label, text });
+//       // Add 91 if not already present
+//       const phoneNumber = cleanNumber.startsWith("91")
+//             ? cleanNumber
+//             : `91${cleanNumber}`;
 
-      return label === text;
-    });
+//       console.log("Phone Number",phoneNumber)
 
-    if (edge) {
-      console.log("✅ Matched Edge:", edge);
+//       fpo_info = await userModel.findByPhone(phoneNumber)
+//     }
 
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     console.log("Fpo Info",fpo_info)
 
-  // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
-  if (incomingId) {
-    const edge = bot.edges.find((e: any) => {
-      const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
-      const label = (e.label || "").toLowerCase();
+//     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+//     if (!bot) return null;
 
-      console.log("BOT", handle, label)
+//     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
 
-      return (
-        handle === incomingId ||             // preferred
-        label === incomingId.toLowerCase()   // fallback
-      );
-    });
+//     //check exist contact
+//     const existContact = await contactModel.findByUserPhoneNumber(message.from)
+//     console.log("Existing Contant",existContact)
+//     if(!existContact){
+//       const newContact = await contactModel.create({
+//         // user_id: mappedUserId,
+//         user_id: bot.user_id,
+//         company_id:bot.company_id,
+//         phone_number:message.from,
+//         name:profile_name
+//       })
+//       console.log("New Contact", newContact)
+//     }
+//   //   else{
+//   //       // Update contact mapping if FPO user found
+//   // if (existContact.user_id !== mappedUserId) {
+//   //   await contactModel.update(existContact.id, {
+//   //     name:profile_name
+//   //   });
+//   // }
+//   //   }
 
-    if (edge) {
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
 
-  // 3️⃣ LAST fallback → text (not recommended but okay)
-  for (const edge of bot.edges) {
-    const label = (edge.label || "").toLowerCase().trim();
+//     // 2️⃣ Load nodes + edges
+//     const rawNodes = await chatBotNodeModel.findByChatBotId(bot?.id) || [];
+//     const rawEdges = await chatBotEdgeModel.findByChatBotId(bot?.id) || [];
 
-    if (label === incomingText) {
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     bot.nodes = rawNodes.map((n: any) => ({
+//       ...n,
+//       data: safeJSON(n.data),
+//     }));
 
-  return null;
-}
+//     bot.edges = rawEdges.map((e: any) => ({
+//       ...e,
+//       data: safeJSON(e.data),
+//     }));
+
+//     console.log("📦 Nodes:", bot.nodes.length);
+//     console.log("🔗 Edges:", bot.edges.length);
+
+//     // console.log("Nodes", JSON.stringify(bot.nodes))
+//     // console.log("Edges", JSON.stringify(bot.edges))
+
+//     const response = await flowRouter({
+//       bot,
+//       phone,
+//       incomingText,
+//       incomingId,
+//       message,
+//       phoneNumberId
+//     })
+
+//     // // 3️⃣ Resolve flow WITHOUT session
+//     // const response = resolveFlow(bot, incomingText,incomingId);
+//     // console.log("Response", JSON.stringify(response))
+
+//     // 4️⃣ Send message
+//     if (response) {
+//       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
+//     } else {
+//       const chatSession = await chatSessionModel.findByPhoneNumber(phone)
+//       if (!chatSession) {
+//         return null
+//       }
+//       await chatSessionModel.update(chatSession.id, {
+//         active: false,
+//         current_node_id: null,
+//         // completed_at: new Date(),
+//         updated_at: new Date(),
+//       })
+//       //       await chatSessionModel.deactivateActiveSession({
+//       //   phoneNumber: phone,
+//       //   chatbotId: bot.id,
+//       //   phoneNumberId,
+//       // });
+//       console.log("⚠️ No response generated to send");
+//     }
+
+//     return response;
+
+//   } catch (error) {
+//     console.error("❌ Chatbot Error:", error);
+//     return;
+//   }
+// }
+
+
+
+// function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
+//   incomingText = incomingText.toLowerCase().trim();
+//   console.log("Incoming Id", incomingId, bot)
+
+//   // 1️⃣ Trigger
+//   const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
+
+//   if (triggerNode) {
+//     const triggerData = safeJSON(triggerNode.data);
+//     const isMatch = matchTrigger(triggerData, incomingText);
+
+//     if (isMatch) {
+//       const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
+//       if (!edge) return null;
+
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
+
+//   // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
+//   if (incomingText) {
+//     const edge = bot.edges.find((e: any) => {
+//       const label = (e.label || "").toLowerCase().trim();
+//       const text = incomingText.toLowerCase().trim();
+
+//       console.log("🔍 Matching:", { label, text });
+
+//       return label === text;
+//     });
+
+//     if (edge) {
+//       console.log("✅ Matched Edge:", edge);
+
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
+
+//   // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
+//   if (incomingId) {
+//     const edge = bot.edges.find((e: any) => {
+//       const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
+//       const label = (e.label || "").toLowerCase();
+
+//       console.log("BOT", handle, label)
+
+//       return (
+//         handle === incomingId ||             // preferred
+//         label === incomingId.toLowerCase()   // fallback
+//       );
+//     });
+
+//     if (edge) {
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
+
+//   // 3️⃣ LAST fallback → text (not recommended but okay)
+//   for (const edge of bot.edges) {
+//     const label = (edge.label || "").toLowerCase().trim();
+
+//     if (label === incomingText) {
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
+
+//   return null;
+// }
 
 
 export function safeJSON(data: any) {
@@ -378,15 +511,30 @@ export default function sendEmail(to: string, subject: string, text: string, htm
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
 
-export function matchTrigger(data: any, text: string) {
-  const keywords = data?.keywords || data?.attributes.keywords;
-  const logic = data?.matchingLogic || "contains";
+export async function matchTrigger(
+  phoneNumberId: string,
+  text: string
+) {
+  const triggerWords =
+    await chatbotTriggerModel.getActiveTriggers(
+      phoneNumberId
+    );
 
-  if (logic === "exact") {
-    return keywords.some((k: string) => k.toLowerCase() === text);
+  if (!text) {
+    return false;
   }
 
-  return keywords.some((k: string) => text.includes(k.toLowerCase()));
+  const normalizedText = text
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  return triggerWords.some(
+    (keyword: string) =>
+      keyword &&
+      keyword.toString().trim().toLowerCase() ===
+      normalizedText
+  );
 }
 
 
@@ -510,9 +658,12 @@ export function replaceBodyVariables(
   });
 }
 
-export async function buildResponse(node: any, bot?: any, session?: any) {
+export async function buildResponse(node: any, session?: any, bot?: any) {
   console.log('NextNode', JSON.stringify(node))
+  console.log()
   const data = safeJSON(node.data);
+  validateChatbotMessage(data);
+
 
   // if (node.type === "message") {
   //   return {
@@ -531,6 +682,116 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
     };
   }
 
+  if (data.key === "@whatsapp/send-cta-message") {
+    const attrs = data.attributes || {};
+
+    const interactiveData = attrs.message?.interactive || {};
+
+    const header = interactiveData.header || {};
+    const body = interactiveData.body || {};
+    const footer = interactiveData.footer || {};
+    const parameters = interactiveData.action?.parameters || {};
+
+    const interactive: any = {
+      type: "cta_url",
+
+      body: {
+        text: body.text || "",
+      },
+
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: parameters.display_text || "Open",
+          url: parameters.url || "",
+        },
+      },
+    };
+
+    // -----------------------------------------
+    // Add header ONLY if type is valid
+    // Meta does NOT support "none"
+    // -----------------------------------------
+    const validHeaderTypes = [
+      "text",
+      "image",
+      "video",
+      "document",
+    ];
+
+    if (
+      header.type &&
+      validHeaderTypes.includes(header.type)
+    ) {
+      if (header.type === "text") {
+        interactive.header = {
+          type: "text",
+          text: header.text || "",
+        };
+      }
+
+      if (
+        header.type === "image" &&
+        header.image
+      ) {
+        interactive.header = {
+          type: "image",
+          image: header.image,
+        };
+      }
+
+      if (
+        header.type === "video" &&
+        header.video
+      ) {
+        interactive.header = {
+          type: "video",
+          video: header.video,
+        };
+      }
+
+      if (
+        header.type === "document" &&
+        header.document
+      ) {
+        interactive.header = {
+          type: "document",
+          document: header.document,
+        };
+      }
+    }
+
+    // -----------------------------------------
+    // Footer is optional
+    // Don't send footer.text = ""
+    // -----------------------------------------
+    if (footer.text?.trim()) {
+      interactive.footer = {
+        text: footer.text,
+      };
+    }
+
+    return {
+      type: "interactive",
+      interactive,
+    };
+  }
+
+
+  if (key === "@whatsapp/stop-chatbot") {
+    if (session?.id) {
+      await endSession(session.id);
+    }
+
+    return {
+      type: "text",
+      text:
+        data?.attributes?.message ||
+        "Thank you. This conversation has been closed.",
+      stopChatbot: true,
+    };
+  }
+
   if (key === "@whatsapp/send-text-message") {
     let text =
       data?.attributes?.message?.text?.body || "";
@@ -546,10 +807,185 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
     };
   }
 
+  //   if (key === "@whatsapp/send-text-message") {
+  //     const text = `Welcome to Krishivan Organization! 🎉
+
+  // Hello Ritesh,
+
+  // Your account has been created successfully .
+
+  // 📧 Email: ritesh45@gmail.com
+  //    Company Name: JAIVIK KISAN UPAJ PRODUCER COMPANY LIMITED
+  //    PAN Number: AAECJ8814A
+  //    Address: 881, SETELIGHT JUCTION, A.B. ROAD, INDORE, Indore, Madhya Pradesh, 452010
+  // 🔐 Password: 123456
+  // 👤 Role: FPO
+
+  // Your Information has been verified through your gst number
+
+  // You can login using the link below:
+
+  // 🔗 https://fpo-krishivan.web.app/login
+
+  // Please keep your login credentials safe.
+
+  // Welcome aboard! 🚀`;
+
+  //     console.log("TEXT", text);
+
+  //     return {
+  //       type: "text",
+  //       text,
+  //     };
+  //   }
+
+  // if (key === "@whatsapp/send-product-message") {
+  //   //Get catalog_id from message.action.catalog_id
+  //   //Get category from session.variable.category
+  //   //call catalogService pass the catalog_id,category
+  //   // create function buildProductMessage 
+  //   console.log("Product session", session.variables.category)
+  //   console.log("Product node", data.attributes.message.interactive.action.catalog_id)
+  //   const catalog_id = data.attributes.message.interactive.action.catalog_id
+  //   const category = session.variables.category
+  //   const productVariants = await catalogService.getProductVariants(category, catalog_id)
+  //   const productItems = productVariants.data?.map((id: string) => {
+  //     return {
+  //       product_retailer_id: id
+  //     };
+  //   })
+
+  //   console.log("Product Items", productItems)
+
+  //   return {
+  //     type: "interactive",
+
+  //     interactive: {
+  //       type: "product_list",
+
+  //       header: {
+  //         type: "text",
+  //         text: "View Krishivan Catalog"
+  //       },
+
+  //       body: {
+  //         text: "Select a product to place order"
+  //       },
+  //       action: {
+  //         catalog_id: catalog_id,
+  //         sections: [
+  //           {
+  //             title: `View selected ${category}`,
+  //             product_items: productItems
+  //           }
+  //         ]
+  //       }
+
+  //     }
+
+  //   }
+  // }
+
+  // if (key === "@whatsapp/send-product-message") {
+  //   //Get catalog_id from message.action.catalog_id
+  //   //Get category from session.variable.category
+  //   //call catalogService pass the catalog_id,category
+  //   // create function buildProductMessage 
+  //   console.log("Product node", session.variables)
+  //   const catalog_id = '795853123055079'
+  //   const product_name = session.variables.product_name
+  //   console.log("Product Name", product_name)
+  //   const productVariants = await catalogService.getProductVariants(product_name, catalog_id)
+  //   const productItems = productVariants.data?.map((id: string) => {
+  //     return {
+  //       product_retailer_id: id
+  //     };
+  //   })
+
+  //   console.log("Product Items", productItems)
+
+  //   return {
+  //     type: "interactive",
+
+  //     interactive: {
+  //       type: "product_list",
+
+  //       header: {
+  //         type: "text",
+  //         text: "View Krishivan Catalog"
+  //       },
+
+  //       body: {
+  //         text: "Select a product to place order"
+  //       },
+  //       action: {
+  //         catalog_id: catalog_id,
+  //         sections: [
+  //           {
+  //             title: `View Krishivan Products`,
+  //             product_items: productItems
+  //           }
+  //         ]
+  //       }
+
+  //     }
+
+  //   }
+  // }
+
+  // Button Interactive  
+  if (key === "@whatsapp/send-button-message") {
+    return {
+      type: "interactive",
+
+      interactive: {
+        type: "button",
+
+        header: {
+          type: "text",
+          text: data?.attributes
+            ? data?.attributes?.message?.interactive?.header?.text || ""
+            : ""
+        },
+
+        body: {
+          text: data?.attributes
+            ? data?.attributes?.message?.interactive?.body?.text
+            : data.text,
+        },
+
+        footer: {
+          text: data?.attributes
+            ? data?.attributes?.message?.interactive?.footer?.text || ""
+            : "",
+        },
+
+        action: {
+          buttons: (
+            data?.attributes
+              ? data?.attributes?.message?.interactive?.action?.buttons || []
+              : data.buttons || []
+          ).map((btn: any, i: number) => ({
+            type: "reply",
+
+            reply: {
+              id: btn?.reply?.id || btn.id || `btn_${i}`,
+
+              title:
+                btn?.reply?.title ||
+                btn.title ||
+                btn,
+            },
+          })),
+        },
+      },
+    };
+  }
+
   if (key === "@whatsapp/send-media-message") {
     const imageLink =
       data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
- 
+
     return {
       type: data?.attributes?.message.type,
       image: {
@@ -557,66 +993,6 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
       },
     };
   }
-
-  // Button Interactive  
-if (key === "@whatsapp/send-button-message") {
-  const interactiveHeader =
-    data?.attributes?.message?.interactive?.header;
-
-  return {
-    type: "interactive",
-
-    interactive: {
-      type: "button",
-
-      header:
-        interactiveHeader?.type === "image"
-          ? {
-              type: "image",
-              image: {
-                link:
-                  interactiveHeader?.image?.link ||
-                  interactiveHeader?.image?.url,
-              },
-            }
-          : {
-              type: "text",
-              text: interactiveHeader?.text || "",
-            },
-
-      body: {
-        text: data?.attributes
-          ? data?.attributes?.message?.interactive?.body?.text
-          : data.text,
-      },
-
-      footer: {
-        text: data?.attributes
-          ? data?.attributes?.message?.interactive?.footer?.text || ""
-          : "",
-      },
-
-      action: {
-        buttons: (
-          data?.attributes
-            ? data?.attributes?.message?.interactive?.action?.buttons || []
-            : data.buttons || []
-        ).map((btn: any, i: number) => ({
-          type: "reply",
-
-          reply: {
-            id: btn?.reply?.id || btn.id || `btn_${i}`,
-
-            title:
-              btn?.reply?.title ||
-              btn.title ||
-              btn,
-          },
-        })),
-      },
-    },
-  };
-}
 
   if (key === "@whatsapp/ask-location") {
     return {
@@ -640,6 +1016,7 @@ if (key === "@whatsapp/send-button-message") {
 
 
   // 📋 LIST MESSAGE BUILDER
+  // 📋 LIST MESSAGE BUILDER
   if (key === "@whatsapp/send-list-message") {
     const interactiveData =
       data.attributes?.message?.interactive || {};
@@ -647,16 +1024,14 @@ if (key === "@whatsapp/send-button-message") {
     const sections =
       interactiveData.action?.sections || [];
 
-    const interactive = {
+    const interactive: any = {
       type: "list",
 
-      header: interactiveData.header,
-
       body: interactiveData.body || {
-        text: "Choose an option"
+        text: "Choose an option",
       },
 
-      footer: interactiveData.footer,
+      ...(interactiveData.footer?.text?.trim() ? { footer: interactiveData.footer } : {}),
 
       action: {
         button:
@@ -669,15 +1044,25 @@ if (key === "@whatsapp/send-button-message") {
           rows: (section.rows || []).map((row: any) => ({
             id: row.id,
             title: row.title,
-            description: row.description || ""
-          }))
-        }))
-      }
+            description: row.description || "",
+          })),
+        })),
+      },
     };
+
+    if (
+      interactiveData.header &&
+      interactiveData.header.type &&
+      ["text", "image", "video", "document"].includes(
+        interactiveData.header.type
+      )
+    ) {
+      interactive.header = interactiveData.header;
+    }
 
     return {
       type: "interactive",
-      interactive
+      interactive,
     };
   }
 
@@ -748,3 +1133,4 @@ if (key === "@whatsapp/send-button-message") {
 
   return null;
 }
+

@@ -1,4 +1,8 @@
+import { validateChatbotMessage } from '../utils/chatbotMessage';
+import db from '@surefy/database';
+import phoneNumberModel from '../models/phoneNumber.model';
 import { Request, Response } from 'express';
+import { parseChatbotDelay } from '../utils/chatbotDelay';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -8,16 +12,33 @@ import { chatBotEdge, chatBot, chatBotNode } from '@surefy/console/interfaces/ch
 import chatBotModel from '../models/chatbot.model';
 import chatBotEdgeModel from '../models/chatBotEdge.model';
 import chatBotNodeModel from '../models/chatBotNode.model';
+import chatbotTriggerModel from '../models/chatbotTrigger.model';
 import wabaModel from '../models/waba.model';
 import { v4 as uuidv4 } from 'uuid';
-import db from '@surefy/database';
-import phoneNumberModel from '../models/phoneNumber.model';
-import chatBotPhoneNumberModel from '../models/chatBotPhoneNumber.model';
+import { values } from 'lodash';
 
 class chatBotService {
+  private normalizeName(name: unknown): string {
+    if (typeof name !== 'string' || !name.trim()) {
+      throw new HTTP400Error({ message: 'ChatBot name must be a non-empty string' });
+    }
+    return name.trim();
+  }
+
+  async updateChatBotName(userId: string, chatBotId: string, name: unknown) {
+    const normalizedName = this.normalizeName(name);
+    const bot = await chatBotModel.updateName(userId, chatBotId, normalizedName);
+    if (!bot) {
+      throw new HTTP400Error({ message: 'ChatBot not found or does not belong to this user' });
+    }
+    return bot;
+  }
+
   async createChatBot(data: chatBot) {
     console.log('Creating chatbot with data:', data); // Debug log
-    const result = await chatBotModel.create(data);
+    const { user_id, company_id, name, description, status, published } = data;
+    const result = await chatBotModel.create({ user_id, company_id,
+      name: this.normalizeName(name), description, status, published });
     return result;
   }
 
@@ -40,30 +61,45 @@ class chatBotService {
     return result;
   }
 
-  async publishedChatBot(userId: string, chatBotId: string) {
-    // ✅ 1. Check chatbot exists
-    const chatBot_phonenumber: any = await chatBotPhoneNumberModel.getByChatBotId(chatBotId)
-    const bot = await chatBotModel.findById(chatBotId);
-    console.log("Chatbot", chatBot_phonenumber)
-    for (const chatBotPhone of chatBot_phonenumber) {
-      console.log("Updating:", chatBotPhone);
+  async publishedChatBot(
+    userId: string,
+    chatBotId: string
+  ) {
+    const bot: any = await chatBotModel.findById(
+      chatBotId
+    );
 
-      await chatBotPhoneNumberModel.update(
-        chatBotPhone.id,
-        { published: true }
-      );
-    }
     if (!bot) {
-      throw new HTTP400Error({ message: 'ChatBot not exists' });
+      throw new HTTP400Error({
+        message: "ChatBot not exists",
+      });
     }
 
-    const existingPublishedBot: any = await chatBotModel.getPublishedBotByUser(userId);
-    console.log("Existing published bot:", existingPublishedBot ? existingPublishedBot.name : "No published bot"); // Debug log
-    if (existingPublishedBot) {
-      throw new HTTP400Error({ message: "Another chatbot is already published for this phone number. Unpublish it before publishing a new one." });
+    if (bot.user_id !== userId) {
+      throw new HTTP400Error({ message: "ChatBot does not belong to this user" });
     }
-    const publishedChatBot = await chatBotModel.update(chatBotId, { status: "published", published: "true" });
-    return publishedChatBot;
+
+    const triggers = await chatbotTriggerModel.findAll({ chatbot_id: chatBotId });
+    if (!triggers.length) {
+      throw new HTTP400Error({ message: "Save a flow with trigger keywords before publishing" });
+    }
+
+    for (const trigger of triggers) {
+      const conflicts = await chatbotTriggerModel.findConflicts({
+        phoneNumberId: trigger.phone_number_id,
+        triggers: [trigger.trigger_word],
+        excludeChatBotId: chatBotId,
+      });
+      if (conflicts.length) {
+        throw new HTTP400Error({ message: "Some trigger keywords are already assigned to another published chatbot.", conflicts } as any);
+      }
+    }
+
+    await chatBotModel.setPublishedState(chatBotId, true);
+
+    return {
+      success: true,
+    };
   }
 
   async getChatBotById(chatBotId: string) {
@@ -83,46 +119,29 @@ class chatBotService {
     return bot;
   }
 
-
-
-  async unpublishedChatBot(userId: string, chatBotId: string, status: string, published: boolean) {
-    // ✅ 1. Check chatbot exists
-    const chatBot_phonenumber: any = await chatBotPhoneNumberModel.getByChatBotId(chatBotId)
-    const bot = await chatBotModel.findById(chatBotId);
+  async unpublishedChatBot(
+    userId: string,
+    chatBotId: string
+  ) {
+    const bot =
+      await chatBotModel.findById(chatBotId);
 
     if (!bot) {
-      throw new HTTP400Error({ message: 'ChatBot not exists' });
-    }
-        console.log("Chatbot", chatBot_phonenumber)
-    for (const chatBotPhone of chatBot_phonenumber) {
-      console.log("Updating:", chatBotPhone);
-
-      await chatBotPhoneNumberModel.update(
-        chatBotPhone.id,
-        { published: false }
-      );
-    }
-    const unpublishedChatBot = await chatBotModel.update(chatBotId, { published, status });
-    return unpublishedChatBot;
-  }
-
-  async assignedChatBotToUser(assigned_to: string, chatBotId: string) {
-    const chatBot = await chatBotModel.findById(chatBotId);
-
-    let assignedTo = chatBot.assigned_to || [];
-
-    if (typeof assignedTo === 'string') {
-      assignedTo = JSON.parse(assignedTo);
-    }
-
-    const updatedAssignedTo = [...new Set([...assignedTo, assigned_to])];
-    return await db('chat_bot')
-      .where('id', chatBot.id)
-      .update({
-        assigned_to: updatedAssignedTo
+      throw new HTTP400Error({
+        message: "ChatBot not exists",
       });
-  }
+    }
 
+    if (bot.user_id !== userId) {
+      throw new HTTP400Error({ message: "ChatBot does not belong to this user" });
+    }
+
+    await chatBotModel.setPublishedState(chatBotId, false);
+
+    return {
+      success: true,
+    };
+  }
 
   async createFlow(userId: string, data: any) {
     const {
@@ -133,190 +152,266 @@ class chatBotService {
       phoneNumberIds = [],
     } = data;
 
-    // ✅ Check chatbot exists
-    const bot = await chatBotModel.findById(chatBotId);
+    console.log("Data", data)
 
-    console.log("Phone Number Id", phoneNumberIds)
+    const bot = await chatBotModel.findById(chatBotId);
 
     if (!bot) {
       throw new HTTP400Error({
         message: "ChatBot flow not exists",
       });
     }
-
-    // ✅ Validate phone numbers
-    if (phoneNumberIds.length > 0) {
-      const phoneNumbers = await Promise.all(
-        phoneNumberIds.map((id: string) =>
-          phoneNumberModel.findByPhoneNumberId(id)
-        )
-      );
-
-      const invalidPhone = phoneNumbers.find((phone) => !phone);
-
-      if (invalidPhone) {
-        throw new HTTP400Error({
-          message: "One or more phone numbers do not exist",
-        });
-      }
-
-      console.log("Dlete chatbot number", chatBotId)
-      // Remove existing mappings
-      await chatBotPhoneNumberModel.deleteChatBotPhoneNumber(chatBotId);
-
-      // Create new mappings
-      const mappings = phoneNumbers.map((phoneNumber: any) => ({
-        chat_bot_id: chatBotId,
-        published: bot.published,
-        phone_number_id: phoneNumber.id,
-        connected_phone_number: phoneNumber.phone_number_id,
-        created_at: new Date(),
-      }));
-
-      console.log("Mappings", mappings)
-
-      for (const mapping of mappings) {
-        await chatBotPhoneNumberModel.create(mapping);
-      }
+    if (bot.user_id !== userId) {
+      throw new HTTP400Error({ message: 'ChatBot does not belong to this user' });
     }
+    const normalizedName = name === undefined ? undefined : this.normalizeName(name);
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: add at least one node.',
+        details: { field: 'nodes', code: 'FLOW_NODES_REQUIRED' },
+      });
+    }
+    if (!Array.isArray(edges) || edges.length === 0) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: connect the trigger to a message or action node.',
+        details: { field: 'edges', code: 'FLOW_CONNECTION_REQUIRED' },
+      });
+    }
+    // ---------------------------------
+    // Get Trigger Node
+    // ---------------------------------
 
-    // ✅ Validate trigger node
-    const hasTrigger = nodes.some(
-      (n: any) => n.type === "trigger"
+    const triggerNode = nodes.find(
+      (node: any) => node.type === "trigger"
     );
 
-    if (!hasTrigger) {
+    if (!triggerNode) {
       throw new HTTP400Error({
         message: "Flow must contain a trigger node",
       });
     }
 
-    // ✅ Delete old flow
-    await chatBotEdgeModel.deleteChatBotEdge(chatBotId);
-    await chatBotNodeModel.deleteChatBotNode(chatBotId);
+    const nodeIds = new Set(nodes.map((node: any) => node?.id));
+    for (const node of nodes) {
+      try {
+        validateChatbotMessage(node?.data);
+      } catch (error) {
+        throw new HTTP400Error({
+          message: error instanceof Error ? error.message : 'Invalid message node',
+          details: { nodeId: node?.id, code: 'FLOW_INVALID_MESSAGE' },
+        });
+      }
+      if (node?.data?.key !== '@whatsapp/delay') continue;
+      try {
+        node.data.attributes = {
+          ...node.data.attributes,
+          delay: parseChatbotDelay(node.data.attributes?.delay),
+        };
+      } catch (error) {
+        throw new HTTP400Error({
+          message: error instanceof Error ? error.message : 'Invalid chatbot delay.',
+          details: { field: 'nodes', nodeId: node.id, code: 'FLOW_INVALID_DELAY' },
+        });
+      }
+    }
+    if (edges.some((edge: any) => !edge || !nodeIds.has(edge.source) || !nodeIds.has(edge.target))) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: a connection references a node that does not exist.',
+        details: { field: 'edges', code: 'FLOW_INVALID_CONNECTION' },
+      });
+    }
+    if (!edges.some((edge: any) => edge.source === triggerNode.id && edge.target !== triggerNode.id)) {
+      throw new HTTP400Error({
+        message: 'Cannot save chatbot flow: connect the trigger to a message or action node.',
+        details: { field: 'edges', code: 'FLOW_CONNECTION_REQUIRED' },
+      });
+    }
 
-    const nodeIdMap: Record<string, string> = {};
+    // ---------------------------------
+    // Extract Trigger Keywords
+    // ---------------------------------
 
-    // ✅ Prepare nodes
-    const formattedNodes = nodes.map((n: any) => {
-      const newId = uuidv4();
+    const rawTriggers =
+      triggerNode?.data?.attributes?.keywords || [];
 
-      nodeIdMap[n.id] = newId;
+    if (
+      !Array.isArray(rawTriggers) ||
+      rawTriggers.length === 0
+    ) {
+      throw new HTTP400Error({
+        message: "At least one trigger keyword is required",
+      });
+    }
 
-      return {
-        id: newId,
-        user_id: userId,
-        chatBotId,
-        type: n.type,
-        data: JSON.stringify(n.data),
-        position: JSON.stringify(
-          n.position || { x: 0, y: 0 }
-        ),
-        createdAt: new Date(),
-      };
+    // ---------------------------------
+    // Normalize Trigger Keywords
+    // ---------------------------------
+
+    const triggerWords = [
+      ...new Set(
+        rawTriggers
+          .filter(
+            (keyword: any) =>
+              typeof keyword === "string"
+          )
+          .map((keyword: string) =>
+            keyword
+              .trim()
+              .toLowerCase()
+              .replace(/\s+/g, " ")
+          )
+          .filter(Boolean)
+      ),
+    ];
+
+    // ---------------------------------
+    // Validate Phone Numbers
+    // ---------------------------------
+
+    if (
+      !Array.isArray(phoneNumberIds) ||
+      phoneNumberIds.length === 0
+    ) {
+      throw new HTTP400Error({
+        message: "At least one phone number is required",
+      });
+    }
+
+    if (!triggerWords.length) throw new HTTP400Error({ message: 'At least one non-empty trigger keyword is required' });
+    
+    const selectedPhones = new Map<string, any>();
+    
+    for (const id of phoneNumberIds) {
+      if (typeof id !== 'string') throw new HTTP400Error({ message: 'Invalid phone number ID' });
+      
+      const phone = await phoneNumberModel.findByPhoneNumberId(id);
+      
+      if (!phone) {
+        throw new HTTP400Error({ message: 'Phone number not found or does not belong to this user' });
+      }
+
+      selectedPhones.set(phone.phone_number_id, phone);
+    }
+    
+    const canonicalPhoneIds = [...selectedPhones.keys()].sort();
+   
+    return db.transaction(async trx => {
+      // Serialize edits to a bot, then reservations on each receiving number.
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`chatbot-flow:${chatBotId}`]);
+      
+      const currentBot = await trx('chat_bot').where({ id: chatBotId, user_id: userId }).forUpdate().first();
+      
+      if (!currentBot) throw new HTTP400Error({ message: 'ChatBot not found' });
+     
+      for (const id of canonicalPhoneIds) {
+        await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`chatbot-phone:${id}`]);
+
+        const phone = selectedPhones.get(id);
+
+        const conflicts = await trx('chatbot_triggers')
+          .whereIn('phone_number_id', [id, phone.id])
+          .whereNot('chatbot_id', chatBotId)
+          .whereRaw("LOWER(TRIM(REGEXP_REPLACE(trigger_word, '[[:space:]]+', ' ', 'g'))) = ANY(?::text[])", [triggerWords])
+          .select('chatbot_id', 'phone_number_id', 'trigger_word');
+
+        if (conflicts.length) throw new HTTP400Error({
+          message: 'Trigger keyword is already assigned to another chatbot on this phone number',
+          details: { code: 'CHATBOT_TRIGGER_CONFLICT', phoneNumberId: id, conflicts },
+        });
+      }
+
+    // ---------------------------------
+    // Save Flow Logic
+    // ---------------------------------
+
+    const messageCount = nodes.filter(
+      (node: any) => node.type === "message"
+    ).length;
+
+    await trx('chat_bot').where({ id: chatBotId }).update({
+      flow_type: messageCount >= 3 ? "form" : "menu",
+      ...(normalizedName === undefined ? {} : { name: normalizedName }),
+      updated_at: new Date(),
     });
 
-    // ✅ Insert nodes
-    await chatBotNodeModel.createNodes(formattedNodes);
+    // delete old nodes/edges
+    await trx('chat_bot_edge').where({ chatBotId }).delete();
 
-    // ✅ Prepare edges
-    const formattedEdges = edges.map((e: any) => {
-      let label = e.label || null;
-      let edgeData: any = {};
+    await trx('chat_bot_node').where({ chatBotId }).delete();
 
-      const sourceNode = nodes.find(
-        (n: any) => n.id === e.source
-      );
+    // create nodes
+    const nodeIdMap: Record<string, string> = {};
 
-      // Condition edge
-      if (
-        e.sourceHandle?.startsWith("condition-true")
-      ) {
-        label = "true";
-        edgeData = { condition: "true" };
-      } else if (
-        e.sourceHandle?.startsWith("condition-false")
-      ) {
-        label = "false";
-        edgeData = { condition: "false" };
-      }
+    const formattedNodes = nodes.map(
+      (node: any) => {
+        const newId = uuidv4();
 
-      // Button edge
-      else if (
-        e.sourceHandle?.startsWith("btn_")
-      ) {
-        const buttons =
-          sourceNode?.data?.buttons ||
-          sourceNode?.data?.buttonData ||
-          sourceNode?.data?.actions ||
-          [];
+        nodeIdMap[node.id] = newId;
 
-        const button = buttons.find(
-          (btn: any) =>
-            btn.id === e.sourceHandle ||
-            btn.button_id === e.sourceHandle ||
-            btn.handleId === e.sourceHandle
-        );
-
-        label =
-          button?.title ||
-          button?.text ||
-          button?.label ||
-          null;
-
-        edgeData = {
-          button_id: e.sourceHandle,
+        return {
+          id: newId,
+          user_id: userId,
+          chatBotId,
+          type: node.type,
+          data: JSON.stringify(node.data),
+          position: JSON.stringify(
+            node.position || {
+              x: 0,
+              y: 0,
+            }
+          ),
+          created_at: new Date(),
         };
       }
+    );
 
-      // List row edge
-      else if (
-        e.sourceHandle?.startsWith("row_")
-      ) {
-        const rows =
-          sourceNode?.data?.rows ||
-          sourceNode?.data?.listRows ||
-          sourceNode?.data?.options ||
-          [];
+    await trx('chat_bot_node').insert(formattedNodes);
 
-        const row = rows.find(
-          (r: any) =>
-            r.id === e.sourceHandle ||
-            r.row_id === e.sourceHandle ||
-            r.handleId === e.sourceHandle
-        );
-
-        label =
-          row?.title ||
-          row?.text ||
-          row?.label ||
-          null;
-
-        edgeData = {
-          button_id: e.sourceHandle,
-        };
-      }
-
-      return {
+    // create edges
+    const formattedEdges = edges.map(
+      (edge: any) => ({
         id: uuidv4(),
         user_id: userId,
         chatBotId,
-        source: nodeIdMap[e.source],
-        target: nodeIdMap[e.target],
-        label,
-        data: JSON.stringify(edgeData),
-        createdAt: new Date(),
-      };
-    });
+        source: nodeIdMap[edge.source],
+        target: nodeIdMap[edge.target],
+        label: edge.label || null,
+        data: JSON.stringify(edge.data || {}),
+        created_at: new Date(),
+      })
+    );
 
-    // ✅ Insert edges
-    await chatBotEdgeModel.createEdges(formattedEdges);
+    await trx('chat_bot_edge').insert(formattedEdges);
+
+    // ---------------------------------
+    // Save Triggers
+    // ---------------------------------
+
+    await trx('chatbot_triggers').where({ chatbot_id: chatBotId }).delete();
+
+    for (const phoneNumberId of canonicalPhoneIds) {
+      for (const triggerWord of triggerWords) {
+        await trx('chatbot_triggers').insert({
+          chatbot_id: chatBotId,
+          phone_number_id: phoneNumberId,
+          trigger_word: triggerWord,
+          active: currentBot.published === true,
+          created_at: new Date(),
+        });
+      }
+    }
 
     return {
       chatBotId,
-      phoneNumberIds,
+      name: normalizedName === undefined
+        ? currentBot.name
+        : normalizedName,
+      triggerWords,
+      phoneNumberIds: canonicalPhoneIds,
     };
+    });
   }
 }
 
 export default new chatBotService();
+

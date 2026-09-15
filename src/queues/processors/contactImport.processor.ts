@@ -111,7 +111,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
 
           // Add tags if specified
           if (options.tagIds && options.tagIds.length > 0) {
-            await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
+            await ContactTagRelationModel.bulkAddTags(userId,contact.id, options.tagIds);
 
             // Update tag counts
             for (const tagId of options.tagIds) {
@@ -149,10 +149,11 @@ async function processContactImport(job: Job<ContactImportJobData>) {
     }
 
     // Update list with final counts
-    await ContactListModel.update(list.id, {
-      valid_contacts: successfulCount,
-      invalid_contacts: failedCount,
-    });
+await ContactListModel.update(list.id, {
+  imported_contacts: successfulCount,
+  import_failed_contacts: failedCount,
+  invalid_phone_numbers: parseResult.invalid,
+});
 
     // Mark job as completed
     const result = {

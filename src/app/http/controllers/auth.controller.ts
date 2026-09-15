@@ -9,6 +9,7 @@ import activityLogsModel from '../../models/activityLogs.model';
 import { uploadImage } from '@surefy/config/firebase.config';
 import companyDomainModel from '../../models/companyDomain.model';
 import userModel from '../../models/user.model';
+import companyModel from '../../models/company.model';
 
 export interface JWTRequest extends Request {
   userId?: string;
@@ -28,7 +29,7 @@ class AuthController {
       throw new HTTP400Error({ message: 'Domain Name is required' });
     }
 
-    const existingUser = await userModel.findByEmailOrPhone(identifier)
+    const existingUser = await userModel.findByEmail(identifier)
     if(!existingUser){
       throw new HTTP400Error({ message: `User with identifier ${identifier} not exist` });
     }
@@ -112,6 +113,11 @@ class AuthController {
     const verifyOtp = await AuthService.verifyOtp(otp,email)
     return successResponse(req,res,'OTP verified successfully', verifyOtp)
   })
+
+  /**
+   * GET /v1/company-domain
+   * Company details 
+   */
   
 
   /**
@@ -139,13 +145,19 @@ class AuthController {
       user,
     });
 
-    if(result){
-      await sendEmail(
-        email,
-       'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
-      )
-    }
+    // if(result){
+    //   await sendEmail(
+    //     email,
+    //    'Welcome to Our Platform',
+    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+    //   )
+    // }
+
+    // await sendEmail(
+    //     email,
+    //    'Welcome to Our Platform',
+    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
+    // )
 
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
   });
@@ -190,13 +202,13 @@ class AuthController {
       domain_name
     });
 
-    if(user){
-      await sendEmail(
-        email,
-       'Welcome to Our Platform',
-       `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
-      )
-    }
+    // if(user){
+    //   await sendEmail(
+    //     email,
+    //    'Welcome to Our Platform',
+    //    `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\n The Soft 7 Team \n ${existDomain.domain_name}`,
+    //   )
+    // }
 
     return successResponse(req, res, 'User registered successfully', user, HttpStatusCode.CREATED);
   });
@@ -287,6 +299,13 @@ class AuthController {
       return res.status(200).json({success:true,message:"Media upload successfully", media_url:media_url })
     }
   }
+
+  async getCompanyDetails(req:Request,res:Response){
+    const {domain_name} = req.body
+    const company_details = await companyModel.getCompanyDetails(domain_name)
+    console.log("Company details",company_details)
+    return res.status(200).json({success:true,message:"Company details retrieve successfully",company:company_details})
+  } 
 }
 
 export default new AuthController();

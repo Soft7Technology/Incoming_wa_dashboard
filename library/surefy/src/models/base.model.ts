@@ -27,7 +27,7 @@ export class BaseModel {
     return this.query().where(conditions);
   }
 
-  async create(data: any) {
+  async create(data: any, trx?: Knex.Transaction) {
     // Convert arrays and objects to JSON strings or raw json bindings for JSON columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
@@ -46,7 +46,7 @@ export class BaseModel {
       }
     });
 
-    const [result] = await this.query().insert(processedData).returning('*');
+    const [result] = await (trx ? trx(this.tableName) : this.query()).insert(processedData).returning('*');
     return result;
   }
 

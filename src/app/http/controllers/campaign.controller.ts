@@ -125,7 +125,7 @@ class CampaignController {
   startCampaign = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
     const result = await CampaignService.startCampaign(id);
-    return successResponse(req, res, result.message);
+    return successResponse(req, res, result.message, result);
   });
 
 
