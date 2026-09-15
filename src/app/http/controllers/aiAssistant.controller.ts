@@ -112,7 +112,7 @@ class AIAssistantController {
   testConnection = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { provider, model, apiKey, assistantId } = req.body;
     let keyToTest = apiKey;
-    
+  
     // If the frontend sends the masked key back, treat it as empty so we fetch from DB
     if (keyToTest && keyToTest.includes('***')) {
       keyToTest = undefined;

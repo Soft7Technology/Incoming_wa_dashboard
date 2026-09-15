@@ -28,11 +28,21 @@ export class BaseModel {
   }
 
   async create(data: any) {
-    // Convert arrays and objects to JSON strings for JSONB columns
+    // Convert arrays and objects to JSON strings or raw json bindings for JSON columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
-      if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
-        processedData[key] = JSON.stringify(processedData[key]);
+      if (processedData[key] === undefined) {
+        delete processedData[key];
+      } else if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
+        processedData[key] = this.db.raw('?::json', [JSON.stringify(processedData[key])]);
+      } else if (typeof processedData[key] === 'string' && (key === 'file_headers' || key === 'import_options' || key === 'attributes' || key === 'custom_fields')) {
+        let jsonStr = processedData[key];
+        try {
+          JSON.parse(jsonStr);
+        } catch {
+          jsonStr = JSON.stringify(jsonStr.split(',').map((s: string) => s.trim()));
+        }
+        processedData[key] = this.db.raw('?::json', [jsonStr]);
       }
     });
 
@@ -41,13 +51,21 @@ export class BaseModel {
   }
 
   async update(id: string | number | any, data: any) {
-    // Convert arrays and objects to JSON strings for JSONB columns
+    // Convert arrays and objects to JSON strings or raw json bindings for JSON columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
       if (processedData[key] === undefined) {
         delete processedData[key];
       } else if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
-        processedData[key] = JSON.stringify(processedData[key]);
+        processedData[key] = this.db.raw('?::json', [JSON.stringify(processedData[key])]);
+      } else if (typeof processedData[key] === 'string' && (key === 'file_headers' || key === 'import_options' || key === 'attributes' || key === 'custom_fields')) {
+        let jsonStr = processedData[key];
+        try {
+          JSON.parse(jsonStr);
+        } catch {
+          jsonStr = JSON.stringify(jsonStr.split(',').map((s: string) => s.trim()));
+        }
+        processedData[key] = this.db.raw('?::json', [jsonStr]);
       }
     });
 
