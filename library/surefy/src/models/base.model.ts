@@ -41,23 +41,32 @@ export class BaseModel {
   }
 
   async update(id: string | number | any, data: any) {
-    // Convert arrays and objects to JSON strings for JSONB columns
-    const processedData = { ...data };
-    Object.keys(processedData).forEach(key => {
-      if (processedData[key] === undefined) {
-        delete processedData[key];
-      } else if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
-        processedData[key] = JSON.stringify(processedData[key]);
-      }
-    });
+  const processedData = { ...data };
 
-    if (Object.keys(processedData).length === 0) {
-      return this.findOne({ id });
+  Object.keys(processedData).forEach((key) => {
+    if (processedData[key] === undefined) {
+      delete processedData[key];
+    } else if (
+      typeof processedData[key] === 'object' &&
+      processedData[key] !== null &&
+      !Array.isArray(processedData[key]) &&
+      !(processedData[key] instanceof Date)
+    ) {
+      processedData[key] = JSON.stringify(processedData[key]);
     }
+  });
 
-    const [result] = await this.query().where({ id }).update(processedData).returning('*');
-    return result;
+  if (Object.keys(processedData).length === 0) {
+    return this.findOne({ id });
   }
+
+  const [result] = await this.query()
+    .where({ id })
+    .update(processedData)
+    .returning('*');
+
+  return result;
+}
 
   async delete(id: string | number | any) {
     return this.query().where({ id }).del();
