@@ -179,7 +179,7 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, notes, tag_ids,assigned_to,status } = req.body;
+    const { name, email, attributes, custom_fields, notes, tag_ids, assigned_to, status } = req.body;
     console.log('Req body',req.body)
 
     const contact = await ContactService.updateContact(req.userId!,id, {
@@ -189,7 +189,8 @@ class ContactController {
       notes,
       tag_ids,
       assigned_to,
-      status
+      status,
+      custom_fields
     });
 
     return successResponse(req, res, 'Contact updated successfully', contact);
