@@ -263,7 +263,8 @@ class ContactService {
       email: data.email,
       attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
       notes: data.notes,
-      assigned_to: data.assigned_to
+      assigned_to: data.assigned_to,
+      status:data.status
     });
 
     // Update tags if provided
