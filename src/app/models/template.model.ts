@@ -5,6 +5,20 @@ class TemplateModel extends BaseModel {
     super('templates');
   }
 
+  async update(id: string | number, data: any) {
+    const updateData = { ...data };
+
+    // Serialize JSONB arrays explicitly; otherwise pg encodes them as SQL arrays.
+    for (const column of ['components', 'meta_data']) {
+      const value = updateData[column];
+      if (value !== undefined && value !== null && typeof value !== 'string') {
+        updateData[column] = JSON.stringify(value);
+      }
+    }
+
+    return super.update(id, updateData);
+  }
+
   async findByCompanyId(userId: string, companyId?: string, wabaId?: string, filters: any = {}) {
     const query = this.query().whereNull('deleted_at');
 
