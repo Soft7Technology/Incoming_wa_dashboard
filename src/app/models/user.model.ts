@@ -1,4 +1,5 @@
 import { BaseModel } from '@surefy/models/base.model';
+import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 
 class UserModel extends BaseModel {
   constructor() {
@@ -231,7 +232,6 @@ class UserModel extends BaseModel {
   }
 
   async findAllUserByCompanyId(companyId?: string,role?:string, filters?: any) {
-    console.log("Role",filters)
     const page = parseInt(filters?.page) || 1;
     const limit = parseInt(filters?.limit) || 10;
     const offset = (page - 1) * limit;
@@ -240,16 +240,8 @@ class UserModel extends BaseModel {
 
     let query = this.query()
       .from('users as u')
-      .leftJoin(
-        this.query()
-          .from('user_plans')
-          .select('*')
-          .where('active', true)
-          .as('up'),
-        function () {
-          this.on('up.id', '=', 'u.assigned_plan');
-        }
-      )
+      // Include inactive/expired plans and retain users with no assigned plan.
+      .leftJoin('user_plans as up', 'up.id', 'u.assigned_plan')
       .select(
         'u.*',
         'up.plan_name',
@@ -262,19 +254,17 @@ class UserModel extends BaseModel {
       )
       .whereNull('u.deleted_at');
 
-    // Restrict company for non-superadmin
-    if (!isSuperAdmin && companyId) {
-      query = query.where('u.company_id', companyId);
+    const targetCompanyId = isSuperAdmin ? filters?.company_id || companyId : companyId;
+    if (!isSuperAdmin && !targetCompanyId) {
+      throw new HTTP403Error({ message: 'Company context is required to list users' });
+    }
+    if (targetCompanyId) {
+      query = query.where('u.company_id', targetCompanyId);
     }
 
     // Optional role filter
     if (filters?.role && filters.role.toLowerCase() !== 'all') {
       query = query.where('u.role', filters.role);
-    }
-
-    // Optional status filter
-    if (filters?.status && filters.status.toLowerCase() !== 'all') {
-      query = query.where('u.status', filters.status);
     }
 
     // Search by name/email/phone
@@ -283,7 +273,7 @@ class UserModel extends BaseModel {
         builder
           .whereILike('u.name', `%${filters.search}%`)
           .orWhereILike('u.email', `%${filters.search}%`)
-          .orWhereILike('u.phone_number', `%${filters.search}%`);
+          .orWhereILike('u.phone', `%${filters.search}%`);
       });
     }
 
