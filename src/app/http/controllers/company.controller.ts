@@ -224,6 +224,8 @@ class CompanyController {
 
   getAllUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const filters = {
+      company_id: typeof req.query.company_id === 'string' ? req.query.company_id : undefined,
+      search: typeof req.query.search === 'string' ? req.query.search : undefined,
       role: req.query.role,
       status: req.query.status,
       page: req.query.page,
