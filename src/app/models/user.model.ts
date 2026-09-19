@@ -232,9 +232,8 @@ class UserModel extends BaseModel {
   }
 
   async findAllUserByCompanyId(companyId?: string,role?:string, filters?: any) {
-    const page = parseInt(filters?.page) || 1;
-    const limit = parseInt(filters?.limit) || 10;
-    const offset = (page - 1) * limit;
+    let page = Math.max(1, parseInt(filters?.page, 10) || 1);
+    const limit = Math.max(1, parseInt(filters?.limit, 10) || 10);
 
     const isSuperAdmin = role === 'superadmin';
 
@@ -267,13 +266,14 @@ class UserModel extends BaseModel {
       query = query.where('u.role', filters.role);
     }
 
-    // Search by name/email/phone
-    if (filters?.search) {
+    // Search all matching company users before counting and paginating.
+    const search = typeof filters?.search === 'string' ? filters.search.trim() : '';
+    if (search) {
       query = query.andWhere((builder) => {
         builder
-          .whereILike('u.name', `%${filters.search}%`)
-          .orWhereILike('u.email', `%${filters.search}%`)
-          .orWhereILike('u.phone', `%${filters.search}%`);
+          .whereILike('u.name', `%${search}%`)
+          .orWhereILike('u.email', `%${search}%`)
+          .orWhereILike('u.phone', `%${search}%`);
       });
     }
 
@@ -285,6 +285,13 @@ class UserModel extends BaseModel {
       .first();
 
     const total = Number(totalResult?.total || 0);
+    const totalPages = Math.ceil(total / limit);
+
+    // A search may retain a page number from the unfiltered list.
+    if (search && page > Math.max(1, totalPages)) {
+      page = 1;
+    }
+    const offset = (page - 1) * limit;
 
     // Get paginated data
     const data = await query
@@ -298,8 +305,8 @@ class UserModel extends BaseModel {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit),
-        hasNextPage: page < Math.ceil(total / limit),
+        totalPages,
+        hasNextPage: page < totalPages,
         hasPreviousPage: page > 1,
       },
     };
