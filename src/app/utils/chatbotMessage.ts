@@ -1,3 +1,23 @@
+export function buildInteractiveHeader(header: any): any | undefined {
+  if (!header?.type || header.type === 'none') return undefined;
+  if (header.type === 'text') {
+    return typeof header.text === 'string' && header.text.trim()
+      ? { type: 'text', text: header.text }
+      : undefined;
+  }
+  if (!['image', 'video', 'document'].includes(header.type)) {
+    throw new Error('Interactive header must be text, image, video, or document.');
+  }
+
+  const media = header[header.type];
+  const id = typeof media?.id === 'string' ? media.id.trim() : '';
+  const link = typeof media?.link === 'string' ? media.link.trim() : '';
+  if ((!id && !link) || (id && link)) {
+    throw new Error(`Interactive ${header.type} header requires either a media id or link.`);
+  }
+  return { type: header.type, [header.type]: id ? { id } : { link } };
+}
+
 export function validateChatbotMessage(data: any): void {
   const message = data?.attributes?.message;
   if (data?.key === '@whatsapp/send-text-message') {
