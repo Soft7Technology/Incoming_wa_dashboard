@@ -40,37 +40,33 @@ export class BaseModel {
     return result;
   }
 
-<<<<<<< HEAD
-async update(id: string | number | any, data: any) {
-=======
   async update(id: string | number | any, data: any) {
->>>>>>> 518da446aa6fc0f183dbecae06935b680048ea6a
-  const processedData = { ...data };
+    const processedData = { ...data };
 
-  Object.keys(processedData).forEach((key) => {
-    if (processedData[key] === undefined) {
-      delete processedData[key];
-    } else if (
-      typeof processedData[key] === 'object' &&
-      processedData[key] !== null &&
-      !Array.isArray(processedData[key]) &&
-      !(processedData[key] instanceof Date)
-    ) {
-      processedData[key] = JSON.stringify(processedData[key]);
+    Object.keys(processedData).forEach((key) => {
+      if (processedData[key] === undefined) {
+        delete processedData[key];
+      } else if (
+        typeof processedData[key] === 'object' &&
+        processedData[key] !== null &&
+        !Array.isArray(processedData[key]) &&
+        !(processedData[key] instanceof Date)
+      ) {
+        processedData[key] = JSON.stringify(processedData[key]);
+      }
+    });
+
+    if (Object.keys(processedData).length === 0) {
+      return this.findOne({ id });
     }
-  });
 
-  if (Object.keys(processedData).length === 0) {
-    return this.findOne({ id });
+    const [result] = await this.query()
+      .where({ id })
+      .update(processedData)
+      .returning('*');
+
+    return result;
   }
-
-  const [result] = await this.query()
-    .where({ id })
-    .update(processedData)
-    .returning('*');
-
-  return result;
-}
 
   async delete(id: string | number | any) {
     return this.query().where({ id }).del();

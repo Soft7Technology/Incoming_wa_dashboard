@@ -18,7 +18,7 @@ class ContactController {
    * Create new contact
    */
   createContact = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number, phone_number_id, name, email, attributes, notes, tag_ids, status,country_code } = req.body;
+    const { phone_number, phone_number_id, name, email, attributes, notes, tag_ids, status, country_code } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
@@ -74,7 +74,7 @@ class ContactController {
   getContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
     console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
-    
+
     // Team members must only see contacts assigned to them.
     // Permission flags control what actions they can perform, not what data they see.
     const isTeamMember = req.userId !== req.ownerId;
@@ -93,7 +93,7 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    console.log('Filters',filters)
+    console.log('Filters', filters)
 
     const contacts = await ContactService.getContacts(effectiveUserId, filters);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
@@ -107,11 +107,11 @@ class ContactController {
   getContactByPhoneNumberId = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
     console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
-    
+
     // Team members must only see contacts assigned to them.
     // Permission flags control what actions they can perform, not what data they see.
     const isTeamMember = req.userId !== req.ownerId;
-    const{phoneNumberId} = req.params
+    const { phoneNumberId } = req.params
 
     const filters = {
       is_valid: req.query.is_valid,
@@ -127,7 +127,7 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters,phoneNumberId);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -145,7 +145,7 @@ class ContactController {
       const teamRow = await db('user_team')
         .where({ email: req.email, invite_status: 'accepted' })
         .first();
-      
+
       let hasContactPermission = false;
       if (teamRow && teamRow.permission) {
         const perm = teamRow.permission;
@@ -157,13 +157,13 @@ class ContactController {
         }
         hasContactPermission = teamPermissions.includes('contact') || teamPermissions.includes('contacts');
       }
-      
+
       if (!hasContactPermission) {
         const assignedTo = contact.assigned_to || [];
-        const isAssigned = Array.isArray(assignedTo) 
+        const isAssigned = Array.isArray(assignedTo)
           ? assignedTo.includes(req.userId)
           : (typeof assignedTo === 'string' && JSON.parse(assignedTo).includes(req.userId));
-        
+
         if (!isAssigned) {
           throw new HTTP400Error({ message: 'Access denied: Contact is not assigned to you' });
         }
@@ -179,12 +179,8 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-<<<<<<< HEAD
     const { name, email, attributes, custom_fields, notes, tag_ids, assigned_to, status } = req.body;
-    console.log('Req body',req.body)
-=======
-    const { name, email, attributes, notes, tag_ids, assigned_to, status } = req.body;
->>>>>>> 518da446aa6fc0f183dbecae06935b680048ea6a
+    console.log('Req body', req.body)
 
     const contact = await ContactService.updateContact(req.userId!, id, {
       name,
@@ -194,10 +190,7 @@ class ContactController {
       tag_ids,
       assigned_to,
       status,
-<<<<<<< HEAD
       custom_fields
-=======
->>>>>>> 518da446aa6fc0f183dbecae06935b680048ea6a
     });
 
     return successResponse(req, res, 'Contact updated successfully', contact);
@@ -273,13 +266,13 @@ class ContactController {
 
   importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
-    const { list_name, phone_column,phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
+    const { list_name, phone_column, phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
 
     console.log("Request file", req.body)
 
 
 
-    if(!phone_number_id){
+    if (!phone_number_id) {
       throw new HTTP400Error({ message: 'Phone Number Id is required' });
     }
 
@@ -310,7 +303,7 @@ class ContactController {
     fs.copyFileSync(file.path, filePath);
     fs.unlinkSync(file.path);
 
-    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!,phone_number_id,country_code || '', filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!, phone_number_id, country_code || '', filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
@@ -369,7 +362,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'tag_ids array is required' });
     }
 
-    await ContactService.addTagsToContact(req.userId!,id, tag_ids);
+    await ContactService.addTagsToContact(req.userId!, id, tag_ids);
     return successResponse(req, res, 'Tags added successfully');
   });
 
@@ -402,7 +395,7 @@ class ContactController {
 
     const effectiveUserId = req.ownerId ?? req.userId!;
     const tag = await ContactService.createTag(effectiveUserId, req.companyId!, { name, color, description });
-    console.log("Tag",tag)
+    console.log("Tag", tag)
     await activityLogsModel.create({
       company_id: req.companyId,
       user_id: effectiveUserId,
@@ -563,12 +556,12 @@ class ContactController {
   /**
    * User Assigned Contact
    */
-  assignedContactToUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const{assigned_to} = req.body
-    const {contactId} = req.params
+  assignedContactToUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { assigned_to } = req.body
+    const { contactId } = req.params
 
-    const userAssignedContact = await ContactService.userAssignedContact(contactId,assigned_to)
-    successResponse(req,res,`User assigned ${contactId}`,userAssignedContact, HttpStatusCode.OK)
+    const userAssignedContact = await ContactService.userAssignedContact(contactId, assigned_to)
+    successResponse(req, res, `User assigned ${contactId}`, userAssignedContact, HttpStatusCode.OK)
   })
 }
 
