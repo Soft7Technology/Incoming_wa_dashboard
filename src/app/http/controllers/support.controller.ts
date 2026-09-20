@@ -243,6 +243,47 @@ Message: ${message}`,
     await supportService.deleteSupportTicket(ticketId);
     return successResponse(req, res, 'Ticket deleted successfully');
   }
+
+  async updateTicketStatus(req: AuthRequest, res: Response) {
+    try {
+      const { ticketId } = req.params;
+      const { status } = req.body;
+
+      if (!ticketId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Ticket Id is required',
+        });
+      }
+
+      if (!status) {
+        return res.status(400).json({
+          success: false,
+          message: 'Status is required',
+        });
+      }
+
+      const updatedTicket = await supportService.updateTicketStatus(
+        ticketId,
+        status
+      );
+
+      return successResponse(
+        req,
+        res,
+        'Ticket status updated successfully',
+        updatedTicket,
+        HttpStatusCode.OK
+      );
+    } catch (error: any) {
+      console.error('Update Ticket Status Error:', error);
+
+      return res.status(500).json({
+        success: false,
+        message: error?.message || 'Something went wrong',
+      });
+    }
+  }
 }
 
 export default new supporController();

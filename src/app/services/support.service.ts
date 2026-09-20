@@ -123,6 +123,12 @@ class supportService {
     return await supportTicketModel.delete(ticketId)
   }
 
+  async updateTicketStatus(ticketId: string, status: string) {
+    const normalizedStatus = status.toLowerCase();
+    const updatedTicket = await supportTicketModel.update(ticketId, { status: normalizedStatus });
+    return updatedTicket;
+  }
+
 
 }
 
