@@ -20,6 +20,18 @@ export function buildInteractiveHeader(header: any): any | undefined {
 
 export function validateChatbotMessage(data: any): void {
   const message = data?.attributes?.message;
+  if (data?.key === '@whatsapp/send-button-message') {
+    const buttons = data?.attributes ? message?.interactive?.action?.buttons : data?.buttons;
+    if (!Array.isArray(buttons) || !buttons.length) {
+      throw new Error('Button message requires at least one button.');
+    }
+    for (const [index, button] of buttons.entries()) {
+      const title = button?.reply?.title ?? button?.title ?? (typeof button === 'string' ? button : '');
+      if (typeof title !== 'string' || !title.trim()) {
+        throw new Error(`Button ${index + 1}: title is required.`);
+      }
+    }
+  }
   if (data?.key === '@whatsapp/send-text-message') {
     if (typeof message?.text?.body !== 'string' || !message.text.body.trim()) {
       throw new Error('Text message node requires attributes.message.text.body.');
