@@ -34,18 +34,22 @@ class ContactService {
       throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
     }
 
-    const contact = await ContactModel.create({
+    const createPayload: any = {
       user_id: userId,
       company_id: companyId,
       phone_number: phone,
-      phone_number_id:data.phone_number_id,
+      phone_number_id: data.phone_number_id,
       name: data.name,
       email: data.email,
       status: data.status,
       attributes: data.attributes || {},
       notes: data.notes,
-      country_code: data.country_code
-    });
+    };
+    if (data.country_code) {
+      createPayload.country_code = data.country_code;
+    }
+
+    const contact = await ContactModel.create(createPayload);
 
     // Tags live in contact_tag_relations; they are not columns on contacts.
     // Create those relations after the contact has an id so tag filters can
@@ -265,7 +269,7 @@ class ContactService {
     const customFields = parseContactCustomFields(data.custom_fields, 'custom_fields');
     const hasCustomFieldUpdate = attributes !== undefined || customFields !== undefined;
 
-    const updated = await ContactModel.update(contactId, {
+    const updatePayload: any = {
       name: data.name,
       email: data.email,
       custom_fields: hasCustomFieldUpdate
@@ -273,8 +277,12 @@ class ContactService {
         : currentCustomFields,
       notes: data.notes,
       assigned_to: data.assigned_to,
-      status:data.status
-    });
+    };
+    if (data.status !== undefined) {
+      updatePayload.status = data.status;
+    }
+
+    const updated = await ContactModel.update(contactId, updatePayload);
 
     // Update tags if provided
     if (data.tag_ids !== undefined) {

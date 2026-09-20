@@ -40,7 +40,11 @@ export class BaseModel {
     return result;
   }
 
+<<<<<<< HEAD
 async update(id: string | number | any, data: any) {
+=======
+  async update(id: string | number | any, data: any) {
+>>>>>>> 518da446aa6fc0f183dbecae06935b680048ea6a
   const processedData = { ...data };
 
   Object.keys(processedData).forEach((key) => {
