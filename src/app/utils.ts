@@ -1,4 +1,4 @@
-import { validateChatbotMessage } from './utils/chatbotMessage';
+import { buildInteractiveHeader, validateChatbotMessage } from './utils/chatbotMessage';
 import chatSessionModel from '../app/models/chatSession.model';
 import chatBotModel from '../app/models/chatbot.model';
 import chatBotNodeModel from './models/chatBotNode.model';
@@ -708,58 +708,8 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
       },
     };
 
-    // -----------------------------------------
-    // Add header ONLY if type is valid
-    // Meta does NOT support "none"
-    // -----------------------------------------
-    const validHeaderTypes = [
-      "text",
-      "image",
-      "video",
-      "document",
-    ];
-
-    if (
-      header.type &&
-      validHeaderTypes.includes(header.type)
-    ) {
-      if (header.type === "text") {
-        interactive.header = {
-          type: "text",
-          text: header.text || "",
-        };
-      }
-
-      if (
-        header.type === "image" &&
-        header.image
-      ) {
-        interactive.header = {
-          type: "image",
-          image: header.image,
-        };
-      }
-
-      if (
-        header.type === "video" &&
-        header.video
-      ) {
-        interactive.header = {
-          type: "video",
-          video: header.video,
-        };
-      }
-
-      if (
-        header.type === "document" &&
-        header.document
-      ) {
-        interactive.header = {
-          type: "document",
-          document: header.document,
-        };
-      }
-    }
+    const normalizedHeader = buildInteractiveHeader(header);
+    if (normalizedHeader) interactive.header = normalizedHeader;
 
     // -----------------------------------------
     // Footer is optional
@@ -935,48 +885,32 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
 
   // Button Interactive  
   if (key === "@whatsapp/send-button-message") {
+    const message = data?.attributes?.message?.interactive;
+    const header = buildInteractiveHeader(message?.header);
+    const footer = message?.footer?.text;
+    const buttons = data?.attributes ? message?.action?.buttons || [] : data.buttons || [];
+
     return {
       type: "interactive",
-
       interactive: {
         type: "button",
-
-        header: {
-          type: "text",
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.header?.text || ""
-            : ""
-        },
-
-        body: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.body?.text
-            : data.text,
-        },
-
-        footer: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.footer?.text || ""
-            : "",
-        },
-
+        ...(header ? { header } : {}),
+        body: { text: data?.attributes ? message?.body?.text : data.text },
+        ...(typeof footer === "string" && footer.trim() ? { footer: { text: footer } } : {}),
         action: {
-          buttons: (
-            data?.attributes
-              ? data?.attributes?.message?.interactive?.action?.buttons || []
-              : data.buttons || []
-          ).map((btn: any, i: number) => ({
-            type: "reply",
-
-            reply: {
-              id: btn?.reply?.id || btn.id || `btn_${i}`,
-
-              title:
-                btn?.reply?.title ||
-                btn.title ||
-                btn,
-            },
-          })),
+          buttons: buttons.map((btn: any, i: number) => {
+            const title = btn?.reply?.title ?? btn?.title ?? (typeof btn === "string" ? btn : "");
+            if (typeof title !== "string" || !title.trim()) {
+              throw new Error(`Button ${i + 1}: title is required.`);
+            }
+            return {
+              type: "reply",
+              reply: {
+                id: btn?.reply?.id || btn.id || `btn_${i}`,
+                title,
+              },
+            };
+          }),
         },
       },
     };
