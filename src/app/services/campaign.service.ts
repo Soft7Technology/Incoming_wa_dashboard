@@ -17,6 +17,7 @@ import campaignModel from '../models/campaign.model';
 import { v4 as uuidv4 } from "uuid";
 import { uploadImage } from '@surefy/config/firebase.config';
 import db from '@surefy/database';
+import phoneNumberModel from '../models/phoneNumber.model';
 
 
 interface CreateCampaignData {
@@ -45,6 +46,7 @@ class CampaignService {
   async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
+    const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
     console.log('Template',template)
     if (!template) {
       throw new HTTP404Error({ message: 'Template not found' });
@@ -103,6 +105,7 @@ class CampaignService {
         const newContacts = missingNumbers.map((num: string) => ({
           user_id: userId,
           company_id: companyId,
+          phone_number_id:phoneNumberId.id,
           phone_number: num,
           name: num, // Fallback to phone number as name
           is_valid: true,
