@@ -27,7 +27,7 @@ test('phone mapping cannot run another owners flow', async () => {
   assert.equal(await runtime({chatbot_id:'bot'},'another-user')('phone'),null);
 });
 
-test('company member flow can run on the company receiving number', async () => {
+test('same-company users cannot run a different owners flow', async () => {
   const bot = await runtime({chatbot_id:'bot'}, 'member', 'company')('meta-id');
-  assert.equal(bot.id, 'bot');
+  assert.equal(bot, null);
 });

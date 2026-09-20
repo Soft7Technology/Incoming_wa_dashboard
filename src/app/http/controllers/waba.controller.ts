@@ -21,7 +21,7 @@ class WabaController {
     }
 
     const waba = await WabaService.createWaba({
-      user_id: req.userId!,
+      user_id: req.ownerId ?? req.userId!,
       company_id: req.companyId!,
       waba_id,
       name,
@@ -46,7 +46,7 @@ class WabaController {
     }
 
     const waba = await wabaService.onboardWaba({
-      user_id: req.userId!,
+      user_id: req.ownerId ?? req.userId!,
       company_id: req.companyId!,
       waba_id
     })
@@ -76,6 +76,7 @@ class WabaController {
     }
 
     const phoneNumber = await WabaService.addPhoneNumber({
+      user_id: req.ownerId ?? req.userId!,
       company_id: req.companyId!,
       waba_id: wabaId,
       phone_number_id,

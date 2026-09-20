@@ -153,6 +153,10 @@ class WabaService {
   async upsertWaba(data: CreateWabaDto) {
     const existing = await WabaModel.findByWabaId(data.waba_id);
 
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    if (existing && (existing.user_id !== data.user_id || existing.company_id !== data.company_id)) {
+      throw new HTTP400Error({ message: 'WABA is already connected to another account' });
+    }
     // Fetch latest data from Meta
     const wabaDetails = await MetaService.getWabaDetails(data.waba_id);
 
@@ -196,6 +200,9 @@ class WabaService {
       const existing = await PhoneNumberModel.findByPhoneNumberId(phone.id);
 
       if (existing) {
+        if (existing.user_id !== clientData.user_id || existing.company_id !== clientData.company_id || existing.waba_id !== clientData.company_WABAID) {
+          throw new HTTP400Error({ message: 'Phone number is already connected to another account' });
+        }
         // Update status changes (very important)
         await PhoneNumberModel.update(existing.id, {
           user_id: clientData.user_id!,
@@ -244,7 +251,9 @@ class WabaService {
 
       // 2️⃣ Loop phone numbers ONE BY ONE
       for (const phone of response.data) {
+        const parentWaba = await this.getWabaById(clientData.company_WABAID);
         const phonePayload: CreatePhoneNumberDto = {
+          user_id: parentWaba.user_id,
           company_id: clientData.company_id,
           waba_id: clientData.company_WABAID, // internal WABA ID
           phone_number_id: phone.id,
@@ -281,6 +290,7 @@ class WabaService {
    * Create WABA account
    */
   async createWaba(data: CreateWabaDto) {
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
     // Check if WABA ID already exists in our database
     const existing = await WabaModel.findByWabaId(data.waba_id);
     if (existing) {
@@ -363,6 +373,10 @@ class WabaService {
    * Add phone number to WABA
    */
   async addPhoneNumber(data: CreatePhoneNumberDto) {
+    const waba = await this.getWabaById(data.waba_id);
+    if (!data.user_id || !data.company_id || waba.user_id !== data.user_id || waba.company_id !== data.company_id) {
+      throw new HTTP404Error({ message: 'WABA not found in your account' });
+    }
     // Verify phone number exists in Meta
     try {
       const phoneDetails = await MetaService.getPhoneNumberDetails(data.phone_number_id);
@@ -414,7 +428,8 @@ class WabaService {
 
       if (!existing) {
         const created = await PhoneNumberModel.create({
-          company_id: companyId,
+          user_id: waba.user_id,
+          company_id: waba.company_id,
           waba_id: wabaId,
           phone_number_id: phone.id,
           display_phone_number: phone.display_phone_number,
@@ -438,7 +453,8 @@ class WabaService {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
-    return PhoneNumberModel.update(id, { ...data, updated_at: new Date() });
+    const { id: ignoredId, user_id, company_id, waba_id, phone_number_id, ...changes } = data;
+    return PhoneNumberModel.update(id, { ...changes, updated_at: new Date() });
   }
 
   /**

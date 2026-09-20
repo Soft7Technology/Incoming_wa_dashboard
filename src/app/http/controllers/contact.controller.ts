@@ -95,7 +95,7 @@ class ContactController {
 
     console.log('Filters',filters)
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters, undefined, req.companyId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -182,7 +182,7 @@ class ContactController {
     const { name, email, attributes, custom_fields, notes, tag_ids, assigned_to, status } = req.body;
     console.log('Req body',req.body)
 
-    const contact = await ContactService.updateContact(req.userId!,id, {
+    const contact = await ContactService.updateContact(req.ownerId ?? req.userId!,id, {
       name,
       email,
       attributes,
@@ -219,7 +219,7 @@ class ContactController {
 
     const effectiveUserId = req.ownerId ?? req.userId!;
 
-    const deletedCount = await ContactService.bulkDeleteContacts(req.companyId!, ids);
+    const deletedCount = await ContactService.bulkDeleteContacts(req.companyId!, ids, effectiveUserId, req.userId !== effectiveUserId ? req.userId : undefined);
 
     await activityLogsModel.create({
       company_id: req.companyId!,
@@ -344,6 +344,7 @@ class ContactController {
     const filters = {
       status: req.query.status,
       job_type: req.query.job_type,
+      user_id: req.ownerId ?? req.userId!,
     };
 
     const jobs = await ContactService.getImportJobs(req.companyId!, filters);
@@ -362,7 +363,7 @@ class ContactController {
       throw new HTTP400Error({ message: 'tag_ids array is required' });
     }
 
-    await ContactService.addTagsToContact(req.userId!,id, tag_ids);
+    await ContactService.addTagsToContact(req.ownerId ?? req.userId!,id, tag_ids);
     return successResponse(req, res, 'Tags added successfully');
   });
 
@@ -469,9 +470,12 @@ class ContactController {
    * GET /v1/contacts/lists/:id/contacts
    * Get contacts in a list
    */
-  getListContacts = tryCatchAsync(async (req: Request, res: Response) => {
+  getListContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { id } = req.params;
     const filters = {
+      user_id: req.ownerId ?? req.userId!,
+      company_id: req.companyId!,
+      assigned_user_id: req.userId !== (req.ownerId ?? req.userId) ? req.userId : undefined,
       is_valid: req.query.is_valid,
       page: req.query.page,
       limit: req.query.limit,
@@ -507,16 +511,18 @@ class ContactController {
    * GET /v1/contacts/user/:userId
    * Get contacts created by a specific user
     */
-  async getUsersContacts(req: Request, res: Response) {
-    const { userId } = req.params;
-    try {
-      const contacts = await ContactService.getContactsByUserId(userId);
-      return successResponse(req, res, 'User contacts retrieved successfully', contacts);
-    } catch (error) {
-      console.error('Error fetching user contacts:', error);
-      throw new HTTP400Error({ message: 'Failed to retrieve user contacts' });
+  getUsersContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const ownerId = req.ownerId ?? req.userId!;
+    if (req.params.userId !== ownerId && req.params.userId !== req.userId) {
+      throw new HTTP400Error({ message: 'Cannot fetch another account contacts' });
     }
-  }
+    const result = await ContactService.getContacts(ownerId, {
+      page: req.query.page,
+      limit: req.query.limit,
+      onlyAssignedToUserId: req.userId !== ownerId ? req.userId : undefined,
+    }, undefined, req.companyId);
+    return successResponse(req, res, 'User contacts retrieved successfully', result);
+  });
 
   /**
    * PATCH /v1/contacts/assign

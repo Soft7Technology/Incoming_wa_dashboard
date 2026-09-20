@@ -66,7 +66,7 @@ class ContactService {
     phoneNumberId?: string,
     companyId?: string
   ) {
-    if (phoneNumberId && !companyId) {
+    if (!userId || !companyId) {
       throw new HTTP400Error({ message: 'Company context is required to fetch contacts by phone number ID' });
     }
     if (filters.country_code !== undefined) {
@@ -307,11 +307,11 @@ class ContactService {
   /**
    * Bulk delete contacts
    */
-  async bulkDeleteContacts(companyId: string, contactIds: string[]) {
+  async bulkDeleteContacts(companyId: string, contactIds: string[], userId: string, assignedUserId?: string) {
     if (!companyId) {
       throw new HTTP400Error({ message: 'Company context is required to delete contacts' });
     }
-    const deletedCount = await ContactModel.bulkDelete(companyId, contactIds);
+    const deletedCount = await ContactModel.bulkDelete(companyId, contactIds, userId, assignedUserId);
     if (deletedCount === 0) {
       throw new HTTP404Error({
         message: 'No contacts were deleted: the requested IDs do not exist in your company or were already deleted',
@@ -610,7 +610,8 @@ class ContactService {
    * Get contacts by filters (for campaign targeting)
    */
   async getContactsByFilters(userId: string, companyId: string, filters: any) {
-    let query = ContactModel.findWithFilters(userId, filters);
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    let query = ContactModel.findWithFilters(userId, filters).where('contacts.company_id', companyId);
 
     // Exclude invalid numbers by default
     if (filters.exclude_invalid !== false) {

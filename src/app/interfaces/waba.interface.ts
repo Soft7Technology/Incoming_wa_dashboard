@@ -42,6 +42,7 @@ export interface CreateWabaDto {
 }
 
 export interface CreatePhoneNumberDto {
+  user_id: string;
   company_id: string;
   waba_id: string;
   phone_number_id: string;
