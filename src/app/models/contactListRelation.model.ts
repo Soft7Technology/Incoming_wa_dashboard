@@ -51,6 +51,10 @@ class ContactListRelationModel extends BaseModel {
       .where('clr.list_id', listId)
       .whereNull('c.deleted_at');
 
+    if (filters.user_id) query.where('c.user_id', filters.user_id);
+    if (filters.company_id) query.where('c.company_id', filters.company_id);
+    if (filters.assigned_user_id) query.whereRaw('c.assigned_to @> ARRAY[?]::uuid[]', [filters.assigned_user_id]);
+
     if (filters.is_valid !== undefined) {
       query = query.where('c.is_valid', filters.is_valid);
     }

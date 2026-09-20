@@ -32,13 +32,21 @@ class ContactModel extends BaseModel {
   }
 
   async create(data: any, trx?: Knex.Transaction): Promise<any> {
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    if (data.phone_number_id) {
+      const phone = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+      if (!phone || phone.user_id !== data.user_id || phone.company_id !== data.company_id) {
+        throw new HTTP400Error({ message: 'Phone number does not belong to this account' });
+      }
+      data = { ...data, phone_number_id: phone.id };
+    }
     const normalized = { ...data, phone_number: normalizeContactPhone(data.phone_number) };
     const insert = async (transaction: Knex.Transaction) => {
       // Serialize creates for the same owner, business number and normalized phone.
       const key = JSON.stringify([data.user_id, data.phone_number_id ?? null, normalized.phone_number]);
       await transaction.raw('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [key]);
       const existing = await transaction('contacts')
-        .where({ user_id: data.user_id, phone_number_id: data.phone_number_id ?? null })
+        .where({ user_id: data.user_id, company_id: data.company_id, phone_number_id: data.phone_number_id ?? null })
         .whereNull('deleted_at')
         .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [normalized.phone_number.slice(1)])
         .first();
@@ -57,28 +65,31 @@ class ContactModel extends BaseModel {
   }
 
   async findOrCreateIncoming(data: any) {
-    const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id);
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id);
     if (existing) return existing;
     try {
       return await this.create(data);
     } catch (error) {
       // Another incoming request may have inserted this contact while we waited.
       if (error instanceof HTTP400Error) {
-        const concurrent = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id);
+        const concurrent = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id);
         if (concurrent) return concurrent;
       }
       throw error;
     }
   }
 
-  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null) {
+  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string) {
     const digits = phoneNumber.replace(/\D/g, '');
-    return this.query()
+    const query = this.query()
       .where('user_id', userId)
       .where('phone_number_id', phoneNumberId ?? null)
       .whereNull('deleted_at')
       .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [digits])
       .first();
+    if (companyId) query.where('company_id', companyId);
+    return query;
   }
 
   async findByPhone(userId: string, phoneNumber: string) {
@@ -197,31 +208,10 @@ class ContactModel extends BaseModel {
       query.where("phone_number_id", phoneNumberId);
     }
 
-    // Ownership / Assignment Filter
+    if (!userId) throw new HTTP400Error({ message: 'User context is required' });
+    query.where('contacts.user_id', userId);
     if (filters.onlyAssignedToUserId) {
-      console.log(
-        "Filtering by assigned user:",
-        filters.onlyAssignedToUserId
-      );
-
-      query.whereRaw(
-        "assigned_to @> ARRAY[?]::uuid[]",
-        [filters.onlyAssignedToUserId]
-      );
-    } else {
-      query.where((builder: any) => {
-        builder.where("user_id", userId);
-
-        if (phoneNumberId) {
-          builder.orWhere("phone_number_id", phoneNumberId);
-        }
-
-        // Contacts assigned to current user
-        builder.orWhereRaw(
-          "assigned_to @> ARRAY[?]::uuid[]",
-          [userId]
-        );
-      });
+      query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
     }
 
     // Ignore deleted contacts
@@ -295,11 +285,11 @@ class ContactModel extends BaseModel {
     return query.where({ user_id: userId }).orWhere({ assigned_to: userId }).returning("*")
   }
 
-  async bulkDelete(companyId: string, ids: string[]) {
-    return this.query()
-      .where({ company_id: companyId })
-      .whereIn('id', ids)
-      .del();
+  async bulkDelete(companyId: string, ids: string[], userId: string, assignedUserId?: string) {
+    if (!companyId || !userId) throw new HTTP400Error({ message: 'User and company context are required' });
+    const query = this.query().where({ company_id: companyId, user_id: userId }).whereIn('id', ids);
+    if (assignedUserId) query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [assignedUserId]);
+    return query.del();
   }
 
   async findByUserPhoneNumber(userId: string, phoneNumber: string) {

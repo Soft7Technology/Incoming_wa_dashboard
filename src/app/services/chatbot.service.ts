@@ -286,7 +286,7 @@ class chatBotService {
       
       const phone = await phoneNumberModel.findByPhoneNumberId(id);
       
-      if (!phone) {
+      if (!phone || phone.user_id !== userId || phone.company_id !== bot.company_id) {
         throw new HTTP400Error({ message: 'Phone number not found or does not belong to this user' });
       }
 

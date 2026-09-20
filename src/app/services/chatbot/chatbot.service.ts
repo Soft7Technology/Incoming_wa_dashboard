@@ -87,8 +87,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     const receivingPhoneNumber = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
     if (!receivingPhoneNumber) return null;
     await contactModel.findOrCreateIncoming({
-      user_id: bot.user_id,
-      company_id: bot.company_id,
+      user_id: receivingPhoneNumber.user_id,
+      company_id: receivingPhoneNumber.company_id,
       phone_number_id: receivingPhoneNumber.id,
       phone_number: message.from,
       name: profile_name,

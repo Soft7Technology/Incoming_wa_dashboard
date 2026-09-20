@@ -190,6 +190,7 @@ export interface MessageStatusUpdate {
 }
 
 export interface BulkSendMessageDto {
+  company_id: string;
   user_id: string;
   phone_number_id: string;
   messageUUID: string;

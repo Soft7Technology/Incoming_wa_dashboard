@@ -49,7 +49,7 @@ class MessageService {
    */
   async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any }) {
     const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
-    if (!phoneNumber) {
+    if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
@@ -262,7 +262,7 @@ class MessageService {
 
   async bulkSendMessage(data: BulkSendMessageDto) {
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
-    if (!phoneNumber) {
+    if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
@@ -740,6 +740,10 @@ class MessageService {
     // Validate all messages have required fields
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
+      const phone = await PhoneNumberModel.findByPhoneNumberId(msg.phone_number_id);
+      if (!phone || phone.user_id !== userId || phone.company_id !== user.company_id) {
+        throw new HTTP404Error({ message: 'Phone number not found in your account' });
+      }
       if (!msg.phone_number_id || !msg.to || !msg.type) {
         throw new HTTP400Error({
           message: `Message at index ${i}: Phone number ID, recipient, and message type are required`,
@@ -761,6 +765,8 @@ class MessageService {
 
     const normalizedMessages = messages.map((msg) => ({
       ...msg,
+      user_id: userId,
+      company_id: user.company_id,
       messageUUID: msg.messageUUID && uuidValidate(msg.messageUUID) ? msg.messageUUID : uuidv4(),
     }));
 
