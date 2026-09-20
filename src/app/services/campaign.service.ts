@@ -47,6 +47,9 @@ class CampaignService {
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
     const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
+    if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
+      throw new HTTP404Error({ message: 'Phone number not found in your account' });
+    }
     console.log('Template',template)
     if (!template) {
       throw new HTTP404Error({ message: 'Template not found' });

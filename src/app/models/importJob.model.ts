@@ -51,6 +51,8 @@ class ImportJobModel extends BaseModel {
       .where({ company_id: companyId })
       .whereNull('deleted_at');
 
+    if (filters.user_id) query.where('user_id', filters.user_id);
+
     if (filters.status) {
       query = query.where({ status: filters.status });
     }
