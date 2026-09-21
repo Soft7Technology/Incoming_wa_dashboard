@@ -1,0 +1,153 @@
+{
+  "info": {
+    "name": "Soft7 Client API ? Single API Key",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Use an owner-scoped s7_ key. No company key or JWT is required. Send requests deliver real messages."
+  },
+  "auth": {
+    "type": "apikey",
+    "apikey": [
+      {
+        "key": "key",
+        "value": "x-api-key",
+        "type": "string"
+      },
+      {
+        "key": "value",
+        "value": "{{api_key}}",
+        "type": "string"
+      },
+      {
+        "key": "in",
+        "value": "header",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "api_key",
+      "value": ""
+    },
+    {
+      "key": "phone_number_id",
+      "value": ""
+    },
+    {
+      "key": "recipient",
+      "value": ""
+    },
+    {
+      "key": "template_name",
+      "value": ""
+    },
+    {
+      "key": "template_language",
+      "value": "en"
+    }
+  ],
+  "item": [
+    {
+      "name": "List my WABA accounts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/api/waba"
+      }
+    },
+    {
+      "name": "List my phone numbers",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/api/waba/phone-numbers"
+      }
+    },
+    {
+      "name": "List my contacts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/api/contacts?page=1&limit=10"
+      }
+    },
+    {
+      "name": "Contacts by phone number",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/api/contacts/phone-number/{{phone_number_id}}?page=1&limit=10"
+      }
+    },
+    {
+      "name": "Create contact",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/api/contacts",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"phone_number\": \"{{recipient}}\",\n  \"name\": \"Example contact\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Send text message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/api/messages/send",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Hello from our API\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Send template message",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/api/messages/send",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": \"{{template_language}}\",\n    \"components\": []\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
