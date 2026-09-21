@@ -1,3 +1,4 @@
+import UserApiKeyRoute from './userApiKey.route';
 import { Router } from 'express';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
 import WabaRoute from './waba.route';
@@ -24,6 +25,8 @@ const AdminRoute = Router();
 
 // Apply JWT authentication to all admin routes
 AdminRoute.use(jwtAuthMiddleware);
+
+AdminRoute.use('/api-keys', UserApiKeyRoute);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
