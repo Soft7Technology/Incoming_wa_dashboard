@@ -7,6 +7,8 @@ import { triggerFlow } from "./flows/trigger.flow";
 type FlowRouterParams={
     bot:{
         id:string
+        isDefault?: boolean;
+        nodes?: Array<{ id: string }>;
     };
     phone:string;
     incomingText:string;
@@ -35,6 +37,11 @@ export const flowRouter = async ({
     console.log('Session',session)
 
     if(session){
+        if (bot.isDefault && incomingText && !incomingId &&
+            !bot.nodes?.some(node => node.id === session.current_node_id)) {
+            await chatSessionModel.deactivateActiveSession({ phoneNumber: phone, chatbotId: bot.id, phoneNumberId });
+            return triggerFlow({ bot, phone, incomingText, phoneNumberId });
+        }
         return await menuFlow({bot,session,incomingId,incomingText,message})
         // if(session.current_flow === 'form'){
         //     return formFlow({bot,session,incomingText,incomingId})
