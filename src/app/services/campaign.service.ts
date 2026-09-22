@@ -1,3 +1,4 @@
+import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
@@ -86,10 +87,11 @@ class CampaignService {
     // If the frontend passed specific phone numbers, ensure they exist in the DB
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // 1. Format numbers to ensure they start with '+' (matching ContactService.createContact logic)
-      filters.contactNumber = filters.contactNumber.map((num: string) => {
-        let phone = num.toString().trim();
-        return phone.startsWith('+') ? phone : '+' + phone;
-      });
+      filters.contactNumber = [...new Set(filters.contactNumber.map((num: string) => {
+        const number = campaignPhoneIdentity(String(num));
+        if (!number) throw new HTTP400Error({ message: 'Campaign phone numbers must contain digits' });
+        return '+' + number;
+      }))];
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
@@ -120,7 +122,7 @@ class CampaignService {
 
     // Get contacts based on filters
     const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
-    const contactList = await contacts;
+    const contactList = uniqueCampaignRecipients(await contacts);
     console.log('Found contacts for campaign:', contactList.length);
 
     if (contactList.length === 0) {
