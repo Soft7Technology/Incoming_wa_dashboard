@@ -11,3 +11,5 @@ Incoming routing priority is an exact normalized keyword match, then an active c
 The default phone assignment is stored in `chatbot_triggers` with an empty `trigger_word`. Existing active/published handling applies; no new column is required. Runtime default lookup is explicit and does not participate in keyword lookup.
 
 This repository contains the backend. A separate flow-editor frontend must permit an empty keyword list when submitting the flow.
+
+When a default flow is waiting at a button or list menu, unmatched text sends that menu again. Valid selections still follow their branches, question nodes still collect answers, and delayed flows remain paused. Saving a flow closes its active sessions because the saved graph receives new node IDs; the next text can start the updated default. Existing default sessions pointing to missing nodes also recover on the next text.

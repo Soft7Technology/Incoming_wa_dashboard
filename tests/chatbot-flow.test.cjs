@@ -55,3 +55,13 @@ test('malformed keywords are rejected instead of becoming a default',async()=>{
     assert.equal(writes.length,0);
   }
 });
+
+test('saving a replacement graph closes sessions that reference old node IDs',async()=>{
+  const {api,writes}=setup([]);
+  const data=structuredClone(payload); data.nodes[0].data.attributes.keywords=[];
+  await api.createFlow('user',data);
+  const reset=writes.findIndex(w=>w.table==='chat_sessions' && w.data?.active===false);
+  const deletion=writes.findIndex(w=>w.table==='chat_bot_node' && w.deleted);
+  assert.ok(reset>=0 && reset<deletion);
+  assert.equal(writes[reset].data.current_node_id,null);
+});

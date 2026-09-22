@@ -340,6 +340,11 @@ class chatBotService {
       updated_at: new Date(),
     });
 
+    // Saved nodes receive new IDs; sessions cannot continue against the old graph.
+    await trx('chat_sessions').where({ chatbot_id: chatBotId, active: true }).update({
+      active: false, current_node_id: null, completed_at: new Date(), updated_at: new Date(),
+    });
+
     // delete old nodes/edges
     await trx('chat_bot_edge').where({ chatBotId }).delete();
 

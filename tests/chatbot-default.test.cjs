@@ -84,3 +84,49 @@ test('mapping lookup separates default, keyword and session queries',async()=>{
   assert.ok(filters.some(x=>x.chatbot_id==='bot'));
   assert.equal(await api.findRuntimeMapping(['meta'],undefined,'  '),null);
 });
+
+test('default button flow responds again to arbitrary text and follows the selected button',async()=>{
+  const executed=[];
+  const api=load('src/app/services/chatbot/flows/menu.flow.ts',{
+    '@surefy/console/app/models/chatSession.model':{update:async()=>{}},
+    '@surefy/console/services/chatbot/engine/executeNode':{executeNode:async args=>{executed.push(args);return {text:'response'}}}
+  });
+  const bot={isDefault:true,nodes:[{id:'menu',data:{key:'@whatsapp/send-button-message'}},{id:'tag'},{id:'column'}],edges:[
+    {source:'menu',target:'tag',data:{buttonId:'tag'}},
+    {source:'menu',target:'column',data:{button_id:'columns'}}
+  ]};
+  const session={id:'session',current_node_id:'menu',variables:{user_id:'owner'}};
+  await api.menuFlow({bot,session,incomingText:'any new text'});
+  assert.equal(executed[0].currentNode.id,'menu');
+  await api.menuFlow({bot,session,incomingId:'columns',incomingText:'columns'});
+  assert.equal(executed[1].currentNode.id,'column');
+  assert.equal(executed[1].session.variables.user_id,'owner');
+  bot.isDefault=false;
+  assert.equal((await api.menuFlow({bot,session,incomingText:'unmatched'})).ignoreMessage,true);
+  assert.equal(executed.length,2);
+});
+test('default question answers continue the flow and delay waits stay paused',async()=>{
+  const executed=[];
+  const api=load('src/app/services/chatbot/flows/menu.flow.ts',{
+    '@surefy/console/app/models/chatSession.model':{update:async()=>{}},
+    '@surefy/console/services/chatbot/engine/executeNode':{executeNode:async args=>{executed.push(args);return {text:'response'}}}
+  });
+  const bot={isDefault:true,nodes:[{id:'question',data:{key:'@whatsapp/ask-question',attributes:{variable:'answer'}}},{id:'next'}],edges:[{source:'question',target:'next'}]};
+  const session={id:'session',current_node_id:'question',variables:{}};
+  await api.menuFlow({bot,session,incomingText:'my answer'});
+  assert.equal(executed[0].session.variables.answer,'my answer');
+  assert.equal(executed[0].currentNode.id,'next');
+  session.variables.chatbot_delay_token='pending';
+  assert.equal((await api.menuFlow({bot,session,incomingText:'hello'})).ignoreMessage,true);
+  assert.equal(executed.length,1);
+});
+test('default flow restarts immediately when an existing session refers to a deleted node',async()=>{
+  let starts=0,resets=0;
+  const api=load('src/app/services/chatbot/flow.route.ts',{
+    '../../models/chatSession.model':{findActiveSession:async()=>({current_node_id:'old-node'}),deactivateActiveSession:async()=>{resets++}},
+    './flows/trigger.flow':{triggerFlow:async()=>{starts++;return {text:'welcome'}}},
+    './flows/menu.flow':{menuFlow:async()=>{throw Error('Stale node must not reach menu')}}
+  });
+  await api.flowRouter({bot:{id:'default',isDefault:true,nodes:[{id:'new-node'}]},phone:'sender',phoneNumberId:'meta',incomingText:'hello'});
+  assert.equal(starts,1);assert.equal(resets,1);
+});
