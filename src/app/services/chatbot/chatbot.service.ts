@@ -48,15 +48,19 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       ? await getRuntimeBot(phoneNumberId, undefined, incomingText)
       : null;
 
-    const triggerMatched = Boolean(bot);
+    let triggerMatched = Boolean(bot);
 
     if (bot) {
       await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
     } else {
       console.info('[Chatbot Routing] No keyword flow selected; checking active session', { phoneNumberId });
       const activeSession = await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId);
-      if (!activeSession) return null;
-      bot = await getRuntimeBot(phoneNumberId, activeSession.chatbot_id);
+      bot = activeSession ? await getRuntimeBot(phoneNumberId, activeSession.chatbot_id) : null;
+      if (!bot && message?.text?.body && incomingText) {
+        bot = await getRuntimeBot(phoneNumberId, undefined, undefined, true);
+        triggerMatched = Boolean(bot);
+        if (bot) await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
+      }
       if (!bot) return null;
     }
 

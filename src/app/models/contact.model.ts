@@ -66,15 +66,29 @@ class ContactModel extends BaseModel {
 
   async findOrCreateIncoming(data: any) {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    const profileName = typeof data.name === 'string' ? data.name.trim() : '';
+    const isPhoneName = (name: string) => /^[+\d\s().-]+$/.test(name) && /\d/.test(name);
+    const refreshName = async (contact: any) => {
+      const currentName = typeof contact.name === 'string' ? contact.name.trim() : '';
+      if (!profileName || isPhoneName(profileName) || (currentName && !isPhoneName(currentName))) return contact;
+      // Compare the old name so a concurrent manual edit is not overwritten.
+      const [updated] = await this.query()
+        .where({ id: contact.id, user_id: data.user_id, company_id: data.company_id,
+          phone_number_id: data.phone_number_id ?? null, name: contact.name ?? null })
+        .whereNull('deleted_at')
+        .update({ name: profileName, updated_at: new Date() })
+        .returning('*');
+      return updated || contact;
+    };
     const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id);
-    if (existing) return existing;
+    if (existing) return refreshName(existing);
     try {
-      return await this.create(data);
+      return await this.create({ ...data, name: profileName || data.phone_number });
     } catch (error) {
       // Another incoming request may have inserted this contact while we waited.
       if (error instanceof HTTP400Error) {
         const concurrent = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id);
-        if (concurrent) return concurrent;
+        if (concurrent) return refreshName(concurrent);
       }
       throw error;
     }

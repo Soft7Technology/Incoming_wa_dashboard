@@ -3,7 +3,7 @@ import phones from '../../models/phoneNumber.model';
 import nodes from '../../models/chatBotNode.model';
 import edges from '../../models/chatBotEdge.model';
 
-export async function getRuntimeBot(phoneNumberId: string, chatbotId?: string, text?: string): Promise<any> {
+export async function getRuntimeBot(phoneNumberId: string, chatbotId?: string, text?: string, defaultOnly = false): Promise<any> {
   const phone = await phones.findByPhoneNumberId(phoneNumberId);
   if (!phone) {
     console.warn('[Chatbot Routing] Receiving phone not found', { phoneNumberId });
@@ -11,7 +11,7 @@ export async function getRuntimeBot(phoneNumberId: string, chatbotId?: string, t
   }
   // Support existing flow mappings saved with either the local UUID or Meta ID.
   const phoneIds = [...new Set([phone.id, phone.phone_number_id, phoneNumberId].filter(Boolean))] as string[];
-  const mapping = await triggers.findRuntimeMapping(phoneIds, chatbotId, text);
+  const mapping = await triggers.findRuntimeMapping(phoneIds, chatbotId, text, defaultOnly);
   if (!mapping) {
     console.info('[Chatbot Routing] No active mapping', { phoneNumberId, chatbotId, lookup: text === undefined ? 'session' : 'keyword' });
     return null;
@@ -35,6 +35,7 @@ export async function getRuntimeBot(phoneNumberId: string, chatbotId?: string, t
   console.info('[Chatbot Routing] Mapping selected', { chatbotId: mapping.chatbot_id, phoneNumberId,
     triggerId: mapping.id, lookup: text === undefined ? 'session' : 'keyword', nodes: flowNodes.length, edges: flowEdges.length });
   return { id: mapping.chatbot_id, user_id: trigger.user_id, company_id: phone.company_id,
+    isDefault: mapping.trigger_word === '',
     nodes: flowNodes.map(decode), edges: flowEdges.map(decode),
     flow_type: flowNodes.filter((node: any) => node.type === 'message').length >= 3 ? 'form' : 'menu' };
 }

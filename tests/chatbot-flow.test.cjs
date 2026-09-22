@@ -25,3 +25,33 @@ test('deduplicates keywords and phone aliases before inserting',async()=>{
   assert.equal(inserted.length,1); assert.equal(inserted[0].data.phone_number_id,'meta'); assert.equal(inserted[0].data.trigger_word,'hi');
 });
 
+
+test('empty or omitted keywords save a default mapping without exposing a keyword', async () => {
+  for (const keywords of [[], undefined, ['  ']]) {
+    const {api,writes}=setup([]);
+    const data=structuredClone(payload);
+    data.nodes[0].data.attributes={keywords};
+    const result=await api.createFlow('user',data);
+    assert.equal(result.isDefault,true);
+    assert.equal(result.triggerWords.length,0);
+    const mapping=writes.find(w=>w.table==='chatbot_triggers' && w.data).data;
+    assert.equal(mapping.trigger_word,'');
+    assert.equal(mapping.active,false);
+    const nodes=writes.find(w=>w.table==='chat_bot_node' && w.data).data;
+    assert.equal(JSON.parse(nodes[0].data).attributes.isDefault,true);
+  }
+});
+test('second default on a number rejects before writes',async()=>{
+  const {api,writes}=setup([{chatbot_id:'other',trigger_word:''}]);
+  const data=structuredClone(payload); data.nodes[0].data.attributes.keywords=[];
+  await assert.rejects(api.createFlow('user',data),error=>error.details.code==='CHATBOT_DEFAULT_CONFLICT');
+  assert.equal(writes.length,0);
+});
+test('malformed keywords are rejected instead of becoming a default',async()=>{
+  for (const keywords of ['hi',[42]]) {
+    const {api,writes}=setup([]); const data=structuredClone(payload);
+    data.nodes[0].data.attributes.keywords=keywords;
+    await assert.rejects(api.createFlow('user',data),/array of strings/);
+    assert.equal(writes.length,0);
+  }
+});

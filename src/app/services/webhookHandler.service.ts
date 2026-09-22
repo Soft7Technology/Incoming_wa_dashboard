@@ -25,8 +25,8 @@ class WebhookHandlerService {
 
     // Handle incoming messages
     if (value.messages) {
-      const contactProfileName = value.contacts?.[0]?.profile?.name;
       for (const message of value.messages) {
+        const contactProfileName = value.contacts?.find((contact: any) => contact.wa_id === message.from)?.profile?.name;
         await this.handleIncomingMessage(message, value.metadata, contactProfileName);
       }
     }

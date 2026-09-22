@@ -280,7 +280,7 @@ export const triggerFlow = async ({
   // Check trigger words
   const matchedBot = await getRuntimeBot(
     phoneNumberId,
-    undefined, incomingText
+    undefined, incomingText, bot.isDefault === true
   );
 
   if (!matchedBot || matchedBot.id !== bot.id) {
@@ -295,7 +295,7 @@ export const triggerFlow = async ({
    * "Hi I want to register under 8888888888"
    * "register 919876543210"
    */
-  const numberMatch = incomingText.match(/\d{10,13}/);
+  const numberMatch = bot.isDefault ? null : incomingText.match(/\d{10,13}/);
   console.log("Number Match", numberMatch)
 
   if (numberMatch) {

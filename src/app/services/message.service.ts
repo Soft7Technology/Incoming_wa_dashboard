@@ -2,6 +2,7 @@ import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/cha
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
+import ContactModel from '../models/contact.model';
 import CompanyModel from '@surefy/console/models/company.model';
 import TemplateModel from '@surefy/console/models/template.model';
 import WabaModel from '@surefy/console/models/waba.model';
@@ -607,6 +608,14 @@ class MessageService {
 
       const message = await MessageModel.create(messagePayload);
 
+      const contact = await ContactModel.findOrCreateIncoming({
+        user_id: phoneNumber.user_id,
+        company_id: phoneNumber.company_id,
+        phone_number_id: phoneNumber.id,
+        phone_number: data.from,
+        name: data.profile_name,
+      });
+
       console.log('Incoming message stored', message.id);
 
       // Emit real-time event so WA_Dashboard browser clients get a toast notification
@@ -627,7 +636,7 @@ class MessageService {
         status: 'received',
         createdAt: new Date().toISOString(),
         mediaType: ['image', 'video', 'audio', 'document'].includes(type) ? type : null,
-        contactName: data.profile_name || data.from || 'New Contact',
+        contactName: contact.name || data.profile_name || data.from || 'New Contact',
         contactPhone: data.from || '',
         from: data.from || '',
       });
