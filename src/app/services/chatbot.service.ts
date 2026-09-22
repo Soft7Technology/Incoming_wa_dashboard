@@ -81,7 +81,7 @@ class chatBotService {
 
     const triggers = await chatbotTriggerModel.findAll({ chatbot_id: chatBotId });
     if (!triggers.length) {
-      throw new HTTP400Error({ message: "Save a flow with trigger keywords before publishing" });
+      throw new HTTP400Error({ message: "Save a flow with a phone number before publishing" });
     }
 
     for (const trigger of triggers) {
@@ -91,7 +91,7 @@ class chatBotService {
         excludeChatBotId: chatBotId,
       });
       if (conflicts.length) {
-        throw new HTTP400Error({ message: "Some trigger keywords are already assigned to another published chatbot.", conflicts } as any);
+        throw new HTTP400Error({ message: trigger.trigger_word === '' ? "A default chatbot is already assigned to this phone number." : "Some trigger keywords are already assigned to another published chatbot.", conflicts } as any);
       }
     }
 
@@ -232,14 +232,13 @@ class chatBotService {
     // ---------------------------------
 
     const rawTriggers =
-      triggerNode?.data?.attributes?.keywords || [];
+      triggerNode?.data?.attributes?.keywords ?? [];
 
     if (
-      !Array.isArray(rawTriggers) ||
-      rawTriggers.length === 0
+      !Array.isArray(rawTriggers) || rawTriggers.some((keyword: any) => typeof keyword !== 'string')
     ) {
       throw new HTTP400Error({
-        message: "At least one trigger keyword is required",
+        message: "Trigger keywords must be an array of strings",
       });
     }
 
@@ -277,7 +276,13 @@ class chatBotService {
       });
     }
 
-    if (!triggerWords.length) throw new HTTP400Error({ message: 'At least one non-empty trigger keyword is required' });
+    const isDefault = triggerWords.length === 0;
+    // An empty mapping reserves the receiving number's default flow, including drafts.
+    const mappingWords = isDefault ? [''] : triggerWords;
+    triggerNode.data = {
+      ...triggerNode.data,
+      attributes: { ...triggerNode.data?.attributes, keywords: triggerWords, isDefault },
+    };
     
     const selectedPhones = new Map<string, any>();
     
@@ -312,12 +317,12 @@ class chatBotService {
         const conflicts = await trx('chatbot_triggers')
           .whereIn('phone_number_id', [id, phone.id])
           .whereNot('chatbot_id', chatBotId)
-          .whereRaw("LOWER(TRIM(REGEXP_REPLACE(trigger_word, '[[:space:]]+', ' ', 'g'))) = ANY(?::text[])", [triggerWords])
+          .whereRaw("LOWER(TRIM(REGEXP_REPLACE(trigger_word, '[[:space:]]+', ' ', 'g'))) = ANY(?::text[])", [mappingWords])
           .select('chatbot_id', 'phone_number_id', 'trigger_word');
 
         if (conflicts.length) throw new HTTP400Error({
-          message: 'Trigger keyword is already assigned to another chatbot on this phone number',
-          details: { code: 'CHATBOT_TRIGGER_CONFLICT', phoneNumberId: id, conflicts },
+          message: isDefault ? 'A default chatbot is already assigned to this phone number' : 'Trigger keyword is already assigned to another chatbot on this phone number',
+          details: { code: isDefault ? 'CHATBOT_DEFAULT_CONFLICT' : 'CHATBOT_TRIGGER_CONFLICT', phoneNumberId: id, conflicts },
         });
       }
 
@@ -391,7 +396,7 @@ class chatBotService {
     await trx('chatbot_triggers').where({ chatbot_id: chatBotId }).delete();
 
     for (const phoneNumberId of canonicalPhoneIds) {
-      for (const triggerWord of triggerWords) {
+      for (const triggerWord of mappingWords) {
         await trx('chatbot_triggers').insert({
           chatbot_id: chatBotId,
           phone_number_id: phoneNumberId,
@@ -408,6 +413,7 @@ class chatBotService {
         ? currentBot.name
         : normalizedName,
       triggerWords,
+      isDefault,
       phoneNumberIds: canonicalPhoneIds,
     };
     });

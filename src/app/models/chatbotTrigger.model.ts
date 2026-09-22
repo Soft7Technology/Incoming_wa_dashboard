@@ -6,11 +6,13 @@ class ChatbotTriggerModel extends BaseModel {
   }
 
 
-  async findRuntimeMapping(phoneNumberId: string | string[], chatbotId?: string, text?: string) {
+  async findRuntimeMapping(phoneNumberId: string | string[], chatbotId?: string, text?: string, defaultOnly = false) {
     const query = this.query().where({ active: true })
       .whereIn('phone_number_id', Array.isArray(phoneNumberId) ? phoneNumberId : [phoneNumberId]);
     if (chatbotId) query.where({ chatbot_id: chatbotId });
-    if (text !== undefined) {
+    if (defaultOnly) {
+      query.where({ trigger_word: '' });
+    } else if (text !== undefined) {
       const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
       if (!normalized) return null;
       query.whereRaw("LOWER(TRIM(REGEXP_REPLACE(trigger_word, '[[:space:]]+', ' ', 'g'))) = ?", [normalized]);
