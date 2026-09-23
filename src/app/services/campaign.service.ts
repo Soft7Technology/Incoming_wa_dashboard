@@ -1,3 +1,4 @@
+import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
@@ -148,34 +149,37 @@ class CampaignService {
     }
 
     // Create campaign
-    const campaign = await CampaignModel.create({
-      user_id:userId,
-      company_id:companyId,
-      phone_number_id: data.phone_number_id,
-      template_id: data.template_id,
-      name: data.name,
-      description: data.description,
-      status,
-      total_recipients: contactList.length,
-      template_params: template.components,
-      parameter_mapping: data.parameter_mapping || {},
-      media_uploads: data.media_uploads || [],
-      contact_filters: filters,
-      scheduled_at: scheduledAt,
+    const campaign = await planUsageService.run(userId, 'Campaign', async trx => {
+      const createdCampaign = await CampaignModel.create({
+        user_id:userId,
+        company_id:companyId,
+        phone_number_id: data.phone_number_id,
+        template_id: data.template_id,
+        name: data.name,
+        description: data.description,
+        status,
+        total_recipients: contactList.length,
+        template_params: template.components,
+        parameter_mapping: data.parameter_mapping || {},
+        media_uploads: data.media_uploads || [],
+        contact_filters: filters,
+        scheduled_at: scheduledAt,
+      }, trx);
+
+      // Create campaign_messages entries for each contact
+      const campaignMessages = contactList.map((contact) => ({
+        campaign_id: createdCampaign.id,
+        contact_id: contact.id,
+        status: 'pending',
+        template_variables: this.resolveTemplateVariables(
+          contact,
+          data.parameter_mapping || {}
+        ),
+      }));
+
+      await CampaignMessageModel.bulkCreate(campaignMessages, trx);
+      return createdCampaign;
     });
-
-    // Create campaign_messages entries for each contact
-    const campaignMessages = contactList.map((contact) => ({
-      campaign_id: campaign.id,
-      contact_id: contact.id,
-      status: 'pending',
-      template_variables: this.resolveTemplateVariables(
-        contact,
-        data.parameter_mapping || {}
-      ),
-    }));
-
-    await CampaignMessageModel.bulkCreate(campaignMessages);
 
     // All recipient writes above have completed, so the worker can start now.
     // This also avoids waiting for the scheduled-campaign scan or a separate /start call.

@@ -15,12 +15,13 @@ class SubscriptionController {
    * Create Subscription Plans
    */
   createSubscription = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { plan_name, price, billing_cycle, description, active, features } = req.body;
+    const { plan_name, price, billing_cycle, trial_days, description, active, features } = req.body;
 
     const newSubscription = await subscriptionService.createSubscriptionPlan(req.userId!, req.companyId, req.userRole!, {
       plan_name,
       price,
       billing_cycle,
+      trial_days,
       description,
       active,
       features,
@@ -92,12 +93,13 @@ class SubscriptionController {
 
   updateSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { plan_name, price, billing_cycle, description, active, features } = req.body;
+    const { plan_name, price, billing_cycle, trial_days, description, active, features } = req.body;
 
     const updatedSubscription = await subscriptionService.updateSubscriptionPlan(id, {
       plan_name,
       price,
       billing_cycle,
+      trial_days,
       description,
       active,
       features,

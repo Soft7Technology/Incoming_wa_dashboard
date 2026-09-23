@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { BaseModel } from '@surefy/models/base.model';
 
 class CampaignMessageModel extends BaseModel {
@@ -156,14 +157,14 @@ class CampaignMessageModel extends BaseModel {
     return this.update(id, updateData);
   }
 
-  async bulkCreate(messages: any[]) {
+  async bulkCreate(messages: any[], trx?: Knex.Transaction) {
     const BATCH_SIZE = 200;
     const results = [];
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
 
-      const inserted = await this.query()
+      const inserted = await (trx ? trx(this.tableName) : this.query())
         .insert(batch)
         .returning('*');
 

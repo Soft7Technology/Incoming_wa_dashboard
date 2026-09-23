@@ -1,3 +1,4 @@
+import planUsageService from './planUsage.service';
 import { validateChatbotMessage } from '../utils/chatbotMessage';
 import db from '@surefy/database';
 import phoneNumberModel from '../models/phoneNumber.model';
@@ -37,8 +38,8 @@ class chatBotService {
   async createChatBot(data: chatBot) {
     console.log('Creating chatbot with data:', data); // Debug log
     const { user_id, company_id, name, description, status, published } = data;
-    const result = await chatBotModel.create({ user_id, company_id,
-      name: this.normalizeName(name), description, status, published });
+    const result = await planUsageService.run(user_id, 'Chatbot', trx => chatBotModel.create({ user_id, company_id,
+      name: this.normalizeName(name), description, status, published }, trx));
     return result;
   }
 

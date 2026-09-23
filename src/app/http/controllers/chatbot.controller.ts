@@ -12,7 +12,7 @@ import userPlansModel from '../../models/userPlans.model';
 class chatBotController {
     updateChatBotName = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         const result = await chatBotService.updateChatBotName(
-            req.userId!, req.params.chatBotId, req.body?.name
+            (req.ownerId ?? req.userId!), req.params.chatBotId, req.body?.name
         );
         return successResponse(req, res, 'ChatBot name updated successfully', result);
     });
@@ -24,14 +24,14 @@ class chatBotController {
     createChatBot = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         const { name, description } = req.body;
         const result = await chatBotService.createChatBot({
-            user_id: req.userId!,
+            user_id: (req.ownerId ?? req.userId!),
             company_id: req.companyId!,
             name,
             description,
             status: 'draft',
             published: false,
         })
-        // await userPlansModel.incrementUsage(req.userId!, 'Chatbot');
+
 
         return successResponse(req, res, 'Create ChatBot successfully', result);
     })
@@ -43,7 +43,7 @@ class chatBotController {
 
     getChatBots = tryCatchAsync(
         async (req: AuthRequest, res: Response) => {
-            const chatBots = await chatBotService.getChatBots(req.userId!);
+            const chatBots = await chatBotService.getChatBots((req.ownerId ?? req.userId!));
             return successResponse(req, res, 'ChatBots retrieved successfully', chatBots);
         }
     );
@@ -53,7 +53,7 @@ class chatBotController {
             const { chatBotId } = req.params;
             // const {status, published} = req.body
 
-            const result = await chatBotService.publishedChatBot(req.userId!, chatBotId);
+            const result = await chatBotService.publishedChatBot((req.ownerId ?? req.userId!), chatBotId);
             return successResponse(req, res, 'ChatBot published successfully', result);
         }
     )
@@ -67,7 +67,7 @@ class chatBotController {
 
             const result =
                 await chatBotService.unpublishedChatBot(
-                    req.userId!,
+                    (req.ownerId ?? req.userId!),
                     chatBotId
                 );
 
@@ -103,7 +103,7 @@ class chatBotController {
 
             console.log("Creating chatbot flow:", { chatBotId, name }); // Debug log
 
-            const result = await chatBotService.createFlow(req.userId!, {
+            const result = await chatBotService.createFlow((req.ownerId ?? req.userId!), {
                 chatBotId,
                 name,
                 nodes,
