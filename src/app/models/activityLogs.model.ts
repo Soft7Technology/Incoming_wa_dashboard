@@ -1,227 +1,154 @@
+import { ActivityQuery, ActivityFilters, ActivityLogInput } from '../interfaces/activity.interface';
+import { parseActivityFilters, parseActivityPagination, parseNotificationIds } from '../utils/activityFilters';
 import { BaseModel } from '@surefy/models/base.model';
-import { filter, upperCase } from 'lodash';
+import { Knex } from 'knex';
+import HTTP403Error from '@surefy/exceptions/HTTP403Error';
+import { activityContext, markActivityRecorded } from '../utils/activityContext';
+
+const isCompanyAdministrator = (role: string): boolean => ['admin', 'company', 'superadmin'].includes(role);
+const NOTIFICATION_LIMIT = 50;
+const DAY_MS = 86_400_000;
 
 class ActivityLogsModel extends BaseModel {
   constructor() {
     super('activity_logs');
   }
 
+  async create(data: ActivityLogInput, trx?: Knex.Transaction) {
+    const context = activityContext.getStore();
+    // Attribute request activity to the authenticated actor, not a client-supplied user ID.
+    const entry = context
+      ? {
+          ...data,
+          user_id: context.userId,
+          company_id: data.company_id ?? context.companyId,
+          request_method: context.request_method,
+          api_endpoint: context.api_endpoint,
+          ip_address: context.ip_address,
+          user_agent: context.user_agent,
+        }
+      : data;
+    const result = await super.create(entry, trx);
+    markActivityRecorded();
+    return result;
+  }
 
-  async getAllActivities(
-    user_id: string,
-    company_id: string,
-    role: string,
-    filters: any
-  ) {
-    console.log("Company Id", company_id,role)
-    const isSuperAdmin = role === 'superadmin';
-
-    const page = Number(filters?.page) || 1;
-    const limit = Number(filters?.limit) || 10;
-
-    console.log("Filters",filters)
-
-    const type =  upperCase(filters?.type)
-    const action = upperCase(filters?.action)
-    const search = filters?.search?.trim();
-
-    const sortedBy = filters?.sorted_by || 'created_at';
-    const sortOrder =
-      filters?.sort_order?.toLowerCase() === 'asc'
-        ? 'asc'
-        : 'desc';
-
-    const offset = (page - 1) * limit;
-
-    const query = this.query().whereNull('deleted_at');
-
-    if (!isSuperAdmin) {
-      if (!company_id) {
-        throw new Error('company_id is required for non-superadmin');
+  /** Every read/update starts here so request filters cannot expand visibility. */
+  private scopedQuery(userId: string, companyId: string | undefined, role: string) {
+    if (!userId || !role) throw new HTTP403Error({ message: 'Authenticated user is required' });
+    const query = this.query()
+      .from('activity_logs as a')
+      .leftJoin('users as u', 'u.id', 'a.user_id')
+      .whereNull('a.deleted_at');
+    if (role !== 'superadmin') {
+      if (!companyId) {
+        if (isCompanyAdministrator(role)) throw new HTTP403Error({ message: 'Company context is required' });
+      } else {
+        // Recover visibility of legacy logs whose company_id was not populated.
+        query.where((builder) =>
+          builder
+            .where('a.company_id', companyId)
+            .orWhere((legacy) => legacy.whereNull('a.company_id').where('u.company_id', companyId)),
+        );
       }
-      query.where('company_id', company_id);
+      if (!isCompanyAdministrator(role)) query.where('a.user_id', userId);
     }
+    return query;
+  }
 
-    if (type) {
-      query.where('action', action).orWhere('entity_type', type)
+  private applyFilters(query: Knex.QueryBuilder, filters: ActivityFilters, now = new Date()): Knex.QueryBuilder {
+    const { type, action, status, userId, companyId, entityId, read, search, from, to, timeFrame } = filters;
+    for (const [column, value] of [
+      ['entity_type', type],
+      ['action', action],
+      ['status', status],
+    ]) {
+      if (value) query.andWhereRaw('UPPER(??) = ?', [`a.${column}`, value.toUpperCase()]);
     }
-
-    if(filters.user_id){
-      query.where('user_id',filters.user_id)
-    }
-
+    if (userId) query.andWhere('a.user_id', userId);
+    if (companyId) query.andWhere('a.company_id', companyId);
+    if (entityId) query.andWhere('a.entity_id', entityId);
+    if (read !== undefined) query.andWhere('a.read', read);
     if (search) {
+      const pattern = `%${search.replace(/[\\%_]/g, '\\$&')}%`;
+      // Group search OR clauses beneath the mandatory access predicates.
       query.andWhere((builder) => {
-        builder
-          .whereILike('description', `%${search}%`)
-          .orWhereILike('entity_type', `%${search}%`);
+        for (const column of ['a.description', 'a.entity_type', 'a.action', 'u.name', 'u.email']) {
+          builder.orWhereILike(column, pattern);
+        }
       });
     }
+    if (from) query.andWhere('a.created_at', '>=', from);
+    if (to) query.andWhere('a.created_at', '<', to);
+    const frame = timeFrame;
+    if (frame) {
+      const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+      if (frame === 'today' || frame === 'yesterday') {
+        const start = new Date(today.getTime() - (frame === 'yesterday' ? DAY_MS : 0));
+        query.andWhere('a.created_at', '>=', start).andWhere('a.created_at', '<', new Date(start.getTime() + DAY_MS));
+      } else if (['7days', '30days', '90days'].includes(frame)) {
+        query
+          .andWhere('a.created_at', '>=', new Date(now.getTime() - parseInt(frame, 10) * DAY_MS))
+          .andWhere('a.created_at', '<=', now);
+      }
+    }
+    return query;
+  }
 
-    // Whitelist sortable columns
-    const allowedSortColumns = [
-      'created_at',
-      'updated_at',
-      'entity_type',
-      'description',
-    ];
-
-    const orderByColumn = allowedSortColumns.includes(sortedBy)
-      ? sortedBy
-      : 'created_at';
-
-    const totalQuery = query.clone();
-
-    const [activities, totalResult] = await Promise.all([
+  async getAllActivities(userId: string, companyId: string | undefined, role: string, filters: ActivityQuery = {}) {
+    const { page, limit, offset, column, direction } = parseActivityPagination(filters);
+    const query = this.applyFilters(this.scopedQuery(userId, companyId, role), parseActivityFilters(filters));
+    // Independent clones keep count and results on identical filters; ID stabilizes ties.
+    const [rows, total] = await Promise.all([
       query
-        .orderBy(orderByColumn, sortOrder)
+        .clone()
+        .select('a.*', 'u.name as user_name', 'u.email as user_email')
+        .orderBy(`a.${column}`, direction)
+        .orderBy('a.id', direction)
         .limit(limit)
         .offset(offset),
-
-      totalQuery.count('id as total').first(),
+      query.clone().count('a.id as total').first(),
     ]);
-
-    return {
-      data: activities,
-      pagination: {
-        page,
-        limit,
-        total: Number(totalResult?.total || 0),
-        totalPages: Math.ceil(
-          Number(totalResult?.total || 0) / limit
-        ),
-      },
-    };
+    const count = Number(total?.total || 0);
+    return { data: rows, pagination: { page, limit, total: count, totalPages: Math.ceil(count / limit) } };
   }
 
   async getActivityNotifications(
-    user_id: string,
-    company_id: string,
+    userId: string,
+    companyId: string | undefined,
     role: string,
-    filters: any
+    filters: ActivityQuery = {},
   ) {
-    const query = this.query().whereNull('deleted_at');
-
-    // User-specific notifications
-    query.where('user_id', user_id);
-
-    const type = upperCase(filters.type)
-
-    if (filters?.type) {
-      query.where('entity_type', type);
-    }
-
-    if(filters.action){
-      query.where('action',filters?.action)
-    }
-
-    const now = new Date();
-
-    switch (filters?.time_frame) {
-      case 'today':
-        query.whereRaw('DATE(created_at) = CURRENT_DATE');
-        break;
-
-      case 'yesterday':
-        query.whereRaw(
-          "DATE(created_at) = CURRENT_DATE - INTERVAL '1 day'"
-        );
-        break;
-
-      case '7days':
-        query.where(
-          'created_at',
-          '>=',
-          new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        );
-        break;
-
-      case '30days':
-        query.where(
-          'created_at',
-          '>=',
-          new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        );
-        break;
-
-      case '90days':
-        query.where(
-          'created_at',
-          '>=',
-          new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-        );
-        break;
-    }
-
-    return query
-      .orderBy('created_at', 'desc')
-      .limit(50);
+    return this.applyFilters(
+      this.scopedQuery(userId, companyId, role).where('a.user_id', userId),
+      parseActivityFilters(filters),
+    )
+      .select('a.*', 'u.name as user_name', 'u.email as user_email')
+      .orderBy('a.created_at', 'desc')
+      .orderBy('a.id', 'desc')
+      .limit(NOTIFICATION_LIMIT);
   }
 
   async getCompanyNotifications(
-    user_id: string,
-    company_id: string,
+    userId: string,
+    companyId: string | undefined,
     role: string,
-    filters: any
+    filters: ActivityQuery = {},
   ) {
-    console.log("CompanyId",company_id)
-    const query = this.query().whereNull('deleted_at');
+    if (!isCompanyAdministrator(role)) throw new HTTP403Error({ message: 'Company admin access is required' });
+    return this.applyFilters(this.scopedQuery(userId, companyId, role), parseActivityFilters(filters))
+      .select('a.*', 'u.name as user_name', 'u.email as user_email')
+      .orderBy('a.created_at', 'desc')
+      .orderBy('a.id', 'desc')
+      .limit(NOTIFICATION_LIMIT);
+  }
 
-    // User-specific notifications
-    query.where('company_id', company_id);
-
-    const type = upperCase(filters.type)
-
-    if (filters?.type) {
-      query.where('entity_type', type);
-    }
-
-    if(filters.action){
-      query.where('action',filters?.action)
-    }
-
-    const now = new Date();
-
-    switch (filters?.time_frame) {
-      case 'today':
-        query.whereRaw('DATE(created_at) = CURRENT_DATE');
-        break;
-
-      case 'yesterday':
-        query.whereRaw(
-          "DATE(created_at) = CURRENT_DATE - INTERVAL '1 day'"
-        );
-        break;
-
-      case '7days':
-        query.where(
-          'created_at',
-          '>=',
-          new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-        );
-        break;
-
-      case '30days':
-        query.where(
-          'created_at',
-          '>=',
-          new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        );
-        break;
-
-      case '90days':
-        query.where(
-          'created_at',
-          '>=',
-          new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-        );
-        break;
-    }
-
-    return query
-      .orderBy('created_at', 'desc')
-      .limit(50);
+  async markRead(userId: string, companyId: string | undefined, role: string, data: unknown) {
+    const ids = parseNotificationIds(data);
+    // Authorize inside the UPDATE subquery; never trust IDs provided by the caller.
+    const accessible = this.scopedQuery(userId, companyId, role).select('a.id').whereIn('a.id', ids);
+    await this.query().whereIn('id', accessible).update({ read: true });
+    return true;
   }
 }
-
 export default new ActivityLogsModel();

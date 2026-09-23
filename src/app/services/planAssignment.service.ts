@@ -1,3 +1,4 @@
+import { markActivityRecorded } from '../utils/activityContext';
 import { countTeamSeats } from './planUsage.service';
 import db from '@surefy/database';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -9,7 +10,7 @@ interface Actor { userId?: string; companyId?: string; userRole?: string }
 
 class PlanAssignmentService {
   async updateUser(userId: string, data: any, actor?: Actor, trialOnly = false) {
-    return db.transaction(async trx => {
+    const result = await db.transaction(async trx => {
       const planId = data.assigned_plan;
       const plan = planId
         ? await trx('subscription_plans').where({ id: planId, active: true }).forShare().first()
@@ -93,8 +94,10 @@ class PlanAssignmentService {
         if (!Number.isFinite(before) || !Number.isFinite(recipientBefore) || before < fee) {
           throw new HTTP400Error({ message: `Insufficient or invalid company wallet balance. Required ${fee}` });
         }
-        await trx('companies').where({ id: company.id }).update({ credit_balance: trx.raw('credit_balance - ?', [fee]) });
-        await trx('users').where({ id: superAdmin.id }).update({ credit_balance: trx.raw('COALESCE(credit_balance, 0) + ?', [fee]) });
+        // Both wallet rows are locked above. Bind the validated balances so this
+        // works with legacy varchar columns as well as numeric wallet columns.
+        await trx('companies').where({ id: company.id }).update({ credit_balance: before - fee });
+        await trx('users').where({ id: superAdmin.id }).update({ credit_balance: recipientBefore + fee });
         const createdBy = actor?.userId || userId;
         await trx('credit_transactions').insert([
           { company_id: company.id, user_id: userId, type: 'debit', amount: -fee,
@@ -127,6 +130,8 @@ class PlanAssignmentService {
       });
       return { user: { ...updated, plan_name: newPlan.plan_name, duration_days: newPlan.duration_days }, plan: newPlan };
     });
+    markActivityRecorded();
+    return result;
   }
 }
 

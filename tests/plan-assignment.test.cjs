@@ -13,10 +13,10 @@ function load(path, dependency) {
   return exports;
 }
 const duration = load('src/app/utils/subscriptionDuration.ts', () => HTTPError);
-function fixture({ existing, failTable, balance = 500, company = 'c' } = {}) {
+function fixture({ existing, failTable, balance = 500, recipientBalance = 20, company = 'c' } = {}) {
   let state = {
     users: [{ id: 'u', company_id: company, name: 'User', assigned_plan: existing?.id },
-      { id: 'sa', company_id: 'platform', role: 'superadmin', credit_balance: 20 }],
+      { id: 'sa', company_id: 'platform', role: 'superadmin', credit_balance: recipientBalance }],
     companies: [{ id: 'c', company_name: 'Company', credit_balance: balance }],
     subscription_plans: [{ id: 'p', company_id: 'c', active: true, billing_cycle: 'Monthly', price: 500, plan_name: 'Pro', features: {} },
       { id: 'f', company_id: 'c', active: true, billing_cycle: 'Free', trial_days: 7, price: 0, plan_name: 'Trial', features: {} }],
@@ -53,7 +53,7 @@ function fixture({ existing, failTable, balance = 500, company = 'c' } = {}) {
       };
       return q;
     };
-    trx.raw = (sql, [value]) => ({ raw: true, delta: sql.includes(' - ') ? -value : value });
+    trx.raw = () => { throw new Error('Wallet writes must bind balances compatible with legacy text columns'); };
     return trx;
   }
   const db = { transaction: async callback => {
@@ -64,6 +64,7 @@ function fixture({ existing, failTable, balance = 500, company = 'c' } = {}) {
   } };
   const service = load('src/app/services/planAssignment.service.ts', name => {
     if (name === '@surefy/database') return db;
+    if (name.includes('activityContext')) return { markActivityRecorded() {} };
     if (name.includes('subscriptionDuration')) return duration;
     if (name.includes('planUsage.service')) return { countTeamSeats: async () => 2 };
     return HTTPError;
@@ -123,4 +124,14 @@ test('an active paid plan cannot be replaced by a Free plan and cross-company pl
   await assert.rejects(f.service.updateUser('u', { assigned_plan: 'f' }, actor), /Cancel the active paid plan/);
   const other = fixture({ company: 'other' });
   await assert.rejects(other.service.updateUser('u', { assigned_plan: 'p' }, { userRole: 'superadmin' }), /another company/);
+});
+
+test('legacy text wallet balances and null recipient balance support assignment without SQL arithmetic', async () => {
+  for (const recipientBalance of ['20.50', null]) {
+    const f = fixture({ balance: '500.75', recipientBalance });
+    await f.service.updateUser('u', { assigned_plan: 'p' }, actor);
+    assert.equal(f.state().companies[0].credit_balance, 400.75);
+    assert.equal(f.state().users[1].credit_balance, Number(recipientBalance ?? 0) + 100);
+    assert.equal(f.state().credit_transactions[0].balance_before, 500.75);
+  }
 });
