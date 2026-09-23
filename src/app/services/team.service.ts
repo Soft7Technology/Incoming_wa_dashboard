@@ -7,11 +7,12 @@ import userModel from '../models/user.model';
 import { Model } from 'firebase-admin/lib/machine-learning/machine-learning';
 import permissionModel from '../models/permission.model';
 import { bulkUpdateTableExecutionQueue } from '@surefy/console/queues/bulkTableUpdate.queue';
+import companyDomainModel from '../models/companyDomain.model';
 
 class teamService{
     async inviteTeam(data: any) {
         try {
-            const { name, email, role, invite_sent_by,user_id, company_id,assigned_plan } = data
+            const { name, email, role, invite_sent_by,user_id, company_id,assigned_plan,domain_name } = data
 
             const existingInvite = await userTeamModel.findInvite(email,invite_sent_by)
             console.log("Existing Value",existingInvite)
@@ -27,7 +28,7 @@ class teamService{
             const token = crypto.randomBytes(32).toString("hex");
 
             //Frontend setup password URL
-            const inviteUrl = `https://app.soft7.in/team/setup-password?token=${token}`;
+            const inviteUrl = `https://${domain_name}/team/setup-password?token=${token}`;
 
             const html = generateInviteTemplate({
                     name,
@@ -78,10 +79,12 @@ class teamService{
         }
     }
 
-    async setUpTeammatePassword(token: string, password: string) {
+    async setUpTeammatePassword(token: string, password: string,domain_name:string) {
         try {
             // 1. Find invite by tokeb
             const existingInvite = await userTeamModel.findOne({ invite_token: token })
+
+            const existingDomain = await companyDomainModel.findByDomain(domain_name)
 
             //2. Check invite exists
             if (!existingInvite) {
@@ -118,6 +121,8 @@ class teamService{
             // users table stores it as permissions (jsonb)
             const createdUser = await userModel.create({
                 name: existingInvite.name,
+                company_id:existingDomain.company_id,
+                domain_name:existingDomain.domain_name,
                 email: existingInvite.email,
                 phone: existingInvite.phone_number,
                 role: existingInvite.role,
