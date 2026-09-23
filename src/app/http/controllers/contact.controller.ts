@@ -62,7 +62,7 @@ class ContactController {
       status: 'SUCCESS'
     });
 
-    await userPlansModel.incrementUsage(effectiveUserId, 'Contact');
+
 
     return successResponse(req, res, 'Contact created successfully', contact, HttpStatusCode.CREATED);
   });

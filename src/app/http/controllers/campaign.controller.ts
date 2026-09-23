@@ -71,7 +71,7 @@ class CampaignController {
       read: false
     });
 
-    await userPlansModel.incrementUsage(effectiveUserId, 'Campaign');
+
 
     return successResponse(req, res, 'Campaign created successfully', campaign, HttpStatusCode.CREATED);
   });

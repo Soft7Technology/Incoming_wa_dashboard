@@ -231,6 +231,14 @@ class UserModel extends BaseModel {
     });
   }
 
+  async findWithAssignedPlan(userId: string) {
+    return this.query().from('users as u')
+      .leftJoin('user_plans as up', 'up.id', 'u.assigned_plan')
+      .select('u.*', 'up.plan_name', 'up.duration_days', 'up.start_date', 'up.end_date',
+        'up.billing_cycle', 'up.active as plan_active', 'up.limits', 'up.usage')
+      .where('u.id', userId).first();
+  }
+
   async findAllUserByCompanyId(companyId?: string,role?:string, filters?: any) {
     let page = Math.max(1, parseInt(filters?.page, 10) || 1);
     const limit = Math.max(1, parseInt(filters?.limit, 10) || 10);
@@ -244,6 +252,7 @@ class UserModel extends BaseModel {
       .select(
         'u.*',
         'up.plan_name',
+        'up.duration_days',
         'up.start_date',
         'up.end_date',
         'up.active as plan_active',
@@ -473,6 +482,8 @@ class UserModel extends BaseModel {
         'users.name',
         'users.created_at as joined',
         'users.email',
+        'user_plans.plan_name',
+        'user_plans.duration_days',
         'user_plans.billing_cycle',
         'user_plans.start_date',
         'user_plans.end_date',

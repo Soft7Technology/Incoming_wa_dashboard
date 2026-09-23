@@ -40,7 +40,7 @@ ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
 ContactRoute.get('/import/jobs', ContactController.getImportJobs);
 ContactRoute.get('/import/:jobId/status', ownedResource('import_jobs', 'jobId'), ContactController.getImportStatus);
 ContactRoute.post('/import/preview', uploadXLSXMiddleware, ContactController.previewImport);
-ContactRoute.post('/import',checkPlanLimit('Contact'), uploadXLSXMiddleware, ownedPhone, ContactController.importContacts);
+ContactRoute.post('/import', uploadXLSXMiddleware, ownedPhone, ContactController.importContacts);
 
 // Contact tags management
 ContactRoute.post('/:id/tags', ownedResource('contacts', 'id'),checkPlanLimit('Tag'), ContactController.addTags);
