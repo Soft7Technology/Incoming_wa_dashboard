@@ -58,3 +58,31 @@ test('campaign recipients detect international calling codes without an Indian f
   assert.equal(parse('+919372597458').phone_number, '+919372597458');
   assert.throws(() => parse('12345'));
 });
+
+test('row country codes support numeric, plus, 00 and ISO forms', () => {
+  for (const code of ['65', '+65', '0065', 'SG', 'sg']) {
+    assert.equal(parse('92956294', code, true).phone_number, '+6592956294');
+  }
+  assert.equal(parse('7579380000', 'IN', true).phone_number, '+917579380000');
+  assert.equal(parse('07391166058', 'GB', true).phone_number, '+447391166058');
+  assert.equal(parse('+32470205982', '91', true).country_code, '32');
+  assert.equal(parse('6592956294', '65', true).phone_number, '+6592956294');
+});
+test('mixed-country workbook detects each row and never applies 91 to every contact', async () => {
+  const XLSX = require('xlsx'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+  const parser = require('../src/app/services/xlsxParser.service').default;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mixed-phone-'));
+  const file = path.join(dir, 'contacts.xlsx');
+  try {
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ['phone', 'CountryCode'], ['92956294', 'SG'], ['7579380000', 91],
+      ['07391166058', '+44'], ['+32470205982', '91'], ['33635295378', ''],
+      ['6.592956294E9', '65'], ['92956294', '  '],
+    ]);
+    const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, sheet, 'Contacts'); XLSX.writeFile(book, file);
+    const result = await parser.parseContactsFromFile(file, '91');
+    assert.deepEqual(result.contacts.map(c => c.country_code), ['65', '91', '44', '32', '33', '65']);
+    assert.equal(result.invalid, 1);
+    assert.equal(result.contacts[0].phone_number, '+6592956294');
+  } finally { fs.unlinkSync(file); fs.rmdirSync(dir); }
+});

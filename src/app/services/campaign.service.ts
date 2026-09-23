@@ -1,3 +1,4 @@
+import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { parseImportedPhone } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
@@ -87,12 +88,20 @@ class CampaignService {
 
     // ── Auto-create external contact numbers ─────────────────────────────
     // If the frontend passed specific phone numbers, ensure they exist in the DB
+    let canonicalRecipientNumbers: string[] | undefined;
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // Infer only from the supplied international number; never default to the sender's country.
+      const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
+      const savedAliases: string[] = [];
+      const matchedNumbers = new Set<string>();
       const normalizedPhones = new Map<string, string>();
       for (const value of filters.contactNumber) {
         try {
-          const parsed = parseImportedPhone(value);
+          const parsed = resolveCampaignPhone(value, savedContacts);
+          if (parsed.contact) {
+            savedAliases.push(parsed.contact.phone_number);
+            matchedNumbers.add(parsed.phone_number);
+          }
           normalizedPhones.set(parsed.phone_number, parsed.country_code);
         } catch (error) {
           throw new HTTP400Error({
@@ -100,7 +109,8 @@ class CampaignService {
           });
         }
       }
-      filters.contactNumber = [...normalizedPhones.keys()];
+      canonicalRecipientNumbers = [...normalizedPhones.keys()];
+      filters.contactNumber = [...new Set([...canonicalRecipientNumbers, ...savedAliases])];
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
@@ -109,8 +119,8 @@ class CampaignService {
       const existingNumbers = new Set(existingContacts.map((c: any) => c.phone_number));
 
       // 3. Filter missing numbers
-      const missingNumbers = filters.contactNumber.filter(
-        (num: string) => !existingNumbers.has(num)
+      const missingNumbers = canonicalRecipientNumbers.filter(
+        (num: string) => !existingNumbers.has(num) && !matchedNumbers.has(num)
       );
 
       // 4. Bulk create missing numbers as new contacts
@@ -132,7 +142,11 @@ class CampaignService {
 
     // Get contacts based on filters
     const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
-    const contactList = uniqueCampaignRecipients(await contacts);
+    const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
+    const contactList = uniqueCampaignRecipients((await contacts).map(contact => ({
+      ...contact, ...parseImportedPhone(contact.phone_number, String(contact.country_code || '')),
+    })).filter(contact => !requestedNumbers || requestedNumbers.has(contact.phone_number)));
+    if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
 
     if (contactList.length === 0) {
@@ -596,7 +610,7 @@ class CampaignService {
         campaign_id: campaign.id,
         profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
-        to: contact.phone_number,
+        to: parseImportedPhone(contact.phone_number, String(contact.country_code || '')).phone_number,
         type: 'template',
         template: templatePayload,
       });

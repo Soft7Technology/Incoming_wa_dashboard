@@ -1,3 +1,5 @@
+require('ts-node/register');
+const importedPhone = require('../src/app/utils/importPhone');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,7 +8,7 @@ const ts = require('typescript');
 function load(file, dependencies) {
   const exports = {};
   const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(js, { exports, require: id => dependencies[id] || {}, console: { info(){}, log(){}, error(){}, warn(){} }, process, Date, setInterval: () => ({ unref(){} }), clearInterval(){} });
+  vm.runInNewContext(js, { exports, require: id => dependencies[id] || (id.endsWith('/importPhone') ? importedPhone : {}), console: { info(){}, log(){}, error(){}, warn(){} }, process, Date, setInterval: () => ({ unref(){} }), clearInterval(){} });
   return exports;
 }
 function service(status, state) {
@@ -153,15 +155,15 @@ test('a recipient exhausting ten pair-limit retries does not stop the next send'
     '../../app/models/phoneNumber.model':{findByPhoneNumberId:async()=>({phone_number_id:'p'})},
     '@surefy/console/models/campaign.model':{findById:async()=>({id:'c',company_id:'co',user_id:'u',status:'running',template_id:'t',phone_number_id:'p'}),incrementCount:async()=>{throw new Error('counter unavailable');},completeIfNoPendingMessages:async()=>true},
     '@surefy/console/models/campaignMessage.model':{getPendingMessages:async()=>{if(selected)return [];selected=true;return [{id:'one',contact_id:'one'},{id:'two',contact_id:'two'}];},getNextRetryAt:async()=>null,getPendingCount:async()=>0,getCampaignStats:async()=>({}),deferRetry:async()=>10,updateStatus:async(id,status)=>statuses.push([id,status]),recordSent:async()=>{}},
-    '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+111',is_valid:true},{id:'two',phone_number:'+222',is_valid:true}],incrementFailedCount:async()=>{throw new Error('counter unavailable');}},
+    '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+6581234567',is_valid:true},{id:'two',phone_number:'+6592956294',is_valid:true}],incrementFailedCount:async()=>{throw new Error('counter unavailable');}},
     '@surefy/console/models/template.model':{findById:async()=>({id:'t'})},
-    '@surefy/console/services/message.service':{sendMessage:async data=>{sent.push(data.to);if(data.to==='+111')throw {code:131056,message:'pair limit'};return {id:'message'};}},
+    '@surefy/console/services/message.service':{sendMessage:async data=>{sent.push(data.to);if(data.to==='+6581234567')throw {code:131056,message:'pair limit'};return {id:'message'};}},
     '@surefy/console/app/utils/messageError':{getMessageError:error=>({error_code:String(error.code||'UNKNOWN'),error_message:error.message||'error'})},
     '@surefy/config/redis.config':{},
     'uuid':{v4:()=> 'lock-owner'}
   });
   assert.equal((await processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co',progressCheckedAt:Date.now()},opts:{attempts:3},timestamp:Date.now(),updateData:async()=>{},log:async()=>{},moveToDelayed:async()=>{}})).status,'completed');
-  assert.deepEqual(sent,['+111','+222']);
+  assert.deepEqual(sent,['+6581234567','+6592956294']);
   assert.deepEqual(statuses,[['one','failed']]);
 });
 
@@ -184,9 +186,9 @@ test('sender rate limit defers its recipient so a later pending recipient can ru
       getNextRetryAt:async()=>new Date(Date.now()+30000),
       deferRetry:async id=>{deferred.push(id);return 1;},recordSent:async id=>{completed.push(id);},
     },
-    '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+111',is_valid:true},{id:'two',phone_number:'+222',is_valid:true}]},
+    '@surefy/console/models/contact.model':{findCampaignRecipients:async()=>[{id:'one',phone_number:'+6581234567',is_valid:true},{id:'two',phone_number:'+6592956294',is_valid:true}]},
     '@surefy/console/models/template.model':{findById:async()=>({id:'t'})},
-    '@surefy/console/services/message.service':{sendMessage:async data=>{sent.push(data.to);if(data.to==='+111')throw {code:130429,message:'throughput limit'};return {id:'message'};}},
+    '@surefy/console/services/message.service':{sendMessage:async data=>{sent.push(data.to);if(data.to==='+6581234567')throw {code:130429,message:'throughput limit'};return {id:'message'};}},
     '@surefy/console/app/utils/messageError':{getMessageError:error=>({error_code:String(error.code||'UNKNOWN'),error_message:error.message||'error'})},
     '@surefy/config/redis.config':{},'uuid':{v4:()=> 'lock-owner'}
   });
@@ -194,7 +196,7 @@ test('sender rate limit defers its recipient so a later pending recipient can ru
   await assert.rejects(processCampaignExecution(job),DelayedError);
   assert.deepEqual(deferred,['one']);
   await assert.rejects(processCampaignExecution(job),DelayedError);
-  assert.deepEqual(sent,['+111','+222']);
+  assert.deepEqual(sent,['+6581234567','+6592956294']);
 });
 test('bulk sends cannot flood the shared campaign database pool', async () => {
   let active=0, peak=0;
