@@ -1,3 +1,4 @@
+import { recordActivity } from '../app/middleware/activity.middleware';
 import { Router } from 'express';
 import { authMiddleware } from '@surefy/middleware/auth.middleware';
 import CompanyRoute from './user.route';
@@ -11,6 +12,7 @@ const ApiConsumerRoute = Router();
 
 // Apply API key authentication to all API consumer routes
 ApiConsumerRoute.use(authMiddleware);
+ApiConsumerRoute.use(recordActivity);
 
 // Mount all API consumer routes
 ApiConsumerRoute.use('/companies', CompanyRoute);
