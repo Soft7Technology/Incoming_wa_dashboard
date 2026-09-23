@@ -1,3 +1,4 @@
+import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
@@ -34,27 +35,31 @@ class ContactService {
       throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
     }
 
-    const contact = await ContactModel.create({
-      user_id: userId,
-      company_id: companyId,
-      phone_number: phone,
-      phone_number_id:data.phone_number_id,
-      name: data.name,
-      email: data.email,
-      status: data.status,
-      attributes: data.attributes || {},
-      notes: data.notes,
-      country_code: data.country_code
+    return planUsageService.run(userId, 'Contact', async trx => {
+      const contact = await ContactModel.create({
+        user_id: userId,
+        company_id: companyId,
+        phone_number: phone,
+        phone_number_id:data.phone_number_id,
+        name: data.name,
+        email: data.email,
+        status: data.status,
+        attributes: data.attributes || {},
+        notes: data.notes,
+        country_code: data.country_code
+      }, trx);
+
+      // Tags live in contact_tag_relations; they are not columns on contacts.
+      // Create those relations after the contact has an id so tag filters can
+      // find contacts created with tag_ids as well.
+      if (Array.isArray(data.tag_ids) && data.tag_ids.length > 0) {
+        const tagIds = [...new Set<string>(data.tag_ids)];
+        await trx('contact_tag_relations').insert(tagIds.map(tag_id => ({ contact_id: contact.id, tag_id })));
+        await trx('contact_tags').whereIn('id', tagIds).increment('contact_count', 1);
+      }
+
+      return contact;
     });
-
-    // Tags live in contact_tag_relations; they are not columns on contacts.
-    // Create those relations after the contact has an id so tag filters can
-    // find contacts created with tag_ids as well.
-    if (Array.isArray(data.tag_ids) && data.tag_ids.length > 0) {
-      await this.addTagsToContact(userId, contact.id, data.tag_ids);
-    }
-
-    return contact;
   }
 
   /**

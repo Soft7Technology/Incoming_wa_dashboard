@@ -23,7 +23,7 @@ class teamController{
             }
             // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
             const permissionArray: string[] = Array.isArray(permission) ? permission : []
-            const invite_sent_by  = req.userId!
+            const invite_sent_by  = req.ownerId ?? req.userId!
             const company_id = req.companyId!
             const assigned_plan = req.assigned_plan!
             console.log("Assigned Plan",assigned_plan)
@@ -39,10 +39,10 @@ class teamController{
 
             const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray,domain_name  })
             if (!inviteTeam.success) {
-                const reason = inviteTeam.error || inviteTeam.message || 'Failed to send invite email';
+                const reason = inviteTeam.message || 'Failed to send invite email';
                 return sendResponse(
                     res,
-                    inviteTeam.error ? HttpStatusCode.INTERNAL_SERVER_ERROR : HttpStatusCode.BAD_REQUEST,
+                    HttpStatusCode.BAD_REQUEST,
                     false,
                     'Failed to send team invite',
                     { error: reason }
@@ -94,7 +94,7 @@ class teamController{
      */
     deleteTeamInvite = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
         const{id}=req.params
-        const deleteInvite = await teamService.deleteInvite(id)
+        const deleteInvite = await teamService.deleteInvite(id, req.ownerId ?? req.userId!)
         successResponse(req,res,"Delete team invite successfully",deleteInvite,HttpStatusCode.ACCEPTED)
     })
 

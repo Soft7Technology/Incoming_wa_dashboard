@@ -1,3 +1,6 @@
+import db from '@surefy/database';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import planUsageService, { syncTeamSeats } from './planUsage.service';
 import userTeamModel from '@surefy/console/app/models/team.model'
 import sendEmail from '@surefy/console/utils';
 import crypto from "crypto";
@@ -11,149 +14,58 @@ import companyDomainModel from '../models/companyDomain.model';
 
 class teamService{
     async inviteTeam(data: any) {
+        const { name, email, role, invite_sent_by, domain_name } = data;
+        const token = crypto.randomBytes(32).toString('hex');
+        const inviteUrl = `https://${domain_name}/team/setup-password?token=${token}`;
+        const html = generateInviteTemplate({ name, email, role, inviteUrl });
+        // Reserve the seat and persist the invitation before contacting the mail provider.
+        const invite = await planUsageService.run(invite_sent_by, 'TeamInvite', async (trx, plan) => {
+            const existing = await trx('user_team').where({ email, invite_sent_by }).first();
+            if (existing) throw new HTTP400Error({ message: 'User already invited' });
+            return userTeamModel.create({ ...data, assigned_plan: plan.id,
+                role: role.toLowerCase(), invite_token: token, invite_status: 'sent' }, trx);
+        });
         try {
-            const { name, email, role, invite_sent_by,user_id, company_id,assigned_plan,domain_name } = data
-
-            const existingInvite = await userTeamModel.findInvite(email,invite_sent_by)
-            console.log("Existing Value",existingInvite)
-
-            if(existingInvite){
-                return {
-                    success:false,
-                    message:"User already invited"
-                }
-            }
-
-            //Generate secure token
-            const token = crypto.randomBytes(32).toString("hex");
-
-            //Frontend setup password URL
-            const inviteUrl = `https://${domain_name}/team/setup-password?token=${token}`;
-
-            const html = generateInviteTemplate({
-                    name,
-                    email,
-                    role,
-                    inviteUrl
-            })
-
-            //Send email first
-            const emailResponse = await sendEmail(
-                email,
-                "You're Invited to Join Soft7",
-                "",
-                html
-            )
-
-            console.log("Email Response",emailResponse)
-
-
-            //Optional check based on your mail provider
-            if(!emailResponse){
-                return{
-                    success:false,
-                    message:"Failed to send Invite email"
-                }
-            }
-
-            //Store invite only after successful email
-            const createInvite = await userTeamModel.create({
-                ...data,
-                role: role.toLowerCase(),
-                invite_token: token,
-                invite_status: "sent",
-            })
-
-            return{
-                success:true,
-                message:"Team Invite send sucessfully",
-                data:createInvite
-            }
-        } catch (error: any) {
-            console.error("Invite Team Error:", error);
-
-            return {
-                success: false,
-                error: error.message || 'Something went wrong',
-            };
+            const sent = await sendEmail(email, "You're Invited to Join Soft7", '', html);
+            if (!sent) throw new Error('Failed to send invite email');
+        } catch (error) {
+            // Refund only a still-pending invitation; an accepted member keeps its seat.
+            await db.transaction(async trx => {
+                await trx('users').where({ id: invite_sent_by }).forUpdate().first();
+                await trx('user_team').where({ id: invite.id, invite_sent_by, invite_status: 'sent' }).delete();
+                await syncTeamSeats(trx, invite_sent_by);
+            });
+            throw error;
         }
+        return { success: true, message: 'Team invite sent successfully', data: invite };
     }
 
-    async setUpTeammatePassword(token: string, password: string,domain_name:string) {
-        try {
-            // 1. Find invite by tokeb
-            const existingInvite = await userTeamModel.findOne({ invite_token: token })
-
-            const existingDomain = await companyDomainModel.findByDomain(domain_name)
-
-            //2. Check invite exists
-            if (!existingInvite) {
-                return {
-                    success: false,
-                    message: "Invalid invite token"
-                }
-            }
-
-            // 3.check already accepted
-            if (existingInvite.invite_status === 'accepted') {
-                
-                return {
-                    success: false,
-                    message: 'Invite already used'
-                }
-            }
-
-            //4. Check if user already exists
-            const existingUser = await userTeamModel.findOne({ email: existingInvite.email })
-
-            if (!existingUser) {
-                return {
-                    success: false,
-                    message: "User not exists"
-                }
-            }
-
-            //5. Hash Password
-            const hashedPassword = await bcrypt.hash(password, 10)
-
-            //6. Create user account
-            // permission in user_team is a flat array e.g. ["dashboard","contact"]
-            // users table stores it as permissions (jsonb)
-            const createdUser = await userModel.create({
-                name: existingInvite.name,
-                company_id:existingDomain.company_id,
-                domain_name:existingDomain.domain_name,
-                email: existingInvite.email,
-                phone: existingInvite.phone_number,
-                role: existingInvite.role,
-                permissions: Array.isArray(existingInvite.permission)
-                    ? existingInvite.permission
-                    : (existingInvite.permission?.nav ?? []),
-                password: hashedPassword,
-                status: "active"
-            })
-
-            await userTeamModel.update(existingInvite.id, { invite_status: "accepted",user_id:createdUser.id })
-            
-            return {
-                success: true,
-                message: "Password setup successful",
-                data: createdUser
-            }
-
-        } catch (error: any) {
-            console.error(
-                "Setup Password Error:",
-                error
-            );
-
-            return {
-                success: false,
-                message:
-                    error.message ||
-                    "Something went wrong"
-            };
+    async setUpTeammatePassword(token: string, password: string, domain_name: string) {
+        const found = await userTeamModel.findOne({ invite_token: token });
+        if (!found) throw new HTTP400Error({ message: 'Invalid invite token' });
+        const domain = await companyDomainModel.findByDomain(domain_name);
+        if (!domain || domain.company_id !== found.company_id) {
+            throw new HTTP400Error({ message: 'Invitation does not belong to this company domain' });
         }
+        const hashedPassword = await bcrypt.hash(password, 10);
+        return db.transaction(async trx => {
+            await trx('users').where({ id: found.invite_sent_by }).forUpdate().first();
+            const invite = await trx('user_team').where({ id: found.id, invite_token: token }).forUpdate().first();
+            if (!invite || invite.invite_status !== 'sent') {
+                throw new HTTP400Error({ message: 'Invitation is no longer pending' });
+            }
+            const existing = await trx('users').where({ email: invite.email }).first();
+            if (existing) throw new HTTP400Error({ message: 'User email already exists' });
+            const createdUser = await userModel.create({
+                name: invite.name, company_id: invite.company_id, domain_name: domain.domain_name,
+                email: invite.email, phone: invite.phone_number, role: invite.role,
+                permissions: Array.isArray(invite.permission) ? invite.permission : (invite.permission?.nav ?? []),
+                password: hashedPassword, status: 'active',
+            }, trx);
+            await trx('user_team').where({ id: invite.id }).update({ invite_status: 'accepted', user_id: createdUser.id });
+            // Pending and accepted both occupy one seat: no usage increment here.
+            return { success: true, message: 'Password setup successful', data: createdUser };
+        });
     }
 
     async userInvites(userId: string) {
@@ -177,21 +89,20 @@ class teamService{
         }));
     }
 
-    async deleteInvite(inviteId: string) {
-        // 1. Find the invite to get the email
-        const invite = await userTeamModel.findById(inviteId);
-
-        // 2. Delete the user account permanently (hard delete from users table)
-        if (invite?.email) {
-            const user = await userModel.findOne({ email: invite.email });
-            if (user) {
-                await userModel.delete(user.id);
+    async deleteInvite(inviteId: string, ownerId: string) {
+        return db.transaction(async trx => {
+            await trx('users').where({ id: ownerId }).forUpdate().first();
+            const invite = await trx('user_team').where({ id: inviteId, invite_sent_by: ownerId }).forUpdate().first();
+            if (!invite) throw new HTTP400Error({ message: 'Team invitation not found in this account' });
+            if (invite.invite_status === 'accepted' && invite.user_id && invite.user_id !== ownerId) {
+                await trx('users').where({ id: invite.user_id, company_id: invite.company_id }).delete();
             }
-        }
-
-        // 3. Delete the invite record
-        return await userTeamModel.delete(inviteId);
+            const deleted = await trx('user_team').where({ id: inviteId }).delete();
+            await syncTeamSeats(trx, ownerId);
+            return deleted;
+        });
     }
+
 }
 
 

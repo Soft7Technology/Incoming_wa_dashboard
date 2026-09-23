@@ -252,39 +252,7 @@ class CompanyController {
     const { name, email, phone, permissions, assigned_plan } = req.body;
     const { userId } = req.params
 
-    const updatedUser = await CompanyService.updateCompanyUser(userId, { name, email, phone, permissions, assigned_plan })
-    const { data } = updatedUser
-    await activityLogsModel.create({
-      user_id: data?.id, // user performing the update
-
-      action: 'UPDATE',
-      entity_type: 'USER',
-      entity_id: userId,
-      read: false,
-
-      description: `Updated user ${data?.name}`,
-
-      new_data: {
-        name: data?.name,
-        email: data?.email,
-        phone: data?.phone,
-        permissions: data?.permissions,
-        assigned_plan: data?.assigned_plan
-      },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
-      user_agent: req.headers['user-agent'] || '',
-
-      request_method: req.method,
-      api_endpoint: req.originalUrl,
-
-      status: 'SUCCESS'
-    });
-
+    const updatedUser = await CompanyService.updateCompanyUser(userId, { name, email, phone, permissions, assigned_plan }, { userId: req.userId, companyId: req.companyId, userRole: req.userRole })
     return successResponse(req, res, 'User updated successfully', updatedUser)
   })
 

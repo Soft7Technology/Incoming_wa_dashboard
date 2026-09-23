@@ -1,3 +1,4 @@
+import planUsageService from '../../app/services/planUsage.service';
 import { Worker, Job } from 'bullmq';
 import redisConfig from '@surefy/config/redis.config';
 import { ContactImportJobData } from '../contactImport.queue';
@@ -85,7 +86,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       for (const contactData of batch) {
         try {
           // Check if contact exists
-          let contact = await ContactModel.findByPhone(userId, contactData.phone_number);
+          let contact = await ContactModel.findOwnedByPhone(userId, contactData.phone_number, phone_number_id, companyId);
 
           if (contact) {
             // Update existing contact
@@ -97,14 +98,14 @@ async function processContactImport(job: Job<ContactImportJobData>) {
             });
           } else {
             // Create new contact
-            contact = await ContactModel.create({
+            contact = await planUsageService.run(userId, 'Contact', trx => ContactModel.create({
               user_id:userId,
               company_id:companyId,
               country_code:country_code,
               phone_number_id:phone_number_id,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,
-            });
+            }, trx));
           }
 
           // Add to list

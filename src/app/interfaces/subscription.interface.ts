@@ -4,6 +4,7 @@ export interface subscriptionPlans {
   user_id?: string;
   price: number;
   billing_cycle: "Monthly" | "Yearly" | "Free";
+  trial_days?: 3 | 7 | 10 | null;
   description: string;
   active: boolean;
 
