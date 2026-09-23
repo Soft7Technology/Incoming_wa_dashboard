@@ -1,3 +1,4 @@
+import { parseImportedPhone } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
@@ -87,12 +88,19 @@ class CampaignService {
     // ── Auto-create external contact numbers ─────────────────────────────
     // If the frontend passed specific phone numbers, ensure they exist in the DB
     if (filters.contactNumber && filters.contactNumber.length > 0) {
-      // 1. Format numbers to ensure they start with '+' (matching ContactService.createContact logic)
-      filters.contactNumber = [...new Set(filters.contactNumber.map((num: string) => {
-        const number = campaignPhoneIdentity(String(num));
-        if (!number) throw new HTTP400Error({ message: 'Campaign phone numbers must contain digits' });
-        return '+' + number;
-      }))];
+      // Infer only from the supplied international number; never default to the sender's country.
+      const normalizedPhones = new Map<string, string>();
+      for (const value of filters.contactNumber) {
+        try {
+          const parsed = parseImportedPhone(value);
+          normalizedPhones.set(parsed.phone_number, parsed.country_code);
+        } catch (error) {
+          throw new HTTP400Error({
+            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Include the country calling code, for example +6581234567.`,
+          });
+        }
+      }
+      filters.contactNumber = [...normalizedPhones.keys()];
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
@@ -113,6 +121,7 @@ class CampaignService {
           company_id: companyId,
           phone_number_id:phoneNumberId.id,
           phone_number: num,
+          country_code: normalizedPhones.get(num),
           name: num, // Fallback to phone number as name
           is_valid: true,
           attributes: {},

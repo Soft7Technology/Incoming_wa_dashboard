@@ -48,3 +48,13 @@ test('Excel import uses raw numeric cells and expands text scientific notation',
     assert.equal(result.errors[0].row, 4);
   } finally { fs.unlinkSync(file); fs.rmdirSync(dir); }
 });
+
+test('campaign recipients detect international calling codes without an Indian fallback', () => {
+  for (const value of ['+6581234567', '6581234567', '006581234567']) {
+    assert.equal(parse(value).phone_number, '+6581234567');
+    assert.equal(parse(value).country_code, '65');
+  }
+  assert.equal(parse('447391166058').country_code, '44');
+  assert.equal(parse('+919372597458').phone_number, '+919372597458');
+  assert.throws(() => parse('12345'));
+});
