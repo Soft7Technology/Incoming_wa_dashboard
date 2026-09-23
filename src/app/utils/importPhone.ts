@@ -1,4 +1,4 @@
-import { parsePhoneNumberFromString } from 'libphonenumber-js/max';
+import { parsePhoneNumberFromString, isSupportedCountry, getCountryCallingCode, CountryCode } from 'libphonenumber-js/max';
 
 /** Expand scientific notation using decimal digits, without floating-point rounding. */
 function expandScientificPhone(raw: string): string {
@@ -22,7 +22,7 @@ function expandScientificPhone(raw: string): string {
   return prefix + expanded;
 }
 
-export function parseImportedPhone(value: unknown, fallbackCode = '') {
+export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountryCode = false) {
   // Remove invisible directional/zero-width formatting copied from messaging apps.
   // Numeric Excel cells must already contain an exact integer; lost digits cannot be recovered.
   if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0 || value >= 1e15)) {
@@ -37,8 +37,21 @@ export function parseImportedPhone(value: unknown, fallbackCode = '') {
     if (!international?.isValid()) throw new Error('Invalid international phone number');
     return { phone_number: international.number, country_code: international.countryCallingCode };
   }
-  const code = fallbackCode.replace(/^\+/, '').trim();
+  const hint = String(fallbackCode ?? '').trim().toUpperCase();
+  const code = isSupportedCountry(hint)
+    ? getCountryCallingCode(hint as CountryCode)
+    : hint.replace(/^(?:\+|00)/, '');
+  if (hint && !/^\d{1,3}$/.test(code)) {
+    throw new Error('Country code must be a calling code such as +65 or an ISO code such as SG');
+  }
   const national = code ? parsePhoneNumberFromString(cleaned, { defaultCallingCode: code }) : undefined;
+  // A country explicitly supplied on this row resolves otherwise ambiguous local digits.
+  // Do not let an import-wide default override a different valid international number.
+  if (rowCountryCode && code) {
+    const preferred = international?.isValid() && international.countryCallingCode === code
+      ? international : national?.isValid() ? national : undefined;
+    if (preferred) return { phone_number: preferred.number, country_code: preferred.countryCallingCode };
+  }
   const candidates = [international, national].filter(number => number?.isValid());
   const unique = [...new Map(candidates.map(number => [number!.number, number!])).values()];
   if (unique.length !== 1) throw new Error(unique.length ? 'Ambiguous phone number: add + and the country calling code' : 'Invalid phone number: supply an international number or a default country code');
