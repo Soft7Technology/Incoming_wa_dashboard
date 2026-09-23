@@ -17,8 +17,8 @@ class teamController{
      */
     teamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         try {
-            const { name, email, phone_number, role, permission } = req.body
-            if (!email || !phone_number || !role) {
+            const { name, email, phone_number, role, permission,domain_name } = req.body
+            if (!email || !phone_number || !role || !domain_name) {
                 throw new HTTP400Error({ message: 'Email, phone number, and role are required' });
             }
             // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
@@ -37,7 +37,7 @@ class teamController{
                 })
             }
 
-            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray })
+            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray,domain_name  })
             if (!inviteTeam.success) {
                 const reason = inviteTeam.error || inviteTeam.message || 'Failed to send invite email';
                 return sendResponse(
@@ -67,8 +67,8 @@ class teamController{
      */
     setUpPassword =tryCatchAsync(async(req:AuthRequest,res:Response)=>{
         try{
-            const {token,password} = req.body
-            const setUpTeamMemberPassword = await teamService.setUpTeammatePassword(token,password)
+            const {token,password,domain_name} = req.body
+            const setUpTeamMemberPassword = await teamService.setUpTeammatePassword(token,password,domain_name)
             successResponse(req,res,"Password set successfully",setUpTeamMemberPassword,HttpStatusCode.OK)
         }catch(error:any){
             console.error('Create Ticket Error:', error);
