@@ -24,11 +24,24 @@ class ContactModel extends BaseModel {
     super('contacts');
   }
 
+  async findCampaignPhoneCandidates(userId: string, companyId: string, numbers: string[]) {
+    if (!numbers.length) return [];
+    const suffixes = [...new Set(numbers.map(value => String(value).replace(/[^0-9]/g, '').replace(/^00/, '')))];
+    return this.query().where({ user_id: userId, company_id: companyId }).whereNull('deleted_at')
+      .andWhere(builder => {
+        for (const digits of suffixes) {
+          // Match local digits against saved international numbers, and vice versa.
+          builder.orWhereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') LIKE ?", [`%${digits}`])
+            .orWhereRaw("? LIKE '%' || regexp_replace(phone_number, '[^0-9]', '', 'g')", [digits]);
+        }
+      });
+  }
+
   async findCampaignRecipients(ids: string[]) {
     if (!ids.length) return [];
     return this.query()
       .whereIn('id', ids)
-      .select('id', 'name', 'phone_number', 'is_valid', 'invalid_reason');
+      .select('id', 'name', 'phone_number', 'country_code', 'is_valid', 'invalid_reason');
   }
 
   async create(data: any, trx?: Knex.Transaction): Promise<any> {

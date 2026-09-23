@@ -101,7 +101,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
             contact = await planUsageService.run(userId, 'Contact', trx => ContactModel.create({
               user_id:userId,
               company_id:companyId,
-              country_code:country_code,
+              country_code: contactData.country_code,
               phone_number_id:phone_number_id,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,

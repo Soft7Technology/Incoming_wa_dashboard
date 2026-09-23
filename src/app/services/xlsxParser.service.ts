@@ -70,11 +70,15 @@ class XLSXParserService {
       let validCount = 0;
       let invalidCount = 0;
 
+      const codeColumn = headers.find(header =>
+        ['countrycode', 'callingcode', 'dialcode', 'country'].includes(header.trim().toLowerCase().replace(/[\s_-]/g, '')),
+      );
+
       // Process each row
       rawData.forEach((row, index) => {
         try {
-          const codeColumn = headers.find(header => ['country_code', 'country code', 'calling_code'].includes(header.trim().toLowerCase()));
-          const parsedPhone = parseImportedPhone(row[phoneColumn!], String((codeColumn && row[codeColumn]) || country_code || ''));
+          const rowCode = codeColumn ? String(row[codeColumn] ?? '').trim() : '';
+          const parsedPhone = parseImportedPhone(row[phoneColumn!], rowCode || country_code || '', Boolean(rowCode));
 
           // Build contact object
           const contact: ParsedContact = {
