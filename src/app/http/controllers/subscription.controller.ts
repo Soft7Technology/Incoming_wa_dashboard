@@ -105,7 +105,7 @@ class SubscriptionController {
       features,
     });
 
-    const { data }: any = updatedSubscription;
+    const data: any = updatedSubscription;
 
     await activityLogsModel.create({
       company_id: data?.company_id,
