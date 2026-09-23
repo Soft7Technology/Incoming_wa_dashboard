@@ -42,8 +42,8 @@ class XLSXParserService {
       const sheetName = workbook.SheetNames[0]; // Use first sheet
       const worksheet = workbook.Sheets[sheetName];
 
-      // Convert to JSON
-      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      // Read underlying numeric values, not rounded scientific-notation display text.
+      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true });
 
       if (rawData.length === 0) {
         throw new Error('XLSX file is empty');
@@ -320,7 +320,7 @@ class XLSXParserService {
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
-      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true });
       console.log(`Total rows in file: ${rawData.length}`);
 
       return {

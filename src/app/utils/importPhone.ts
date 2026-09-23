@@ -1,8 +1,34 @@
 import { parsePhoneNumberFromString } from 'libphonenumber-js/max';
 
+/** Expand scientific notation using decimal digits, without floating-point rounding. */
+function expandScientificPhone(raw: string): string {
+  const match = raw.match(/^(\+?)(\d+)(?:\.(\d*))?[eE]([+-]?\d+)$/);
+  if (!match) return raw;
+  const [, prefix, whole, fraction = '', exponentText] = match;
+  const exponent = Number(exponentText);
+  // Bound expansion before allocating strings from untrusted spreadsheet content.
+  if (raw.length > 256 || !Number.isSafeInteger(exponent) || Math.abs(exponent) > 256) {
+    throw new Error('Scientific notation phone number is too large');
+  }
+  const digits = whole + fraction;
+  const decimalPosition = whole.length + exponent;
+  if (decimalPosition <= 0 || (decimalPosition < digits.length && /[1-9]/.test(digits.slice(decimalPosition)))) {
+    throw new Error('Phone number must be a whole number');
+  }
+  const expanded = (decimalPosition < digits.length
+    ? digits.slice(0, decimalPosition)
+    : digits + '0'.repeat(decimalPosition - digits.length)).replace(/^0+/, '');
+  if (!expanded || expanded.length > 15) throw new Error('Phone number must contain at most 15 digits');
+  return prefix + expanded;
+}
+
 export function parseImportedPhone(value: unknown, fallbackCode = '') {
   // Remove invisible directional/zero-width formatting copied from messaging apps.
-  const raw = String(value ?? '').replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').trim();
+  // Numeric Excel cells must already contain an exact integer; lost digits cannot be recovered.
+  if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0 || value >= 1e15)) {
+    throw new Error('Excel phone number must be a positive exact integer with at most 15 digits');
+  }
+  const raw = expandScientificPhone(String(value ?? '').replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').trim());
   if (!raw || !/^[+\d\s().-]+$/.test(raw)) throw new Error('Invalid phone number characters');
   const cleaned = raw.replace(/[\s().-]/g, '');
   const explicit = cleaned.startsWith('+') || cleaned.startsWith('00');
