@@ -1,6 +1,7 @@
 import { recordActivity } from '../app/middleware/activity.middleware';
 import UserApiKeyRoute from './userApiKey.route';
 import { Router } from 'express';
+import PaymentRoute from './payment.route';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
 import WabaRoute from './waba.route';
 import TemplateRoute from './template.route';
@@ -29,6 +30,7 @@ AdminRoute.use(jwtAuthMiddleware);
 AdminRoute.use(recordActivity);
 
 AdminRoute.use('/api-keys', UserApiKeyRoute);
+AdminRoute.use('/payments', PaymentRoute);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);

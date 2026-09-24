@@ -14,6 +14,32 @@ function load(file, deps) {
   return exports;
 }
 class HttpError extends Error { constructor(data) { super(data.message); } }
+test('tag edits allow null/empty assignees while retaining team assignment authorization', async () => {
+  let lookups = 0;
+  const query = { join() { return this; }, where() { return this; }, whereNull() { return this; },
+    async first() { lookups++; return undefined; } };
+  const middleware = load('src/app/http/middleware/accountScope.ts', {
+    '@surefy/database': () => query,
+    '@surefy/exceptions/HTTP403Error': HttpError,
+  });
+  const req = { userId: 'owner', ownerId: 'owner', companyId: 'company', body: {} };
+  for (const assigned_to of [undefined, null, [], 'owner']) {
+    req.body = { assigned_to, assignedTo: null, tag_ids: ['tag'] };
+    let error;
+    await middleware.accountAssignments(req, {}, e => { error = e; });
+    assert.equal(error, undefined);
+  }
+  assert.equal(lookups, 0);
+  req.body.assigned_to = 'outside-user';
+  let error;
+  await middleware.accountAssignments(req, {}, e => { error = e; });
+  assert.match(error.message, /must belong to your team/);
+  assert.equal(lookups, 1);
+  req.userId = 'member';
+  req.body.assigned_to = null;
+  await middleware.accountAssignments(req, {}, e => { error = e; });
+  assert.match(error.message, /Only the account owner/);
+});
 function models() {
   const db = knex({ client: 'pg' });
   const queries = [];
