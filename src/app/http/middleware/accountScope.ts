@@ -48,7 +48,8 @@ export async function accountAssignments(req: JWTAuthRequest, _res: Response, ne
     if (assigned === undefined) return next();
     const ownerId = req.ownerId ?? req.userId;
     if (req.userId !== ownerId) throw new HTTP403Error({ message: 'Only the account owner can change contact assignments' });
-    const ids = Array.isArray(assigned) ? assigned : [assigned];
+    // A null assignee clears assignment; it is not a user ID to look up in the team.
+    const ids = assigned === null ? [] : Array.isArray(assigned) ? assigned : [assigned];
     for (const id of ids) {
       if (id === ownerId) continue;
       const member = await db('users as u')

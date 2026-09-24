@@ -78,7 +78,7 @@ class XLSXParserService {
       rawData.forEach((row, index) => {
         try {
           const rowCode = codeColumn ? String(row[codeColumn] ?? '').trim() : '';
-          const parsedPhone = parseImportedPhone(row[phoneColumn!], rowCode || country_code || '', Boolean(rowCode));
+          const parsedPhone = parseImportedPhone(row[phoneColumn!], rowCode || country_code || '', Boolean(rowCode), true);
 
           // Build contact object
           const contact: ParsedContact = {

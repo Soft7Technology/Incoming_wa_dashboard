@@ -1,3 +1,4 @@
+import { addTagsToContacts } from '../../services/contactBulkTags.service';
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
@@ -13,6 +14,18 @@ import userTeamModel from '../../models/team.model';
 import db from '@surefy/database';
 
 class ContactController {
+  /** Apply existing tags to a batch of contacts in the authenticated account. */
+  addBulkTags = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const result = await addTagsToContacts(
+      req.ownerId ?? req.userId,
+      req.companyId,
+      req.userId,
+      req.body?.contact_ids,
+      req.body?.tag_ids,
+    );
+    return successResponse(req, res, 'Tags added to contacts successfully', result);
+  });
+
   /**
    * POST /v1/contacts
    * Create new contact

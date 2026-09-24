@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Company payment test</title>
+<style>
+  body { font: 16px system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+  label { display: block; margin: 16px 0; }
+  input { display: block; width: 100%; box-sizing: border-box; padding: 10px; margin-top: 5px; }
+  button { padding: 12px; margin: 8px 8px 8px 0; cursor: pointer; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f4f6; padding: 16px; }
+</style>
+<h1>Company payment test</h1>
+<p>Complete a INR 1 sandbox checkout using your company's configured test gateway.</p>
+<form id="form">
+  <label>API origin <input id="origin" type="url" placeholder="http://localhost:3000" required></label>
+  <label>Company administrator JWT <input id="token" type="password" autocomplete="off" required></label>
+  <label>Customer phone (10 digits) <input id="phone" inputmode="numeric" pattern="[0-9]{10}" required></label>
+  <button id="pay" type="submit">Open INR 1 test checkout</button>
+  <button id="verify" type="button" disabled>Check payment status</button>
+  <button id="reset" type="button">New test attempt</button>
+</form>
+<pre id="result" aria-live="polite">Configure a test gateway using PUT /v1/admin/payments/gateways first.</pre>
+<script>
+  // Keep tokens and checkout state in memory; never persist them in browser storage.
+  (() => {
+    const element = id => document.getElementById(id);
+    let localOrder, attemptKey = crypto.randomUUID(), context;
+    const show = value => { element('result').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); };
+    async function api(path, body) {
+      const response = await fetch(context.origin + '/v1/admin/payments' + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + context.token, 'Idempotency-Key': attemptKey },
+        body: JSON.stringify(body || {}),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Payment request failed');
+      return result.data;
+    }
+    async function loadScript(url) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = url; script.onload = resolve; script.onerror = () => reject(new Error('Could not load checkout SDK'));
+        document.head.appendChild(script);
+      });
+    }
+    async function verify() {
+      if (!localOrder) return;
+      try { localOrder = await api('/orders/' + localOrder.id + '/verify'); show(localOrder); }
+      catch (error) { show(error.message); }
+    }
+    element('verify').onclick = verify;
+    element('reset').onclick = () => {
+      localOrder = undefined; context = undefined; attemptKey = crypto.randomUUID();
+      element('verify').disabled = true; show('Ready for a new test payment.');
+    };
+    element('form').onsubmit = async event => {
+      event.preventDefault(); element('pay').disabled = true; element('reset').disabled = true;
+      try {
+        context = context || { origin: new URL(element('origin').value).origin, token: element('token').value.trim(), phone: element('phone').value };
+        localOrder = await api('/test-orders', { customer_phone: context.phone });
+        show(localOrder); element('verify').disabled = false;
+        if (!localOrder.is_test) throw new Error('This page only supports sandbox checkout.');
+        if (localOrder.status !== 'pending') return;
+        const checkout = localOrder.checkout;
+        if (checkout?.mode !== 'test') throw new Error('Expected sandbox checkout configuration.');
+        if (checkout.provider === 'razorpay') {
+          if (!window.Razorpay) await loadScript('https://checkout.razorpay.com/v1/checkout.js');
+          await new Promise(resolve => {
+            new window.Razorpay({ key: checkout.key, order_id: checkout.order_id, amount: checkout.amount,
+              currency: checkout.currency, name: checkout.name, handler: async () => { await verify(); resolve(); },
+              modal: { ondismiss: () => { show('Checkout closed. Use Check payment status to verify this order.'); resolve(); } } }).open();
+          });
+        } else if (checkout.provider === 'cashfree') {
+          if (!window.Cashfree) await loadScript('https://sdk.cashfree.com/js/v3/cashfree.js');
+          await window.Cashfree({ mode: 'sandbox' }).checkout({ paymentSessionId: checkout.payment_session_id, redirectTarget: '_modal' });
+          await verify();
+        }
+      } catch (error) { show(error.message); }
+      finally { element('pay').disabled = false; element('reset').disabled = false; }
+    };
+  })();
+</script>
+</html>
