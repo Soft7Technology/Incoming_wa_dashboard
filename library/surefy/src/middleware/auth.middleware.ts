@@ -19,10 +19,25 @@ export { generateCompanyKey };
 /** Authenticate a user API key and derive its user/company context. */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const apiKey = req.headers['x-api-key'];
-    if (typeof apiKey !== 'string' || !apiKey.trim()) {
+    const legacyKey = req.headers['x-api-key'];
+    const authorization = req.headers.authorization;
+    let bearerKey: string | undefined;
+
+    if (authorization !== undefined) {
+      const match = typeof authorization === 'string' ? /^Bearer\s+(\S+)$/i.exec(authorization.trim()) : null;
+      if (!match) throw new HTTP401Error({ message: 'Provide Authorization: Bearer <user-api-key>' });
+      bearerKey = match[1];
+    }
+    if (legacyKey !== undefined && (typeof legacyKey !== 'string' || !legacyKey.trim())) {
       throw new HTTP401Error({ message: 'Provide a valid x-api-key header' });
     }
+    // Keep existing integrations compatible, but reject conflicting identities.
+    const headerKey = typeof legacyKey === 'string' ? legacyKey.trim() : undefined;
+    if (bearerKey && headerKey && bearerKey !== headerKey) {
+      throw new HTTP401Error({ message: 'Authorization and x-api-key must contain the same user API key' });
+    }
+    const apiKey = bearerKey || headerKey;
+    if (!apiKey) throw new HTTP401Error({ message: 'Provide Authorization: Bearer <user-api-key> or x-api-key' });
 
     const account = await authenticateUserApiKey(apiKey);
     if (!account) throw new HTTP401Error({ message: 'Invalid or revoked API key' });
@@ -39,6 +54,6 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
 /** Allow anonymous requests only when no API key was supplied. */
 export const optionalAuthMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  if (req.headers['x-api-key'] === undefined) return next();
+  if (req.headers['x-api-key'] === undefined && req.headers.authorization === undefined) return next();
   return authMiddleware(req, res, next);
 };
