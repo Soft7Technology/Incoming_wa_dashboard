@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { successResponse,errorResponse, tryCatchAsync } from '@surefy/utils/Controller';
+import { successResponse, errorResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
@@ -11,144 +11,186 @@ import userTeamModel from '../../models/team.model';
 import db from '@surefy/database';
 import { sendResponse } from '@surefy/utils/Response';
 
-class teamController{
-    /**
-     * POST /v1/team/invite
-     */
-    teamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-        try {
-            const { name, email, phone_number, role, permission,domain_name } = req.body
-            if (!email || !phone_number || !role || !domain_name) {
-                throw new HTTP400Error({ message: 'Email, phone number, and role are required' });
-            }
-            // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
-            const permissionArray: string[] = Array.isArray(permission) ? permission : []
-            const invite_sent_by  = req.ownerId ?? req.userId!
-            const company_id = req.companyId!
-            const assigned_plan = req.assigned_plan!
-            console.log("Assigned Plan",assigned_plan)
+class teamController {
+  /**
+   * POST /v1/team/invite
+   */
+  teamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    try {
+      const { name, email, phone_number, role, permission, domain_name } = req.body;
+      if (!email || !phone_number || !role || !domain_name) {
+        throw new HTTP400Error({ message: 'Email, phone number, and role are required' });
+      }
+      // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
+      const permissionArray: string[] = Array.isArray(permission) ? permission : [];
+      const invite_sent_by = req.ownerId ?? req.userId!;
+      const company_id = req.companyId!;
+      const assigned_plan = req.assigned_plan!;
+      console.log('Assigned Plan', assigned_plan);
 
-            const existingEmail = await userModel.findByEmailPhone(email,phone_number)
-            console.log("EXISTING",existingEmail)
-            if(existingEmail){
-                return res.status(400).json({
-                    success:false,
-                    message:"Cannot send team invite User Email already exists"
-                })
-            }
+      const existingEmail = await userModel.findByEmailPhone(email, phone_number);
+      console.log('EXISTING', existingEmail);
+      if (existingEmail) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot send team invite User Email already exists',
+        });
+      }
 
-            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray,domain_name  })
-            if (!inviteTeam.success) {
-                const reason = inviteTeam.message || 'Failed to send invite email';
-                return sendResponse(
-                    res,
-                    HttpStatusCode.BAD_REQUEST,
-                    false,
-                    'Failed to send team invite',
-                    { error: reason }
-                );
-            }
-            return successResponse(req, res, `Invite sent to ${email} successfully`, inviteTeam.data);
-        } catch (error: any) {
-            console.error('Create Ticket Error:', error);
+      const inviteTeam = await teamService.inviteTeam({
+        assigned_plan,
+        name,
+        invite_sent_by,
+        company_id,
+        email,
+        phone_number,
+        role,
+        permission: permissionArray,
+        domain_name,
+      });
+      if (!inviteTeam.success) {
+        const reason = inviteTeam.message || 'Failed to send invite email';
+        return sendResponse(res, HttpStatusCode.BAD_REQUEST, false, 'Failed to send team invite', { error: reason });
+      }
+      return successResponse(req, res, `Invite sent to ${email} successfully`, inviteTeam.data);
+    } catch (error: any) {
+      console.error('Create Ticket Error:', error);
 
-            return sendResponse(
-                res,
-                error?.statusCode || HttpStatusCode.INTERNAL_SERVER_ERROR,
-                false,
-                'Failed to send team invite',
-                { error: error?.message || 'Internal Server Error' }
-            );
-        }
-    })
+      return sendResponse(
+        res,
+        error?.statusCode || HttpStatusCode.INTERNAL_SERVER_ERROR,
+        false,
+        'Failed to send team invite',
+        { error: error?.message || 'Internal Server Error' },
+      );
+    }
+  });
 
-    /**
-     * POST /v1/team/setup-password
-     */
-    setUpPassword =tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        try{
-            const {token,password,domain_name} = req.body
-            const setUpTeamMemberPassword = await teamService.setUpTeammatePassword(token,password,domain_name)
-            successResponse(req,res,"Password set successfully",setUpTeamMemberPassword,HttpStatusCode.OK)
-        }catch(error:any){
-            console.error('Create Ticket Error:', error);
-            return res.status(500).json({
-                success: false,
-                message: error?.message || 'Internal Server Error',
-            });
-        }
-    })
+  /**
+   * POST /v1/team/setup-password
+   */
+  setUpPassword = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    try {
+      const { token, password, domain_name } = req.body;
+      const setUpTeamMemberPassword = await teamService.setUpTeammatePassword(token, password, domain_name);
+      successResponse(req, res, 'Password set successfully', setUpTeamMemberPassword, HttpStatusCode.OK);
+    } catch (error: any) {
+      console.error('Create Ticket Error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error?.message || 'Internal Server Error',
+      });
+    }
+  });
 
-    /**
-     * GET /v1/team/invites
-     */
-    userTeamInvites = tryCatchAsync(async(req: JWTAuthRequest, res: Response)=>{
-        // Members see the invites sent by the owner (their inviter)
-        const effectiveUserId = req.ownerId ?? req.userId!;
-        const teamInvites = await teamService.userInvites(effectiveUserId)
-        successResponse(req,res,"All User Invites",teamInvites)
-    })
+  /**
+   * GET /v1/team/invites
+   */
+  userTeamInvites = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    // Members see the invites sent by the owner (their inviter)
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const teamInvites = await teamService.userInvites(effectiveUserId);
+    successResponse(req, res, 'All User Invites', teamInvites);
+  });
 
-    /**
-     * DELETE /v1/team/:id/invite
-     */
-    deleteTeamInvite = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-        const{id}=req.params
-        const deleteInvite = await teamService.deleteInvite(id, req.ownerId ?? req.userId!)
-        successResponse(req,res,"Delete team invite successfully",deleteInvite,HttpStatusCode.ACCEPTED)
-    })
+  /**
+   * DELETE /v1/team/:id/invite
+   */
+  deleteTeamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { id } = req.params;
+    const deleteInvite = await teamService.deleteInvite(id, req.ownerId ?? req.userId!);
+    successResponse(req, res, 'Delete team invite successfully', deleteInvite, HttpStatusCode.ACCEPTED);
+  });
 
-    /**
-     * PATCH /v1/team/:id/permissions
-     * Add nav permissions to an accepted team member.
-     * :id is the user.id of the team member.
-     * Body: { add: string[] }  — array of nav keys to add, e.g. ["inbox"]
-     */
-    updateMemberPermissions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-        const { id } = req.params;
-        const { add = [] }: { add: string[] } = req.body;
+  /**
+   * GET /v1/team/my-permissions
+   * Returns current user's active permissions from database
+   */
+  getMyPermissions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const userId = req.userId!;
+    const user = await userModel.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
+    // If user is a team member, fetch permissions from user_team
+    let permissions: string[] = [];
+    const teamRow = await db('user_team').where('email', user.email).where('invite_status', 'accepted').first();
 
-        // Find the user to get their email
-        const user = await userModel.findById(id);
-        if (!user) {
-            return res.status(404).json({ success: false, message: 'User not found' });
-        }
+    if (teamRow?.permission) {
+      const perm = teamRow.permission;
+      if (Array.isArray(perm)) {
+        permissions = perm.map((p: string) => p.toLowerCase());
+      } else if (Array.isArray(perm?.nav)) {
+        permissions = perm.nav.map((p: string) => p.toLowerCase());
+      }
+    }
 
-        // Find the user_team row for this member (invited by the current user or by owner)
-        const effectiveUserId = req.ownerId ?? req.userId!;
-        const teamRow = await db('user_team')
-            .where('email', user.email)
-            .where('invite_status', 'accepted')
-            .first();
+    // If user has assigned contacts, include contact permission
+    try {
+      const assignedContactsCount = await db('contacts')
+        .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [user.id])
+        .whereNull('deleted_at')
+        .count('* as count')
+        .first();
+      const hasAssignedContacts = parseInt(String(assignedContactsCount?.count || 0)) > 0;
+      if (hasAssignedContacts && !permissions.includes('contact') && !permissions.includes('contacts')) {
+        permissions.push('contact');
+      }
+    } catch (err) {}
 
-        if (!teamRow) {
-            return res.status(404).json({ success: false, message: 'Team member not found' });
-        }
+    return successResponse(req, res, 'Current user permissions', {
+      permissions,
+      role: user.role,
+    });
+  });
 
-        // Merge new permissions into existing nav array
-        const existing: any = teamRow.permission ?? {};
-        const existingNav: string[] = Array.isArray(existing?.nav)
-            ? existing.nav
-            : (Array.isArray(existing) ? existing : []);
+  /**
+   * PATCH /v1/team/:id/permissions
+   * Add nav permissions to an accepted team member.
+   * :id is the user.id of the team member.
+   * Body: { add: string[] }  — array of nav keys to add, e.g. ["inbox"]
+   */
+  updateMemberPermissions = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const { id } = req.params;
+    const { add = [] }: { add: string[] } = req.body;
 
-        const { replace }: { replace?: string[] } = req.body;
+    // Find the user to get their email
+    const user = await userModel.findById(id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
 
-        // If `replace` is provided, use it as the full new nav list; otherwise append
-        const mergedNav = replace !== undefined
-            ? replace.map((k: string) => k.toLowerCase())
-            : [...new Set([...existingNav, ...add.map((k: string) => k.toLowerCase())])];
+    // Find the user_team row for this member (invited by the current user or by owner)
+    const effectiveUserId = req.ownerId ?? req.userId!;
+    const teamRow = await db('user_team').where('email', user.email).where('invite_status', 'accepted').first();
 
-        const updatedPermission = Array.isArray(existing)
-            ? mergedNav  // legacy flat array
-            : { ...existing, nav: mergedNav };
+    if (!teamRow) {
+      return res.status(404).json({ success: false, message: 'Team member not found' });
+    }
 
-        await db('user_team')
-            .where('id', teamRow.id)
-            .update({ permission: JSON.stringify(updatedPermission) });
+    // Merge new permissions into existing nav array
+    const existing: any = teamRow.permission ?? {};
+    const existingNav: string[] = Array.isArray(existing?.nav) ? existing.nav : Array.isArray(existing) ? existing : [];
 
-        return successResponse(req, res, 'Permissions updated successfully', { permission: updatedPermission });
-    })
+    const { replace }: { replace?: string[] } = req.body;
+
+    // If `replace` is provided, use it as the full new nav list; otherwise append
+    const mergedNav =
+      replace !== undefined
+        ? replace.map((k: string) => k.toLowerCase())
+        : [...new Set([...existingNav, ...add.map((k: string) => k.toLowerCase())])];
+
+    const updatedPermission = Array.isArray(existing)
+      ? mergedNav // legacy flat array
+      : { ...existing, nav: mergedNav };
+
+    await db('user_team')
+      .where('id', teamRow.id)
+      .update({ permission: JSON.stringify(updatedPermission) });
+
+    return successResponse(req, res, 'Permissions updated successfully', { permission: updatedPermission });
+  });
 }
 
-export default new teamController()
+export default new teamController();
