@@ -1,0 +1,650 @@
+{
+  "info": {
+    "name": "WhatsApp Messages - User API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Messages only. Set base_url to your API root including /v1, without a trailing slash. Requests use /api/messages/send. Set phone_number_id to your connected sender, recipient to the full international number including country calling code, and user_api_key to your issued user API key (not a dashboard JWT or Meta token). Authentication: Authorization: Bearer {{user_api_key}}. Set secrets in a private Postman environment before use; exported files contain no credentials. Sending a request can send a real WhatsApp message. Media URL/ID examples do not upload files. Templates must match your approved template definition."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{user_api_key}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://your-api.example.com/v1",
+      "type": "string"
+    },
+    {
+      "key": "user_api_key",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "phone_number_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "recipient",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "media_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "image_url",
+      "value": "https://your-domain.example/image.jpg",
+      "type": "string"
+    },
+    {
+      "key": "video_url",
+      "value": "https://your-domain.example/video.mp4",
+      "type": "string"
+    },
+    {
+      "key": "document_url",
+      "value": "https://your-domain.example/document.pdf",
+      "type": "string"
+    },
+    {
+      "key": "audio_url",
+      "value": "https://your-domain.example/audio.mp3",
+      "type": "string"
+    },
+    {
+      "key": "sticker_url",
+      "value": "https://your-domain.example/sticker.webp",
+      "type": "string"
+    },
+    {
+      "key": "template_name",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "template_language",
+      "value": "en",
+      "type": "string"
+    },
+    {
+      "key": "template_body_value",
+      "value": "Customer",
+      "type": "string"
+    },
+    {
+      "key": "document_filename",
+      "value": "document.pdf",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Text",
+      "item": [
+        {
+          "name": "Send text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": \"Hello! How can we help you?\",\n    \"preview_url\": false\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Sends a text message using the authenticated user account. recipient must include its country calling code. API success is not proof of delivery."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Media",
+      "item": [
+        {
+          "name": "Send image by link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"link\": \"{{image_url}}\",\n    \"caption\": \"Your image\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send image by id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"image\",\n  \"image\": {\n    \"id\": \"{{media_id}}\",\n    \"caption\": \"Your image\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send video by link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"video\",\n  \"video\": {\n    \"link\": \"{{video_url}}\",\n    \"caption\": \"Your video\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send video by id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"video\",\n  \"video\": {\n    \"id\": \"{{media_id}}\",\n    \"caption\": \"Your video\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send document by link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"link\": \"{{document_url}}\",\n    \"caption\": \"Your document\",\n    \"filename\": \"{{document_filename}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send document by id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"document\",\n  \"document\": {\n    \"id\": \"{{media_id}}\",\n    \"caption\": \"Your document\",\n    \"filename\": \"{{document_filename}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send audio by link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"audio\",\n  \"audio\": {\n    \"link\": \"{{audio_url}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send audio by id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"audio\",\n  \"audio\": {\n    \"id\": \"{{media_id}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send sticker by link",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"sticker\",\n  \"sticker\": {\n    \"link\": \"{{sticker_url}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        },
+        {
+          "name": "Send sticker by id",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"sticker\",\n  \"sticker\": {\n    \"id\": \"{{media_id}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use a publicly accessible media URL for link, or an existing WhatsApp media ID for id. Supply only one of link or id. Replace the media variables before sending; these examples do not upload files."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Templates",
+      "item": [
+        {
+          "name": "Send template without parameters",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": {\n      \"code\": \"{{template_language}}\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Use an approved template with no dynamic parameters; set its exact name and language."
+          },
+          "response": []
+        },
+        {
+          "name": "Send template with body parameter",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": {\n      \"code\": \"{{template_language}}\"\n    },\n    \"components\": [\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"{{template_body_value}}\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Example for a template with one positional body parameter. Match parameter count, order and types to your approved template."
+          },
+          "response": []
+        },
+        {
+          "name": "Send template with image header",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": {\n      \"code\": \"{{template_language}}\"\n    },\n    \"components\": [\n      {\n        \"type\": \"header\",\n        \"parameters\": [\n          {\n            \"type\": \"image\",\n            \"image\": {\n              \"link\": \"{{image_url}}\"\n            }\n          }\n        ]\n      },\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"{{template_body_value}}\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Requires an approved template with this media header and one positional body parameter. Remove or adjust body parameters to match your template."
+          },
+          "response": []
+        },
+        {
+          "name": "Send template with video header",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": {\n      \"code\": \"{{template_language}}\"\n    },\n    \"components\": [\n      {\n        \"type\": \"header\",\n        \"parameters\": [\n          {\n            \"type\": \"video\",\n            \"video\": {\n              \"link\": \"{{video_url}}\"\n            }\n          }\n        ]\n      },\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"{{template_body_value}}\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Requires an approved template with this media header and one positional body parameter. Remove or adjust body parameters to match your template."
+          },
+          "response": []
+        },
+        {
+          "name": "Send template with document header",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"to\": \"{{recipient}}\",\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": \"{{template_name}}\",\n    \"language\": {\n      \"code\": \"{{template_language}}\"\n    },\n    \"components\": [\n      {\n        \"type\": \"header\",\n        \"parameters\": [\n          {\n            \"type\": \"document\",\n            \"document\": {\n              \"link\": \"{{document_url}}\",\n              \"filename\": \"{{document_filename}}\"\n            }\n          }\n        ]\n      },\n      {\n        \"type\": \"body\",\n        \"parameters\": [\n          {\n            \"type\": \"text\",\n            \"text\": \"{{template_body_value}}\"\n          }\n        ]\n      }\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/messages/send",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "messages",
+                "send"
+              ]
+            },
+            "description": "Requires an approved template with this media header and one positional body parameter. Remove or adjust body parameters to match your template."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

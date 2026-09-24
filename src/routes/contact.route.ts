@@ -11,7 +11,7 @@ ContactRoute.use(accountScope);
 // All contact endpoints require authentication (applied at route group level)
 
 // Lists management
-ContactRoute.get('/lists',  ContactController.getLists);
+ContactRoute.get('/lists', ContactController.getLists);
 ContactRoute.get('/lists/:id', ownedResource('contact_lists', 'id'), ContactController.getListById);
 ContactRoute.get('/lists/:id/contacts', ownedResource('contact_lists', 'id'), ContactController.getListContacts);
 ContactRoute.delete('/lists/:id', ownedResource('contact_lists', 'id'), ContactController.deleteList);
@@ -29,11 +29,27 @@ ContactRoute.get('/phone-number/:phoneNumberId', ownedPhone, ContactController.g
 // Retain the existing phone-number URL; use /by-id/:id for contact detail.
 ContactRoute.get('/:phoneNumberId', ownedPhone, ContactController.getContactByPhoneNumberId);
 ContactRoute.get('/by-id/:id', ownedResource('contacts', 'id'), ContactController.getContactById);
-ContactRoute.put('/:id', ownedResource('contacts', 'id'), accountAssignments, requireRole('user','member'),ContactController.updateContact);
-ContactRoute.delete('/',requireRole('user','member'), ContactController.bulkDeleteContacts);
-ContactRoute.delete('/:id', ownedResource('contacts', 'id'),requireRole('user','member'), ContactController.deleteContact);
-ContactRoute.get('/user/:userId', ContactController.getUsersContacts)
-ContactRoute.put('/:contactId/assigned', ownedResource('contacts', 'contactId'), accountAssignments,ContactController.assignedContactToUser)
+ContactRoute.put(
+  '/:id',
+  ownedResource('contacts', 'id'),
+  accountAssignments,
+  requireRole('user', 'member'),
+  ContactController.updateContact,
+);
+ContactRoute.delete('/', requireRole('user', 'member'), ContactController.bulkDeleteContacts);
+ContactRoute.delete(
+  '/:id',
+  ownedResource('contacts', 'id'),
+  requireRole('user', 'member'),
+  ContactController.deleteContact,
+);
+ContactRoute.get('/user/:userId', ContactController.getUsersContacts);
+ContactRoute.put(
+  '/:contactId/assigned',
+  ownedResource('contacts', 'contactId'),
+  accountAssignments,
+  ContactController.assignedContactToUser,
+);
 
 // Contact import
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);
@@ -45,9 +61,7 @@ ContactRoute.post('/import', uploadXLSXMiddleware, ownedPhone, ContactController
 // Contact tags management
 // Adding existing tags does not consume the plan allowance for creating new tags.
 ContactRoute.post('/bulk/tags', requireRole('user', 'member'), ContactController.addBulkTags);
-ContactRoute.post('/:id/tags', ownedResource('contacts', 'id'),checkPlanLimit('Tag'), ContactController.addTags);
+ContactRoute.post('/:id/tags', ownedResource('contacts', 'id'), checkPlanLimit('Tag'), ContactController.addTags);
 ContactRoute.delete('/:id/tags', ownedResource('contacts', 'id'), ContactController.removeTags);
 
 export default ContactRoute;
-
-

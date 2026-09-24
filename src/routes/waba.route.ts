@@ -8,7 +8,7 @@ WabaRoute.use(accountScope);
 
 // All WABA endpoints require authentication (applied at route group level)
 
-WabaRoute.post('/onboard', WabaController.onboardingWaba)
+WabaRoute.post('/onboard', WabaController.onboardingWaba);
 
 // WABA Account Management
 WabaRoute.post('/', WabaController.createWaba);
@@ -19,11 +19,14 @@ WabaRoute.post('/:wabaId/phone-numbers', ownedResource('waba_accounts', 'wabaId'
 WabaRoute.get('/phone-numbers', WabaController.getPhoneNumbers);
 WabaRoute.get('/:wabaId/phone-numbers', ownedResource('waba_accounts', 'wabaId'), WabaController.getWabaPhoneNumbers);
 
-WabaRoute.post('/:wabaId/sync-phone-numbers', ownedResource('waba_accounts', 'wabaId'), WabaController.syncPhoneNumbers);
+WabaRoute.post(
+  '/:wabaId/sync-phone-numbers',
+  ownedResource('waba_accounts', 'wabaId'),
+  WabaController.syncPhoneNumbers,
+);
 WabaRoute.put('/phone-numbers/:id', ownedResource('phone_numbers', 'id'), WabaController.updatePhoneNumber);
-WabaRoute.delete('/:wabaId/waba-account', ownedResource('waba_accounts', 'wabaId'),WabaController.deleteWabaAccount)
+WabaRoute.delete('/:wabaId/waba-account', ownedResource('waba_accounts', 'wabaId'), WabaController.deleteWabaAccount);
 WabaRoute.delete('/phone-numbers/:id', ownedResource('phone_numbers', 'id'), WabaController.deletePhoneNumber);
-WabaRoute.post('/:phoneNumberId/verify-number', ownedPhone,WabaController.verifiedPhoneNumber)
-
+WabaRoute.post('/:phoneNumberId/verify-number', ownedPhone, WabaController.verifiedPhoneNumber);
 
 export default WabaRoute;
