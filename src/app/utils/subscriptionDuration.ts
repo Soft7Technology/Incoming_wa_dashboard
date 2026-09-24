@@ -1,6 +1,10 @@
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 
 export function resolveTrialDays(billingCycle: string, trialDays?: unknown): 3 | 7 | 10 | null {
+  // Validate API input before persistence; TypeScript types do not validate request bodies.
+  if (!['Monthly', 'Yearly', 'Free'].includes(billingCycle)) {
+    throw new HTTP400Error({ message: 'billing_cycle must be Monthly, Yearly, or Free; use trial_days for Free plan duration' });
+  }
   if (billingCycle !== 'Free') {
     if (trialDays !== undefined && trialDays !== null) {
       throw new HTTP400Error({ message: 'trial_days is only supported for Free plans' });

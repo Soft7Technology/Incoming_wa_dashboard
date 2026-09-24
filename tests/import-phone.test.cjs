@@ -86,3 +86,14 @@ test('mixed-country workbook detects each row and never applies 91 to every cont
     assert.equal(result.contacts[0].phone_number, '+6592956294');
   } finally { fs.unlinkSync(file); fs.rmdirSync(dir); }
 });
+
+test('Indian local numbers do not become Myanmar, Maldives, Lebanon or Bhutan numbers', () => {
+  for (const number of ['9522007000', '9607155555', '9617855555', '9752665171', '9598065229']) {
+    const result = parse(number, '91', false, true);
+    assert.equal(result.phone_number, '+91' + number);
+    assert.equal(result.country_code, '91');
+    assert.throws(() => parse(number, '', false, true), /Country code is required/);
+  }
+  assert.equal(parse('+447831774016', '91', false, true).country_code, '44');
+  assert.equal(parse('92956294', '65', true, true).phone_number, '+6592956294');
+});

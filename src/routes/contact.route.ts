@@ -43,6 +43,8 @@ ContactRoute.post('/import/preview', uploadXLSXMiddleware, ContactController.pre
 ContactRoute.post('/import', uploadXLSXMiddleware, ownedPhone, ContactController.importContacts);
 
 // Contact tags management
+// Adding existing tags does not consume the plan allowance for creating new tags.
+ContactRoute.post('/bulk/tags', requireRole('user', 'member'), ContactController.addBulkTags);
 ContactRoute.post('/:id/tags', ownedResource('contacts', 'id'),checkPlanLimit('Tag'), ContactController.addTags);
 ContactRoute.delete('/:id/tags', ownedResource('contacts', 'id'), ContactController.removeTags);
 

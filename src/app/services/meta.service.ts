@@ -73,6 +73,7 @@ class MetaService {
           limit: 100,
         },
       });
+      console.log('Respnse',response.data)
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Templates:', error.response?.data || error.message);

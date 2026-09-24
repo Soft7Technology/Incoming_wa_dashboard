@@ -22,7 +22,7 @@ function expandScientificPhone(raw: string): string {
   return prefix + expanded;
 }
 
-export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountryCode = false) {
+export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountryCode = false, requireCountryContext = false) {
   // Remove invisible directional/zero-width formatting copied from messaging apps.
   // Numeric Excel cells must already contain an exact integer; lost digits cannot be recovered.
   if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0 || value >= 1e15)) {
@@ -45,12 +45,16 @@ export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountry
     throw new Error('Country code must be a calling code such as +65 or an ISO code such as SG');
   }
   const national = code ? parsePhoneNumberFromString(cleaned, { defaultCallingCode: code }) : undefined;
-  // A country explicitly supplied on this row resolves otherwise ambiguous local digits.
-  // Do not let an import-wide default override a different valid international number.
-  if (rowCountryCode && code) {
+  // Bare digits are not evidence of a country: an Indian mobile beginning 95
+  // must not become a Myanmar number when India was selected for the import.
+  if (code) {
     const preferred = international?.isValid() && international.countryCallingCode === code
       ? international : national?.isValid() ? national : undefined;
     if (preferred) return { phone_number: preferred.number, country_code: preferred.countryCallingCode };
+    if (rowCountryCode) throw new Error('Phone number does not match the row country code; use + for an international number');
+  }
+  if (!code && requireCountryContext) {
+    throw new Error('Country code is required for an unprefixed phone number: add a country_code column, select an import country, or use +countrycode');
   }
   const candidates = [international, national].filter(number => number?.isValid());
   const unique = [...new Map(candidates.map(number => [number!.number, number!])).values()];

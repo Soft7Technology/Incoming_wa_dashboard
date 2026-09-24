@@ -43,6 +43,9 @@ test('plan edits preserve duration, accept duration-only updates, and clear it f
   assert.equal((await service.updateSubscriptionPlan('plan', { trial_days: 10 })).trial_days, 10);
   assert.equal((await service.updateSubscriptionPlan('plan', { billing_cycle: 'Monthly' })).trial_days, null);
   await assert.rejects(service.updateSubscriptionPlan('plan', { trial_days: 5 }), /must be 3, 7, or 10/);
+  for (const billing_cycle of ['free', '7days', '', 'Weekly']) {
+    await assert.rejects(service.updateSubscriptionPlan('plan', { billing_cycle }), /billing_cycle must be Monthly, Yearly, or Free/);
+  }
 });
 
 test('calendar periods clamp month ends and leap years and retain precise remaining time', () => {
