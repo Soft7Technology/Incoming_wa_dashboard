@@ -1,16 +1,8 @@
 import { buildInteractiveHeader, validateChatbotMessage } from './utils/chatbotMessage';
 import chatSessionModel from '../app/models/chatSession.model';
-import chatBotModel from '../app/models/chatbot.model';
-import chatBotNodeModel from './models/chatBotNode.model';
-import chatBotEdgeModel from './models/chatBotEdge.model';
-import messageService from './services/message.service';
-import phoneNumberModel from './models/phoneNumber.model';
-import aiAgentService from './services/aiAgent.service';
 import nodemailer from "nodemailer";
 import metaService from './services/meta.service';
 import { parsePhoneNumberFromString } from "libphonenumber-js";
-import contactModel from './models/contact.model';
-import userModel from './models/user.model';
 import chatbotTriggerModel from './models/chatbotTrigger.model';
 
 export const transporter = nodemailer.createTransport({
@@ -30,89 +22,6 @@ export async function endSession(sessionId: string) {
     updated_at: new Date(),
   });
 }
-
-
-export const COUNTRY_PHONE_LENGTHS: any = {
-  // Asia
-  '91': 10, // India
-  '92': 10, // Pakistan
-  '93': 9, // Afghanistan
-  '94': 9, // Sri Lanka
-  '95': 8, // Myanmar
-  '60': 9, // Malaysia
-  '62': 10, // Indonesia
-  '63': 10, // Philippines
-  '65': 8, // Singapore
-  '66': 9, // Thailand
-  '81': 10, // Japan
-  '82': 10, // South Korea
-  '84': 9, // Vietnam
-  '86': 11, // China
-  '852': 8, // Hong Kong
-  '853': 8, // Macau
-  '886': 9, // Taiwan
-
-  // Middle East
-  '971': 9, // UAE
-  '966': 9, // Saudi Arabia
-  '965': 8, // Kuwait
-  '974': 8, // Qatar
-  '973': 8, // Bahrain
-  '968': 8, // Oman
-  '962': 9, // Jordan
-  '961': 8, // Lebanon
-  '972': 9, // Israel
-  '964': 10, // Iraq
-  '98': 10, // Iran
-
-  // North America
-  '1': 10, // USA/Canada
-
-  // Europe
-  '44': 10, // UK
-  '33': 9, // France
-  '49': 10, // Germany
-  '39': 10, // Italy
-  '34': 9, // Spain
-  '31': 9, // Netherlands
-  '32': 9, // Belgium
-  '41': 9, // Switzerland
-  '43': 10, // Austria
-  '45': 8, // Denmark
-  '46': 9, // Sweden
-  '47': 8, // Norway
-  '48': 9, // Poland
-  '351': 9, // Portugal
-  '30': 10, // Greece
-  '353': 9, // Ireland
-  '420': 9, // Czech Republic
-  '36': 9, // Hungary
-  '40': 9, // Romania
-  '380': 9, // Ukraine
-  '7': 10, // Russia/Kazakhstan
-
-  // Oceania
-  '61': 9, // Australia
-  '64': 9, // New Zealand
-
-  // Africa
-  '20': 10, // Egypt
-  '27': 9, // South Africa
-  '234': 10, // Nigeria
-  '254': 9, // Kenya
-  '255': 9, // Tanzania
-  '233': 9, // Ghana
-  '251': 9, // Ethiopia
-  '212': 9, // Morocco
-
-  // South America
-  '55': 11, // Brazil
-  '54': 10, // Argentina
-  '56': 9, // Chile
-  '57': 10, // Colombia
-  '51': 9, // Peru
-  '58': 10, // Venezuela,
-};
 
 export const generateInviteTemplate = ({
   name,
@@ -404,35 +313,6 @@ export function safeJSON(data: any) {
     return {};
   }
 }
-
-
-// export function replaceVariables(obj:any, variables:Record<string, any>):any{
-//   console.log("Variables", obj,variables)
-//   console.log("Typeof",typeof obj)
-
-//   if(typeof obj === "string"){
-//     return obj.replace(/\{\{(.*?)\}\}/g,(_,key)=> {
-//       console.log("key",variables[key.trim()])
-//       return variables[key.trim()]?? "";
-//     })
-//   }
-
-//   if(Array.isArray(obj)){
-//     return obj.map(item => replaceVariables(item,variables))
-//   }
-
-//   if(obj && typeof obj === "object"){
-//     const result:any = {}
-
-//     for(const key in obj){
-//       result[key] = replaceVariables(obj[key], variables)
-//     }
-
-//     return result;
-//   }
-
-//   return obj;
-// }
 
 
 export function replaceVariables(
@@ -757,132 +637,6 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
     };
   }
 
-  //   if (key === "@whatsapp/send-text-message") {
-  //     const text = `Welcome to Krishivan Organization! 🎉
-
-  // Hello Ritesh,
-
-  // Your account has been created successfully .
-
-  // 📧 Email: ritesh45@gmail.com
-  //    Company Name: JAIVIK KISAN UPAJ PRODUCER COMPANY LIMITED
-  //    PAN Number: AAECJ8814A
-  //    Address: 881, SETELIGHT JUCTION, A.B. ROAD, INDORE, Indore, Madhya Pradesh, 452010
-  // 🔐 Password: 123456
-  // 👤 Role: FPO
-
-  // Your Information has been verified through your gst number
-
-  // You can login using the link below:
-
-  // 🔗 https://fpo-krishivan.web.app/login
-
-  // Please keep your login credentials safe.
-
-  // Welcome aboard! 🚀`;
-
-  //     console.log("TEXT", text);
-
-  //     return {
-  //       type: "text",
-  //       text,
-  //     };
-  //   }
-
-  // if (key === "@whatsapp/send-product-message") {
-  //   //Get catalog_id from message.action.catalog_id
-  //   //Get category from session.variable.category
-  //   //call catalogService pass the catalog_id,category
-  //   // create function buildProductMessage 
-  //   console.log("Product session", session.variables.category)
-  //   console.log("Product node", data.attributes.message.interactive.action.catalog_id)
-  //   const catalog_id = data.attributes.message.interactive.action.catalog_id
-  //   const category = session.variables.category
-  //   const productVariants = await catalogService.getProductVariants(category, catalog_id)
-  //   const productItems = productVariants.data?.map((id: string) => {
-  //     return {
-  //       product_retailer_id: id
-  //     };
-  //   })
-
-  //   console.log("Product Items", productItems)
-
-  //   return {
-  //     type: "interactive",
-
-  //     interactive: {
-  //       type: "product_list",
-
-  //       header: {
-  //         type: "text",
-  //         text: "View Krishivan Catalog"
-  //       },
-
-  //       body: {
-  //         text: "Select a product to place order"
-  //       },
-  //       action: {
-  //         catalog_id: catalog_id,
-  //         sections: [
-  //           {
-  //             title: `View selected ${category}`,
-  //             product_items: productItems
-  //           }
-  //         ]
-  //       }
-
-  //     }
-
-  //   }
-  // }
-
-  // if (key === "@whatsapp/send-product-message") {
-  //   //Get catalog_id from message.action.catalog_id
-  //   //Get category from session.variable.category
-  //   //call catalogService pass the catalog_id,category
-  //   // create function buildProductMessage 
-  //   console.log("Product node", session.variables)
-  //   const catalog_id = '795853123055079'
-  //   const product_name = session.variables.product_name
-  //   console.log("Product Name", product_name)
-  //   const productVariants = await catalogService.getProductVariants(product_name, catalog_id)
-  //   const productItems = productVariants.data?.map((id: string) => {
-  //     return {
-  //       product_retailer_id: id
-  //     };
-  //   })
-
-  //   console.log("Product Items", productItems)
-
-  //   return {
-  //     type: "interactive",
-
-  //     interactive: {
-  //       type: "product_list",
-
-  //       header: {
-  //         type: "text",
-  //         text: "View Krishivan Catalog"
-  //       },
-
-  //       body: {
-  //         text: "Select a product to place order"
-  //       },
-  //       action: {
-  //         catalog_id: catalog_id,
-  //         sections: [
-  //           {
-  //             title: `View Krishivan Products`,
-  //             product_items: productItems
-  //           }
-  //         ]
-  //       }
-
-  //     }
-
-  //   }
-  // }
-
   // Button Interactive  
   if (key === "@whatsapp/send-button-message") {
     const message = data?.attributes?.message?.interactive;
@@ -950,7 +704,6 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
 
 
   // 📋 LIST MESSAGE BUILDER
-  // 📋 LIST MESSAGE BUILDER
   if (key === "@whatsapp/send-list-message") {
     const interactiveData =
       data.attributes?.message?.interactive || {};
@@ -999,71 +752,6 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
       interactive,
     };
   }
-
-  // 🔗 CTA URL BUTTON
-  // if (type === "cta_url") {
-  //   const interactive: any = {
-  //     type: "cta_url",
-  //     body: {
-  //       text: data.text || ""
-  //     },
-  //     footer: data.footer || undefined,
-  //     action: {
-  //       name: "cta_url",
-  //       parameters: {
-  //         display_text: data.ctaDisplayText || "Open",
-  //         url: data.ctaUrl
-  //       }
-  //     }
-  //   };
-
-  //   // Optional Header
-  //   if (data.headerType === 'image' && data.headerMedia) {
-  //     interactive.header = {
-  //       type: "image",
-  //       image: {
-  //         link: data.headerMedia
-  //       }
-  //     };
-  //   } else if (data.headerType === 'text' && data.header) {
-  //     interactive.header = {
-  //       type: "text",
-  //       text: data.header
-  //     };
-  //   }
-  //   return {
-  //     type: "interactive",
-  //     interactive
-  //   }
-  // }
-
-  // // 🎞️ CAROUSEL (Meta = "product" or "generic template")
-  // if (type === "carousel") {
-  //   return {
-  //     type: "interactive",
-  //     interactive: {
-  //       type: "carousel", // or "catalog_message" depending on API
-  //       body: {
-  //         text: data.text || "Browse items"
-  //       },
-  //       action: {
-  //         cards: data.carouselCards || []
-  //       }
-  //     }
-  //   };
-  // }
-
-  // // 🖼️ MEDIA MESSAGE (image header)
-  // if (type === "media") {
-  //   return {
-  //     type: "image",
-  //     image: {
-  //       link: data.mediaUrl,
-  //       caption: data.text || ""
-  //     }
-  //   };
-  // }
-
 
   return null;
 }

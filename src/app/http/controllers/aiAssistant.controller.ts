@@ -3,66 +3,111 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import aiAssistantModel from '../../models/aiAssistant.model';
-import { encryptApiKey, decryptApiKey, maskApiKey } from '../../utils/crypto.util';
+import { encryptApiKey, decryptApiKey} from '../../utils/crypto.util';
+import aiAgentService from '../../services/aiAssistant.service';
 
-import axios from 'axios';
-import fs from 'fs';
 
-const formatResponse = (assistant: any) => {
-  if (!assistant) return null;
-  return {
-    id: Number(assistant.id),
-    name: assistant.name,
-    role: assistant.role,
-    status: assistant.status,
-    promptType: assistant.prompt_type,
-    predefinedPrompt: assistant.predefined_prompt,
-    customPrompt: assistant.custom_prompt,
-    provider: assistant.provider,
-    model: assistant.model,
-    apiKey: assistant.api_key ? maskApiKey(decryptApiKey(assistant.api_key)) : null,
-    createdAt: assistant.created_at,
-    updatedAt: assistant.updated_at,
-  };
+export const openAiModelMap: Record<string, string> = {
+  'gpt-4o': 'gpt-4o',
+  'gpt-4o mini': 'gpt-4o-mini',
+  'gpt-4.1': 'gpt-4.1',
+  'gpt-4.1 mini': 'gpt-4.1-mini',
 };
 
 class AIAssistantController {
   getAssistants = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const userId = req.userId!;
     const assistants = await aiAssistantModel.findByUserId(userId);
-    const formatted = assistants.map(formatResponse);
-    return successResponse(req, res, 'Assistants retrieved successfully', formatted);
+    return successResponse(req, res, 'Assistants retrieved successfully', assistants);
   });
 
   createAssistant = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const userId = req.userId!;
-    const { name, role, status, promptType, predefinedPrompt, customPrompt, provider, model, apiKey } = req.body;
 
-    console.log("createAssistant headers:", req.headers);
-    console.log("createAssistant body:", req.body);
-    console.log("createAssistant files:", req.files);
-    if (!name || !role || !promptType || !provider || !model) {
-      throw new HTTP400Error({ message: 'Missing required parameters' });
+    const {
+      name,
+      role,
+      promptType,
+      predefinedPrompt,
+      customPrompt,
+      provider,
+      model,
+      apiKey,
+    } = req.body;
+
+    if (!name || !role || !promptType || !provider || !model || !apiKey) {
+      throw new HTTP400Error({
+        message: 'Missing required parameters',
+      });
+    }
+
+    let connectionVerified = false;
+    let connectionError: string | null = null;
+
+    try {
+      await aiAgentService.testProviderConnection(
+        provider,
+        model,
+        apiKey,
+      );
+
+      connectionVerified = true;
+    } catch (error: any) {
+      connectionVerified = false;
+
+      const rawConnectionError =
+        error?.response?.data?.error?.message ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Unable to verify provider connection';
+
+      connectionError = String(rawConnectionError).slice(0, 500);
+
+      console.error('AI provider connection failed:', {
+        provider,
+        model,
+        error: connectionError,
+      });
+    }
+
+    const encryptedApiKey = encryptApiKey(apiKey);
+
+    if (!encryptedApiKey) {
+      throw new HTTP400Error({
+        message: 'Unable to encrypt API key',
+      });
     }
 
     const payload = {
       user_id: userId,
       name,
       role,
-      status: status || 'ACTIVE',
+      status: connectionVerified
+        ? ('ACTIVE' as const)
+        : ('INACTIVE' as const),
       prompt_type: promptType,
       predefined_prompt: predefinedPrompt || null,
       custom_prompt: customPrompt || null,
       provider,
       model,
-      api_key: encryptApiKey(apiKey) || undefined,
+      connection_verified: connectionVerified,
+      connection_error: connectionError,
+      api_key: encryptedApiKey,
     };
 
-    const result = await aiAssistantModel.createAssistant(payload);
-    const assistantId = result.id;
+    const response = await aiAssistantModel.create(payload);
 
+    const message = connectionVerified
+      ? 'Assistant created and connection verified successfully'
+      : `Assistant created, but provider connection failed: ${connectionError || 'Unknown connection error'
+      }`;
 
-    return successResponse(req, res, 'Assistant created successfully', formatResponse(result));
+    return successResponse(
+      req,
+      res,
+      message,
+      response
+    );
   });
 
   updateAssistant = tryCatchAsync(async (req: AuthRequest, res: Response) => {
@@ -92,16 +137,15 @@ class AIAssistantController {
       updated_at: new Date().toISOString(),
     };
 
-    const result = await aiAssistantModel.updateAssistant(id, payload);
+    const result = await aiAssistantModel.update(id, payload);
 
-
-    return successResponse(req, res, 'Assistant updated successfully', formatResponse(result));
+    return successResponse(req, res, 'Assistant updated successfully', result);
   });
 
   deleteAssistant = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const existing = await aiAssistantModel.findById(id);
-    if (!existing) {       
+    if (!existing) {
       throw new HTTP400Error({ message: 'Assistant not found' });
     }
 
@@ -109,52 +153,73 @@ class AIAssistantController {
     return successResponse(req, res, 'Assistant deleted successfully', { id: Number(id) });
   });
 
-  testConnection = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { provider, model, apiKey, assistantId } = req.body;
-    let keyToTest = apiKey;
-    
-    // If the frontend sends the masked key back, treat it as empty so we fetch from DB
-    if (keyToTest && keyToTest.includes('***')) {
-      keyToTest = undefined;
-    }
+  testConnection = tryCatchAsync(
+    async (req: AuthRequest, res: Response) => {
+      const {
+        provider,
+        model,
+        apiKey,
+        assistantId,
+      } = req.body;
 
-    if (!keyToTest && assistantId) {
-      const existing = await aiAssistantModel.findById(assistantId);
-      if (existing && existing.api_key) {
-        const decrypted = decryptApiKey(existing.api_key);
-        if (decrypted && decrypted.includes('***')) {
-          throw new HTTP400Error({ message: 'Saved API Key is corrupted (masked). Please enter your real API key and save again.' });
+      if (!provider) {
+        throw new HTTP400Error({
+          message: 'Provider is required',
+        });
+      }
+
+      let keyToTest = String(apiKey || '').trim();
+
+      // Use the saved encrypted key when frontend sends a masked/empty key
+      if ((!keyToTest || keyToTest.includes('***')) && assistantId) {
+        const existing = await aiAssistantModel.findById(assistantId);
+
+        if (existing?.api_key) {
+          keyToTest = decryptApiKey(existing.api_key)?.trim() || '';
         }
-        keyToTest = decrypted;
       }
-    }
 
-    if (!keyToTest) {
-      throw new HTTP400Error({ message: 'API Key is missing' });
-    }
-
-    try {
-      if (provider.toLowerCase().includes('openai')) {
-        await axios.post(
-          'https://api.openai.com/v1/chat/completions',
-          { model: model || 'gpt-4o-mini', messages: [{ role: 'user', content: 'hello' }], max_tokens: 1 },
-          { headers: { Authorization: `Bearer ${keyToTest}` } }
-        );
-      } else if (provider.toLowerCase().includes('gemini')) {
-        const geminiModel = model?.toLowerCase().includes('pro') ? 'gemini-pro-latest' : 'gemini-flash-latest';
-        await axios.post(
-          `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${keyToTest}`,
-          { contents: [{ parts: [{ text: 'hello' }] }] }
-        );
-      } else {
-        throw new HTTP400Error({ message: 'Unsupported provider for testing' });
+      if (!keyToTest || keyToTest.includes('***')) {
+        throw new HTTP400Error({
+          message: 'API key is missing or invalid',
+        });
       }
-      return successResponse(req, res, 'Connection successful. API Key is valid.');
-    } catch (error: any) {
-      const msg = error?.response?.data?.error?.message || error?.message || 'Invalid API Key';
-      throw new HTTP400Error({ message: `Connection failed: ${msg}` });
-    }
-  });
+
+      const testResult =
+        await aiAgentService.testProviderConnection(
+          provider,
+          model,
+          keyToTest,
+        );
+
+      // Update database when testing an existing assistant
+      if (assistantId) {
+        await aiAssistantModel.update(assistantId, {
+          status: testResult.success ? 'ACTIVE' : 'INACTIVE',
+          connection_error: testResult.success
+            ? null
+            : testResult.message,
+          last_connection_test_at: new Date(),
+        });
+      }
+
+      if (!testResult.success) {
+        throw new HTTP400Error({
+          message: testResult.message,
+        });
+      }
+
+      return successResponse(
+        req,
+        res,
+        testResult.message,
+        {
+          assistantId,
+          status: 'ACTIVE',
+        },
+      );
+    },
+  );
 }
 
 export default new AIAssistantController();
