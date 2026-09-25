@@ -16,14 +16,10 @@ class AIAssistantModel extends BaseModel {
     return this.query().where({ id }).first();
   }
 
-  async findByUserId(userId: string): Promise<AIAssistant[]> {
+  async findByUserId(userId: string): Promise<any[]> {
     return this.query().where({ user_id: userId });
   }
  
-  async updateAssistant(id: number | string, data: Partial<AIAssistant>): Promise<AIAssistant> {
-    const [result] = await this.query().where({ id }).update(data).returning('*');
-    return result;
-  }
 
   async deleteAssistant(id: number | string): Promise<number> {
     return this.query().where({ id }).del();
