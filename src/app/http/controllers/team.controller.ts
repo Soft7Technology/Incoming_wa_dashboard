@@ -19,7 +19,7 @@ class teamController {
     try {
       const { name, email, phone_number, role, permission, domain_name } = req.body;
       if (!email || !phone_number || !role || !domain_name) {
-        throw new HTTP400Error({ message: 'Email, phone number, and role are required' });
+        throw new HTTP400Error({ message: 'Email, phone number, domain_name, and role are required' });
       }
       // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
       const permissionArray: string[] = Array.isArray(permission) ? permission : [];
@@ -37,24 +37,20 @@ class teamController {
         });
       }
 
-      const inviteTeam = await teamService.inviteTeam({
-        assigned_plan,
-        name,
-        invite_sent_by,
-        company_id,
-        email,
-        phone_number,
-        role,
-        permission: permissionArray,
-        domain_name,
-      });
-      if (!inviteTeam.success) {
-        const reason = inviteTeam.message || 'Failed to send invite email';
-        return sendResponse(res, HttpStatusCode.BAD_REQUEST, false, 'Failed to send team invite', { error: reason });
-      }
-      return successResponse(req, res, `Invite sent to ${email} successfully`, inviteTeam.data);
-    } catch (error: any) {
-      console.error('Create Ticket Error:', error);
+            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray,domain_name  })
+            if (!inviteTeam.success) {
+                const reason = inviteTeam.message || 'Failed to send invite email';
+                return sendResponse(
+                    res,
+                    HttpStatusCode.BAD_REQUEST,
+                    false,
+                    'Failed to send team invite',
+                    { error: reason }
+                );
+            }
+            return successResponse(req, res, `Invite sent to ${email} successfully`, inviteTeam.data);
+        } catch (error: any) {
+            console.error('Create Ticket Error:', error);
 
       return sendResponse(
         res,

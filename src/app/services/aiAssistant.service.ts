@@ -1,7 +1,22 @@
-import axios from 'axios';
 import aiAssistantModel from '../models/aiAssistant.model';
 import messageModel from '../models/message.model';
 import { decryptApiKey } from '../utils/crypto.util';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import axios, { AxiosError } from 'axios';
+
+export const openAiModelMap: Record<string, string> = {
+  'gpt-4o': 'gpt-4o',
+  'gpt-4o mini': 'gpt-4o-mini',
+  'gpt-4.1': 'gpt-4.1',
+  'gpt-4.1 mini': 'gpt-4.1-mini',
+};
+
+type ProviderTestResult = {
+  success: boolean;
+  message: string;
+  statusCode?: number;
+  errorCode?: string;
+};
 
 class AIAgentService {
   /**
@@ -20,13 +35,13 @@ class AIAgentService {
 
       // 2. Fetch recent chat history to provide context/memory (limit to last 10 messages)
       const history = await messageModel.getRecentMessages(userId, phone, 10);
-                                                    
+
       history.reverse(); // Order from oldest to newest
 
       // 3. Format prompt and system instruction
-      let systemInstruction = activeAssistant.prompt_type === 'custom'                                    
-        ? activeAssistant.custom_prompt                                                                                         
-        : `You are a helpful assistant acting as a: ${activeAssistant.role}.`;            
+      let systemInstruction = activeAssistant.prompt_type === 'custom'
+        ? activeAssistant.custom_prompt
+        : `You are a helpful assistant acting as a: ${activeAssistant.role}.`;
 
 
 
@@ -35,7 +50,7 @@ class AIAgentService {
 
       if (!apiKey) {
         console.warn('⚠️ No API Key found for AI Assistant.');
-        return 'Assistant configuration error: API Key not found.'; 
+        return 'Assistant configuration error: API Key not found.';
       }
 
       let responseText = '';
@@ -50,7 +65,7 @@ class AIAgentService {
           role: msg.direction === 'inbound' ? 'user' : 'model',
           parts: [{ text: msg.content?.body || '' }]
         }));
-        
+
         // Append latest incoming text
         contents.push({
           role: 'user',
@@ -113,6 +128,106 @@ class AIAgentService {
     } catch (error: any) {
       console.error('❌ AI Agent Service Error:', error?.response?.data || error.message);
       return 'Sorry, I encountered an issue processing your request.';
+    }
+  }
+
+  async testProviderConnection(
+    provider: string,
+    model: string,
+    apiKey: string,
+  ): Promise<ProviderTestResult> {
+    const normalizedProvider = String(provider || '')
+      .trim()
+      .toLowerCase();
+
+    try {
+      if (normalizedProvider.includes('openai')) {
+        const requestedModel = String(model || 'gpt-4o-mini')
+          .trim()
+          .toLowerCase();
+
+        const openAiModel =
+          openAiModelMap[requestedModel] ||
+          requestedModel.replace(/\s+/g, '-');
+
+        await axios.post(
+          'https://api.openai.com/v1/responses',
+          {
+            model: openAiModel,
+            input: 'Reply with OK',
+            max_output_tokens: 16,
+            store: false,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000,
+          },
+        );
+      } else if (normalizedProvider.includes('gemini')) {
+        const geminiModel = String(model || 'gemini-2.5-flash')
+          .trim()
+          .replace(/^models\//, '');
+
+        await axios.post(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+            geminiModel,
+          )}:generateContent`,
+          {
+            contents: [
+              {
+                parts: [{ text: 'Reply with OK' }],
+              },
+            ],
+            generationConfig: {
+              maxOutputTokens: 16,
+            },
+          },
+          {
+            params: {
+              key: apiKey,
+            },
+            timeout: 15000,
+          },
+        );
+      } else {
+        return {
+          success: false,
+          message: `Unsupported provider: ${provider}`,
+        };
+      }
+
+      return {
+        success: true,
+        message: 'Connection successful. API key is valid.',
+      };
+    } catch (error) {
+      const axiosError = error as AxiosError<any>;
+
+      const statusCode = axiosError.response?.status;
+      const errorData = axiosError.response?.data;
+
+      const providerError =
+        errorData?.error?.message ||
+        errorData?.message ||
+        axiosError.message ||
+        'Provider connection failed';
+
+      const errorCode =
+        errorData?.error?.code ||
+        errorData?.error?.type ||
+        errorData?.code;
+
+      return {
+        success: false,
+        statusCode,
+        errorCode,
+        message: errorCode
+          ? `${errorCode}: ${providerError}`
+          : providerError,
+      };
     }
   }
 }

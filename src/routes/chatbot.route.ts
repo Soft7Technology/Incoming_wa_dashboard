@@ -2,18 +2,16 @@ import { Router } from 'express';
 import chatBotController from '../app/http/controllers/chatbot.controller';
 import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
 
-const chatBotRoute = Router()
+const chatBotRoute = Router();
 
 // chatBotRoute.post('/create', checkPlanLimit('Chatbot'), chatBotController.createChatBot)
-chatBotRoute.post('/create',chatBotController.createChatBot)
-chatBotRoute.post('/flow/:chatBotId', chatBotController.createChatBotFlow)
-chatBotRoute.get('/', chatBotController.getChatBots)
-chatBotRoute.patch('/:chatBotId/name', chatBotController.updateChatBotName)
-chatBotRoute.put('/:chatBotId/publish', chatBotController.publishedChatBot)
-chatBotRoute.put('/:chatBotId/unpublish', chatBotController.unpublishedChatBot)
-chatBotRoute.get('/:chatBotId', chatBotController.getChatBotById)
-chatBotRoute.delete('/:chatBotId', chatBotController.deleteChatBot)
+chatBotRoute.post('/create', chatBotController.createChatBot);
+chatBotRoute.post('/flow/:chatBotId', chatBotController.createChatBotFlow);
+chatBotRoute.get('/', chatBotController.getChatBots);
+chatBotRoute.patch('/:chatBotId/name', chatBotController.updateChatBotName);
+chatBotRoute.put('/:chatBotId/publish', chatBotController.publishedChatBot);
+chatBotRoute.put('/:chatBotId/unpublish', chatBotController.unpublishedChatBot);
+chatBotRoute.get('/:chatBotId', chatBotController.getChatBotById);
+chatBotRoute.delete('/:chatBotId', chatBotController.deleteChatBot);
 
-export default chatBotRoute
-
-
+export default chatBotRoute;

@@ -32,16 +32,16 @@ companyRoute.get('/', CompanyController.getAllCompanies);
 companyRoute.post('/user', companyController.createUser);
 companyRoute.get('/user', companyController.getAllUsers);
 companyRoute.put('/user/:userId', CompanyController.updateCompanyUser);
-companyRoute.get('/user/:userId',companyController.getCompanyUser)
-companyRoute.post('/custom-domain', companyController.createCustomName)
-companyRoute.post('/own-domain', companyController.createOwnDomain)
-companyRoute.get('/domain',companyController.getCompanyCustomDomain)
-companyRoute.get('/domain-status/:domainId',companyController.domainStatus)
-companyRoute.get('/company-domain',companyController.getCompanyDomain)
-companyRoute.get('/:company_domain/domain',companyController.getCompanyDomainDetails)
-companyRoute.post('/:company_domain/domain/active',companyController.companyDomainApproved) 
+companyRoute.get('/user/:userId', companyController.getCompanyUser);
+companyRoute.post('/custom-domain', companyController.createCustomName);
+companyRoute.post('/own-domain', companyController.createOwnDomain);
+companyRoute.get('/domain', companyController.getCompanyCustomDomain);
+companyRoute.get('/domain-status/:domainId', companyController.domainStatus);
+companyRoute.get('/company-domain', companyController.getCompanyDomain);
+companyRoute.get('/:company_domain/domain', companyController.getCompanyDomainDetails);
+companyRoute.post('/:company_domain/domain/active', companyController.companyDomainApproved);
 
-companyRoute.post('/:company_domain/domain/inactive',companyController.companyDomainInactive)
+companyRoute.post('/:company_domain/domain/inactive', companyController.companyDomainInactive);
 companyRoute.get('/subscriptions', CompanyController.getCompaniesSubscription);
 
 companyRoute.get('/stats', CompanyController.getUserStats);

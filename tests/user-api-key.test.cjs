@@ -27,6 +27,39 @@ function loadService(model) {
   }).default;
 }
 
+test('Bearer user API keys work and malformed or conflicting headers fail closed', async () => {
+  const key = 's7_' + 'b'.repeat(64);
+  let calls = 0;
+  class Unauthorized extends Error { constructor(data) { super(data.message); } }
+  const middleware = load('library/surefy/src/middleware/auth.middleware.ts', {
+    '../services/userApiKey.service': { authenticateUserApiKey: async token => {
+      calls++;
+      return token === key ? { userId: 'owner', companyId: 'company', userRole: 'user' } : null;
+    } },
+    '../exceptions/HTTP401Error': Unauthorized,
+    '../services/auth.service': { generateCompanyKey() {} },
+  });
+  for (const headers of [{ authorization: `Bearer ${key}` }, { authorization: `bearer ${key}`, 'x-api-key': key }]) {
+    const req = { headers };
+    let error;
+    await middleware.authMiddleware(req, {}, e => { error = e; });
+    assert.equal(error, undefined);
+    assert.equal(req.userId, 'owner');
+    assert.equal(req.companyId, 'company');
+  }
+  const before = calls;
+  for (const headers of [{ authorization: 'Bearer' }, { authorization: `Basic ${key}` },
+    { authorization: `Bearer ${key} extra` }, { authorization: `Bearer ${key}`, 'x-api-key': 'other' }]) {
+    let error;
+    await middleware.optionalAuthMiddleware({ headers }, {}, e => { error = e; });
+    assert.ok(error instanceof Unauthorized);
+  }
+  assert.equal(calls, before);
+  let error;
+  await middleware.authMiddleware({ headers: { authorization: 'Bearer revoked' } }, {}, e => { error = e; });
+  assert.match(error.message, /Invalid or revoked/);
+});
+
 test('issued API keys have cryptographic entropy and their plaintext is not stored', async () => {
   let inserted;
   const service = loadService({

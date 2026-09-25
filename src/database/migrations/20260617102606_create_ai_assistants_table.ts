@@ -13,6 +13,8 @@ export async function up(knex: Knex): Promise<void> {
     table.string('provider', 100).notNullable();
     table.string('model', 100).notNullable();
     table.string('api_key', 500);
+    table.boolean('connection_verified')
+    table.string('connection_error')
     table.timestamp('created_at').defaultTo(knex.fn.now());
     table.timestamp('updated_at').defaultTo(knex.fn.now());
 

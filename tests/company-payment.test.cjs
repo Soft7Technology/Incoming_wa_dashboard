@@ -128,13 +128,14 @@ function harness() {
   let creates = 0, verifies = 0, fail = false;
   const api = load(serviceFile, {
     '@surefy/database': db,
+    '../models/companyPayment.model': load('src/app/models/companyPayment.model.ts', { '@surefy/database': db }).default,
     '../utils/paymentCredentials': { decryptPaymentCredentials: () => gateway.credentials, encryptPaymentCredentials: () => 'encrypted' },
     './paymentGateway.provider': {
       createGatewayOrder: async () => { creates++; if (fail) throw new Error('Timeout'); return { provider_order_id: 'order_1', checkout: {} }; },
       verifyGatewayOrder: async () => { verifies++; return true; },
     },
   });
-  const req = { companyId: 'company-a', userId: 'user-a', userRole: 'admin', get: () => 'retry-key-1' };
+  const req = { companyId: 'company-a', userId: 'user-a', userRole: 'admin', idempotencyKey: 'retry-key-1' };
   return { ...api, rows, req, counts: () => ({ creates, verifies }), fail: () => { fail = true; } };
 }
 

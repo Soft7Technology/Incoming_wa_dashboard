@@ -14,12 +14,12 @@ CreditRoute.get('/balance/:companyId', CreditController.getBalance);
 // Get transactions (all authenticated users can view based on their role)
 CreditRoute.get('/transactions/:companyId', CreditController.getTransactions);
 
-CreditRoute.get('/transactions',CreditController.getTransactionHistory)
+CreditRoute.get('/transactions', CreditController.getTransactionHistory);
 
 // Add credits (admin/superadmin only)
 CreditRoute.post('/add', requireRole('superadmin'), CreditController.addCredit);
 
-CreditRoute.get('/superadmin/transaction', creditController.superAdminTransaction)
+CreditRoute.get('/superadmin/transaction', creditController.superAdminTransaction);
 
 // Refund credits (admin/superadmin only)
 CreditRoute.post('/refund', requireRole('admin', 'superadmin'), CreditController.refundCredit);

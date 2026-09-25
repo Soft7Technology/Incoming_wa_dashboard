@@ -34,18 +34,18 @@ AdminRoute.use('/payments', PaymentRoute);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
-AdminRoute.use('/support',supportRoute)
+AdminRoute.use('/support', supportRoute);
 AdminRoute.use('/subscription', SubscriptionRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);
 AdminRoute.use('/templates', TemplateRoute);
-AdminRoute.use('/messages', MessageRoute);  
+AdminRoute.use('/messages', MessageRoute);
 AdminRoute.use('/credits', CreditRoute);
 AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
-AdminRoute.use('/chatbot',chatBotRoute ); 
-AdminRoute.use('/team',teamInviteRoute)
+AdminRoute.use('/chatbot', chatBotRoute);
+AdminRoute.use('/team', teamInviteRoute);
 AdminRoute.use('/columns', ColumnRoute);
 AdminRoute.use('/activity', activityRoute);
 AdminRoute.use('/ai-assistant', aiAssistantRoute);
