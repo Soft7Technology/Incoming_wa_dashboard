@@ -115,7 +115,8 @@ class WebhookHandlerService {
       message_id: message.id,
       from: message.from,
       type: message.type,
-      content: this.extractMessageContent(message),
+      content: message,
+      raw_message: message,
       context: message.context,
       profile_name: profileName || message.from,
     });

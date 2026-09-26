@@ -86,6 +86,7 @@ class CampaignMessageModel extends BaseModel {
       .where('campaign_messages.campaign_id', campaignId)
       .where('campaign_messages.retry_after', '>', new Date());
     if (failedBefore) {
+      query.whereNot('campaign_messages.status', 'skipped');
       query.leftJoin('messages', 'messages.id', 'campaign_messages.message_id')
         .where(builder => builder.where('campaign_messages.status', 'failed').orWhere('messages.status', 'failed'))
         .where(builder => builder.whereNull('campaign_messages.failed_at').orWhere('campaign_messages.failed_at', '<', failedBefore));
@@ -104,6 +105,7 @@ class CampaignMessageModel extends BaseModel {
     const query = this.query()
       .leftJoin("messages", "messages.id", "campaign_messages.message_id")
       .where("campaign_messages.campaign_id", campaignId)
+      .whereNot("campaign_messages.status", "skipped")
       .where((qb) => {
         qb.where("campaign_messages.status", "failed")
           .orWhere("messages.status", "failed");
@@ -194,6 +196,7 @@ class CampaignMessageModel extends BaseModel {
       .from('campaign_messages as cm')
       .leftJoin('messages as m', 'm.id', 'cm.message_id')
       .where('cm.campaign_id', campaignId)
+      .whereNot('cm.status', 'skipped')
       .where((query) => {
         query.where('cm.status', 'failed').orWhere('m.status', 'failed');
       })
@@ -216,11 +219,12 @@ class CampaignMessageModel extends BaseModel {
       .select(
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'sent')     AS sent_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'pending')  AS pending_count`),
+        this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'skipped' AND cm.error_code IN ('WHATSAPP_OPTED_OUT', 'WHATSAPP_CONSENT_REQUIRED', 'WHATSAPP_WINDOW_CLOSED')) AS skipped_opt_out_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'delivered') AS delivered_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'read')    AS read_count`),
         this.db.raw(`
            COUNT(*) FILTER(
-             WHERE cm.status = 'failed' OR m.status = 'failed'
+             WHERE cm.status <> 'skipped' AND (cm.status = 'failed' OR m.status = 'failed')
            ) AS failed_count
           `),
         this.db.raw(`ROUND(COALESCE(SUM(m.cost), 0),1) AS total_cost`),
@@ -314,6 +318,7 @@ class CampaignMessageModel extends BaseModel {
 
     const effectiveStatusSql = `
     CASE
+      WHEN cm.status::text = 'skipped' THEN 'skipped'
       WHEN cm.status::text = 'failed' OR m.status::text = 'failed'
         THEN 'failed'
       WHEN m.status IS NOT NULL
@@ -334,7 +339,7 @@ class CampaignMessageModel extends BaseModel {
     // status=failed finds failures from campaign_messages OR messages.
     // Other statuses use the final/effective status.
     if (status === 'failed') {
-      baseQuery.andWhere((query) => {
+      baseQuery.whereNot('cm.status', 'skipped').andWhere((query) => {
         query
           .where('cm.status', 'failed')
           .orWhere('m.status', 'failed');
@@ -450,6 +455,7 @@ class CampaignMessageModel extends BaseModel {
       .join('contacts as c', 'c.id', 'cm.contact_id')
       .where('cm.campaign_id', campaignId)
       .where('m.status', 'failed')
+      .whereNot('cm.status', 'skipped')
       .where('m.error_message', error)
       .select(columns);
 

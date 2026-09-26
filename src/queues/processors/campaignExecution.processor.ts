@@ -1,3 +1,4 @@
+import { isWhatsAppSuppressed } from '../../app/utils/whatsappPreference';
 import { buildRecipient } from '../../app/utils/importPhone';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job, DelayedError } from 'bullmq';
@@ -269,6 +270,12 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     infrastructureOperation = true;
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
+    if (isWhatsAppSuppressed(error)) {
+      await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
+        error_code: error.code, error_message: error.message, failed_at: null, retry_after: null,
+      });
+      return;
+    }
     if (isConnectionAcquireError(error)) {
       console.warn('[Campaign Worker] Recipient database connection unavailable', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: error.message });
       throw new CampaignInfrastructureError(error.message);

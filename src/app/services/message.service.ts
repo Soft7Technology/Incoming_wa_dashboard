@@ -1,3 +1,5 @@
+import whatsappPreferences, { WhatsAppSendContext } from './whatsappPreference.service';
+import { isWhatsAppSuppressed } from '../utils/whatsappPreference';
 import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
 import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
@@ -50,7 +52,7 @@ class MessageService {
   /**
    * Send messages
    */
-  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any }) {
+  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any } & WhatsAppSendContext) {
     const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
@@ -232,7 +234,9 @@ class MessageService {
 
     try {
       // Send via Meta API
-      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload);
+      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, {
+        businessInitiated: Boolean(data.campaign_id) || resolved?.businessInitiated, preferenceReply: resolved?.preferenceReply,
+      });
 
       // Update message with WAMID
       await MessageModel.update(message.id, {
@@ -262,8 +266,9 @@ class MessageService {
     } catch (error: any) {
       // Update message as failed
       await MessageModel.update(message.id, {
-        status: 'failed',
-        failed_at: new Date(),
+        status: isWhatsAppSuppressed(error) ? 'suppressed' : 'failed',
+        failed_at: isWhatsAppSuppressed(error) ? null : new Date(),
+        ...(isWhatsAppSuppressed(error) ? { cost: 0 } : {}),
         ...getMessageError(error),
       });
 
@@ -422,6 +427,7 @@ class MessageService {
     const message = await MessageModel.create({
       id: data.messageUUID,
       user_id: data.user_id,
+      company_id: data.company_id,
       // campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
       direction: 'outbound',
@@ -437,7 +443,7 @@ class MessageService {
 
     try {
       // Send via Meta API
-      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload);
+      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, { businessInitiated: true });
 
       // Update message with WAMID
       await MessageModel.update(message.id, {
@@ -467,8 +473,9 @@ class MessageService {
     } catch (error: any) {
       // Update message as failed
       await MessageModel.update(message.id, {
-        status: 'failed',
-        failed_at: new Date(),
+        status: isWhatsAppSuppressed(error) ? 'suppressed' : 'failed',
+        failed_at: isWhatsAppSuppressed(error) ? null : new Date(),
+        ...(isWhatsAppSuppressed(error) ? { cost: 0 } : {}),
         ...getMessageError(error),
       });
 
@@ -626,8 +633,6 @@ class MessageService {
         delivered_at: new Date(),
       };
 
-      const message = await MessageModel.create(messagePayload);
-
       const contact = await ContactModel.findOrCreateIncoming({
         user_id: phoneNumber.user_id,
         company_id: phoneNumber.company_id,
@@ -635,6 +640,28 @@ class MessageService {
         ...sender,
         name: data.profile_name,
       });
+
+      const stored = await whatsappPreferences.persistIncoming(contact, messagePayload, data.raw_message || data.content);
+      const message = stored.message;
+      if (stored.handled && stored.receipt?.reply_status === 'pending') {
+        const receipt = await whatsappPreferences.claimReply(stored.receipt.id);
+        if (receipt) {
+          // Claim before dispatch: duplicate webhook deliveries never send a second confirmation.
+          try {
+            const reply = await this.sendMessage({
+              user_id: phoneNumber.user_id, company_id: phoneNumber.company_id,
+              phone_number_id: phoneNumber.id, campaign_id: null, to: '+' + receipt.recipient,
+              type: 'text', text: { body: receipt.reply_text }, context: { message_id: receipt.wamid },
+            }, { phoneNumber, preferenceReply: { receiptId: receipt.id, token: receipt.reply_token } });
+            await whatsappPreferences.finishReply(receipt.id, reply.wamid);
+          } catch (error: any) {
+            // The opt-out transaction has already committed. Never roll it back for a failed reply.
+            await whatsappPreferences.finishReply(receipt.id, undefined, error.message);
+            console.warn('WhatsApp preference confirmation failed', { receiptId: receipt.id, error: error.message });
+          }
+        }
+      }
+      if (stored.duplicate) return { ...message, preference_handled: stored.handled, webhook_duplicate: true };
 
       console.log('Incoming message stored', message.id);
 
@@ -659,9 +686,9 @@ class MessageService {
         contactName: contact.name || data.profile_name || data.from || 'New Contact',
         contactPhone: data.from || '',
         from: data.from || '',
-      });
+      }).catch(error => console.error('Incoming message socket notification failed', error));
 
-      return message;
+      return { ...message, preference_handled: stored.handled, webhook_duplicate: false };
     } catch (error) {
       console.error('Failed to save incoming message', error);
       throw error;
@@ -678,11 +705,11 @@ class MessageService {
   /**
    * Handle Send ChatBot message
    */
-  async sendChatBotMessage(phoneNumberId: string, to: string, response: any): Promise<any> {
+  async sendChatBotMessage(phoneNumberId: string, to: string, response: any, replyToWamid?: string): Promise<any> {
     console.log('Response', JSON.stringify(response));
 
     if (Array.isArray(response?.messages)) {
-      return sendChatbotResponseBatch(response, (message) => this.sendChatBotMessage(phoneNumberId, to, message));
+      return sendChatbotResponseBatch(response, (message) => this.sendChatBotMessage(phoneNumberId, to, message, replyToWamid));
     }
     response = normalizeChatbotResponse(response);
     if (!response) {
@@ -702,6 +729,7 @@ class MessageService {
         to: to,
       };
 
+      if (replyToWamid) metaPayload.context = { message_id: replyToWamid };
       metaPayload.type = response.type;
       metaPayload.interactive = response.interactive;
 
@@ -745,6 +773,7 @@ class MessageService {
 
       return metaResponse.data;
     } catch (error: any) {
+      if (isWhatsAppSuppressed(error)) return { status: 'skipped_opt_out', code: error.code };
       console.error('❌ Send Message Error:', error?.response?.data || error.message);
       return null;
     }

@@ -22,6 +22,9 @@ ContactRoute.get('/tags', ContactController.getTags);
 ContactRoute.put('/tags/:id', ownedResource('contact_tags', 'id'), ContactController.updateTag);
 ContactRoute.delete('/tags/:id', ownedResource('contact_tags', 'id'), ContactController.deleteTag);
 
+ContactRoute.get('/:id/whatsapp-preferences', ownedResource('contacts', 'id'), ContactController.getWhatsAppPreferences);
+ContactRoute.put('/:id/whatsapp-preferences', ownedResource('contacts', 'id'), requireRole('user', 'member'), ContactController.updateWhatsAppPreferences);
+
 // Contact CRUD
 ContactRoute.post('/', ownedPhone, checkPlanLimit('Contact'), ContactController.createContact);
 ContactRoute.get('/', ContactController.getContacts);

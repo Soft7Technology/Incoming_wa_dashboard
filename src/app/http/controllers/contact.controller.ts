@@ -1,3 +1,4 @@
+import whatsappPreferences from '../../services/whatsappPreference.service';
 import { addTagsToContacts } from '../../services/contactBulkTags.service';
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
@@ -14,6 +15,18 @@ import userTeamModel from '../../models/team.model';
 import db from '@surefy/database';
 
 class ContactController {
+  getWhatsAppPreferences = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const result = await whatsappPreferences.get(req.companyId!, String(req.params.id), req.ownerId ?? req.userId!,
+      typeof req.query.before === 'string' ? req.query.before : undefined);
+    return successResponse(req, res, 'WhatsApp preferences retrieved', result);
+  });
+
+  updateWhatsAppPreferences = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const result = await whatsappPreferences.recordStaff(req.companyId!, String(req.params.id),
+      req.ownerId ?? req.userId!, req.userId!, req.body);
+    return successResponse(req, res, 'WhatsApp preferences recorded', result);
+  });
+
   /** Apply existing tags to a batch of contacts in the authenticated account. */
   addBulkTags = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const result = await addTagsToContacts(

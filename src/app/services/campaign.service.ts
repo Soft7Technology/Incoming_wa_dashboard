@@ -1,3 +1,4 @@
+import { isWhatsAppSuppressed } from '../utils/whatsappPreference';
 import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { buildRecipient } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
@@ -104,7 +105,7 @@ class CampaignService {
           normalizedPhones.set(parsed.phone_number, parsed.country_code);
         } catch (error) {
           throw new HTTP400Error({
-            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Include the country calling code, for example +6581234567.`,
+            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Include the country calling code, for example +6581234567 +91937259458`,
           });
         }
       }
@@ -606,6 +607,7 @@ class CampaignService {
       const message = await MessageService.sendMessage({
         messageUUID,
         user_id: campaign.user_id,
+        company_id: campaign.company_id,
         campaign_id: campaign.id,
         profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
@@ -628,6 +630,12 @@ class CampaignService {
       // // Update contact stats
       await ContactModel.incrementMessageCount(contact.id);
     } catch (error: any) {
+      if (isWhatsAppSuppressed(error)) {
+        await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
+          error_code: error.code, error_message: error.message, failed_at: null, retry_after: null,
+        });
+        return;
+      }
       console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {

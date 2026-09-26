@@ -1,3 +1,4 @@
+import MessageModel from '../models/message.model';
 import { parseImportedPhone } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
@@ -221,6 +222,12 @@ class ContactService {
           tagsMap.get(contact.id) || [];
       });
     }
+
+    const latestMessages = await MessageModel.findLatestForContacts(contacts);
+    const latestByContact = new Map(latestMessages.map(row => [row.contact_id, row.last_message]));
+    contacts.forEach((contact: any) => {
+      contact.last_message = latestByContact.get(contact.id) ?? null;
+    });
 
     console.log(
       "Final Contacts Response:",

@@ -1,3 +1,4 @@
+import { isWhatsAppSuppressed } from '../../app/utils/whatsappPreference';
 import { Worker, Job } from 'bullmq';
 import redisConfig from '@surefy/config/redis.config';
 import { BulkMessageSendJobData } from '../bulkMessageSend.queue';
@@ -29,6 +30,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
       total: messages.length,
       successful: 0,
       failed: 0,
+      skipped: 0,
       errors: [] as any[],
     };
 
@@ -39,7 +41,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
       console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}, messages ${i + 1} to ${Math.min(i + BATCH_SIZE, messages.length)}`);
 
       // Bound active sends so bulk jobs do not exhaust the pool used by campaigns.
-      const batchResults: PromiseSettledResult<{ success: boolean; to: string; message?: any; error?: string }>[] = [];
+      const batchResults: PromiseSettledResult<{ success: boolean; to: string; message?: any; error?: string; skipped?: boolean }>[] = [];
       for (let offset = 0; offset < batch.length; offset += MAX_PARALLEL_SENDS) {
         const chunk = batch.slice(offset, offset + MAX_PARALLEL_SENDS);
         batchResults.push(...await Promise.allSettled(
@@ -60,10 +62,11 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
               document: messageData.document,
               audio: messageData.audio,
               context: messageData.context,
-            });
+            }, { businessInitiated: true });
 
             return { success: true, to: messageData.to, message };
           } catch (error: any) {
+            if (isWhatsAppSuppressed(error)) return { success: false, skipped: true, to: messageData.to, error: error.code };
             console.error(`Failed to send message to ${messageData.to}:`, error.message);
             return {
               success: false,
@@ -77,7 +80,9 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 
       // Count results
       batchResults.forEach((result) => {
-        if (result.status === 'fulfilled' && result.value.success) {
+        if (result.status === 'fulfilled' && result.value.skipped) {
+          results.skipped++;
+        } else if (result.status === 'fulfilled' && result.value.success) {
           results.successful++;
         } else {
           results.failed++;

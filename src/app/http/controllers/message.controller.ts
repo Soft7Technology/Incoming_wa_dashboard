@@ -177,7 +177,7 @@ class MessageController {
           for (const message of value.messages || []) {
             const profileName = value.contacts?.find((contact: any) => contact.wa_id === message.from)?.profile?.name;
             console.log("Value",message)
-            await MessageService.saveIncomingMessage({
+            const saved = await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
               profile_name: profileName || "",
               message_id: message.id,
@@ -187,7 +187,9 @@ class MessageController {
               context: message?.context?.id,
             });
 
-            await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName)
+            if (saved && !saved.preference_handled && !saved.webhook_duplicate) {
+              await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName);
+            }
           }
         }
       }

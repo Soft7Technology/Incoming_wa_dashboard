@@ -32,7 +32,9 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   // Contact filters accept multiple country codes in repeated query parameters.
   app.use(hpp({ whitelist: ['country_code'] }));
   app.use(compression());
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '10mb', verify: (req, _res, buffer) => {
+    if (req.headers['x-hub-signature-256']) (req as any).rawBody = Buffer.from(buffer);
+  } }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(morgan('dev'));
   // app.use(express.json());

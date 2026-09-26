@@ -7,7 +7,7 @@ export interface Message {
   type: 'text' | 'image' | 'video' | 'document' | 'audio' | 'template' | 'interactive' | 'location' | 'contacts' | 'sticker';
   from_phone: string;
   to_phone: string;
-  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'deleted';
+  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'deleted' | 'suppressed';
   error_message?: string;
   error_code?: string;
   content?: any;

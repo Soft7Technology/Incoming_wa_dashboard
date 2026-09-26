@@ -1,8 +1,50 @@
+import { buildRecipient } from '../utils/importPhone';
 import { BaseModel } from '@surefy/models/base.model';
 
 class MessageModel extends BaseModel {
   constructor() {
     super('messages');
+  }
+
+  /** One lookup for the current contact page; never match national-number suffixes. */
+  async findLatestForContacts(contacts: any[]): Promise<{ contact_id: string; last_message: any }[]> {
+    const identities = contacts.flatMap(contact => {
+      if (!contact.user_id || !contact.company_id || !contact.phone_number_id) return [];
+      try {
+        return [{
+          contact_id: contact.id,
+          user_id: contact.user_id,
+          company_id: contact.company_id,
+          phone_number_id: contact.phone_number_id,
+          recipient: buildRecipient(contact.phone_number, contact.country_code),
+        }];
+      } catch {
+        // Unresolved legacy numbers cannot safely identify a conversation.
+        return [];
+      }
+    });
+    if (!identities.length) return [];
+
+    const result = await this.db.raw(`
+      SELECT c.contact_id, latest.last_message
+      FROM jsonb_to_recordset(?::jsonb) AS c(
+        contact_id text, user_id uuid, company_id uuid, phone_number_id uuid, recipient text
+      )
+      LEFT JOIN LATERAL (
+        SELECT to_jsonb(m) AS last_message
+        FROM messages m
+        WHERE m.user_id = c.user_id
+          AND m.company_id = c.company_id
+          AND m.phone_number_id = c.phone_number_id
+          AND (
+            (m.direction = 'inbound' AND regexp_replace(m.from_phone, '[^0-9]', '', 'g') = c.recipient)
+            OR (m.direction = 'outbound' AND regexp_replace(m.to_phone, '[^0-9]', '', 'g') = c.recipient)
+          )
+        ORDER BY m.created_at DESC NULLS LAST, m.id DESC
+        LIMIT 1
+      ) latest ON TRUE
+    `, [JSON.stringify(identities)]);
+    return result.rows;
   }
 
   async getUserDashboard(companyId: string, userId: string) {
