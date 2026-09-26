@@ -1,3 +1,5 @@
+import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
+import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
@@ -65,6 +67,14 @@ class MessageService {
     // if (company.credit_balance < messageCost) {
     //   throw new HTTP400Error({ message: 'Insufficient credits' });
     // }
+
+    try {
+      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
+      const recipient = data.country_code
+        ? parseImportedPhone(data.to, data.country_code, true)
+        : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
+      data = { ...data, to: buildRecipient(recipient.phone_number, recipient.country_code) };
+    } catch (error: any) { throw new HTTP400Error({ message: `Invalid recipient: ${error.message}` }); }
 
     // Build Meta API payload
     const metaPayload: any = {
@@ -277,6 +287,14 @@ class MessageService {
     // if (company.credit_balance < messageCost) {
     //   throw new HTTP400Error({ message: 'Insufficient credits' });
     // }
+
+    try {
+      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
+      const recipient = data.country_code
+        ? parseImportedPhone(data.to, data.country_code, true)
+        : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
+      data = { ...data, to: buildRecipient(recipient.phone_number, recipient.country_code) };
+    } catch (error: any) { throw new HTTP400Error({ message: `Invalid recipient: ${error.message}` }); }
 
     // Build Meta API payload
     const metaPayload: any = {
@@ -520,6 +538,8 @@ class MessageService {
         return null;
       }
 
+      const sender = parseWhatsAppPhone(data.from);
+      data = { ...data, from: sender.country_code + sender.phone_number };
       let content = data.content;
       const type = data.type;
 
@@ -612,7 +632,7 @@ class MessageService {
         user_id: phoneNumber.user_id,
         company_id: phoneNumber.company_id,
         phone_number_id: phoneNumber.id,
-        phone_number: data.from,
+        ...sender,
         name: data.profile_name,
       });
 

@@ -1,3 +1,5 @@
+require('ts-node/register');
+const phoneUtils = require('../src/app/utils/importPhone');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -10,7 +12,7 @@ function load(file, deps) {
   const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(js, { exports, require: id => deps[id] || {}, Error, console: { log() {} } });
+  vm.runInNewContext(js, { exports, require: id => deps[id] || (id === '../utils/importPhone' ? phoneUtils : {}), Error, console: { log() {} } });
   return exports;
 }
 class HttpError extends Error { constructor(data) { super(data.message); } }
@@ -121,7 +123,7 @@ test('incoming contacts reuse only the owner, company, and phone identity', asyn
     const data = { user_id: 'owner', company_id: 'company', phone_number_id: 'phone', phone_number: '+919372597458' };
     const existing = { id: 'existing' };
     contacts.findOwnedByPhone = async (...args) => {
-      assert.deepEqual(args, ['owner', '+919372597458', 'phone', 'company']);
+      assert.deepEqual(args, ['owner', '9372597458', 'phone', 'company', '91']);
       return existing;
     };
     contacts.create = async () => { creates++; return { id: 'new' }; };

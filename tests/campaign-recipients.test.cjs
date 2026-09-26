@@ -1,3 +1,4 @@
+require('ts-node/register');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -6,7 +7,7 @@ const ts = require('typescript');
 const exported = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/utils/campaignRecipients.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-}).outputText, { exports: exported });
+}).outputText, { exports: exported, require: () => require('../src/app/utils/importPhone') });
 
 test('different contact IDs and formatting produce one recipient, preserving first template data', () => {
   const first = { id: 'a', phone_number: '+91 93725 97458', name: 'First' };

@@ -1,3 +1,5 @@
+require('ts-node/register');
+const phoneUtils = require('../src/app/utils/importPhone');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
@@ -12,7 +14,7 @@ function setup(existing) {
   const exports={};
   const js=ts.transpileModule(fs.readFileSync('src/app/models/contact.model.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
   const deps={'@surefy/models/base.model':{BaseModel},'@surefy/exceptions/HTTP400Error':HttpError};
-  vm.runInNewContext(js,{exports,require:id=>deps[id]||{},console,Date});
+  vm.runInNewContext(js,{exports,require:id=>deps[id] || (id === '../utils/importPhone' ? phoneUtils : {}),console,Date});
   exports.default.findOwnedByPhone=async()=>existing;
   return {model:exports.default,queries,db};
 }
@@ -44,7 +46,7 @@ test('new unnamed contact falls back to phone and later incoming profile can enr
   try {
     env.model.create=async value=>value;
     const created=await env.model.findOrCreateIncoming({...data,name:'  '});
-    assert.equal(created.name,data.phone_number);
+    assert.equal(created.name,'9876543210');
     const named=await env.model.findOrCreateIncoming(data); assert.equal(named.name,'Alice');
   } finally {await env.db.destroy()}
 });

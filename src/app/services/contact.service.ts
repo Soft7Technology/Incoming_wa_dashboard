@@ -1,3 +1,4 @@
+import { parseImportedPhone } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
@@ -22,15 +23,13 @@ class ContactService {
    * Create a new contact
    */
   async createContact(userId: string, companyId: string, data: any) {
-    const rawPhone = data.phone_number?.toString().trim();
-    const digits = rawPhone?.replace(/[+\s()-]/g, '');
-    if (!digits || !/^\d+$/.test(digits)) {
-      throw new HTTP400Error({ message: 'A valid phone number is required' });
-    }
-    const phone = '+' + digits;
+    let identity;
+    try { identity = parseImportedPhone(data.phone_number, data.country_code || '', Boolean(data.country_code)); }
+    catch (error: any) { throw new HTTP400Error({ message: error.message }); }
+    const phone = identity.phone_number;
 
     // Check if contact already exists
-    const existing = await ContactModel.findOwnedByPhone(userId, phone, data.phone_number_id);
+    const existing = await ContactModel.findOwnedByPhone(userId, phone, data.phone_number_id, companyId, identity.country_code);
     if (existing) {
       throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
     }
@@ -46,7 +45,7 @@ class ContactService {
         status: data.status,
         attributes: data.attributes || {},
         notes: data.notes,
-        country_code: data.country_code
+        country_code: identity.country_code
       }, trx);
 
       // Tags live in contact_tag_relations; they are not columns on contacts.
@@ -634,7 +633,7 @@ class ContactService {
     }
 
     if (filters.contactNumber && filters.contactNumber.length > 0) {
-      query = query.whereIn('phone_number', filters.contactNumber);
+      query = query.whereRaw("country_code || phone_number = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
     }
 
     // Filter by lists (OR condition)
@@ -754,17 +753,20 @@ class ContactService {
     // Sample data to include in the template
     const sampleData = [
       {
-        phone_number: '+1234567890',
+        phone_number: '9372597458',
+        country_code: '91',
         name: 'John Doe',
         email: 'john@example.com',
       },
       {
-        phone_number: '+0987654321',
+        phone_number: '81234567',
+        country_code: '65',
         name: 'Jane Smith',
         email: 'jane@example.com',
       },
       {
-        phone_number: '+1122334455',
+        phone_number: '2025550123',
+        country_code: '1',
         name: 'Bob Johnson',
         email: 'bob@example.com',
       },
@@ -776,6 +778,7 @@ class ContactService {
     // Set column widths
     worksheet['!cols'] = [
       { wch: 20 }, // phone_number
+      { wch: 15 }, // country_code
       { wch: 25 }, // name
       { wch: 30 }, // email
     ];
@@ -793,8 +796,8 @@ class ContactService {
     return ContactModel.findByUserId(userId);
   }
 
-  async findContactByPhone(userId: string, phoneNumber: string) {
-    return ContactModel.findByPhone(userId, phoneNumber);
+  async findContactByPhone(userId: string, phoneNumber: string, countryCode?: string, phoneNumberId?: string, companyId?: string) {
+    return ContactModel.findOwnedByPhone(userId, phoneNumber, phoneNumberId, companyId, countryCode);
   }
 
   async userAssignedContact(contactId: string, assigned_to: string) {

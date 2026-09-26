@@ -72,9 +72,11 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       const cleanNumber = fpoNumber.replace(/\D/g, "");
 
       // Add 91 if not already present
-      const phoneNumber = cleanNumber.startsWith("91")
-            ? cleanNumber
-            : `91${cleanNumber}`;
+      // const phoneNumber = cleanNumber.startsWith("91")
+      //       ? cleanNumber
+      //       : `${cleanNumber}`;
+
+      const phoneNumber = cleanNumber
 
       console.log("Phone Number",phoneNumber)
       

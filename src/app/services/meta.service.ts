@@ -1,3 +1,4 @@
+import { parseWhatsAppPhone } from '../utils/importPhone';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -27,8 +28,14 @@ class MetaService {
    * Send a message via WhatsApp Business API
    */
   async sendMessage(phoneNumberId: string, payload: any): Promise<any> {
+    if (payload.to !== undefined) {
+      try {
+        const identity = parseWhatsAppPhone(payload.to);
+        payload = { ...payload, to: identity.country_code + identity.phone_number };
+      } catch (error: any) { throw new HTTP400Error({ message: `Invalid international recipient: ${error.message}` }); }
+    }
     try {
-      console.log();
+      console.log('Paylod', payload);
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {

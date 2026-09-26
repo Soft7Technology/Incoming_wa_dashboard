@@ -22,7 +22,7 @@ function expandScientificPhone(raw: string): string {
   return prefix + expanded;
 }
 
-export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountryCode = false, requireCountryContext = false) {
+export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountryCode = false, _requireCountryContext = true) {
   // Remove invisible directional/zero-width formatting copied from messaging apps.
   // Numeric Excel cells must already contain an exact integer; lost digits cannot be recovered.
   if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0 || value >= 1e15)) {
@@ -33,31 +33,59 @@ export function parseImportedPhone(value: unknown, fallbackCode = '', rowCountry
   const cleaned = raw.replace(/[\s().-]/g, '');
   const explicit = cleaned.startsWith('+') || cleaned.startsWith('00');
   const international = parsePhoneNumberFromString(cleaned.startsWith('00') ? `+${cleaned.slice(2)}` : cleaned.startsWith('+') ? cleaned : `+${cleaned}`);
-  if (explicit) {
-    if (!international?.isValid()) throw new Error('Invalid international phone number');
-    return { phone_number: international.number, country_code: international.countryCallingCode };
-  }
   const hint = String(fallbackCode ?? '').trim().toUpperCase();
   const code = isSupportedCountry(hint)
     ? getCountryCallingCode(hint as CountryCode)
     : hint.replace(/^(?:\+|00)/, '');
-  if (hint && !/^\d{1,3}$/.test(code)) {
+  if (hint && !/^[1-9]\d{0,2}$/.test(code)) {
     throw new Error('Country code must be a calling code such as +65 or an ISO code such as SG');
+  }
+  if (explicit) {
+    if (!international?.isValid()) throw new Error('Invalid international phone number');
+    if (rowCountryCode && code && international.countryCallingCode !== code) {
+      throw new Error('International phone number conflicts with the row country code');
+    }
+    return { phone_number: international.nationalNumber, country_code: international.countryCallingCode };
   }
   const national = code ? parsePhoneNumberFromString(cleaned, { defaultCallingCode: code }) : undefined;
   // Bare digits are not evidence of a country: an Indian mobile beginning 95
   // must not become a Myanmar number when India was selected for the import.
   if (code) {
-    const preferred = international?.isValid() && international.countryCallingCode === code
-      ? international : national?.isValid() ? national : undefined;
-    if (preferred) return { phone_number: preferred.number, country_code: preferred.countryCallingCode };
-    if (rowCountryCode) throw new Error('Phone number does not match the row country code; use + for an international number');
+    const full = international?.isValid() && international.countryCallingCode === code ? international : undefined;
+    if (full && national?.isValid() && full.number !== national.number) {
+      throw new Error('Ambiguous phone number: use + and the country calling code');
+    }
+    const preferred = full || (national?.isValid() ? national : undefined);
+    if (preferred) return { phone_number: preferred.nationalNumber, country_code: preferred.countryCallingCode };
+    throw new Error('Phone number does not match the row country code; use + for an international number');
   }
-  if (!code && requireCountryContext) {
-    throw new Error('Country code is required for an unprefixed phone number: add a country_code column, select an import country, or use +countrycode');
+  throw new Error('Country code is required for an unprefixed phone number: add a country_code column, select an import country, or use +countrycode');
+}
+
+/** WhatsApp sender IDs and API recipients explicitly carry an international calling code. */
+export function parseWhatsAppPhone(value: unknown) {
+  const raw = String(value ?? '').trim();
+  return parseImportedPhone(raw.startsWith('+') || raw.startsWith('00') ? raw : `+${raw}`);
+}
+
+/** Stored fields are national digits + calling code. Never infer a missing country. */
+export function buildRecipient(phone: unknown, countryCode?: unknown): string {
+  const raw = String(phone ?? '').trim();
+  const hint = String(countryCode ?? '').trim().toUpperCase();
+  const code = isSupportedCountry(hint)
+    ? getCountryCallingCode(hint as CountryCode) : hint.replace(/^(?:\+|00)/, '');
+  // Explicit legacy international values remain readable until migration.
+  if (raw.startsWith('+') || raw.startsWith('00')) {
+    const parsed = parseImportedPhone(raw, code, Boolean(code));
+    return parsed.country_code + parsed.phone_number;
   }
-  const candidates = [international, national].filter(number => number?.isValid());
-  const unique = [...new Map(candidates.map(number => [number!.number, number!])).values()];
-  if (unique.length !== 1) throw new Error(unique.length ? 'Ambiguous phone number: add + and the country calling code' : 'Invalid phone number: supply an international number or a default country code');
-  return { phone_number: unique[0].number, country_code: unique[0].countryCallingCode };
+  if (!code) throw new Error('Country code is required to construct an international recipient');
+  if (!/^[1-9]\d{0,2}$/.test(code) || !/^\d+$/.test(raw)) {
+    throw new Error('Recipient requires national digits and a valid country calling code');
+  }
+  const parsed = parseWhatsAppPhone(code + raw);
+  if (parsed.country_code !== code || parsed.phone_number !== raw) {
+    throw new Error('Recipient phone number is not a valid national number for its country code');
+  }
+  return code + raw;
 }

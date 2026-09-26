@@ -15,7 +15,7 @@ class MessageController {
    * Send a message
    */
   sendMessage = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number_id, to, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
+    const { phone_number_id, to, country_code, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
@@ -32,6 +32,7 @@ class MessageController {
       phone_number_id,
       profile_name,
       to,
+      country_code,
       type,
       text,
       template,

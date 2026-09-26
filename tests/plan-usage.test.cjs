@@ -1,3 +1,5 @@
+require('ts-node/register');
+const phoneUtils = require('../src/app/utils/importPhone');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,7 +11,7 @@ function load(file, deps) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: id => deps[id] || HttpError, Date, console });
+  vm.runInNewContext(code, { exports, require: id => deps[id] || (id === '../utils/importPhone' ? phoneUtils : HttpError), Date, console });
   return exports;
 }
 const source = 'src/app/services/planUsage.service.ts';
@@ -145,8 +147,8 @@ test('contact service persists in the usage transaction without controller incre
       assert.equal(typeof trx, 'function'); await trx('contacts').insert(data); return data;
     } },
   }).default;
-  const result = await contacts.createContact('owner', 'company', { phone_number: '919876543210' });
-  assert.equal(result.phone_number, '+919876543210');
+  const result = await contacts.createContact('owner', 'company', { phone_number: '9876543210', country_code: '91' });
+  assert.equal(result.phone_number, '9876543210');
   assert.equal(JSON.parse(h.state().user_plans[0].usage).Contact, 1);
 });
 test('chatbot creation consumes the active plan in its persistence transaction', async () => {

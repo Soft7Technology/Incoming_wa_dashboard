@@ -47,6 +47,8 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
           try {
             const message = await MessageService.sendMessage({
               user_id: userId,
+              company_id: messageData.company_id,
+              country_code: messageData.country_code,
               campaign_id: null,
               phone_number_id: messageData.phone_number_id,
               to: messageData.to,

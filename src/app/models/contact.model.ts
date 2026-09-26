@@ -1,3 +1,4 @@
+import { parseImportedPhone as parsePhone, parseWhatsAppPhone } from '../utils/importPhone';
 import { countryCodeFilterValues } from '../utils/countryCode';
 import { BaseModel } from '@surefy/models/base.model';
 import db from '../../database';
@@ -5,12 +6,17 @@ import phoneNumberModel from './phoneNumber.model';
 import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 
+function parseImportedPhone(value: unknown, code = '') {
+  try { return parsePhone(value, code, Boolean(code)); }
+  catch (error: any) { throw new HTTP400Error({ message: error.message }); }
+}
+
 export function normalizeContactPhone(value: unknown): string {
   const digits = String(value ?? '').trim().replace(/[+\s()-]/g, '');
   if (!/^\d+$/.test(digits)) {
     throw new HTTP400Error({ message: 'A valid phone number is required' });
   }
-  return `+${digits}`;
+  return digits;
 }
 
 // Helper: build an OR condition for uuid-array column "assigned_to"
@@ -53,15 +59,15 @@ class ContactModel extends BaseModel {
       }
       data = { ...data, phone_number_id: phone.id };
     }
-    const normalized = { ...data, phone_number: normalizeContactPhone(data.phone_number) };
+    const normalized = { ...data, ...parseImportedPhone(data.phone_number, data.country_code || '') };
     const insert = async (transaction: Knex.Transaction) => {
       // Serialize creates for the same owner, business number and normalized phone.
-      const key = JSON.stringify([data.user_id, data.phone_number_id ?? null, normalized.phone_number]);
+      const key = JSON.stringify([data.company_id, data.user_id, data.phone_number_id ?? null, normalized.country_code, normalized.phone_number]);
       await transaction.raw('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', [key]);
       const existing = await transaction('contacts')
         .where({ user_id: data.user_id, company_id: data.company_id, phone_number_id: data.phone_number_id ?? null })
         .whereNull('deleted_at')
-        .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [normalized.phone_number.slice(1)])
+        .where({ phone_number: normalized.phone_number, country_code: normalized.country_code })
         .first();
       if (existing) {
         throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
@@ -72,13 +78,16 @@ class ContactModel extends BaseModel {
   }
 
   async update(id: any, data: any) {
-    return super.update(id, data.phone_number === undefined ? data : {
-      ...data, phone_number: normalizeContactPhone(data.phone_number),
-    });
+    if (data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
+    const existing = await this.findById(id);
+    return super.update(id, { ...data, ...parseImportedPhone(
+      data.phone_number ?? existing.phone_number, data.country_code ?? existing.country_code ?? '',
+    ) });
   }
 
   async findOrCreateIncoming(data: any) {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    data = { ...data, ...(data.country_code ? parseImportedPhone(data.phone_number, data.country_code) : parseWhatsAppPhone(data.phone_number)) };
     const profileName = typeof data.name === 'string' ? data.name.trim() : '';
     const isPhoneName = (name: string) => /^[+\d\s().-]+$/.test(name) && /\d/.test(name);
     const refreshName = async (contact: any) => {
@@ -93,39 +102,40 @@ class ContactModel extends BaseModel {
         .returning('*');
       return updated || contact;
     };
-    const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id);
+    const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id, data.country_code);
     if (existing) return refreshName(existing);
     try {
       return await this.create({ ...data, name: profileName || data.phone_number });
     } catch (error) {
       // Another incoming request may have inserted this contact while we waited.
       if (error instanceof HTTP400Error) {
-        const concurrent = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id);
+        const concurrent = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id, data.country_code);
         if (concurrent) return refreshName(concurrent);
       }
       throw error;
     }
   }
 
-  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string) {
-    const digits = phoneNumber.replace(/\D/g, '');
+  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string, countryCode?: string) {
+    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseWhatsAppPhone(phoneNumber);
     const query = this.query()
       .where('user_id', userId)
       .where('phone_number_id', phoneNumberId ?? null)
       .whereNull('deleted_at')
-      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [digits])
+      .where(identity)
       .first();
     if (companyId) query.where('company_id', companyId);
     return query;
   }
 
-  async findByPhone(userId: string, phoneNumber: string) {
+  async findByPhone(userId: string, phoneNumber: string, countryCode?: string) {
+    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseWhatsAppPhone(phoneNumber);
     return this.query()
       .where(function (this: any) {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
       })
-      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [normalizeContactPhone(phoneNumber).slice(1)])
+      .where(identity)
       .whereNull('deleted_at')
       .first();
   }
@@ -198,13 +208,13 @@ class ContactModel extends BaseModel {
 
   async bulkCreate(contacts: any[]) {
     return this.query().insert(contacts.map(contact => ({
-      ...contact, phone_number: normalizeContactPhone(contact.phone_number),
+      ...contact, ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
     }))).returning('*');
   }
 
   async bulkUpsert(userId: string, contacts: any[]) {
     const promises = contacts.map(async (contact) => {
-      const existing = await this.findByPhone(userId, contact.phone_number);
+      const existing = await this.findOwnedByPhone(userId, contact.phone_number, contact.phone_number_id, contact.company_id, contact.country_code);
       if (existing) {
         return this.update(existing.id, {
           ...contact,
@@ -322,7 +332,7 @@ class ContactModel extends BaseModel {
   async findByUserPhoneNumber(userId: string, phoneNumber: string) {
     return this.query()
       .where({ user_id: userId })
-      .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ?", [phoneNumber.replace(/\D/g, '')])
+      .where(parseWhatsAppPhone(phoneNumber))
       .whereNull('deleted_at')
       .first();
   }

@@ -84,7 +84,7 @@ class WebhookHandlerService {
 
       if (message) {
         // Try to find contact by phone number
-        const contact = await ContactModel.findByPhone(message.company_id, message.to_phone);
+        const contact = await ContactModel.findOwnedByPhone(message.user_id, message.to_phone, message.phone_number_id, message.company_id);
 
         if (contact) {
           // Determine reason

@@ -350,15 +350,15 @@ class MessageModel extends BaseModel {
         }
       })
       .andWhere((builder) => {
-        const last10 = normalizedNumber.slice(-10);
+        const internationalNumber = normalizedNumber.replace(/\D/g, '');
         builder
           .whereRaw(
-            `RIGHT(REPLACE(messages.from_phone, '+', ''), 10) = ?`,
-            [last10]
+            `REGEXP_REPLACE(messages.from_phone, '[^0-9]', '', 'g') = ?`,
+            [internationalNumber]
           )
           .orWhereRaw(
-            `RIGHT(REPLACE(messages.to_phone, '+', ''), 10) = ?`,
-            [last10]
+            `REGEXP_REPLACE(messages.to_phone, '[^0-9]', '', 'g') = ?`,
+            [internationalNumber]
           );
       })
       .orderBy('messages.created_at', 'desc')
@@ -412,13 +412,8 @@ class MessageModel extends BaseModel {
     const validUuidIds = Array.from(new Set(targetPhoneIds.filter((id) => isUuid(id))));
 
     const contactPhoneSQL = `
-      RIGHT(
-        CASE 
-          WHEN direction = 'inbound' THEN REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g')
-          ELSE REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')
-        END,
-        10
-      )
+      CASE WHEN direction = 'inbound' THEN REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g')
+        ELSE REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') END
     `.trim();
 
     // 🔹 Subquery: latest message per unique contact phone
@@ -457,7 +452,7 @@ class MessageModel extends BaseModel {
           .orWhereIn(
             db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`RIGHT(REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g'), 10)`))
+              .select(db.raw(`country_code || phone_number`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
@@ -484,7 +479,7 @@ class MessageModel extends BaseModel {
           .orWhereIn(
             db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`RIGHT(REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g'), 10)`))
+              .select(db.raw(`country_code || phone_number`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
@@ -514,14 +509,14 @@ class MessageModel extends BaseModel {
 
   async getRecentMessages(userId: string, phone: string, limit: number = 10) {
     const normalizedPhone = (phone || '').replace(/\D/g, '');
-    const last10 = normalizedPhone.slice(-10);
+    const internationalNumber = normalizedPhone;
 
     return this.query()
       .where({ user_id: userId })
       .andWhere((builder) => {
         builder
-          .whereRaw(`RIGHT(REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g'), 10) = ?`, [last10])
-          .orWhereRaw(`RIGHT(REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g'), 10) = ?`, [last10]);
+          .whereRaw(`REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g') = ?`, [internationalNumber])
+          .orWhereRaw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') = ?`, [internationalNumber]);
       })
       .orderBy('created_at', 'desc')
       .limit(limit);

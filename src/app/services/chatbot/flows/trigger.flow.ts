@@ -303,10 +303,7 @@ export const triggerFlow = async ({
     const fpoNumber = numberMatch[0];
     const cleanNumber = fpoNumber.replace(/\D/g, "");
 
-    // Add 91 if not already present
-    const phoneNumber = cleanNumber.startsWith("91")
-      ? cleanNumber
-      : `91${cleanNumber}`;
+    const phoneNumber = cleanNumber;
 
     console.log("FPO Number Found:", fpoNumber);
 

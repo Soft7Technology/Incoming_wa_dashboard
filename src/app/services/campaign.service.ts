@@ -1,5 +1,5 @@
 import { resolveCampaignPhone } from '../utils/campaignPhone';
-import { parseImportedPhone } from '../utils/importPhone';
+import { buildRecipient } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
@@ -92,14 +92,13 @@ class CampaignService {
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // Infer only from the supplied international number; never default to the sender's country.
       const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
-      const savedAliases: string[] = [];
       const matchedNumbers = new Set<string>();
       const normalizedPhones = new Map<string, string>();
       for (const value of filters.contactNumber) {
         try {
-          const parsed = resolveCampaignPhone(value, savedContacts);
+          const resolvedPhone = resolveCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id));
+          const parsed = { ...resolvedPhone, phone_number: buildRecipient(resolvedPhone.phone_number, resolvedPhone.country_code) };
           if (parsed.contact) {
-            savedAliases.push(parsed.contact.phone_number);
             matchedNumbers.add(parsed.phone_number);
           }
           normalizedPhones.set(parsed.phone_number, parsed.country_code);
@@ -110,13 +109,14 @@ class CampaignService {
         }
       }
       canonicalRecipientNumbers = [...normalizedPhones.keys()];
-      filters.contactNumber = [...new Set([...canonicalRecipientNumbers, ...savedAliases])];
+      filters.contactNumber = canonicalRecipientNumbers;
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
-        .whereIn('phone_number', filters.contactNumber);
+        .where('phone_number_id', phoneNumberId.id)
+        .whereRaw('country_code || phone_number = ANY(?)', [canonicalRecipientNumbers]);
 
-      const existingNumbers = new Set(existingContacts.map((c: any) => c.phone_number));
+      const existingNumbers = new Set(existingContacts.map((c: any) => buildRecipient(c.phone_number, c.country_code)));
 
       // 3. Filter missing numbers
       const missingNumbers = canonicalRecipientNumbers.filter(
@@ -130,7 +130,7 @@ class CampaignService {
           user_id: userId,
           company_id: companyId,
           phone_number_id:phoneNumberId.id,
-          phone_number: num,
+          phone_number: "+" + num,
           country_code: normalizedPhones.get(num),
           name: num, // Fallback to phone number as name
           is_valid: true,
@@ -143,9 +143,8 @@ class CampaignService {
     // Get contacts based on filters
     const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
-    const contactList = uniqueCampaignRecipients((await contacts).map(contact => ({
-      ...contact, ...parseImportedPhone(contact.phone_number, String(contact.country_code || '')),
-    })).filter(contact => !requestedNumbers || requestedNumbers.has(contact.phone_number)));
+    const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
+      !requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code))));
     if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
 
@@ -610,7 +609,7 @@ class CampaignService {
         campaign_id: campaign.id,
         profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
-        to: parseImportedPhone(contact.phone_number, String(contact.country_code || '')).phone_number,
+        to: buildRecipient(contact.phone_number, contact.country_code),
         type: 'template',
         template: templatePayload,
       });
@@ -869,6 +868,7 @@ class CampaignService {
     const message = await MessageService.sendMessage({
       messageUUID,
       user_id: campaign.user_id,
+      company_id: campaign.company_id,
       campaign_id: campaign.id,
       phone_number_id: campaign.phone_number_id,
       to: testPhoneNumber,

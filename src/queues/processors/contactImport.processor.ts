@@ -86,7 +86,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       for (const contactData of batch) {
         try {
           // Check if contact exists
-          let contact = await ContactModel.findOwnedByPhone(userId, contactData.phone_number, phone_number_id, companyId);
+          let contact = await ContactModel.findOwnedByPhone(userId, contactData.phone_number, phone_number_id, companyId, contactData.country_code);
 
           if (contact) {
             // Update existing contact

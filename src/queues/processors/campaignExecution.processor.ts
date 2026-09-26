@@ -1,4 +1,4 @@
-import { parseImportedPhone } from '../../app/utils/importPhone';
+import { buildRecipient } from '../../app/utils/importPhone';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
@@ -234,7 +234,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
 
     infrastructureOperation = false;
     // Resolve legacy local numbers using this contact's country, never the sender's country.
-    recipientPhone = parseImportedPhone(contact.phone_number, String(contact.country_code || '')).phone_number;
+    recipientPhone = buildRecipient(contact.phone_number, contact.country_code);
     // Build template payload
     const templatePayload = buildTemplatePayload(
       template,

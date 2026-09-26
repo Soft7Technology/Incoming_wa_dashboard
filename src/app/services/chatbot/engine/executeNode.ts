@@ -1,3 +1,4 @@
+import phoneNumberModel from '../../../models/phoneNumber.model';
 import axios from 'axios';
 import { parseChatbotDelay } from '../../../utils/chatbotDelay';
 import { randomUUID } from 'crypto';
@@ -433,11 +434,9 @@ export const executeNode = async ({
                 return null;
             }
 
-            const contact =
-                await contactModel.findByPhone(
-                    userId,
-                    phone
-                );
+            const receivingPhone = await phoneNumberModel.findByPhoneNumberId(session.phoneNumberId);
+            if (!receivingPhone || receivingPhone.user_id !== userId) return null;
+            const contact = await contactModel.findOwnedByPhone(userId, phone, receivingPhone.id, receivingPhone.company_id);
 
             if (!contact) {
                 console.log(
@@ -562,7 +561,9 @@ export const executeNode = async ({
                 return null;
             }
 
-            const contact = await contactModel.findByUserPhoneNumber(userId, phone);
+            const receivingPhone = await phoneNumberModel.findByPhoneNumberId(session.phoneNumberId);
+            if (!receivingPhone || receivingPhone.user_id !== userId) return null;
+            const contact = await contactModel.findOwnedByPhone(userId, phone, receivingPhone.id, receivingPhone.company_id);
 
             if (!contact) {
                 console.log("Contact not found");

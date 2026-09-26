@@ -2,7 +2,7 @@ import { buildInteractiveHeader, validateChatbotMessage } from './utils/chatbotM
 import chatSessionModel from '../app/models/chatSession.model';
 import nodemailer from "nodemailer";
 import metaService from './services/meta.service';
-import { parsePhoneNumberFromString } from "libphonenumber-js";
+import { parseImportedPhone } from './utils/importPhone';
 import chatbotTriggerModel from './models/chatbotTrigger.model';
 
 export const transporter = nodemailer.createTransport({
@@ -469,54 +469,11 @@ function parseJSON(data: any) {
   }
 }
 
-export const normalizePhoneNumber = (
-  phone: string,
-  country_code?: string
-) => {
-
-  if (!phone) return null;
-
-  let cleaned = String(phone)
-    .replace(/[^\d+]/g, "")
-    .trim();
-
-  // Remove leading zero
-  if (cleaned.startsWith("0")) {
-    cleaned = cleaned.slice(1);
-  }
-
-  let parsed;
-
-  // Already international
-  if (cleaned.startsWith("+")) {
-
-    parsed = parsePhoneNumberFromString(cleaned);
-
-  } else {
-
-    // Example: 919876543210
-    if (cleaned.startsWith("91") && cleaned.length === 12) {
-      cleaned = "+" + cleaned;
-      parsed = parsePhoneNumberFromString(cleaned);
-    } else {
-
-      // Use provided country
-      parsed = parsePhoneNumberFromString(
-        cleaned,
-        country_code as any || "IN"
-      );
-    }
-  }
-
-  if (!parsed || !parsed.isValid()) {
-    return null;
-  }
-
-  return {
-    number: parsed.number,
-    country: parsed.country,
-    country_code: parsed.countryCallingCode,
-  };
+export const normalizePhoneNumber = (phone: string, country_code?: string) => {
+  try {
+    const identity = parseImportedPhone(phone, country_code || '');
+    return { number: identity.phone_number, country_code: identity.country_code };
+  } catch { return null; }
 };
 
 export function replaceBodyVariables(

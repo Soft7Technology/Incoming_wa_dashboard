@@ -542,18 +542,16 @@ class ContactController {
    * Assign a contact (looked up by phone) to a team member
    */
   assignContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number, assigned_to } = req.body;
+    const { phone_number, country_code, phone_number_id, assigned_to } = req.body;
 
     if (!phone_number || !assigned_to) {
       throw new HTTP400Error({ message: 'phone_number and assigned_to are required' });
     }
 
-    // Normalize phone — add + if missing
-    const normalized = phone_number.startsWith('+') ? phone_number : `+${phone_number}`;
 
     // Find contact by phone for this user
     const effectiveUserId = req.ownerId ?? req.userId!;
-    const contact = await ContactService.findContactByPhone(effectiveUserId, normalized);
+    const contact = await ContactService.findContactByPhone(effectiveUserId, phone_number, country_code, phone_number_id, req.companyId);
     if (!contact) {
       return res.status(404).json({ success: false, message: 'Contact not found for this phone number' });
     }

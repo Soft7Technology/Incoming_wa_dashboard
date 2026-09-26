@@ -31,6 +31,7 @@ export interface SendBulkMessageDto {
   campaign_id: string | undefined | null;
   phone_number_id: string;
   to: string;
+  country_code?: string;
   type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
   text?: {
     body: string;
@@ -106,6 +107,7 @@ export interface SendMessageDto {
   phone_number_id: string;
   profile_name?: string;
   to: string;
+  country_code?: string;
   type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
   text?: {
     body: string;
@@ -195,6 +197,7 @@ export interface BulkSendMessageDto {
   phone_number_id: string;
   messageUUID: string;
   to: string;
+  country_code?: string;
   type: 'text' | 'template' | 'image' | 'video' | 'document' | 'audio' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction';
   text?: {
     body: string;

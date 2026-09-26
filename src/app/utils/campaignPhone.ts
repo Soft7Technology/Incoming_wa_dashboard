@@ -13,11 +13,11 @@ export function resolveCampaignPhone(value: string, contacts: SavedPhone[]) {
   for (const contact of contacts) {
     try {
       const parsed = parseImportedPhone(contact.phone_number, String(contact.country_code || ''));
-      const full = parsed.phone_number.slice(1);
-      const national = full.slice(parsed.country_code.length);
-      if (requested ? requested.phone_number === parsed.phone_number :
+      const national = parsed.phone_number;
+      const full = parsed.country_code + national;
+      if (requested ? requested.country_code === parsed.country_code && requested.phone_number === parsed.phone_number :
         digits === full || digits === national || digits === `0${national}`) {
-        matches.set(parsed.phone_number, { ...parsed, contact });
+        matches.set(full, { ...parsed, contact });
       }
     } catch { /* Malformed legacy contacts cannot supply a reliable country code. */ }
   }
