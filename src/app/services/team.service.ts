@@ -11,6 +11,7 @@ import { Model } from 'firebase-admin/lib/machine-learning/machine-learning';
 import permissionModel from '../models/permission.model';
 import { bulkUpdateTableExecutionQueue } from '@surefy/console/queues/bulkTableUpdate.queue';
 import companyDomainModel from '../models/companyDomain.model';
+import { publishSocketEvent } from './socket-bridge';
 
 class teamService{
     async inviteTeam(data: any) {
@@ -48,7 +49,7 @@ class teamService{
             throw new HTTP400Error({ message: 'Invitation does not belong to this company domain' });
         }
         const hashedPassword = await bcrypt.hash(password, 10);
-        return db.transaction(async trx => {
+        const result = await db.transaction(async trx => {
             await trx('users').where({ id: found.invite_sent_by }).forUpdate().first();
             const invite = await trx('user_team').where({ id: found.id, invite_token: token }).forUpdate().first();
             if (!invite || invite.invite_status !== 'sent') {
@@ -66,6 +67,20 @@ class teamService{
             // Pending and accepted both occupy one seat: no usage increment here.
             return { success: true, message: 'Password setup successful', data: createdUser };
         });
+
+        try {
+            await publishSocketEvent('team_invite_accepted', {
+                userId: found.invite_sent_by,
+                invite_id: found.id,
+                email: found.email,
+                role: found.role,
+                status: 'accepted',
+            });
+        } catch (socketErr) {
+            console.warn('Socket emit team_invite_accepted error:', socketErr);
+        }
+
+        return result;
     }
 
     async userInvites(userId: string) {

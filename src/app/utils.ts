@@ -382,7 +382,7 @@ export const downloadMedia = async (mediaId: string) => {
 export default function sendEmail(to: string, subject: string, text: string, html?: string) {
   console.log(`📧 Sending email to ${to}: ${subject}\n${text}`);
   return transporter.sendMail({
-    from: `"Your App Name" <${process.env.SMTP_USER}>`,
+    from: `"Soft7 Technologies" <${process.env.SMTP_USER}>`,
     to,
     subject,
     text,
