@@ -1,3 +1,5 @@
+require('ts-node/register');
+require('tsconfig-paths/register');
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const ts=require('typescript');
@@ -6,7 +8,7 @@ const vm=require('node:vm');
 function load(file,deps) {
   const exports={};
   const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
-  vm.runInNewContext(js,{exports,require:id=>deps[id]||{},console:{log(){},info(){},warn(){},error(){}},process:{env:{}}});
+  vm.runInNewContext(js,{exports,require:id=>deps[id] || {},console:{log(){},info(){},warn(){},error(){}},process:{env:{}}});
   return exports;
 }
 function handler({keyword=null,session=null,sessionBot=null,defaultBot={id:'default',isDefault:true}}={}) {

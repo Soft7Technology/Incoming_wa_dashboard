@@ -1,5 +1,4 @@
-import { isWhatsAppSuppressed } from '../utils/whatsappPreference';
-import { resolveCampaignPhone } from '../utils/campaignPhone';
+import { resolveCampaignPhone, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import { buildRecipient } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
@@ -30,11 +29,12 @@ interface CreateCampaignData {
   description?: string;
   phone_number_id: string;
   template_id: string;
+  country_code?: string | number;
   contact_filters?: {
     tag_ids?: string[];
     tags?: string[];            // tag names sent by frontend
     list_ids?: string[];
-    contactNumber?: string[];   // direct phone numbers sent by frontend
+    contactNumber?: Array<string | number>;   // direct phone numbers sent by frontend
     exclude_invalid?: boolean;
     attributes?: Record<string, any>;
   };
@@ -49,6 +49,8 @@ class CampaignService {
    * Create a new campaign
    */
   async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
+    try { validateCampaignPhoneInputs(data.contact_filters, data.country_code); }
+    catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
     const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
@@ -69,7 +71,7 @@ class CampaignService {
     // ── Resolve tag names → tag IDs ──────────────────────────────────────
     // Frontend sends contact_filters.tags as an array of tag NAMES.
     // The contact filter query expects tag_ids (UUIDs). Resolve here.
-    const filters = { ...(data.contact_filters || {}) };
+    const filters = { ...(data.contact_filters || {}), contactNumber: data.contact_filters?.contactNumber?.map(String) };
 
     if (filters.tags && filters.tags.length > 0 && (!filters.tag_ids || filters.tag_ids.length === 0)) {
       const resolvedTagIds: string[] = [];
@@ -97,7 +99,8 @@ class CampaignService {
       const normalizedPhones = new Map<string, string>();
       for (const value of filters.contactNumber) {
         try {
-          const resolvedPhone = resolveCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id));
+          const resolvedPhone = resolveCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
+            { countryCode: data.country_code === undefined ? undefined : String(data.country_code), allowBareInternational: true });
           const parsed = { ...resolvedPhone, phone_number: buildRecipient(resolvedPhone.phone_number, resolvedPhone.country_code) };
           if (parsed.contact) {
             matchedNumbers.add(parsed.phone_number);
@@ -105,7 +108,7 @@ class CampaignService {
           normalizedPhones.set(parsed.phone_number, parsed.country_code);
         } catch (error) {
           throw new HTTP400Error({
-            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Include the country calling code, for example +6581234567 +91937259458`,
+            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Supply country_code for a national number or use an international number such as +6581234567`,
           });
         }
       }
@@ -630,12 +633,6 @@ class CampaignService {
       // // Update contact stats
       await ContactModel.incrementMessageCount(contact.id);
     } catch (error: any) {
-      if (isWhatsAppSuppressed(error)) {
-        await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
-          error_code: error.code, error_message: error.message, failed_at: null, retry_after: null,
-        });
-        return;
-      }
       console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {

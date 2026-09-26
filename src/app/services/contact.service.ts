@@ -311,12 +311,10 @@ class ContactService {
    * Delete contact (soft delete)
    */
   async deleteContact(contactId: string) {
-    const contact = await ContactModel.findById(contactId);
-    if (!contact) {
+    const deletedCount = await ContactModel.delete(contactId);
+    if (deletedCount === 0) {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
-
-    await ContactModel.delete(contactId);
   }
 
   /**

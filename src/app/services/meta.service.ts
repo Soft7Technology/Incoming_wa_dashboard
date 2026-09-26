@@ -1,4 +1,3 @@
-import whatsappPreferences, { WhatsAppSendContext } from './whatsappPreference.service';
 import { parseWhatsAppPhone } from '../utils/importPhone';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
@@ -28,7 +27,7 @@ class MetaService {
   /**
    * Send a message via WhatsApp Business API
    */
-  async sendMessage(phoneNumberId: string, payload: any, context: WhatsAppSendContext = {}): Promise<any> {
+  async sendMessage(phoneNumberId: string, payload: any): Promise<any> {
     if (payload.to !== undefined) {
       try {
         const identity = parseWhatsAppPhone(payload.to);
@@ -36,7 +35,6 @@ class MetaService {
       } catch (error: any) { throw new HTTP400Error({ message: `Invalid international recipient: ${error.message}` }); }
     }
     if (!payload.to) throw new HTTP400Error({ message: 'Recipient is required' });
-    return whatsappPreferences.guardSend(phoneNumberId, payload, context, async () => {
     try {
       console.log('Paylod', payload);
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
@@ -51,7 +49,6 @@ class MetaService {
         details: error.response?.data || error.message,
       });
     }
-    });
   }
 
   /**

@@ -1,3 +1,4 @@
+import { validateCampaignPhones } from '../app/http/middleware/campaignPhoneValidation';
 import { Router } from 'express';
 import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
 import CampaignController from '@surefy/console/http/controllers/campaign.controller';
@@ -8,7 +9,7 @@ const CampaignRoute = Router();
 // All campaign endpoints require authentication (applied at route group level)
 
 // Campaign CRUD
-CampaignRoute.post('/', checkPlanLimit('Campaign'), CampaignController.createCampaign);
+CampaignRoute.post('/', validateCampaignPhones, checkPlanLimit('Campaign'), CampaignController.createCampaign);
 // CampaignRoute.post('/', CampaignController.createCampaign);
 CampaignRoute.get('/', CampaignController.getCampaigns);
 

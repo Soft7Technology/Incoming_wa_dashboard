@@ -1,4 +1,6 @@
 require('ts-node/register');
+require('tsconfig-paths/register');
+require('ts-node/register');
 const importedPhone = require('../src/app/utils/importPhone');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -8,7 +10,7 @@ const ts = require('typescript');
 function load(file, dependencies) {
   const exports = {};
   const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(js, { exports, require: id => dependencies[id] || (id.endsWith('/importPhone') ? importedPhone : {}), console: { info(){}, log(){}, error(){}, warn(){} }, process, Date, setInterval: () => ({ unref(){} }), clearInterval(){} });
+  vm.runInNewContext(js + (file.endsWith('campaignExecution.processor.ts') ? '\nexports.sendCampaignMessageForTest = sendCampaignMessage;' : ''), { exports, require: id => dependencies[id] || (id.endsWith('/importPhone') ? importedPhone : {}), console: { info(){}, log(){}, error(){}, warn(){} }, process, Date, setInterval: () => ({ unref(){} }), clearInterval(){} });
   return exports;
 }
 function service(status, state) {

@@ -1,4 +1,3 @@
-import { preferenceCommand } from '../../utils/whatsappPreference';
 import chatSessionModel from '@surefy/console/app/models/chatSession.model';
 import { getRuntimeBot } from './runtimeBot';
 import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
@@ -22,7 +21,6 @@ export const transporter = nodemailer.createTransport({
 
 export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any, profile_name:any) {
   try {
-    if (preferenceCommand(message)) return null;
 
     console.log("📥 Incoming:", phoneNumberId, message);
 

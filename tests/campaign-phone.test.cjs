@@ -24,3 +24,24 @@ test('shared national digits across countries require an explicit country prefix
     { id: 'us', phone_number: '+17579380000', country_code: '1' },
   ]), /Multiple contacts/);
 });
+
+
+test('campaign creation accepts international digits with or without plus', () => {
+  for (const value of ['+919372597458', '919372597458', '+65 8123 4567', '6581234567', '006581234567']) {
+    const parsed = resolve(value, [], { allowBareInternational: true });
+    assert.equal(parsed.phone_number, value.includes('9372597458') ? '9372597458' : '81234567');
+  }
+});
+test('campaign creation accepts national numbers with supplied country or saved context', () => {
+  assert.equal(resolve('9372597458', [], { countryCode: '+91', allowBareInternational: true }).country_code, '91');
+  assert.equal(resolve('81234567', [], { countryCode: 'SG', allowBareInternational: true }).country_code, '65');
+  assert.throws(() => resolve('81234567', [], { allowBareInternational: true }));
+  assert.equal(resolve('9522007000', [], { countryCode: '91', allowBareInternational: true }).country_code, '91');
+});
+test('campaign phone payload validation rejects malformed arrays and unsafe numbers', () => {
+  const { validateCampaignPhoneInputs: validate } = require('../src/app/utils/campaignPhone');
+  for (const contactNumber of ['919372597458', [], ['abc'], [null], [1.5], [Infinity], [{}]]) {
+    assert.throws(() => validate({ contactNumber }));
+  }
+  assert.doesNotThrow(() => validate({ contactNumber: [919372597458, '+6581234567', '81234567'] }, '+65'));
+});

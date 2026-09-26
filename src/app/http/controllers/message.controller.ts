@@ -187,7 +187,7 @@ class MessageController {
               context: message?.context?.id,
             });
 
-            if (saved && !saved.preference_handled && !saved.webhook_duplicate) {
+            if (saved) {
               await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName);
             }
           }

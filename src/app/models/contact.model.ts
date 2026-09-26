@@ -322,11 +322,20 @@ class ContactModel extends BaseModel {
     return query.where({ user_id: userId }).orWhere({ assigned_to: userId }).returning("*")
   }
 
+  async delete(id: string | number | any) {
+    const now = new Date();
+    return this.query().where({ id }).whereNull('deleted_at')
+      .update({ deleted_at: now, updated_at: now });
+  }
+
   async bulkDelete(companyId: string, ids: string[], userId: string, assignedUserId?: string) {
     if (!companyId || !userId) throw new HTTP400Error({ message: 'User and company context are required' });
-    const query = this.query().where({ company_id: companyId, user_id: userId }).whereIn('id', ids);
+    const query = this.query().where({ company_id: companyId, user_id: userId })
+      .whereIn('id', ids).whereNull('deleted_at');
     if (assignedUserId) query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [assignedUserId]);
-    return query.del();
+    // Preserve referenced messages, inbound receipts, and preference audit history.
+    const now = new Date();
+    return query.update({ deleted_at: now, updated_at: now });
   }
 
   async findByUserPhoneNumber(userId: string, phoneNumber: string) {
