@@ -7,6 +7,7 @@ PaymentRoute.use(PaymentController.noStore);
 
 PaymentRoute.get('/providers', PaymentController.providers);
 PaymentRoute.get('/gateways', PaymentController.configurations);
+PaymentRoute.post('/gateways', PaymentController.createGateway);
 PaymentRoute.put('/gateways', PaymentController.configure);
 PaymentRoute.delete('/gateways/:mode', PaymentController.disable);
 PaymentRoute.post('/test-orders', PaymentController.createTestOrder);

@@ -20,115 +20,54 @@ type ProviderTestResult = {
 
 class AIAgentService {
   /**
-   * Run the AI Assistant for a given message
+   * Generate one reply using the selected local assistant and scoped message history.
+   * phoneNumberId is the local database ID; phone is the customer's international number.
    */
-  async runAssistant(userId: string, companyId: string, phone: string, incomingText: string): Promise<string | null> {
+  async runAssistant(assistantId: string, userId: string, companyId: string, phoneNumberId: string, phone: string): Promise<string> {
+    // Never silently select another assistant if the configured ID is unavailable.
+    const assistant = await aiAssistantModel.findActiveOwned(assistantId, userId);
+    if (!assistant) throw new Error('The selected AI assistant is unavailable for this account');
+    // Use only this assistant's decrypted credential, with no environment-key fallback.
+    const apiKey = decryptApiKey(assistant.api_key);
+    if (!apiKey || apiKey.startsWith('enc:')) throw new Error('The selected AI assistant needs a valid API key');
+    // Custom text takes precedence for custom mode; otherwise use the saved preset/role.
+    const instruction = assistant.prompt_type === 'custom' ? assistant.custom_prompt
+      : assistant.predefined_prompt || `You are a helpful assistant acting as a: ${assistant.role}.`;
+    if (!instruction?.trim()) throw new Error('The selected AI assistant needs a prompt');
+    const history = await messageModel.getRecentMessages(userId, companyId, phoneNumberId, phone, 10);
+    // The webhook persists the current inbound message before invoking the chatbot.
+    // Do not append it again: it is already included in the last ten rows.
+    // The query returns newest first; providers receive the conversation oldest first.
+    const messages = history.slice().reverse().map((row: any) => ({
+      role: row.direction === 'inbound' ? 'user' : 'assistant', content: assistantMessageText(row),
+    })).filter((message: any) => message.content);
+    if (!messages.length) throw new Error('No message context is available');
+    const provider = String(assistant.provider).trim().toLowerCase();
+    const requestedModel = String(assistant.model || '').trim();
+    if (!requestedModel) throw new Error('The selected AI assistant needs a model');
+    let text = '';
     try {
-      // 1. Get the active assistant for the user
-      const assistants = await aiAssistantModel.findByUserId(userId);
-      const activeAssistant = assistants.find((a: any) => a.status === 'ACTIVE');
-
-      if (!activeAssistant) {
-        console.log(`⚠️ No active AI Assistant found for user ${userId}`);
-        return null;
-      }
-
-      // 2. Fetch recent chat history to provide context/memory (limit to last 10 messages)
-      const history = await messageModel.getRecentMessages(userId, phone, 10);
-
-      history.reverse(); // Order from oldest to newest
-
-      // 3. Format prompt and system instruction
-      let systemInstruction = activeAssistant.prompt_type === 'custom'
-        ? activeAssistant.custom_prompt
-        : `You are a helpful assistant acting as a: ${activeAssistant.role}.`;
-
-
-
-      const provider = activeAssistant.provider.toLowerCase();
-      const apiKey = decryptApiKey(activeAssistant.api_key) || process.env.GEMINI_API_KEY || process.env.OPENAI_API_KEY;
-
-      if (!apiKey) {
-        console.warn('⚠️ No API Key found for AI Assistant.');
-        return 'Assistant configuration error: API Key not found.';
-      }
-
-      let responseText = '';
-
-      if (provider.includes('gemini')) {
-        // Call Gemini API via Axios
-        const modelName = activeAssistant.model.toLowerCase().includes('pro') ? 'gemini-1.5-pro' : 'gemini-1.5-flash';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
-
-        // Format history for Gemini
-        const contents = history.map((msg: any) => ({
-          role: msg.direction === 'inbound' ? 'user' : 'model',
-          parts: [{ text: msg.content?.body || '' }]
-        }));
-
-        // Append latest incoming text
-        contents.push({
-          role: 'user',
-          parts: [{ text: incomingText }]
-        });
-
-        const payload = {
-          contents,
-          systemInstruction: {
-            parts: [{ text: systemInstruction || '' }]
-          }
-        };
-
-        const res = await axios.post(url, payload, {
-          headers: { 'Content-Type': 'application/json' }
-        });
-
-        responseText = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-
-      } else if (provider.includes('openai')) {
-        // Call OpenAI API via Axios
-        const url = 'https://api.openai.com/v1/chat/completions';
-        const modelName = activeAssistant.model.toLowerCase().includes('mini') ? 'gpt-4o-mini' : 'gpt-4o';
-
-        // Format history for OpenAI
-        const messages: any[] = [
-          { role: 'system', content: systemInstruction || '' }
-        ];
-
-        history.forEach((msg: any) => {
-          messages.push({
-            role: msg.direction === 'inbound' ? 'user' : 'assistant',
-            content: msg.content?.body || ''
-          });
-        });
-
-        messages.push({
-          role: 'user',
-          content: incomingText
-        });
-
-        const payload = {
-          model: modelName,
-          messages,
-          temperature: 0.7
-        };
-
-        const res = await axios.post(url, payload, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${apiKey}`
-          }
-        });
-
-        responseText = res.data?.choices?.[0]?.message?.content || '';
-      }
-
-      return responseText.trim();
-
-    } catch (error: any) {
-      console.error('❌ AI Agent Service Error:', error?.response?.data || error.message);
-      return 'Sorry, I encountered an issue processing your request.';
+      // Convert stored history into the selected provider's message format.
+      if (provider.includes('openai')) {
+        const result = await axios.post('https://api.openai.com/v1/chat/completions', {
+          model: openAiModelMap[requestedModel.toLowerCase()] || requestedModel,
+          messages: [{ role: 'system', content: instruction }, ...messages], store: false,
+        }, { headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 30000 });
+        text = result.data?.choices?.[0]?.message?.content || '';
+      } else if (provider.includes('gemini')) {
+        const model = requestedModel.replace(/^models\//, '');
+        const result = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
+          systemInstruction: { parts: [{ text: instruction }] },
+          contents: messages.map((message: any) => ({ role: message.role === 'assistant' ? 'model' : 'user', parts: [{ text: message.content }] })),
+        }, { headers: { 'x-goog-api-key': apiKey, 'Content-Type': 'application/json' }, timeout: 30000 });
+        text = (result.data?.candidates?.[0]?.content?.parts || []).map((part: any) => part.text || '').join('');
+      } else throw new Error('Unsupported AI provider');
+    } catch {
+      // Never propagate Axios request configuration: it contains the assistant's key.
+      throw new Error('AI provider could not generate a response');
     }
+    if (typeof text !== 'string' || !text.trim()) throw new Error('AI provider returned an empty response');
+    return text.trim();
   }
 
   async testProviderConnection(
@@ -233,3 +172,16 @@ class AIAgentService {
 }
 
 export default new AIAgentService();
+
+/** Extract readable text from stored WhatsApp payloads; media gets a type label, not transcription. */
+export function assistantMessageText(row: any): string {
+  let content = row.content;
+  if (typeof content === 'string') {
+    try { content = JSON.parse(content); } catch { return content; }
+  }
+  const text = content?.text?.body || (typeof content?.text === 'string' ? content.text : '')
+    || content?.body || content?.interactive?.button_reply?.title || content?.interactive?.list_reply?.title
+    || content?.button?.text || content?.caption || content?.image?.caption || content?.video?.caption
+    || content?.interactive?.body?.text;
+  return typeof text === 'string' ? text : `[${row.type || 'non-text'} message]`;
+}

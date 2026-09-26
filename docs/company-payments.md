@@ -20,7 +20,10 @@ be used to grant a plan. Payment success is checked using the verification endpo
 
 ## Configure a gateway
 
-`PUT /gateways`
+`POST /v1/admin/payments/gateways` creates the first active configuration for the chosen mode and returns HTTP 201.
+If that company already has an active gateway in the mode, POST returns HTTP 400 and preserves it.
+Use `PUT /v1/admin/payments/gateways` with the same body to replace credentials or switch providers.
+Both endpoints require a company administrator JWT and `Content-Type: application/json`.
 
 ```json
 {
@@ -37,7 +40,7 @@ Use the matching test or production credentials. Razorpay key prefixes are check
 Cashfree uses separate sandbox and production API hosts. Saving credentials does not itself validate them with
 the provider; creating a test order checks whether the test credentials work.
 
-One gateway is active per company per mode. Saving a new configuration deactivates the previous version.
+One gateway is active per company per mode. PUT deactivates the previous version; POST never replaces an active configuration.
 Existing orders retain their original credentials for verification; revoking those keys at the gateway may
 prevent verification. Secrets are encrypted and never returned by these endpoints.
 
@@ -113,3 +116,31 @@ is sent as Razorpay's receipt or Cashfree's order ID. Automatic retries of unkno
 
 Validation: `node --test tests/company-payment.test.cjs` and `npm.cmd run build`.
 Automated tests mock gateway HTTP responses; real sandbox checkout still requires configured credentials.
+
+## Frontend setup and checkout sequence
+
+1. Request `GET /v1/admin/payments/providers` for supported providers and credential labels.
+2. A company administrator submits POST `/v1/admin/payments/gateways` once per mode. For Cashfree use `provider: "cashfree"`, with its App ID in `key_id` and Secret Key in `key_secret`.
+3. Request GET `/v1/admin/payments/gateways` to show configured metadata; secrets are never returned.
+4. Create a test order or an order using a fresh `Idempotency-Key` header. Reuse that key when retrying the same order request.
+5. Pass `data.checkout` to your provider checkout integration. Keep `data.id` as the local order ID.
+6. After checkout, POST `/v1/admin/payments/orders/<local-id>/verify`. Display success only when the returned `data.status` is `paid`.
+
+Example configuration response (HTTP 201; generated IDs/timestamps vary):
+
+```json
+{
+  "success": true,
+  "message": "Payment gateway created",
+  "data": {
+    "id": "generated-gateway-uuid",
+    "provider": "razorpay",
+    "mode": "test",
+    "display_name": "Client Store",
+    "active": true,
+    "credentials_configured": true
+  }
+}
+```
+
+This saves an existing merchant account's credentials; it does not create a merchant account at the payment provider or validate credentials remotely. Use the test-order endpoint to check the test connection. `passwordReset.model.ts` has no role in payment configuration. The API remains authenticated; it does not provide public payer order-creation endpoints.

@@ -14,6 +14,14 @@ export const menuFlow = async ({
   console.log("Menu Incoming ID",incomingId,incomingText)
   if (session?.variables?.chatbot_delay_token) return { ignoreMessage: true };
 
+  // Active AI conversations accept free text without requiring a button/edge match.
+  // Prefer the original message body to preserve casing for node command handling.
+  const activeNode = bot.nodes.find((node: any) => node.id === session?.current_node_id);
+  if (activeNode?.data?.key === '@whatsapp/ai-agent') {
+    return executeNode({ bot, currentNode: activeNode, session: { ...session,
+      last_message: message?.text?.body || incomingText || incomingId || '' } });
+  }
+
   // =========================================
   // 1. START FLOW
   // =========================================

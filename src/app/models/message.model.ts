@@ -1,4 +1,4 @@
-import { buildRecipient } from '../utils/importPhone';
+import { buildRecipient, parseWhatsAppPhone } from '../utils/importPhone';
 import { BaseModel } from '@surefy/models/base.model';
 
 class MessageModel extends BaseModel {
@@ -549,19 +549,24 @@ class MessageModel extends BaseModel {
       .orderBy('lm.created_at', 'desc');
   }
 
-  async getRecentMessages(userId: string, phone: string, limit: number = 10) {
-    const normalizedPhone = (phone || '').replace(/\D/g, '');
-    const internationalNumber = normalizedPhone;
-
+  /** Fetch at most ten usable messages for one customer on one business number. */
+  async getRecentMessages(userId: string, companyId: string, phoneNumberId: string, phone: string, limit = 10) {
+    if (!userId || !companyId || !phoneNumberId) throw new Error('Message history requires account and sending-number scope');
+    const identity = parseWhatsAppPhone(phone);
+    // Compare the complete international identity to avoid matching another country.
+    const recipient = identity.country_code + identity.phone_number;
     return this.query()
-      .where({ user_id: userId })
-      .andWhere((builder) => {
-        builder
-          .whereRaw(`REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g') = ?`, [internationalNumber])
-          .orWhereRaw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') = ?`, [internationalNumber]);
+      .where({ user_id: userId, company_id: companyId, phone_number_id: phoneNumberId })
+      // Queued/failed messages were not successfully exchanged and are not AI context.
+      .whereIn('status', ['received', 'sent', 'delivered', 'read'])
+      .andWhere(builder => {
+        builder.where(q => q.where('direction', 'inbound')
+          .whereRaw("REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g') = ?", [recipient]))
+          .orWhere(q => q.where('direction', 'outbound')
+            .whereRaw("REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') = ?", [recipient]));
       })
-      .orderBy('created_at', 'desc')
-      .limit(limit);
+      .orderBy('created_at', 'desc').orderBy('id', 'desc')
+      .limit(Math.max(1, Math.min(10, limit)));
   }
 }
 

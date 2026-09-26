@@ -29,6 +29,12 @@ class PaymentController {
     return successResponse(req, res, 'Company payment gateways', result);
   });
 
+  // POST creates a configuration; PUT can replace an existing configuration.
+  createGateway = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const result = await payments.configure(paymentContext(req), req.body || {}, true);
+    return successResponse(req, res, 'Payment gateway created', result, 201);
+  });
+
   configure = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const result = await payments.configure(paymentContext(req), req.body || {});
     return successResponse(req, res, 'Payment gateway configured', result);

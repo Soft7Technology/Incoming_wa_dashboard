@@ -191,3 +191,36 @@ test('reconfiguring a company does not change the gateway of existing orders', a
   assert.equal(h.rows.company_payment_orders[0].gateway_id, 'gateway-a');
   assert.equal((await h.default.verify(h.req, order.id)).status, 'paid');
 });
+
+test('create-only gateway configuration preserves existing mode and allows a separate mode', async () => {
+  const h = harness();
+  const body = { provider: 'razorpay', mode: 'test', key_id: 'rzp_test_new', key_secret: 'new-secret', display_name: 'Client Store' };
+  await assert.rejects(h.default.configure(h.req, body, true), /already exists/);
+  assert.equal(h.rows.company_payment_gateways.length, 1);
+  assert.equal(h.rows.company_payment_gateways[0].active, true);
+  const created = await h.default.configure(h.req, { ...body, mode: 'live', key_id: 'rzp_live_new' }, true);
+  assert.equal(created.mode, 'live');
+  assert.equal(h.rows.company_payment_gateways.length, 2);
+  assert.equal(h.rows.company_payment_gateways[0].active, true);
+  assert.ok(!JSON.stringify(created).includes('new-secret'));
+  await assert.rejects(h.default.configure({ ...h.req, userRole: 'user' }, body, true), /Only company administrators/);
+});
+
+test('POST gateway controller uses authenticated context, create-only behavior and HTTP 201', async () => {
+  let call, response;
+  const controller = load('src/app/http/controllers/payment.controller.ts', {
+    '../../services/companyPayment.service': { configure: async (...args) => { call = args; return { id: 'created' }; } },
+    '@surefy/utils/Controller': {
+      tryCatchAsync: fn => fn,
+      successResponse: (...args) => { response = args; },
+    },
+  }).default;
+  await controller.createGateway({ userId: 'owner', companyId: 'trusted-company', userRole: 'admin', get: () => undefined,
+    body: { company_id: 'untrusted-company', provider: 'razorpay' } }, {});
+  assert.equal(call[0].companyId, 'trusted-company');assert.equal(call[2], true);
+  assert.equal(response[4], 201);assert.equal(response[3].id, 'created');
+  const routes = [];
+  const router = { use() {}, get() {}, put() {}, delete() {}, post: (...args) => routes.push(args) };
+  load('src/routes/payment.route.ts', { express: { Router: () => router }, '../app/http/controllers/payment.controller': controller });
+  assert.equal(routes.find(([path]) => path === '/gateways')[1], controller.createGateway);
+});

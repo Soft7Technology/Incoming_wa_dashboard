@@ -88,7 +88,7 @@ class CompanyPaymentService {
     ];
   }
 
-  async configure(req: PaymentContext, body: any) {
+  async configure(req: PaymentContext, body: any, createOnly = false) {
     const { company_id } = paymentScope(req, true);
     const mode = paymentMode(body.mode);
     if (!['razorpay', 'cashfree'].includes(body.provider)) {
@@ -106,6 +106,10 @@ class CompanyPaymentService {
       // Serialize configuration changes and order creation for this company.
       const company = await CompanyPaymentModel.lockCompany(trx, company_id);
       if (!company) throw new HTTP404Error({ message: 'Company not found' });
+      // Check under the company lock so concurrent POSTs cannot replace each other.
+      if (createOnly && await CompanyPaymentModel.activeGateway(trx, company_id, mode)) {
+        throw new HTTP400Error({ message: `A ${mode} payment gateway already exists. Use PUT /gateways to replace it.` });
+      }
       await CompanyPaymentModel.deactivateGateways(trx, company_id, mode);
       await CompanyPaymentModel.insertGateway(trx, {
         id,

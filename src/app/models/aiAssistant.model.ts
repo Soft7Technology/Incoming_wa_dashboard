@@ -16,6 +16,13 @@ class AIAssistantModel extends BaseModel {
     return this.query().where({ id }).first();
   }
 
+  // A flow can use only an active assistant owned by its receiving-number account.
+  async findActiveOwned(id: string, userId: string) {
+    // Text comparison supports both legacy numeric IDs and UUID-based deployments.
+    return this.query().where({ user_id: userId, status: 'ACTIVE' })
+      .whereRaw('id::text = ?', [String(id)]).first();
+  }
+
   async findByUserId(userId: string): Promise<any[]> {
     return this.query().where({ user_id: userId });
   }
