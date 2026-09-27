@@ -2,6 +2,7 @@ import { Response, NextFunction } from 'express';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import payments, { PaymentContext } from '../../services/companyPayment.service';
+import { AuthRequest } from '@surefy/middleware/auth.middleware';
 
 // Only authenticated identity and the retry key cross the HTTP/service boundary.
 function paymentContext(req: JWTAuthRequest): PaymentContext {
@@ -30,7 +31,8 @@ class PaymentController {
   });
 
   // POST creates a configuration; PUT can replace an existing configuration.
-  createGateway = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+  createGateway = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    console.log('Request body',req.body)
     const result = await payments.configure(paymentContext(req), req.body || {}, true);
     return successResponse(req, res, 'Payment gateway created', result, 201);
   });

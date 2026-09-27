@@ -1,3 +1,4 @@
+import paymentPlans from './paymentPlan.service';
 import { createHash, randomUUID } from 'crypto';
 import db from '@surefy/database';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -63,6 +64,8 @@ function publicOrder(order: any) {
     checkout: order.checkout,
     created_at: order.created_at,
     paid_at: order.paid_at,
+    user_plan_id: order.user_plan_id ?? null,
+    fulfilled_at: order.fulfilled_at ?? null,
   };
 }
 
@@ -147,7 +150,16 @@ class CompanyPaymentService {
     if (test && body.amount_paise !== undefined && body.amount_paise !== 100) {
       throw new HTTP400Error({ message: 'Test orders use a fixed amount_paise of 100 (INR 1)' });
     }
-    const amount_paise = test ? 100 : paymentAmount(body.amount_paise);
+    const planId = body.subscription_plan_id;
+    const recipientId = body.user_id ?? scope.user_id;
+    if (planId !== undefined) {
+      if (typeof planId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId) || typeof recipientId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipientId)) {
+        throw new HTTP400Error({ message: 'subscription_plan_id and user_id must be UUIDs' });
+      }
+      if (mode !== 'live') throw new HTTP400Error({ message: 'Subscription purchases require live mode; test payments cannot activate plans' });
+      if (body.amount_paise !== undefined) throw new HTTP400Error({ message: 'Omit amount_paise for subscriptions; price comes from the saved plan' });
+    } else if (body.user_id !== undefined) throw new HTTP400Error({ message: 'user_id is only supported for subscription purchases' });
+    const requestedAmount = planId === undefined ? (test ? 100 : paymentAmount(body.amount_paise)) : null;
     const idempotency_key = requiredString(req.idempotencyKey, 'Idempotency-Key header', 100);
     const customer_phone =
       body.customer_phone === undefined ? '' : requiredString(body.customer_phone, 'customer_phone', 15);
@@ -155,7 +167,7 @@ class CompanyPaymentService {
       throw new HTTP400Error({ message: 'customer_phone must contain 10 digits for this INR checkout' });
     }
     const request_hash = createHash('sha256')
-      .update(JSON.stringify({ mode, amount_paise, customer_phone }))
+      .update(JSON.stringify(planId === undefined ? { mode, amount_paise: requestedAmount, customer_phone } : { mode, subscription_plan_id: planId, user_id: recipientId, customer_phone }))
       .digest('hex');
     const prepared = await db.transaction(async (trx) => {
       const company = await CompanyPaymentModel.lockCompany(trx, scope.company_id);
@@ -171,6 +183,8 @@ class CompanyPaymentService {
       if (gateway.provider === 'cashfree' && !customer_phone) {
         throw new HTTP400Error({ message: 'customer_phone is required for Cashfree checkout' });
       }
+      const reserved = planId === undefined ? null : await paymentPlans.reserve(trx, scope.company_id, recipientId, planId);
+      const amount_paise = reserved?.amount ?? requestedAmount!;
       const gatewayConnection = connection(gateway);
       const id = randomUUID();
       const order = await CompanyPaymentModel.insertOrder(trx, {
@@ -183,6 +197,7 @@ class CompanyPaymentService {
         currency: 'INR',
         is_test: mode === 'test',
         status: 'creating',
+        ...(reserved ? { user_plan_id: reserved.userPlanId } : {}),
       });
       return { gateway, gatewayConnection, order };
     });
@@ -225,7 +240,7 @@ class CompanyPaymentService {
 
   async verify(req: PaymentContext, id: string) {
     const order = await this.findOrder(req, id);
-    if (order.status === 'paid') return publicOrder(order);
+    if (order.status === 'paid' && (!order.user_plan_id || order.fulfilled_at || order.is_test)) return publicOrder(order);
     if (!order.provider_order_id)
       throw new HTTP400Error({
         message:
@@ -235,7 +250,14 @@ class CompanyPaymentService {
     if (!gateway) throw new HTTP404Error({ message: 'Order gateway configuration not found' });
     const paid = await verifyGatewayOrder(connection(gateway), order);
     if (paid) {
-      await CompanyPaymentModel.markPaid(order.company_id, id);
+      // Payment confirmation and entitlement activation commit together. Retrying
+      // verification after a failure is safe and cannot extend the plan twice.
+      await db.transaction(async trx => {
+        const locked = await trx('company_payment_orders').where({ id, company_id: order.company_id }).forUpdate().first();
+        if (!locked) throw new HTTP404Error({ message: 'Payment order not found' });
+        await paymentPlans.fulfill(trx, locked);
+        if (locked.status !== 'paid') await trx('company_payment_orders').where({ id }).update({ status: 'paid', paid_at: new Date(), updated_at: new Date() });
+      });
     }
     // Read back the latest state so concurrent verifications never regress paid to pending.
     return this.get(req, id);

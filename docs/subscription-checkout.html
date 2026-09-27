@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Company payment test</title>
+<title>Subscription checkout</title>
 <style>
   body { font: 16px system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; }
   label { display: block; margin: 16px 0; }
@@ -10,22 +10,20 @@
   button { padding: 12px; margin: 8px 8px 8px 0; cursor: pointer; }
   pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f4f6; padding: 16px; }
 </style>
-<h1>Company payment test</h1>
-<p>Use your company's configured gateway. Live checkout collects real money when you complete payment.</p>
+<h1>Subscription checkout</h1>
+<p>Enter a subscription plan to pay its saved price. This is live checkout: completing payment charges real money.</p>
 <form id="form">
   <label>API origin <input id="origin" type="url" placeholder="http://localhost:3000" required></label>
   <label>Company administrator JWT <input id="token" type="password" autocomplete="off" required></label>
   <label>Customer phone (10 digits) <input id="phone" inputmode="numeric" pattern="[0-9]{10}" required></label>
-  <label>Subscription plan ID (optional, live only) <input id="plan" placeholder="Company subscription UUID"></label>
+  <label>Subscription plan ID <input id="plan" placeholder="Company subscription UUID" required></label>
   <label>Plan recipient user ID (optional; defaults to signed-in user) <input id="recipient" placeholder="User UUID in this company"></label>
-  <label>Mode <select id="mode"><option value="test">Test (sandbox)</option><option value="live">Live (real payment)</option></select></label>
-  <label>Amount in paise (100 = INR 1) <input id="amount" type="number" min="100" max="100000000" step="1" value="100" required disabled></label>
-  <p id="modeNote">Test mode uses a fixed INR 1 order.</p>
-  <button id="pay" type="submit">Open INR 1 test checkout</button>
+<p>The server determines the price from the selected subscription. After payment, this page verifies the order and displays plan activation status.</p>
+  <button id="pay" type="submit">Pay for subscription</button>
   <button id="verify" type="button" disabled>Check payment status</button>
   <button id="reset" type="button">New payment attempt</button>
 </form>
-<pre id="result" aria-live="polite">Configure the selected mode using POST or PUT /v1/admin/payments/gateways first.</pre>
+<pre id="result" aria-live="polite">Configure a live gateway using POST or PUT /v1/admin/payments/gateways first.</pre>
 <script>
   // Keep tokens and checkout state in memory; never persist them in browser storage.
   (() => {
@@ -62,7 +60,10 @@
         for (let attempt = 0; attempt < (retry ? 12 : 1); attempt++) {
           localOrder = await api('/orders/' + orderId + '/verify');
           show(localOrder);
-          if (localOrder.status === 'paid') return;
+          if (localOrder.status === 'paid') {
+            show({ message: localOrder.fulfilled_at ? 'Payment verified. Your subscription is active.' : 'Payment verified. Plan activation is not yet confirmed.', order: localOrder });
+            return;
+          }
           if (!retry) break;
           show({ message: 'Checkout finished. Waiting for gateway payment confirmation...', order: localOrder });
           if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 3000));
@@ -76,44 +77,35 @@
         element('reset').disabled = false;
       }
     }
-    const fields = ['origin', 'token', 'phone', 'mode', 'amount', 'plan', 'recipient'];
-    function updateMode() {
-      const live = element('mode').value === 'live';
-      element('amount').disabled = Boolean(context) || !live;
-      if (!live) element('amount').value = '100';
-      element('pay').textContent = live ? 'Open live checkout' : 'Open INR 1 test checkout';
-      element('modeNote').textContent = live ? 'Live mode: completing checkout charges the entered amount.' : 'Test mode uses a fixed INR 1 order.';
-    }
-    element('mode').onchange = updateMode;
+    const fields = ['origin', 'token', 'phone', 'plan', 'recipient'];
     element('verify').onclick = () => verify(true);
     element('reset').onclick = () => {
       localOrder = undefined; context = undefined; attemptKey = crypto.randomUUID();
-      fields.forEach(id => { element(id).disabled = false; }); updateMode();
-      element('verify').disabled = true; show('Ready for a new payment. Previous orders remain available through the API.');
+      fields.forEach(id => { element(id).disabled = false; });
+      element('pay').disabled = false; element('verify').disabled = true; show('Ready for a new payment. Previous orders remain available through the API.');
     };
     element('form').onsubmit = async event => {
       event.preventDefault(); element('pay').disabled = true; element('reset').disabled = true;
       try {
         if (!context) {
-          const amount = Number(element('amount').value);
-          if (!Number.isSafeInteger(amount) || amount < 100 || amount > 100000000) throw new Error('Enter whole paise between 100 and 100000000.');
-          context = { origin: new URL(element('origin').value).origin, token: element('token').value.trim(), phone: element('phone').value,
-            mode: element('mode').value, amount, plan: element('plan').value.trim(), recipient: element('recipient').value.trim() };
-          if (context.plan && context.mode !== 'live') { context = undefined; throw new Error('Subscription payments require live mode.'); }
+          const plan = element('plan').value.trim();
+          if (!plan) throw new Error('Enter a subscription plan ID.');
+          context = { origin: new URL(element('origin').value).origin, token: element('token').value.trim(),
+            phone: element('phone').value, plan, recipient: element('recipient').value.trim() };
           // Freeze the attempt's inputs so retries retain the same amount, mode and key.
           fields.forEach(id => { element(id).disabled = true; });
         }
-        localOrder = await api(context.mode === 'live' ? '/orders' : '/test-orders', context.mode === 'live'
-          ? { mode: 'live', customer_phone: context.phone, ...(context.plan
-            ? { subscription_plan_id: context.plan, ...(context.recipient ? { user_id: context.recipient } : {}) }
-            : { amount_paise: context.amount }) }
-          : { customer_phone: context.phone });
-        if (context.plan) context.amount = localOrder.amount_paise; // Server-priced subscription, never the editable amount.
+        // A retry reuses the same idempotency key and therefore the same order/plan.
+        localOrder = localOrder || await api('/orders', {
+          mode: 'live', subscription_plan_id: context.plan, customer_phone: context.phone,
+          ...(context.recipient ? { user_id: context.recipient } : {}),
+        });
         show(localOrder); element('verify').disabled = false;
-        if (localOrder.is_test !== (context.mode === 'test') || localOrder.amount_paise !== context.amount) throw new Error('Returned order mode or amount does not match this attempt.');
+        if (localOrder.is_test || !localOrder.user_plan_id) throw new Error('Expected a live subscription order.');
+        if (localOrder.status === 'paid') { await verify(); return; }
         if (localOrder.status !== 'pending') return;
         const checkout = localOrder.checkout;
-        if (checkout?.mode !== context.mode) throw new Error('Checkout mode does not match the requested mode.');
+        if (checkout?.mode !== 'live') throw new Error('Checkout mode does not match the requested mode.');
         if (checkout.provider === 'razorpay') {
           if (!window.Razorpay) await loadScript('https://checkout.razorpay.com/v1/checkout.js');
           // Resolve the SDK callback immediately. Waiting on backend fetch here can
@@ -133,11 +125,11 @@
           await verify(true);
         } else if (checkout.provider === 'cashfree') {
           if (!window.Cashfree) await loadScript('https://sdk.cashfree.com/js/v3/cashfree.js');
-          await window.Cashfree({ mode: context.mode === 'live' ? 'production' : 'sandbox' }).checkout({ paymentSessionId: checkout.payment_session_id, redirectTarget: '_modal' });
+          await window.Cashfree({ mode: 'production' }).checkout({ paymentSessionId: checkout.payment_session_id, redirectTarget: '_modal' });
           await verify(true);
-        }
+        } else throw new Error('Unsupported checkout provider.');
       } catch (error) { show(error.message); }
-      finally { element('pay').disabled = false; element('reset').disabled = false; }
+      finally { element('pay').disabled = localOrder?.status === 'paid'; element('reset').disabled = false; }
     };
   })();
 </script>

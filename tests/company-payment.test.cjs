@@ -128,6 +128,7 @@ function harness() {
   let creates = 0, verifies = 0, fail = false;
   const api = load(serviceFile, {
     '@surefy/database': db,
+    './paymentPlan.service': { fulfill: async () => {} },
     '../models/companyPayment.model': load('src/app/models/companyPayment.model.ts', { '@surefy/database': db }).default,
     '../utils/paymentCredentials': { decryptPaymentCredentials: () => gateway.credentials, encryptPaymentCredentials: () => 'encrypted' },
     './paymentGateway.provider': {
