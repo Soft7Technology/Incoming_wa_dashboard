@@ -1,3 +1,4 @@
+import contactOptOut from './contactOptOut.service';
 import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
 import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
@@ -212,6 +213,12 @@ class MessageService {
     }
 
     // Create message record
+    if (data.campaign_id && await contactOptOut.isBlocked(phoneNumber, metaPayload.to)) {
+      const error: any = new Error('Contact opted out of campaign messages');
+      error.code = 'CONTACT_OPTED_OUT';
+      throw error;
+    }
+
     const message = await MessageModel.create({
       id: data.messageUUID,
       user_id: data.user_id,
@@ -636,6 +643,7 @@ class MessageService {
       });
 
       const message = await MessageModel.create(messagePayload);
+      const preferenceHandled = await contactOptOut.incoming(phoneNumber, contact, data.raw_message || data.content);
 
       console.log('Incoming message stored', message.id);
 
@@ -662,7 +670,7 @@ class MessageService {
         from: data.from || '',
       }).catch(error => console.error('Incoming message socket notification failed', error));
 
-      return message;
+      return { ...message, preference_handled: preferenceHandled };
     } catch (error) {
       console.error('Failed to save incoming message', error);
       throw error;

@@ -187,7 +187,7 @@ class MessageController {
               context: message?.context?.id,
             });
 
-            if (saved) {
+            if (saved && !saved.preference_handled) {
               await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName);
             }
           }

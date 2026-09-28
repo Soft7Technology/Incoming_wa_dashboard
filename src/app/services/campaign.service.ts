@@ -1,3 +1,4 @@
+import contactOptOut from './contactOptOut.service';
 import { resolveCampaignPhone, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import { buildRecipient } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
@@ -146,9 +147,11 @@ class CampaignService {
 
     // Get contacts based on filters
     const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
+    const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
     const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
-      !requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code))));
+      !excludedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)) &&
+      (!requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)))));
     if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
 
@@ -633,6 +636,10 @@ class CampaignService {
       // // Update contact stats
       await ContactModel.incrementMessageCount(contact.id);
     } catch (error: any) {
+      if (error.code === 'CONTACT_OPTED_OUT') {
+        await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', { error_code: error.code, error_message: error.message, retry_after: null });
+        return;
+      }
       console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {

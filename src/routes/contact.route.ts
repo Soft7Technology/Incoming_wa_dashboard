@@ -5,8 +5,13 @@ import ContactController from '@surefy/console/http/controllers/contact.controll
 import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
 import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
 
+import OptOutController from '../app/http/controllers/contactOptOut.controller';
+
 const ContactRoute = Router();
 ContactRoute.use(accountScope);
+ContactRoute.get('/opt-in-out/keywords/:phoneNumberId', ownedPhone, OptOutController.getKeywords);
+ContactRoute.put('/opt-in-out/keywords/:phoneNumberId', ownedPhone, requireRole('user'), OptOutController.updateKeywords);
+ContactRoute.put('/:id/opt-in-out', ownedResource('contacts', 'id'), requireRole('user', 'member'), OptOutController.updateContact);
 
 // All contact endpoints require authentication (applied at route group level)
 
@@ -34,7 +39,7 @@ ContactRoute.put('/:id', ownedResource('contacts', 'id'), accountAssignments, re
 ContactRoute.delete('/', requireRole('user', 'member'), ContactController.bulkDeleteContacts);
 ContactRoute.delete('/:id', ownedResource('contacts', 'id'), requireRole('user', 'member'), ContactController.deleteContact);
 ContactRoute.get('/user/:userId', ContactController.getUsersContacts);
-ContactRoute.put('/:contactId/assigned', ownedResource('contacts', 'contactId'), accountAssignments, ContactController.assignedContactToUser);
+ContactRoute.put('/:contactId/assigned',requireRole('user'), ownedResource('contacts', 'contactId'), accountAssignments, ContactController.assignedContactToUser);
 
 // Contact import
 ContactRoute.get('/import/sample', ContactController.downloadSampleTemplate);

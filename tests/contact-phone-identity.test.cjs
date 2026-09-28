@@ -104,11 +104,12 @@ test('migration stops before data or index changes when clarification is require
 });
 
 
-function messageHarness(contacts = []) {
+function messageHarness(contacts = [], blocked = false) {
   const sent = [], saved = [], incoming = [];
   const business = { id: 'business', phone_number_id: 'meta', user_id: 'owner', company_id: 'company' };
   const service = load('src/app/services/message.service.ts', {
     '../utils/importPhone': phone,
+    './contactOptOut.service': { incoming: async () => false, isBlocked: async () => blocked },
     '../utils/campaignPhone': require('../src/app/utils/campaignPhone'),
     '@surefy/console/models/phoneNumber.model': { findByPhoneNumberId: async () => business },
     '../models/contact.model': {
@@ -156,4 +157,12 @@ test('incoming service persists split sender identity within the receiving compa
   assert.equal(contact.company_id, 'company');
   assert.equal(contact.user_id, 'owner');
   assert.equal(env.saved[0].from_phone, '6581234567');
+});
+
+test('campaign send rejects a fresh opt-out before message persistence and Meta dispatch', async () => {
+  const contact = { id: 'sg', phone_number_id: 'business', phone_number: '81234567', country_code: '65' };
+  const env = messageHarness([contact], true);
+  await assert.rejects(env.service.sendMessage({ ...sendData, campaign_id: 'campaign', to: '+6581234567' }), error => error.code === 'CONTACT_OPTED_OUT');
+  assert.equal(env.sent.length, 0);
+  assert.equal(env.saved.length, 0);
 });
