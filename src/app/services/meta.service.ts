@@ -216,6 +216,7 @@ class MetaService {
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
       });
+      console.log('Response',response.data)
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Upload Media:', error.response?.data || error.message);
