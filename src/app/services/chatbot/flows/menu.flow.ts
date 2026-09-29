@@ -12,6 +12,15 @@ export const menuFlow = async ({
 }: any) => {
 
   console.log("Menu Incoming ID",incomingId,incomingText)
+  if (session?.variables?.chatbot_delay_token) return { ignoreMessage: true };
+
+  // Active AI conversations accept free text without requiring a button/edge match.
+  // Prefer the original message body to preserve casing for node command handling.
+  const activeNode = bot.nodes.find((node: any) => node.id === session?.current_node_id);
+  if (activeNode?.data?.key === '@whatsapp/ai-agent') {
+    return executeNode({ bot, currentNode: activeNode, session: { ...session,
+      last_message: message?.text?.body || incomingText || incomingId || '' } });
+  }
 
   // =========================================
   // 1. START FLOW
@@ -26,7 +35,9 @@ export const menuFlow = async ({
     // Find ANY edges globally
     console.log("Global")
     const globalEdge = bot.edges.find(
-      (e:any)=> e?.data?.buttonId || e?.data?.button_id === incomingId
+      (e:any)=> e.source === currentNodeId &&
+        (e?.data?.buttonId === incomingId || e?.data?.button_id === incomingId ||
+          e?.data?.sourceHandle === incomingId || e.sourceHandle === incomingId)
     )
 
     console.log("Global Edge",globalEdge)
@@ -43,10 +54,6 @@ export const menuFlow = async ({
       //VARIABLES
       let updatedVariables = session?.variables || {};
 
-      //RESET VARIABLES
-      if(globalEdge.data){
-        updatedVariables = {}
-      }
 
       //Update session
       await chatSessionModel.update(session.id,{
@@ -200,7 +207,7 @@ export const menuFlow = async ({
   // Match button/list reply ID
   let matchedEdge = edges.find(
     (e: any) =>
-      e.sourceHandle === incomingId
+      Boolean(incomingId) && e.sourceHandle === incomingId
   );
 
   // fallback text matching
@@ -214,7 +221,13 @@ export const menuFlow = async ({
 
   if (!matchedEdge) {
     console.log("❌ No matched edge");
-    return null;
+    // A default menu should answer arbitrary text again while awaiting a choice.
+    // Question answers and delay waits are handled above and must not restart.
+    if (bot.isDefault && incomingText && !incomingId &&
+        (nodeKey === '@whatsapp/send-button-message' || nodeKey === '@whatsapp/send-list-message')) {
+      return executeNode({ bot, session, currentNode });
+    }
+    return { ignoreMessage: true };
   }
 
   const nextNode = bot.nodes.find(

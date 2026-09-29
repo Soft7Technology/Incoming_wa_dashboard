@@ -5,6 +5,20 @@ class CampaignModel extends BaseModel {
     super('campaigns');
   }
 
+  async findDetailsById(campaignId: string) {
+    const phoneIdMatch = this.db.raw('pn.id::text = c.phone_number_id::text');
+    return this.query()
+      .from('campaigns as c')
+      .leftJoin('templates as t', 't.id', 'c.template_id')
+      .leftJoin('phone_numbers as pn', function () {
+        this.on('pn.phone_number_id', '=', 'c.phone_number_id')
+          .orOn(phoneIdMatch);
+      })
+      .where('c.id', campaignId)
+      .select('c.*', 't.name as template_name', 'pn.display_phone_number as phone_number')
+      .first();
+  }
+
   async findByUserId(userId: string, filters: any = {}) {
     let query = this.query()
       .whereNull('deleted_at')
@@ -42,6 +56,10 @@ class CampaignModel extends BaseModel {
   async updateStatus(campaignId: string, status: string, additionalData: any = {}) {
     const updateData: any = { status, ...additionalData };
 
+    if (status === 'scheduled' || status === 'running' || status === 'completed') {
+      updateData.failure_reason = null;
+    }
+
     if (status === 'running' && !additionalData.started_at) {
       updateData.started_at = new Date();
     }
@@ -76,6 +94,26 @@ class CampaignModel extends BaseModel {
       .where({ status: 'scheduled' })
       .where('scheduled_at', '<=', new Date())
       .whereNull('deleted_at');
+  }
+
+  async markRunningJobFailed(id: string, reason: string) {
+    return this.query().where({ id, status: 'running' })
+      .whereExists(this.db('campaign_messages')
+        .select(this.db.raw('1'))
+        .where('campaign_messages.campaign_id', id)
+        .where('campaign_messages.status', 'pending'))
+      .update({ status: 'failed', failure_reason: reason, completed_at: new Date(), updated_at: new Date() });
+  }
+
+  async completeIfNoPendingMessages(id: string): Promise<boolean> {
+    const updated = await this.query()
+      .where({ id, status: 'running' })
+      .whereNotExists(this.db('campaign_messages')
+        .select(this.db.raw('1'))
+        .where('campaign_messages.campaign_id', id)
+        .where('campaign_messages.status', 'pending'))
+      .update({ status: 'completed', failure_reason: null, completed_at: new Date(), updated_at: new Date() });
+    return updated > 0;
   }
 
   async getRunningCampaigns() {

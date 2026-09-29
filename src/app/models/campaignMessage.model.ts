@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import { BaseModel } from '@surefy/models/base.model';
 
 class CampaignMessageModel extends BaseModel {
@@ -32,10 +33,107 @@ class CampaignMessageModel extends BaseModel {
       .where({ contact_id: contactId, status: 'pending' });
   }
 
-  async getPendingMessages(campaignId: string, limit: number) {
-    return this.query()
-      .where({ campaign_id: campaignId, status: 'pending' })
+  async getPendingMessages(
+    campaignId: string,
+    limit: number,
+    status?: string,
+    errorMessage?: string
+  ) {
+    const query = this.query()
+      .where("campaign_id", campaignId)
+      .where("status", status || "pending")
+      .where(builder => builder.whereNull('retry_after').orWhere('retry_after', '<=', new Date()))
+      .orderBy('created_at')
+      .orderBy('id')
       .limit(limit);
+
+    // if (errorMessage) {
+    //   query.andWhere((qb) => {
+    //     qb.where("error_message", errorMessage)
+    //       .orWhereNull("error_message");
+    //   });
+    // }
+
+    return query;
+  }
+
+  async getPendingCount(campaignId: string): Promise<number> {
+    const row = await this.query()
+      .where({ campaign_id: campaignId, status: 'pending' })
+      .count('* as count')
+      .first();
+    return Number(row?.count || 0);
+  }
+
+  async getDeferredCount(campaignId: string): Promise<number> {
+    const row = await this.query()
+      .where({ campaign_id: campaignId, status: 'pending' })
+      .where('retry_after', '>', new Date())
+      .count('* as count')
+      .first();
+    return Number(row?.count || 0);
+  }
+
+  async deferRetry(id: string, delayMs: number, countAttempt = false): Promise<number> {
+    const updateData: any = { retry_after: new Date(Date.now() + delayMs) };
+    if (countAttempt) updateData.retry_attempts = this.db.raw('COALESCE(retry_attempts, 0) + 1');
+    const [row] = await this.query().where({ id }).update(updateData).returning('retry_attempts');
+    return Number(row?.retry_attempts || 0);
+  }
+
+  async getNextRetryAt(campaignId: string, failedBefore?: Date): Promise<Date | null> {
+    const query = this.query()
+      .where('campaign_messages.campaign_id', campaignId)
+      .where('campaign_messages.retry_after', '>', new Date());
+    if (failedBefore) {
+      query.whereNot('campaign_messages.status', 'skipped');
+      query.leftJoin('messages', 'messages.id', 'campaign_messages.message_id')
+        .where(builder => builder.where('campaign_messages.status', 'failed').orWhere('messages.status', 'failed'))
+        .where(builder => builder.whereNull('campaign_messages.failed_at').orWhere('campaign_messages.failed_at', '<', failedBefore));
+    } else {
+      query.where('campaign_messages.status', 'pending');
+    }
+    const row = await query.min('campaign_messages.retry_after as retry_after').first();
+    return row?.retry_after || null;
+  }
+
+  async getFailedMessages(
+    campaignId: string,
+    BATCH_SIZE: any,
+    before?: Date,
+  ) {
+    const query = this.query()
+      .leftJoin("messages", "messages.id", "campaign_messages.message_id")
+      .where("campaign_messages.campaign_id", campaignId)
+      .whereNot("campaign_messages.status", "skipped")
+      .where((qb) => {
+        qb.where("campaign_messages.status", "failed")
+          .orWhere("messages.status", "failed");
+      })
+      .where(builder => builder.whereNull('campaign_messages.retry_after').orWhere('campaign_messages.retry_after', '<=', new Date()))
+      .select(
+        "campaign_messages.*",
+        "messages.status as message_status"
+      )
+      .limit(BATCH_SIZE);
+    if (before) query.where(builder => builder.whereNull('campaign_messages.failed_at').orWhere('campaign_messages.failed_at', '<', before));
+    return query.orderBy('campaign_messages.created_at').orderBy('campaign_messages.id');
+  }
+
+  async recordSent(id: string, campaignId: string, contactId: string, messageId: string, cost: number) {
+    return this.db.transaction(async trx => {
+      await trx('campaign_messages').where({ id }).update({
+        status: 'sent', message_id: messageId, sent_at: new Date(),
+        error_message: null, error_code: null, failed_at: null, retry_after: null, retry_attempts: 0,
+      });
+      await trx('campaigns').where({ id: campaignId }).update({
+        sent_count: trx.raw('COALESCE(sent_count, 0) + 1'),
+        total_cost: trx.raw('COALESCE(total_cost, 0) + ?', [cost]),
+      });
+      await trx('contacts').where({ id: contactId }).update({
+        message_count: trx.raw('COALESCE(message_count, 0) + 1'), last_contacted_at: new Date(),
+      });
+    });
   }
 
   async updateStatus(id: string, status: string, data: any = {}) {
@@ -55,19 +153,20 @@ class CampaignMessageModel extends BaseModel {
 
     if (status === 'failed' && !data.failed_at) {
       updateData.failed_at = new Date();
+      updateData.retry_after = null;
     }
 
     return this.update(id, updateData);
   }
 
-  async bulkCreate(messages: any[]) {
+  async bulkCreate(messages: any[], trx?: Knex.Transaction) {
     const BATCH_SIZE = 200;
     const results = [];
 
     for (let i = 0; i < messages.length; i += BATCH_SIZE) {
       const batch = messages.slice(i, i + BATCH_SIZE);
 
-      const inserted = await this.query()
+      const inserted = await (trx ? trx(this.tableName) : this.query())
         .insert(batch)
         .returning('*');
 
@@ -97,13 +196,16 @@ class CampaignMessageModel extends BaseModel {
       .from('campaign_messages as cm')
       .leftJoin('messages as m', 'm.id', 'cm.message_id')
       .where('cm.campaign_id', campaignId)
-      .whereRaw(`( m.status = \'failed\')`)
+      .whereNot('cm.status', 'skipped')
+      .where((query) => {
+        query.where('cm.status', 'failed').orWhere('m.status', 'failed');
+      })
       .select(
-        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text) AS error_message`),
+        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text, cm.error_code::text) AS error_message`),
         this.db.raw(`COUNT(*) AS total`)
       )
       .groupBy(
-        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text)`)
+        this.db.raw(`COALESCE(m.error_message, cm.error_message, m.error_code::text, cm.error_code::text)`)
       )
       .orderBy('total', 'desc')
   }
@@ -119,16 +221,90 @@ class CampaignMessageModel extends BaseModel {
         this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'pending')  AS pending_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'delivered') AS delivered_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'read')    AS read_count`),
-        this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'failed' OR cm.status = 'failed')  AS failed_count`),
         this.db.raw(`
            COUNT(*) FILTER(
-             WHERE cm.status = 'failed' OR m.status = 'failed'
+             WHERE cm.status <> 'skipped' AND (cm.status = 'failed' OR m.status = 'failed')
            ) AS failed_count
           `),
         this.db.raw(`ROUND(COALESCE(SUM(m.cost), 0),1) AS total_cost`),
       )
       .first();
   }
+
+
+  // async getCampaignMessageStatus(
+  //   campaignId: string,
+  //   status?: string,
+  //   page: number = 1,
+  //   pageSize: number = 10
+  // ) {
+  //   const offset = (page - 1) * pageSize;
+
+  //   console.log("Details", campaignId, status, page, pageSize)
+
+  //   // ---------- BASE QUERY ----------
+  //   const baseQuery = this.query()
+  //     .from('campaign_messages as cm')
+  //     .leftJoin('messages as m', 'm.id', 'cm.message_id')
+  //     .join('contacts as c', 'c.id', 'cm.contact_id')
+  //     .join('campaigns as ca', 'ca.id', 'cm.campaign_id')
+  //     .join('templates as t', 't.id', 'ca.template_id')
+  //     .where('cm.campaign_id', campaignId);
+
+  //   if (status) {
+  //     baseQuery.andWhereRaw(
+  //       `COALESCE(m.status, cm.status) = ?`,
+  //       [status]
+  //     );
+  //   }
+
+  //   // ---------- TOTAL COUNT ----------
+  //   const [{ count }] = await baseQuery
+  //     .clone()
+  //     .clearSelect()
+  //     .count('* as count');
+
+  //   const total = Number(count);
+
+  //   // ---------- PAGINATED DATA ----------
+  //   const data = await baseQuery
+  //     .clone()
+  //     .select(
+  //       this.db.raw(`c.attributes ->> 'fullName' AS "leadName"`),
+  //       this.db.raw(`REPLACE(c.phone_number, '+', '') AS "phoneNumber"`),
+  //       'm.status as messageStatus',
+  //       'm.from_phone as fromPhone',
+  //       'm.to_phone as toPhone',
+  //       't.name as templateName',
+  //       'cm.template_variables as templateVariables',
+  //       'm.cost as messageCost',
+  //       'm.error_message as messageError',
+  //       'cm.error_message as campaignError',
+  //       'm.error_code as messageErrorCode',
+  //       'm.read_at as readAt',
+  //       'm.delivered_at as deliveredAt',
+  //       'm.failed_at as failedAt',
+  //       'm.created_at as sentAt'
+  //     )
+  //     .limit(pageSize)
+  //     .offset(offset)
+
+  //   // ---------- PAGINATION META ----------
+  //   const totalPages = Math.ceil(total / pageSize);
+
+  //   return {
+  //     data,
+  //     pagination: {
+  //       page,
+  //       pageSize,
+  //       total,
+  //       totalPages,
+  //       hasNextPage: page < totalPages,
+  //       hasPreviousPage: page > 1
+  //     }
+  //   };
+  // }
+
 
 
   async getCampaignMessageStatus(
@@ -139,9 +315,17 @@ class CampaignMessageModel extends BaseModel {
   ) {
     const offset = (page - 1) * pageSize;
 
-    console.log("Details", campaignId, status, page, pageSize)
+    const effectiveStatusSql = `
+    CASE
+      WHEN cm.status::text = 'skipped' THEN 'skipped'
+      WHEN cm.status::text = 'failed' OR m.status::text = 'failed'
+        THEN 'failed'
+      WHEN m.status IS NOT NULL
+        THEN m.status::text
+      ELSE cm.status::text
+    END
+  `;
 
-    // ---------- BASE QUERY ----------
     const baseQuery = this.query()
       .from('campaign_messages as cm')
       .leftJoin('messages as m', 'm.id', 'cm.message_id')
@@ -150,45 +334,75 @@ class CampaignMessageModel extends BaseModel {
       .join('templates as t', 't.id', 'ca.template_id')
       .where('cm.campaign_id', campaignId);
 
-    if (status) {
-      baseQuery.andWhereRaw(
-        `COALESCE(m.status, cm.status) = ?`,
-        [status]
-      );
+    // Filtering:
+    // status=failed finds failures from campaign_messages OR messages.
+    // Other statuses use the final/effective status.
+    if (status === 'failed') {
+      baseQuery.whereNot('cm.status', 'skipped').andWhere((query) => {
+        query
+          .where('cm.status', 'failed')
+          .orWhere('m.status', 'failed');
+      });
+    } else if (status) {
+      baseQuery.andWhereRaw(`${effectiveStatusSql} = ?`, [status]);
     }
 
-    // ---------- TOTAL COUNT ----------
-    const [{ count }] = await baseQuery
+    const totalResult = await baseQuery
       .clone()
       .clearSelect()
-      .count('* as count');
+      .count('* as count')
+      .first();
 
-    const total = Number(count);
+    const total = Number(totalResult?.count || 0);
 
-    // ---------- PAGINATED DATA ----------
     const data = await baseQuery
       .clone()
       .select(
+        'cm.id as campaignMessageId',
+        'cm.campaign_id as campaignId',
+        'cm.contact_id as contactId',
+        'cm.message_id as messageId',
+
         this.db.raw(`c.attributes ->> 'fullName' AS "leadName"`),
         this.db.raw(`REPLACE(c.phone_number, '+', '') AS "phoneNumber"`),
-        'm.status as messageStatus',
+
+        // Helpful for debugging: see each table's actual status.
+        this.db.raw(`cm.status::text AS "campaignMessageStatus"`),
+        this.db.raw(`m.status::text AS "messageStatus"`),
+
+        // Final status returned to frontend.
+        this.db.raw(`${effectiveStatusSql} AS "status"`),
+
         'm.from_phone as fromPhone',
         'm.to_phone as toPhone',
         't.name as templateName',
         'cm.template_variables as templateVariables',
         'm.cost as messageCost',
-        'm.error_message as messageError',
-        'cm.error_message as campaignError',
-        'm.error_code as messageErrorCode',
-        'm.read_at as readAt',
-        'm.delivered_at as deliveredAt',
-        'm.failed_at as failedAt',
-        'm.created_at as sentAt'
-      )
-      .limit(pageSize)
-      .offset(offset)
 
-    // ---------- PAGINATION META ----------
+        // Error can be stored in either table.
+        this.db.raw(`
+        COALESCE(m.error_message, cm.error_message) AS "errorMessage"
+      `),
+        this.db.raw(`
+        COALESCE(m.error_code::text, cm.error_code) AS "errorCode"
+      `),
+
+        'cm.error_message as campaignErrorMessage',
+        'cm.error_code as campaignErrorCode',
+        'm.error_message as messageErrorMessage',
+        'm.error_code as messageErrorCode',
+
+        'cm.failed_at as campaignFailedAt',
+        'm.failed_at as messageFailedAt',
+        'cm.sent_at as campaignSentAt',
+        'm.created_at as sentAt',
+        'm.delivered_at as deliveredAt',
+        'm.read_at as readAt'
+      )
+      .orderBy('cm.created_at', 'desc')
+      .limit(pageSize)
+      .offset(offset);
+
     const totalPages = Math.ceil(total / pageSize);
 
     return {
@@ -199,8 +413,8 @@ class CampaignMessageModel extends BaseModel {
         total,
         totalPages,
         hasNextPage: page < totalPages,
-        hasPreviousPage: page > 1
-      }
+        hasPreviousPage: page > 1,
+      },
     };
   }
 
@@ -240,6 +454,7 @@ class CampaignMessageModel extends BaseModel {
       .join('contacts as c', 'c.id', 'cm.contact_id')
       .where('cm.campaign_id', campaignId)
       .where('m.status', 'failed')
+      .whereNot('cm.status', 'skipped')
       .where('m.error_message', error)
       .select(columns);
 

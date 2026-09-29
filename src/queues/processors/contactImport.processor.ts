@@ -1,3 +1,4 @@
+import planUsageService from '../../app/services/planUsage.service';
 import { Worker, Job } from 'bullmq';
 import redisConfig from '@surefy/config/redis.config';
 import { ContactImportJobData } from '../contactImport.queue';
@@ -46,12 +47,12 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       user_id:userId,
       company_id:companyId,
       phone_number_id:phone_number_id,
-      country_code:country_code,
+      country_code:country_code || null,
       name: listName,
       file_name: path.basename(filePath),
       file_path: filePath,
       file_headers: parseResult.headers,
-      total_contacts: parseResult.contacts.length,
+      total_contacts: parseResult.contacts.length + parseResult.invalid,
       valid_contacts: parseResult.valid,
       invalid_contacts: parseResult.invalid,
     });
@@ -59,7 +60,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
     // Update job with list_id and total rows
     await ImportJobModel.update(jobId, {
       list_id: list.id,
-      total_rows: parseResult.contacts.length,
+      total_rows: parseResult.contacts.length + parseResult.invalid,
       file_headers: parseResult.headers,
     });
 
@@ -70,9 +71,9 @@ async function processContactImport(job: Job<ContactImportJobData>) {
     const batches = Math.ceil(totalContacts / BATCH_SIZE);
 
     let successfulCount = 0;
-    let failedCount = 0;
+    let failedCount = parseResult.invalid;
     let skippedCount = 0;
-    const allErrors: any[] = [];
+    const allErrors: any[] = [...parseResult.errors];
 
     for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
       const start = batchIndex * BATCH_SIZE;
@@ -85,7 +86,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       for (const contactData of batch) {
         try {
           // Check if contact exists
-          let contact = await ContactModel.findByPhone(userId, contactData.phone_number);
+          let contact = await ContactModel.findOwnedByPhone(userId, contactData.phone_number, phone_number_id, companyId, contactData.country_code);
 
           if (contact) {
             // Update existing contact
@@ -93,17 +94,18 @@ async function processContactImport(job: Job<ContactImportJobData>) {
               attributes: { ...contact.attributes, ...contactData.attributes },
               name: contactData.name || contact.name,
               email: contactData.email || contact.email,
+              country_code: contactData.country_code,
             });
           } else {
             // Create new contact
-            contact = await ContactModel.create({
+            contact = await planUsageService.run(userId, 'Contact', trx => ContactModel.create({
               user_id:userId,
               company_id:companyId,
-              country_code:country_code,
+              country_code: contactData.country_code,
               phone_number_id:phone_number_id,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,
-            });
+            }, trx));
           }
 
           // Add to list
@@ -111,7 +113,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
 
           // Add tags if specified
           if (options.tagIds && options.tagIds.length > 0) {
-            await ContactTagRelationModel.bulkAddTags(contact.id, options.tagIds);
+            await ContactTagRelationModel.bulkAddTags(userId,contact.id, options.tagIds);
 
             // Update tag counts
             for (const tagId of options.tagIds) {
@@ -132,7 +134,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       }
 
       // Update progress after each batch
-      const processedRows = end;
+      const processedRows = end + parseResult.invalid;
       await ImportJobModel.updateProgress(jobId, {
         processed_rows: processedRows,
         successful_rows: successfulCount,
@@ -142,17 +144,18 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       });
 
       // Update job progress percentage
-      const progressPercentage = Math.round((processedRows / totalContacts) * 100);
+      const progressPercentage = Math.round((processedRows / (totalContacts + parseResult.invalid)) * 100);
       await job.updateProgress(progressPercentage);
 
       console.log(`[Job ${jobId}] Progress: ${progressPercentage}% (${processedRows}/${totalContacts})`);
     }
 
     // Update list with final counts
-    await ContactListModel.update(list.id, {
-      valid_contacts: successfulCount,
-      invalid_contacts: failedCount,
-    });
+await ContactListModel.update(list.id, {
+  imported_contacts: successfulCount,
+  import_failed_contacts: failedCount,
+  invalid_phone_numbers: parseResult.invalid,
+});
 
     // Mark job as completed
     const result = {
@@ -161,7 +164,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
       imported: successfulCount,
       failed: failedCount,
       skipped: skippedCount,
-      total: totalContacts,
+      total: totalContacts + parseResult.invalid,
       errors: allErrors.slice(0, 50), // Return first 50 errors in result
     };
 

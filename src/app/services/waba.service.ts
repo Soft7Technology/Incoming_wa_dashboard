@@ -9,6 +9,8 @@ import wabaModel from '@surefy/console/models/waba.model';
 import phoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import metaService from '@surefy/console/services/meta.service';
 import activityLogsModel from '../models/activityLogs.model';
+import contactListModel from '../models/contactList.model';
+import ImportJobModel from "../models/importJob.model"
 
 class WabaService {
   /**
@@ -54,7 +56,7 @@ class WabaService {
 
   async onboardWaba(data: CreateWabaDto) {
     try {
-      console.log("Data",data)
+      console.log("Data", data)
       const clientWabaAccount = await this.upsertWaba(data);
 
       await activityLogsModel.create({
@@ -151,13 +153,17 @@ class WabaService {
   async upsertWaba(data: CreateWabaDto) {
     const existing = await WabaModel.findByWabaId(data.waba_id);
 
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    if (existing && (existing.user_id !== data.user_id || existing.company_id !== data.company_id)) {
+      throw new HTTP400Error({ message: 'WABA is already connected to another account' });
+    }
     // Fetch latest data from Meta
     const wabaDetails = await MetaService.getWabaDetails(data.waba_id);
 
     if (existing) {
       return WabaModel.update(existing.id, {
-        user_id:data.user_id,
-        company_id:data.company_id,
+        user_id: data.user_id,
+        company_id: data.company_id,
         name: wabaDetails.name,
         currency: wabaDetails.currency,
         timezone: wabaDetails.timezone,
@@ -185,19 +191,22 @@ class WabaService {
     waba_id: string;
     company_WABAID: string;
   }) {
-    console.log("Client data",clientData)
+    console.log("Client data", clientData)
     const response = await MetaService.getPhoneNumbers(clientData.waba_id);
-    console.log("Phone number Response",response)
+    console.log("Phone number Response", response)
     const results = [];
 
     for (const phone of response.data || []) {
       const existing = await PhoneNumberModel.findByPhoneNumberId(phone.id);
 
       if (existing) {
+        if (existing.user_id !== clientData.user_id || existing.company_id !== clientData.company_id || existing.waba_id !== clientData.company_WABAID) {
+          throw new HTTP400Error({ message: 'Phone number is already connected to another account' });
+        }
         // Update status changes (very important)
         await PhoneNumberModel.update(existing.id, {
-          user_id:clientData.user_id!,
-          company_id:clientData.company_id! || undefined,
+          user_id: clientData.user_id!,
+          company_id: clientData.company_id! || undefined,
           quality_rating: phone.quality_rating,
           meta_data: phone,
           updated_at: new Date(),
@@ -242,7 +251,9 @@ class WabaService {
 
       // 2️⃣ Loop phone numbers ONE BY ONE
       for (const phone of response.data) {
+        const parentWaba = await this.getWabaById(clientData.company_WABAID);
         const phonePayload: CreatePhoneNumberDto = {
+          user_id: parentWaba.user_id,
           company_id: clientData.company_id,
           waba_id: clientData.company_WABAID, // internal WABA ID
           phone_number_id: phone.id,
@@ -279,6 +290,7 @@ class WabaService {
    * Create WABA account
    */
   async createWaba(data: CreateWabaDto) {
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
     // Check if WABA ID already exists in our database
     const existing = await WabaModel.findByWabaId(data.waba_id);
     if (existing) {
@@ -342,8 +354,8 @@ class WabaService {
   /**
    * Get WABA accounts for company
    */
-  async getCompanyWabas(userId: string,companyId:string) {
-    return WabaModel.findByUserId(userId,companyId);
+  async getCompanyWabas(userId: string, companyId: string) {
+    return WabaModel.findByUserId(userId, companyId);
   }
 
   /**
@@ -361,6 +373,10 @@ class WabaService {
    * Add phone number to WABA
    */
   async addPhoneNumber(data: CreatePhoneNumberDto) {
+    const waba = await this.getWabaById(data.waba_id);
+    if (!data.user_id || !data.company_id || waba.user_id !== data.user_id || waba.company_id !== data.company_id) {
+      throw new HTTP404Error({ message: 'WABA not found in your account' });
+    }
     // Verify phone number exists in Meta
     try {
       const phoneDetails = await MetaService.getPhoneNumberDetails(data.phone_number_id);
@@ -388,8 +404,8 @@ class WabaService {
   /**
    * Get phone numbers for company
    */
-  async getUserPhoneNumbers(userId: string,companyId?:string) {
-    return PhoneNumberModel.findByUserId(userId,companyId);
+  async getUserPhoneNumbers(userId: string, companyId?: string) {
+    return PhoneNumberModel.findByUserId(userId, companyId);
   }
 
   /**
@@ -412,7 +428,8 @@ class WabaService {
 
       if (!existing) {
         const created = await PhoneNumberModel.create({
-          company_id: companyId,
+          user_id: waba.user_id,
+          company_id: waba.company_id,
           waba_id: wabaId,
           phone_number_id: phone.id,
           display_phone_number: phone.display_phone_number,
@@ -436,7 +453,8 @@ class WabaService {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
-    return PhoneNumberModel.update(id, { ...data, updated_at: new Date() });
+    const { id: ignoredId, user_id, company_id, waba_id, phone_number_id, ...changes } = data;
+    return PhoneNumberModel.update(id, { ...changes, updated_at: new Date() });
   }
 
   /**
@@ -451,9 +469,31 @@ class WabaService {
     return PhoneNumberModel.update(id, { deleted_at: new Date() });
   }
 
-  async verifyNumber(phoneNumberId:string){
+  async verifyNumber(phoneNumberId: string) {
     const verifyNumber = await metaService.verifiedPhoneNumbers(phoneNumberId)
     return verifyNumber
+  }
+
+  async deleteWabaAccount(wabaId: string) {
+    // Get all phone numbers belonging to the WABA
+    const phoneNumbers = await phoneNumberModel.findByWabaId(wabaId);
+
+    // Delete dependent contact lists first
+    for (const phoneNumber of phoneNumbers) {
+      await contactListModel.deleteByPhoneNumberId(phoneNumber.id);
+      await ImportJobModel.deleteByPhoneNumberId(phoneNumber.id);
+      await phoneNumberModel.delete(phoneNumber.id);
+    }
+
+    // Delete phone numbers
+    // for (const phoneNumber of phoneNumbers) {
+    //   await phoneNumberModel.delete(phoneNumber.id);
+    // }
+
+    // Finally delete WABA account
+    const deletedWaba = await wabaModel.delete(wabaId);
+
+    return deletedWaba;
   }
 }
 

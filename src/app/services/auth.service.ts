@@ -1,3 +1,4 @@
+import { Knex } from 'knex';
 import UserModel from '../models/user.model';
 import CompanyModel from '../models/company.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -10,10 +11,14 @@ import userPlansModel from '../models/userPlans.model';
 import crypto from 'crypto';
 import userTeamModel from '../models/team.model';
 import db from '@surefy/database';
+import companyDomainModel from '../models/companyDomain.model';
 
 interface LoginCredentials {
   identifier: string; // email or phone
   password: string;
+  hostname?: string;
+  domain?: string;
+  domain_name?: string;
 }
 
 interface JWTPayload {
@@ -38,11 +43,13 @@ class AuthService {
    * Login with email or phone number
    */
   async login(credentials: LoginCredentials, ipAddress: string) {
-    const { identifier, password } = credentials;
+    const { identifier, password, domain, domain_name, hostname } = credentials;
 
     if (!identifier || !password) {
       throw new HTTP400Error({ message: 'Identifier and password are required' });
     }
+
+    let resolvedDomain = domain || domain_name || hostname || '';
 
     // Find user by email or phone
     const user = await UserModel.findByEmailOrPhone(identifier);
@@ -67,6 +74,16 @@ class AuthService {
     let company = null;
     if (user.company_id) {
       company = await CompanyModel.findById(user.company_id);
+    }
+
+    // Look up company domain if resolvedDomain is missing
+    if (!resolvedDomain && user.company_id) {
+      try {
+        const domainRow = await companyDomainModel.findOne({ company_id: user.company_id, status: 'active' });
+        if (domainRow?.domain_name) {
+          resolvedDomain = domainRow.domain_name;
+        }
+      } catch { /* ignore */ }
     }
 
     // Get active plan status from user_plans table
@@ -122,6 +139,9 @@ class AuthService {
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
+    const domainName = resolvedDomain || null;
+    const domainInfo = domainName ? { hostname: domainName, domain: domainName, domain_name: domainName, website_domain: domainName } : { hostname: null };
+
     return {
       data: {
         ...userWithoutPassword,
@@ -132,10 +152,12 @@ class AuthService {
         // Include team permissions — empty array means no restriction (owner/admin)
         permissions: teamPermissions,
         owner_id: ownerId,
+        ...domainInfo,
       },
       company,
       token,
       expiresIn: this.JWT_EXPIRES_IN,
+      ...domainInfo,
     };
   }
 
@@ -195,18 +217,21 @@ class AuthService {
     return { resetToken };
   }
 
-  /**
+
+    /**
    * Register new user (company role)
    */
-  async register(data: {
+  async registerUser(data: {
     name: string;
     email?: string;
     phone?: string;
     company_id?: string;
     password: string;
     role: string;
+    hostname?: string;
+    domain_name?: string;
   }) {
-    const { name, email, phone, company_id, password } = data;
+    const { name, email, phone, company_id, password, hostname, domain_name } = data;
 
     console.log('Registering user with data:', data);
 
@@ -241,14 +266,105 @@ class AuthService {
       phone,
       company_id,
       password: hashedPassword,
+      domain_name:domain_name,
       role: data.role,
       status: 'inactive'
     });
 
+    console.log("Domain register",company_id)
+
+    // const registerDomain = await companyDomainModel.create({
+    //   company_id,
+    //   user_id:user.id,
+    //   hostname: 'admin.soft7.in',
+    //   domain_name: 'admin.soft7.in',
+    //   domain_type:'default',
+    //   status:"active",
+    //   ssl_status:"active"
+    // })
+
     // Remove password from response
     const { password: _, ...userWithoutPassword } = user;
 
-    return userWithoutPassword;
+    return {
+      ...userWithoutPassword,
+    };
+  }
+
+  /**
+   * Register new user (company role)
+   */
+  async register(data: {
+    name: string;
+    email?: string;
+    phone?: string;
+    company_id?: string;
+    password: string;
+    role: string;
+    hostname?: string;
+    domain?: string;
+  }, trx?: Knex.Transaction) {
+    const { name, email, phone, company_id, password, hostname, domain } = data;
+    const targetHostname = hostname || domain;
+
+
+
+    // Validate
+    if (!email && !phone) {
+      throw new HTTP400Error({ message: 'Either email or phone is required' });
+    }
+
+    // Check existing
+    if (email) {
+      const existingUser = await (trx ? trx('users').where({ email }).whereNull('deleted_at').first() : UserModel.findByEmail(email));
+      if (existingUser) {
+        throw new HTTP400Error({ message: 'Email already registered' });
+      }
+    }
+
+    if (phone) {
+      const existingUser = await (trx ? trx('users').where({ phone }).whereNull('deleted_at').first() : UserModel.findByPhone(phone));
+      if (existingUser) {
+        throw new HTTP400Error({ message: 'Phone number already registered' });
+      }
+    }
+
+
+    // Hash password
+    const hashedPassword = await this.hashPassword(password);
+
+    // Create user
+    const user = await UserModel.create({
+      name,
+      email,
+      phone,
+      company_id,
+      password: hashedPassword,
+      role: data.role,
+      status: 'inactive'
+    }, trx);
+
+    console.log("Domain register",company_id)
+
+    const registerDomain = await companyDomainModel.create({
+      company_id,
+      user_id:user.id,
+      hostname: 'admin.soft7.in',
+      domain_name: 'admin.soft7.in',
+      domain_type:'',
+      status:"active",
+      ssl_status:"active"
+    }, trx)
+
+    // Remove password from response
+    const { password: _, ...userWithoutPassword } = user;
+
+    const regDomain = hostname || domain || registerDomain?.hostname || registerDomain?.domain_name || null;
+    return {
+      ...userWithoutPassword,
+      hostname: regDomain,
+      ...(regDomain ? { domain: regDomain, domain_name: regDomain, website_domain: regDomain } : {})
+    };
   }
 
   /**

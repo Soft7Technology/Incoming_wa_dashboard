@@ -1,13 +1,9 @@
+import { buildInteractiveHeader, validateChatbotMessage } from './utils/chatbotMessage';
 import chatSessionModel from '../app/models/chatSession.model';
-import chatBotModel from '../app/models/chatbot.model';
-import chatBotNodeModel from './models/chatBotNode.model';
-import chatBotEdgeModel from './models/chatBotEdge.model';
-import messageService from './services/message.service';
 import nodemailer from "nodemailer";
 import metaService from './services/meta.service';
-import { parsePhoneNumberFromString } from "libphonenumber-js";
-
-
+import { parseImportedPhone } from './utils/importPhone';
+import chatbotTriggerModel from './models/chatbotTrigger.model';
 
 export const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -19,7 +15,13 @@ export const transporter = nodemailer.createTransport({
   },
 });
 
-
+export async function endSession(sessionId: string) {
+  return await chatSessionModel.update(sessionId, {
+    active: false,
+    current_node_id: null,
+    updated_at: new Date(),
+  });
+}
 
 export const generateInviteTemplate = ({
   name,
@@ -92,11 +94,13 @@ export const generateInviteTemplate = ({
 };
 
 
-// export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any) {
+// export async function handleIncomingMessageChatBot(phoneNumberId: any, message: any, profile_name:any) {
 //   try {
+
 //     console.log("📥 Incoming:", phoneNumberId, message);
 
 //     const phone = message.from;
+
 
 //     const incomingId =
 //       message?.interactive?.button_reply?.id ||
@@ -111,17 +115,62 @@ export const generateInviteTemplate = ({
 //     ).toLowerCase().trim();
 
 //     console.log("📩 Parsed:", { phone, incomingText });
+//     console.log("Incoming Id",incomingId)
 
 //     // 1️⃣ Get bot
 //     console.log("🔍 Finding bot for phone number:", phoneNumberId);
-//     const bot: any = await chatBotModel.getPublishedBotByPhoneNumberId(phoneNumberId);
-//     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
+//     const bot: any = await chatBotModel.getPublishedBotByPhoneNumber(phoneNumberId);
+
+//     const numberMatch = incomingText.match(/\d{10,13}/);
+//     let fpo_info
+
+//     if(numberMatch){
+//       const fpoNumber = numberMatch[0];
+//       const cleanNumber = fpoNumber.replace(/\D/g, "");
+
+//       // Add 91 if not already present
+//       const phoneNumber = cleanNumber.startsWith("91")
+//             ? cleanNumber
+//             : `91${cleanNumber}`;
+
+//       console.log("Phone Number",phoneNumber)
+
+//       fpo_info = await userModel.findByPhone(phoneNumber)
+//     }
+
+//     console.log("Fpo Info",fpo_info)
+
 //     console.log("🤖 Found bot:", bot ? bot.name : "No bot");
 //     if (!bot) return null;
 
+//     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
+
+//     //check exist contact
+//     const existContact = await contactModel.findByUserPhoneNumber(message.from)
+//     console.log("Existing Contant",existContact)
+//     if(!existContact){
+//       const newContact = await contactModel.create({
+//         // user_id: mappedUserId,
+//         user_id: bot.user_id,
+//         company_id:bot.company_id,
+//         phone_number:message.from,
+//         name:profile_name
+//       })
+//       console.log("New Contact", newContact)
+//     }
+//   //   else{
+//   //       // Update contact mapping if FPO user found
+//   // if (existContact.user_id !== mappedUserId) {
+//   //   await contactModel.update(existContact.id, {
+//   //     name:profile_name
+//   //   });
+//   // }
+//   //   }
+
+
 //     // 2️⃣ Load nodes + edges
-//     const rawNodes = await chatBotNodeModel.findByChatBotId(bot.id) || [];
-//     const rawEdges = await chatBotEdgeModel.findByChatBotId(bot.id) || [];
+//     const rawNodes = await chatBotNodeModel.findByChatBotId(bot?.id) || [];
+//     const rawEdges = await chatBotEdgeModel.findByChatBotId(bot?.id) || [];
 
 //     bot.nodes = rawNodes.map((n: any) => ({
 //       ...n,
@@ -139,98 +188,122 @@ export const generateInviteTemplate = ({
 //     // console.log("Nodes", JSON.stringify(bot.nodes))
 //     // console.log("Edges", JSON.stringify(bot.edges))
 
+//     const response = await flowRouter({
+//       bot,
+//       phone,
+//       incomingText,
+//       incomingId,
+//       message,
+//       phoneNumberId
+//     })
 
-//     // 3️⃣ Resolve flow WITHOUT session
-//     const response = resolveFlow(bot, incomingText,incomingId);
-//     console.log("Response", JSON.stringify(response))
+//     // // 3️⃣ Resolve flow WITHOUT session
+//     // const response = resolveFlow(bot, incomingText,incomingId);
+//     // console.log("Response", JSON.stringify(response))
 
 //     // 4️⃣ Send message
 //     if (response) {
 //       await messageService.sendChatBotMessage(phoneNumberId, phone, response);
 //     } else {
-//       console.log("⚠️ No response generated");
+//       const chatSession = await chatSessionModel.findByPhoneNumber(phone)
+//       if (!chatSession) {
+//         return null
+//       }
+//       await chatSessionModel.update(chatSession.id, {
+//         active: false,
+//         current_node_id: null,
+//         // completed_at: new Date(),
+//         updated_at: new Date(),
+//       })
+//       //       await chatSessionModel.deactivateActiveSession({
+//       //   phoneNumber: phone,
+//       //   chatbotId: bot.id,
+//       //   phoneNumberId,
+//       // });
+//       console.log("⚠️ No response generated to send");
 //     }
 
 //     return response;
 
 //   } catch (error) {
 //     console.error("❌ Chatbot Error:", error);
-//     return null;
+//     return;
 //   }
 // }
 
 
-function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
-  incomingText = incomingText.toLowerCase().trim();
-  console.log("Incoming Id", incomingId, bot)
 
-  // 1️⃣ Trigger
-  const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
+// function resolveFlow(bot: any, incomingText: string, incomingId?: string) {
+//   incomingText = incomingText.toLowerCase().trim();
+//   console.log("Incoming Id", incomingId, bot)
 
-  if (triggerNode) {
-    const triggerData = safeJSON(triggerNode.data);
-    const isMatch = matchTrigger(triggerData, incomingText);
+//   // 1️⃣ Trigger
+//   const triggerNode = bot.nodes.find((n: any) => n.type === "trigger");
 
-    if (isMatch) {
-      const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
-      if (!edge) return null;
+//   if (triggerNode) {
+//     const triggerData = safeJSON(triggerNode.data);
+//     const isMatch = matchTrigger(triggerData, incomingText);
 
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     if (isMatch) {
+//       const edge = bot.edges.find((e: any) => e.source === triggerNode.id);
+//       if (!edge) return null;
 
-  // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
-  if (incomingText) {
-    const edge = bot.edges.find((e: any) => {
-      const label = (e.label || "").toLowerCase().trim();
-      const text = incomingText.toLowerCase().trim();
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-      console.log("🔍 Matching:", { label, text });
+//   // 🔥 2️⃣ MATCH USING LABEL ↔ incomingText
+//   if (incomingText) {
+//     const edge = bot.edges.find((e: any) => {
+//       const label = (e.label || "").toLowerCase().trim();
+//       const text = incomingText.toLowerCase().trim();
 
-      return label === text;
-    });
+//       console.log("🔍 Matching:", { label, text });
 
-    if (edge) {
-      console.log("✅ Matched Edge:", edge);
+//       return label === text;
+//     });
 
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//     if (edge) {
+//       console.log("✅ Matched Edge:", edge);
 
-  // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
-  if (incomingId) {
-    const edge = bot.edges.find((e: any) => {
-      const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
-      const label = (e.label || "").toLowerCase();
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-      console.log("BOT", handle, label)
+//   // 🔥 2️⃣ PRIMARY: MATCH USING incomingId
+//   if (incomingId) {
+//     const edge = bot.edges.find((e: any) => {
+//       const handle = e?.data?.sourceHandle;   // 👈 BEST PRACTICE
+//       const label = (e.label || "").toLowerCase();
 
-      return (
-        handle === incomingId ||             // preferred
-        label === incomingId.toLowerCase()   // fallback
-      );
-    });
+//       console.log("BOT", handle, label)
 
-    if (edge) {
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//       return (
+//         handle === incomingId ||             // preferred
+//         label === incomingId.toLowerCase()   // fallback
+//       );
+//     });
 
-  // 3️⃣ LAST fallback → text (not recommended but okay)
-  for (const edge of bot.edges) {
-    const label = (edge.label || "").toLowerCase().trim();
+//     if (edge) {
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
 
-    if (label === incomingText) {
-      const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
-      return buildResponse(nextNode);
-    }
-  }
+//   // 3️⃣ LAST fallback → text (not recommended but okay)
+//   for (const edge of bot.edges) {
+//     const label = (edge.label || "").toLowerCase().trim();
 
-  return null;
-}
+//     if (label === incomingText) {
+//       const nextNode = bot.nodes.find((n: any) => n.id === edge.target);
+//       return buildResponse(nextNode);
+//     }
+//   }
+
+//   return null;
+// }
 
 
 export function safeJSON(data: any) {
@@ -240,35 +313,6 @@ export function safeJSON(data: any) {
     return {};
   }
 }
-
-
-// export function replaceVariables(obj:any, variables:Record<string, any>):any{
-//   console.log("Variables", obj,variables)
-//   console.log("Typeof",typeof obj)
-
-//   if(typeof obj === "string"){
-//     return obj.replace(/\{\{(.*?)\}\}/g,(_,key)=> {
-//       console.log("key",variables[key.trim()])
-//       return variables[key.trim()]?? "";
-//     })
-//   }
-
-//   if(Array.isArray(obj)){
-//     return obj.map(item => replaceVariables(item,variables))
-//   }
-
-//   if(obj && typeof obj === "object"){
-//     const result:any = {}
-
-//     for(const key in obj){
-//       result[key] = replaceVariables(obj[key], variables)
-//     }
-
-//     return result;
-//   }
-
-//   return obj;
-// }
 
 
 export function replaceVariables(
@@ -318,12 +362,12 @@ export function replaceVariables(
 }
 
 
-export const downloadImage = async (mediaId: string) => {
+export const downloadMedia = async (mediaId: string) => {
   console.log("MediaId:", mediaId);
   try {
-    const mediaUrl = metaService.handleMedia(mediaId)
-    console.log("Media Url", mediaUrl)
-    return mediaUrl
+    const media = await metaService.handleMedia(mediaId)
+    console.log("Media", media)
+    return media;
   } catch (error: any) {
     console.error(
       '❌ Error downloading image:',
@@ -347,15 +391,30 @@ export default function sendEmail(to: string, subject: string, text: string, htm
   // Integrate with actual email service here (e.g., SendGrid, SES)
 }
 
-export function matchTrigger(data: any, text: string) {
-  const keywords = data?.keywords || data?.attributes.keywords;
-  const logic = data?.matchingLogic || "contains";
+export async function matchTrigger(
+  phoneNumberId: string,
+  text: string
+) {
+  const triggerWords =
+    await chatbotTriggerModel.getActiveTriggers(
+      phoneNumberId
+    );
 
-  if (logic === "exact") {
-    return keywords.some((k: string) => k.toLowerCase() === text);
+  if (!text) {
+    return false;
   }
 
-  return keywords.some((k: string) => text.includes(k.toLowerCase()));
+  const normalizedText = text
+    .toString()
+    .trim()
+    .toLowerCase();
+
+  return triggerWords.some(
+    (keyword: string) =>
+      keyword &&
+      keyword.toString().trim().toLowerCase() ===
+      normalizedText
+  );
 }
 
 
@@ -410,54 +469,11 @@ function parseJSON(data: any) {
   }
 }
 
-export const normalizePhoneNumber = (
-  phone: string,
-  country_code?: string
-) => {
-
-  if (!phone) return null;
-
-  let cleaned = String(phone)
-    .replace(/[^\d+]/g, "")
-    .trim();
-
-  // Remove leading zero
-  if (cleaned.startsWith("0")) {
-    cleaned = cleaned.slice(1);
-  }
-
-  let parsed;
-
-  // Already international
-  if (cleaned.startsWith("+")) {
-
-    parsed = parsePhoneNumberFromString(cleaned);
-
-  } else {
-
-    // Example: 919876543210
-    if (cleaned.startsWith("91") && cleaned.length === 12) {
-      cleaned = "+" + cleaned;
-      parsed = parsePhoneNumberFromString(cleaned);
-    } else {
-
-      // Use provided country
-      parsed = parsePhoneNumberFromString(
-        cleaned,
-        country_code as any || "IN"
-      );
-    }
-  }
-
-  if (!parsed || !parsed.isValid()) {
-    return null;
-  }
-
-  return {
-    number: parsed.number,
-    country: parsed.country,
-    country_code: parsed.countryCallingCode,
-  };
+export const normalizePhoneNumber = (phone: string, country_code?: string) => {
+  try {
+    const identity = parseImportedPhone(phone, country_code || '');
+    return { number: identity.phone_number, country_code: identity.country_code };
+  } catch { return null; }
 };
 
 export function replaceBodyVariables(
@@ -479,9 +495,12 @@ export function replaceBodyVariables(
   });
 }
 
-export async function buildResponse(node: any, bot?: any, session?: any) {
+export async function buildResponse(node: any, session?: any, bot?: any) {
   console.log('NextNode', JSON.stringify(node))
+  console.log()
   const data = safeJSON(node.data);
+  validateChatbotMessage(data);
+
 
   // if (node.type === "message") {
   //   return {
@@ -500,6 +519,66 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
     };
   }
 
+  if (data.key === "@whatsapp/send-cta-message") {
+    const attrs = data.attributes || {};
+
+    const interactiveData = attrs.message?.interactive || {};
+
+    const header = interactiveData.header || {};
+    const body = interactiveData.body || {};
+    const footer = interactiveData.footer || {};
+    const parameters = interactiveData.action?.parameters || {};
+
+    const interactive: any = {
+      type: "cta_url",
+
+      body: {
+        text: body.text || "",
+      },
+
+      action: {
+        name: "cta_url",
+        parameters: {
+          display_text: parameters.display_text || "Open",
+          url: parameters.url || "",
+        },
+      },
+    };
+
+    const normalizedHeader = buildInteractiveHeader(header);
+    if (normalizedHeader) interactive.header = normalizedHeader;
+
+    // -----------------------------------------
+    // Footer is optional
+    // Don't send footer.text = ""
+    // -----------------------------------------
+    if (footer.text?.trim()) {
+      interactive.footer = {
+        text: footer.text,
+      };
+    }
+
+    return {
+      type: "interactive",
+      interactive,
+    };
+  }
+
+
+  if (key === "@whatsapp/stop-chatbot") {
+    if (session?.id) {
+      await endSession(session.id);
+    }
+
+    return {
+      type: "text",
+      text:
+        data?.attributes?.message ||
+        "Thank you. This conversation has been closed.",
+      stopChatbot: true,
+    };
+  }
+
   if (key === "@whatsapp/send-text-message") {
     let text =
       data?.attributes?.message?.text?.body || "";
@@ -515,63 +594,47 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
     };
   }
 
-  if (key === "@whatsapp/send-media-message") {
-    const imageLink =
-      data?.attributes?.message?.image?.link || "";
- 
+  // Button Interactive  
+  if (key === "@whatsapp/send-button-message") {
+    const message = data?.attributes?.message?.interactive;
+    const header = buildInteractiveHeader(message?.header);
+    const footer = message?.footer?.text;
+    const buttons = data?.attributes ? message?.action?.buttons || [] : data.buttons || [];
+
     return {
-      type: "image",
-      image: {
-        link: imageLink,
+      type: "interactive",
+      interactive: {
+        type: "button",
+        ...(header ? { header } : {}),
+        body: { text: data?.attributes ? message?.body?.text : data.text },
+        ...(typeof footer === "string" && footer.trim() ? { footer: { text: footer } } : {}),
+        action: {
+          buttons: buttons.map((btn: any, i: number) => {
+            const title = btn?.reply?.title ?? btn?.title ?? (typeof btn === "string" ? btn : "");
+            if (typeof title !== "string" || !title.trim()) {
+              throw new Error(`Button ${i + 1}: title is required.`);
+            }
+            return {
+              type: "reply",
+              reply: {
+                id: btn?.reply?.id || btn.id || `btn_${i}`,
+                title,
+              },
+            };
+          }),
+        },
       },
     };
   }
 
-  // Button Interactive  
-  if (key === "@whatsapp/send-button-message") {
+  if (key === "@whatsapp/send-media-message") {
+    const imageLink =
+      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
+
     return {
-      type: "interactive",
-
-      interactive: {
-        type: "button",
-
-        header: {
-          type: "text",
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.header?.text || ""
-            : ""
-        },
-
-        body: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.body?.text
-            : data.text,
-        },
-
-        footer: {
-          text: data?.attributes
-            ? data?.attributes?.message?.interactive?.footer?.text || ""
-            : "",
-        },
-
-        action: {
-          buttons: (
-            data?.attributes
-              ? data?.attributes?.message?.interactive?.action?.buttons || []
-              : data.buttons || []
-          ).map((btn: any, i: number) => ({
-            type: "reply",
-
-            reply: {
-              id: btn?.reply?.id || btn.id || `btn_${i}`,
-
-              title:
-                btn?.reply?.title ||
-                btn.title ||
-                btn,
-            },
-          })),
-        },
+      type: data?.attributes?.message.type,
+      image: {
+        link: imageLink,
       },
     };
   }
@@ -605,16 +668,14 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
     const sections =
       interactiveData.action?.sections || [];
 
-    const interactive = {
+    const interactive: any = {
       type: "list",
 
-      header: interactiveData.header,
-
       body: interactiveData.body || {
-        text: "Choose an option"
+        text: "Choose an option",
       },
 
-      footer: interactiveData.footer,
+      ...(interactiveData.footer?.text?.trim() ? { footer: interactiveData.footer } : {}),
 
       action: {
         button:
@@ -627,82 +688,28 @@ export async function buildResponse(node: any, bot?: any, session?: any) {
           rows: (section.rows || []).map((row: any) => ({
             id: row.id,
             title: row.title,
-            description: row.description || ""
-          }))
-        }))
-      }
+            description: row.description || "",
+          })),
+        })),
+      },
     };
+
+    if (
+      interactiveData.header &&
+      interactiveData.header.type &&
+      ["text", "image", "video", "document"].includes(
+        interactiveData.header.type
+      )
+    ) {
+      interactive.header = interactiveData.header;
+    }
 
     return {
       type: "interactive",
-      interactive
+      interactive,
     };
   }
 
-  // 🔗 CTA URL BUTTON
-  // if (type === "cta_url") {
-  //   const interactive: any = {
-  //     type: "cta_url",
-  //     body: {
-  //       text: data.text || ""
-  //     },
-  //     footer: data.footer || undefined,
-  //     action: {
-  //       name: "cta_url",
-  //       parameters: {
-  //         display_text: data.ctaDisplayText || "Open",
-  //         url: data.ctaUrl
-  //       }
-  //     }
-  //   };
-
-  //   // Optional Header
-  //   if (data.headerType === 'image' && data.headerMedia) {
-  //     interactive.header = {
-  //       type: "image",
-  //       image: {
-  //         link: data.headerMedia
-  //       }
-  //     };
-  //   } else if (data.headerType === 'text' && data.header) {
-  //     interactive.header = {
-  //       type: "text",
-  //       text: data.header
-  //     };
-  //   }
-  //   return {
-  //     type: "interactive",
-  //     interactive
-  //   }
-  // }
-
-  // // 🎞️ CAROUSEL (Meta = "product" or "generic template")
-  // if (type === "carousel") {
-  //   return {
-  //     type: "interactive",
-  //     interactive: {
-  //       type: "carousel", // or "catalog_message" depending on API
-  //       body: {
-  //         text: data.text || "Browse items"
-  //       },
-  //       action: {
-  //         cards: data.carouselCards || []
-  //       }
-  //     }
-  //   };
-  // }
-
-  // // 🖼️ MEDIA MESSAGE (image header)
-  // if (type === "media") {
-  //   return {
-  //     type: "image",
-  //     image: {
-  //       link: data.mediaUrl,
-  //       caption: data.text || ""
-  //     }
-  //   };
-  // }
-
-
   return null;
 }
+

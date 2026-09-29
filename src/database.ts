@@ -11,6 +11,9 @@ pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (val: string) => {
 
 // ✅ Singleton — reuse the shared instance created in library/surefy/src/database/index.ts
 // to avoid competing connection pools exhausting the DB.
+const poolMax = Number(process.env.DB_POOL_MAX ?? 15);
+if (!Number.isInteger(poolMax) || poolMax < 1) throw new Error('DB_POOL_MAX must be a positive integer');
+
 if (!(global as any).__knex_db__) {
   (global as any).__knex_db__ = knex({
     client: 'pg',
@@ -22,8 +25,8 @@ if (!(global as any).__knex_db__) {
       database: process.env.DB_NAME || 'console_db',
     },
     pool: {
-      min: 2,
-      max: 15,
+      min: 0,
+      max: poolMax,
       acquireTimeoutMillis: 30000,
       idleTimeoutMillis: 30000,
       afterCreate: (conn: any, done: any) => {
@@ -36,5 +39,25 @@ if (!(global as any).__knex_db__) {
 }
 
 const db = (global as any).__knex_db__;
+
+// Ensure hostname column exists on company_domains table & copy domain_name data
+(async () => {
+  try {
+    const hasHostname = await db.schema.hasColumn('company_domains', 'hostname');
+    if (!hasHostname) {
+      await db.schema.alterTable('company_domains', (table: any) => {
+        table.string('hostname').nullable();
+      });
+      console.log('✅ Added hostname column to company_domains table');
+      const hasDomainName = await db.schema.hasColumn('company_domains', 'domain_name');
+      if (hasDomainName) {
+        await db.raw('UPDATE company_domains SET hostname = domain_name WHERE hostname IS NULL AND domain_name IS NOT NULL');
+        console.log('✅ Migrated domain_name data to hostname column');
+      }
+    }
+  } catch (err) {
+    console.error('Error ensuring hostname column on company_domains:', err);
+  }
+})();
 
 export default db;

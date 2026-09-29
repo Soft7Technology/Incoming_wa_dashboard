@@ -1,3 +1,8 @@
+import MessageModel from '../models/message.model';
+import { parseImportedPhone } from '../utils/importPhone';
+import planUsageService from './planUsage.service';
+import { resolveImportColumn } from '../utils/importColumn';
+import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
 import ContactTagModel from '../models/contactTag.model';
 import ContactTagRelationModel from '../models/contactTagRelation.model';
@@ -12,86 +17,222 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { filter } from 'lodash';
 import db from '@surefy/database';
+import { parseContactCustomFields } from '../utils/contactCustomFields';
 
 class ContactService {
   /**
    * Create a new contact
    */
   async createContact(userId: string, companyId: string, data: any) {
-    let phone = data.phone_number?.toString().trim();
-
-    // Add + if not present
-    if (phone && !phone.startsWith('+')) {
-      phone = '+' + phone;
-    }
+    let identity;
+    try { identity = parseImportedPhone(data.phone_number, data.country_code || '', Boolean(data.country_code)); }
+    catch (error: any) { throw new HTTP400Error({ message: error.message }); }
+    const phone = identity.phone_number;
 
     // Check if contact already exists
-    const existing = await ContactModel.findByPhone(userId, phone);
+    const existing = await ContactModel.findOwnedByPhone(userId, phone, data.phone_number_id, companyId, identity.country_code);
     if (existing) {
-      throw new HTTP400Error({ message: 'Contact with this phone number already exists' });
+      throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
     }
 
-    const contact = await ContactModel.create({
-      user_id: userId,
-      company_id: companyId,
-      phone_number: phone,
-      phone_number_id:data.phone_number_id,
-      name: data.name,
-      email: data.email,
-      status: data.status,
-      attributes: data.attributes || {},
-      notes: data.notes,
-    });
+    return planUsageService.run(userId, 'Contact', async trx => {
+      const contact = await ContactModel.create({
+        user_id: userId,
+        company_id: companyId,
+        phone_number: phone,
+        phone_number_id:data.phone_number_id,
+        name: data.name,
+        email: data.email,
+        status: data.status,
+        attributes: data.attributes || {},
+        notes: data.notes,
+        country_code: identity.country_code
+      }, trx);
 
-    return contact;
+      // Tags live in contact_tag_relations; they are not columns on contacts.
+      // Create those relations after the contact has an id so tag filters can
+      // find contacts created with tag_ids as well.
+      if (Array.isArray(data.tag_ids) && data.tag_ids.length > 0) {
+        const tagIds = [...new Set<string>(data.tag_ids)];
+        await trx('contact_tag_relations').insert(tagIds.map(tag_id => ({ contact_id: contact.id, tag_id })));
+        await trx('contact_tags').whereIn('id', tagIds).increment('contact_count', 1);
+      }
+
+      return contact;
+    });
   }
 
   /**
    * Get all contacts for a company
    */
-  async getContacts(userId: string, filters: any = {},phoneNumberId?:string) {
-    let query = ContactModel.findWithFilters(userId, filters,phoneNumberId);
-
-    // Filter by tags
-    if (filters.tag_ids && filters.tag_ids.length > 0) {
-      const contactIds = await ContactTagRelationModel.getContactIdsByTags(filters.tag_ids);
-      query = query.whereIn('id', contactIds);
+  async getContacts(
+    userId: string,
+    filters: any = {},
+    phoneNumberId?: string,
+    companyId?: string
+  ) {
+    if (!userId || !companyId) {
+      throw new HTTP400Error({ message: 'Company context is required to fetch contacts by phone number ID' });
+    }
+    if (filters.country_code !== undefined) {
+      try {
+        filters = { ...filters, country_code: normalizeCountryCodes(filters.country_code) };
+      } catch (error) {
+        throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Invalid country_code' });
+      }
     }
 
-    // Filter by lists
-    if (filters.list_ids && filters.list_ids.length > 0) {
-      const contactIds = await ContactListRelationModel.getContactIdsByLists(filters.list_ids);
-      query = query.whereIn('id', contactIds);
-    }
+    console.log("=================================");
+    console.log("GET CONTACTS START");
+    console.log("User ID:", userId);
+    console.log("Phone Number ID:", phoneNumberId);
+    console.log("Filters:", JSON.stringify(filters, null, 2));
+    console.log("=================================");
 
-    // Get total count before pagination
-    const countQuery = query.clone();
-    const totalResult = await countQuery.count('* as count').first();
-    const total = parseInt(String(totalResult?.count || 0));
-
-    // Pagination
-    const page = parseInt(filters.page) || 1;
-    const limit = parseInt(filters.limit) || 20;
+    const page = Number(filters.page) || 1;
+    const limit = Number(filters.limit) || 20;
     const offset = (page - 1) * limit;
-    const sortBy = filters.sortBy
-    const sortOrder = filters.sortOrder
 
-    const contacts = await query.orderBy(sortBy, sortOrder).limit(limit).offset(offset)
+    const sortBy = filters.sortBy || "created_at";
+    const sortOrder = filters.sortOrder || "desc";
 
-    // Get tags for each contact
+    let query = ContactModel.findWithFilters(
+      userId,
+      { ...filters, countryTagMatch: 'any' },
+      phoneNumberId
+    );
+
+    if (companyId) {
+      query.where('contacts.company_id', companyId);
+    }
+
+    console.log(
+      "Initial Query:",
+      query.clone().toSQL().toNative()
+    );
+
+    // Country and tag filters are applied together by ContactModel.findWithFilters.
+
+    // -------------------------
+    // LIST FILTER
+    // -------------------------
+    if (filters.list_ids?.length) {
+      console.log("List IDs:", filters.list_ids);
+
+      const listContactIds =
+        await ContactListRelationModel.getContactIdsByLists(
+          filters.list_ids
+        );
+
+      console.log(
+        "Contact IDs from Lists:",
+        listContactIds
+      );
+
+      if (!listContactIds.length) {
+        console.log(
+          "No contacts found for supplied lists"
+        );
+
+        return {
+          contacts: [],
+          pagination: {
+            total: 0,
+            page,
+            limit,
+            total_pages: 0,
+          },
+        };
+      }
+
+      query.whereIn("id", listContactIds);
+
+      console.log(
+        "Query After List Filter:",
+        query.clone().toSQL().toNative()
+      );
+    }
+
+    console.log(
+      "Final Query Before Count:",
+      query.clone().toSQL().toNative()
+    );
+
+    // -------------------------
+    // COUNT
+    // -------------------------
+    const totalResult = await query
+      .clone()
+      .count("* as count")
+      .first();
+
+    console.log("Total Result:", totalResult);
+
+    const total = Number(totalResult?.count || 0);
+
+    // -------------------------
+    // FETCH CONTACTS
+    // -------------------------
+    const contacts = await query
+      .orderBy(sortBy, sortOrder)
+      .limit(limit)
+      .offset(offset);
+
+    console.log(
+      "Contacts Found:",
+      contacts.length
+    );
+
+    console.log(
+      "Contacts:",
+      JSON.stringify(contacts, null, 2)
+    );
+
+    // -------------------------
+    // FETCH TAGS
+    // -------------------------
     if (contacts.length > 0) {
-      const contactIds = contacts.map((c: any) => c.id);
-      const tagsData = await ContactTagRelationModel.getContactsWithTags(contactIds);
+      const contactIds = contacts.map(
+        (contact: any) => contact.id
+      );
+
+      console.log(
+        "Contact IDs for Tag Lookup:",
+        contactIds
+      );
+
+      const tagsData =
+        await ContactTagRelationModel.getContactsWithTags(
+          contactIds
+        );
+
+      console.log(
+        "Tags Data:",
+        JSON.stringify(tagsData, null, 2)
+      );
 
       const tagsMap = new Map();
+
       tagsData.forEach((item: any) => {
         tagsMap.set(item.contact_id, item.tags);
       });
 
       contacts.forEach((contact: any) => {
-        contact.tags = tagsMap.get(contact.id) || [];
+        contact.tags =
+          tagsMap.get(contact.id) || [];
       });
     }
+
+    const latestMessages = await MessageModel.findLatestForContacts(contacts);
+    const latestByContact = new Map(latestMessages.map(row => [row.contact_id, row.last_message]));
+    contacts.forEach((contact: any) => {
+      contact.last_message = latestByContact.get(contact.id) ?? null;
+    });
+
+    console.log(
+      "Final Contacts Response:",
+      JSON.stringify(contacts, null, 2)
+    );
 
     return {
       contacts,
@@ -129,25 +270,38 @@ class ContactService {
   /**
    * Update contact
    */
-  async updateContact(contactId: string, data: any) {
+  async updateContact(userId:string,contactId: string, data: any) {
     const contact = await ContactModel.findById(contactId);
     if (!contact) {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
 
-    const updated = await ContactModel.update(contactId, {
+    const currentCustomFields = parseContactCustomFields(
+      contact.custom_fields ?? contact.attributes ?? {},
+      'stored custom fields'
+    ) || {};
+    const attributes = parseContactCustomFields(data.attributes, 'attributes');
+    const customFields = parseContactCustomFields(data.custom_fields, 'custom_fields');
+    const hasCustomFieldUpdate = attributes !== undefined || customFields !== undefined;
+
+    const updatePayload: any = {
       name: data.name,
       email: data.email,
-      phone_number: data.phone_number,
-      status: data.status,
-      attributes: data.attributes ? { ...contact.attributes, ...data.attributes } : contact.attributes,
+      custom_fields: hasCustomFieldUpdate
+        ? { ...currentCustomFields, ...(attributes || {}), ...(customFields || {}) }
+        : currentCustomFields,
       notes: data.notes,
-      ...(data.assigned_to !== undefined && { assigned_to: data.assigned_to }),
-    });
+      assigned_to: data.assigned_to,
+    };
+    if (data.status !== undefined) {
+      updatePayload.status = data.status;
+    }
+
+    const updated = await ContactModel.update(contactId, updatePayload);
 
     // Update tags if provided
     if (data.tag_ids !== undefined) {
-      await this.syncContactTags(contactId, data.tag_ids);
+      await this.syncContactTags(userId,contactId, data.tag_ids);
     }
 
     return updated;
@@ -157,19 +311,26 @@ class ContactService {
    * Delete contact (soft delete)
    */
   async deleteContact(contactId: string) {
-    const contact = await ContactModel.findById(contactId);
-    if (!contact) {
+    const deletedCount = await ContactModel.delete(contactId);
+    if (deletedCount === 0) {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
-
-    await ContactModel.delete(contactId);
   }
 
   /**
    * Bulk delete contacts
    */
-  async bulkDeleteContacts(companyId: string, contactIds: string[]) {
-    return await ContactModel.bulkDelete(companyId, contactIds);
+  async bulkDeleteContacts(companyId: string, contactIds: string[], userId: string, assignedUserId?: string) {
+    if (!companyId) {
+      throw new HTTP400Error({ message: 'Company context is required to delete contacts' });
+    }
+    const deletedCount = await ContactModel.bulkDelete(companyId, contactIds, userId, assignedUserId);
+    if (deletedCount === 0) {
+      throw new HTTP404Error({
+        message: 'No contacts were deleted: the requested IDs do not exist in your company or were already deleted',
+      });
+    }
+    return deletedCount;
   }
 
   /**
@@ -199,6 +360,16 @@ class ContactService {
     // Get basic file info for job tracking
     const preview = await XLSXParserService.getFilePreview(filePath);
     console.log(`File preview for import job: ${JSON.stringify(preview)}`);
+
+    try {
+      options = { ...options,
+        phoneColumn: resolveImportColumn(preview.headers, options.phoneColumn),
+        nameColumn: resolveImportColumn(preview.headers, options.nameColumn),
+        emailColumn: resolveImportColumn(preview.headers, options.emailColumn),
+      };
+    } catch (error) {
+      throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Invalid import column' });
+    }
 
     // Create import job record in database
     const importJob = await ImportJobModel.create({
@@ -395,8 +566,9 @@ class ContactService {
   /**
    * Add tags to contact
    */
-  async addTagsToContact(contactId: string, tagIds: string[]) {
-    await ContactTagRelationModel.bulkAddTags(contactId, tagIds);
+  async addTagsToContact(userId:string,contactId: string, tagIds: string[]) {
+    console.log('Tag contact',tagIds)
+    await ContactTagRelationModel.bulkAddTags(userId,contactId, tagIds);
 
     // Update tag counts
     for (const tagId of tagIds) {
@@ -419,7 +591,7 @@ class ContactService {
   /**
    * Sync contact tags (replace all tags)
    */
-  async syncContactTags(contactId: string, tagIds: string[]) {
+  async syncContactTags(userId:string,contactId: string, tagIds: string[]) {
     // Get existing tags
     const existing = await ContactTagRelationModel.findByContact(contactId);
     const existingTagIds = existing.map((r) => r.tag_id);
@@ -430,7 +602,7 @@ class ContactService {
 
     // Add new tags
     if (toAdd.length > 0) {
-      await this.addTagsToContact(contactId, toAdd);
+      await this.addTagsToContact(userId,contactId, toAdd);
     }
 
     // Remove old tags
@@ -451,7 +623,8 @@ class ContactService {
    * Get contacts by filters (for campaign targeting)
    */
   async getContactsByFilters(userId: string, companyId: string, filters: any) {
-    let query = ContactModel.findWithFilters(userId, filters);
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    let query = ContactModel.findWithFilters(userId, filters).where('contacts.company_id', companyId);
 
     // Exclude invalid numbers by default
     if (filters.exclude_invalid !== false) {
@@ -465,7 +638,7 @@ class ContactService {
     }
 
     if (filters.contactNumber && filters.contactNumber.length > 0) {
-      query = query.whereIn('phone_number', filters.contactNumber);
+      query = query.whereRaw("country_code || phone_number = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
     }
 
     // Filter by lists (OR condition)
@@ -587,17 +760,20 @@ class ContactService {
     // Sample data to include in the template
     const sampleData = [
       {
-        phone_number: '+1234567890',
+        phone_number: '9372597458',
+        country_code: '91',
         name: 'John Doe',
         email: 'john@example.com',
       },
       {
-        phone_number: '+0987654321',
+        phone_number: '81234567',
+        country_code: '65',
         name: 'Jane Smith',
         email: 'jane@example.com',
       },
       {
-        phone_number: '+1122334455',
+        phone_number: '2025550123',
+        country_code: '1',
         name: 'Bob Johnson',
         email: 'bob@example.com',
       },
@@ -609,6 +785,7 @@ class ContactService {
     // Set column widths
     worksheet['!cols'] = [
       { wch: 20 }, // phone_number
+      { wch: 15 }, // country_code
       { wch: 25 }, // name
       { wch: 30 }, // email
     ];
@@ -626,8 +803,8 @@ class ContactService {
     return ContactModel.findByUserId(userId);
   }
 
-  async findContactByPhone(userId: string, phoneNumber: string) {
-    return ContactModel.findByPhone(userId, phoneNumber);
+  async findContactByPhone(userId: string, phoneNumber: string, countryCode?: string, phoneNumberId?: string, companyId?: string) {
+    return ContactModel.findOwnedByPhone(userId, phoneNumber, phoneNumberId, companyId, countryCode);
   }
 
   async userAssignedContact(contactId: string, assigned_to: string) {

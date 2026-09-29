@@ -15,6 +15,7 @@ import { uploadImage } from '@surefy/config/firebase.config';
 import activityLogsModel from '../../models/activityLogs.model';
 import userTeamModel from '../../models/team.model';
 import userModel from '../../models/user.model';
+import companyDomainModel from '../../models/companyDomain.model';
 
 
 class CompanyController {
@@ -24,7 +25,7 @@ class CompanyController {
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
 
-    const { name, email, phone, domain, status, business_id, webhook_url, meta_config, settings, credit_balance} = req.body;
+    const { name, email, phone, domain, status, business_id, webhook_url, meta_config, settings, credit_balance } = req.body;
     const user = typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user;
 
     const file: Express.Multer.File | undefined = req.file
@@ -68,7 +69,10 @@ class CompanyController {
         email,
         'Welcome to Our Platform',
         `Hi ${name},\n\nWelcome to our platform! Your account has been created successfully. You can now log in using your Email: ${email} or Phone: ${phone}.\n\nBest regards,\nThe Soft 7 Team`,
-      )
+      ).catch((error: unknown) => {
+        console.error('Registration saved, but welcome email failed:',
+          error instanceof Error ? error.message : error);
+      });
     }
 
     return successResponse(req, res, 'Company and user created successfully', result, HttpStatusCode.CREATED);
@@ -110,14 +114,14 @@ class CompanyController {
    * GET /v1/companies/all
    * Get all companies
    */
-  getAllCompanies  = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+  getAllCompanies = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const filters = {
-            status: req.query.status,
-            page: req.query.page,
-            limit: req.query.limit,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit,
     };
-    console.log("Filters status",filters)
-    const companies = await CompanyService.getAllCompanies(req.companyId!,filters);
+    console.log("Filters status", filters)
+    const companies = await CompanyService.getAllCompanies(req.companyId!, filters);
     return successResponse(req, res, 'Companies retrieved successfully', companies);
   });
 
@@ -131,7 +135,7 @@ class CompanyController {
     if (file) {
       data.logo = await uploadImage(file)
     }
-    
+
     // Use route param if present (super admin updating any company), fall back to JWT companyId
     const targetCompanyId = (req.params as any).companyId || req.companyId!;
     const company = await CompanyService.updateCompany(targetCompanyId, data);
@@ -161,7 +165,7 @@ class CompanyController {
       entity_id: data?.id,
 
       description: `Created user ${data?.name} (${data?.email})`,
-      read:false,
+      read: false,
 
       new_data: {
         id: data?.id,
@@ -220,13 +224,15 @@ class CompanyController {
 
   getAllUsers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const filters = {
-        role:req.query.role,
-        status: req.query.status,
-        page: req.query.page,
-        limit: req.query.limit,
+      company_id: typeof req.query.company_id === 'string' ? req.query.company_id : undefined,
+      search: typeof req.query.search === 'string' ? req.query.search : undefined,
+      role: req.query.role,
+      status: req.query.status,
+      page: req.query.page,
+      limit: req.query.limit,
     };
-    
-    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!,req.userRole!, filters)
+
+    const users = await CompanyService.getAllUsers(req.userId!, req.companyId!, req.userRole!, filters)
     return successResponse(req, res, 'Users retrieved successfully', users)
   })
 
@@ -246,46 +252,14 @@ class CompanyController {
     const { name, email, phone, permissions, assigned_plan } = req.body;
     const { userId } = req.params
 
-    const updatedUser = await CompanyService.updateCompanyUser(userId, { name, email, phone, permissions, assigned_plan })
-    const { data } = updatedUser
-    await activityLogsModel.create({
-      user_id: data?.id, // user performing the update
-
-      action: 'UPDATE',
-      entity_type: 'USER',
-      entity_id: userId,
-      read:false,
-
-      description: `Updated user ${data?.name}`,
-
-      new_data: {
-        name: data?.name,
-        email: data?.email,
-        phone: data?.phone,
-        permissions: data?.permissions,
-        assigned_plan: data?.assigned_plan
-      },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
-      user_agent: req.headers['user-agent'] || '',
-
-      request_method: req.method,
-      api_endpoint: req.originalUrl,
-
-      status: 'SUCCESS'
-    });
-
+    const updatedUser = await CompanyService.updateCompanyUser(userId, { name, email, phone, permissions, assigned_plan }, { userId: req.userId, companyId: req.companyId, userRole: req.userRole })
     return successResponse(req, res, 'User updated successfully', updatedUser)
   })
 
-  getCompanyUser = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const{userId} = req.params
+  getCompanyUser = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { userId } = req.params
     const user = await CompanyService.getUserById(userId)
-    successResponse(req,res,'Company User Details',user)
+    successResponse(req, res, 'Company User Details', user)
   })
 
   //   razorpayOrderId: "order_SgA55nIqCKdwUs"
@@ -337,9 +311,9 @@ class CompanyController {
     }
   }
 
-  async getAllUserPlans(req:AuthRequest,res:Response){
+  async getAllUserPlans(req: AuthRequest, res: Response) {
     const userPlans = await userPlansModel.getAllUserPlan(req.userId!)
-    successResponse(req,res,"All User Plans",userPlans)
+    successResponse(req, res, "All User Plans", userPlans)
   }
 
   async getUserById(req: AuthRequest, res: Response) {
@@ -376,7 +350,7 @@ class CompanyController {
       action: 'UPDATE',
       entity_type: 'USER',
       entity_id: id,
-      read:false,
+      read: false,
       description: `Updated user ${id}`,
 
       new_data: req.body,
@@ -509,7 +483,7 @@ class CompanyController {
       action: 'SUSPEND',
       entity_type: 'SUBSCRIPTION',
       entity_id: userActivePlan.id,
-      read:false,
+      read: false,
 
       description: `Suspended user subscription plan`,
 
@@ -663,28 +637,171 @@ class CompanyController {
     successResponse(req, res, 'User Activated Successfully', activateUser, HttpStatusCode.CREATED);
   }
 
-  async suspendCompany(req:AuthRequest,res:Response){
-    const{companyId} = req.params
+  async suspendCompany(req: AuthRequest, res: Response) {
+    const { companyId } = req.params
     const suspendCompany = await companyService.suspendCompany(companyId)
-    successResponse(req,res,'Company Suspended successfully', suspendCompany)
+    successResponse(req, res, 'Company Suspended successfully', suspendCompany)
   }
 
-  async activeCompany(req:AuthRequest,res:Response){
-    const{companyId} = req.params
+  async activeCompany(req: AuthRequest, res: Response) {
+    const { companyId } = req.params
     const activeCompany = await companyService.activateUser(companyId)
-    successResponse(req,res,'Company Active successfully',activeCompany)
+    successResponse(req, res, 'Company Active successfully', activeCompany)
   }
 
-  async inactiveCompany(req:AuthRequest,res:Response){
-    const{companyId} = req.params
+  async inactiveCompany(req: AuthRequest, res: Response) {
+    const { companyId } = req.params
     const activeCompany = await companyService.inactiveUser(companyId)
-    successResponse(req,res,'Company Inactive successfully',activeCompany)
+    successResponse(req, res, 'Company Inactive successfully', activeCompany)
   }
 
-  async deleteCompany(req:AuthRequest,res:Response){
-    const{companyId} = req.params
+  async deleteCompany(req: AuthRequest, res: Response) {
+    const { companyId } = req.params
     const activeCompany = await companyService.deleteUser(companyId)
-    successResponse(req,res,'Company delete successfully',activeCompany)
+    successResponse(req, res, 'Company delete successfully', activeCompany)
+  }
+
+  async createCustomName(req: AuthRequest, res: Response) {
+    const { domain_name } = req.body;
+
+    // const existingDomain = await companyDomainModel.findByDomain(domain_name)
+    // if(existingDomain){
+    //   return res.status(200).json({
+    //     success:false,
+    //     message:"Domain name already exist use some other name"
+    //   })
+    // }
+
+    const existingCustomDomain =
+      await companyDomainModel.findDomainByCompanyId(req.companyId!,domain_name);
+
+
+    if (existingCustomDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Custom Domain name already exist under your company",
+      });
+    }
+
+    const createCustomerDomain = await companyService.createCustomName(
+      req.userId!,
+      req.companyId!,
+      domain_name
+    );
+
+    return successResponse(
+      req,
+      res,
+      "Domain name sent successfully to superadmin for review",
+      createCustomerDomain
+    );
+  }
+
+  async createOwnDomain(req: AuthRequest, res: Response) {
+    const { domain_name } = req.body;
+
+    const existingDomain = await companyDomainModel.findByDomain(domain_name)
+    if(existingDomain){
+      return res.status(200).json({
+        success:false,
+        message:"Domain name already exist use some other name"
+      })
+    }
+
+    const existingCustomDomain =
+      await companyDomainModel.findDomainByCompanyId(req.companyId!,domain_name);
+
+    if (existingCustomDomain) {
+      return res.status(400).json({
+        success: false,
+        message: "Custom Domain name already exist under your company",
+      });
+    }
+
+    const createCustomerDomain = await companyService.createDomainName(
+      req.userId!,
+      req.companyId!,
+      domain_name
+    );
+
+    return successResponse(
+      req,
+      res,
+      "Domain name sent successfully to superadmin for review",
+      createCustomerDomain
+    );
+  }
+
+  async getCompanyDomain(req: AuthRequest, res: Response) {
+    const companyDomain = await companyService.getCompanyDomains(req.userId!)
+    successResponse(req, res, "Company Domain retrieve successfully", companyDomain)
+  }
+
+  async getCompanyDomainDetails(req: AuthRequest, res: Response) {
+    const { company_domain } = req.params
+    const companyDomain = await companyService.getCompanyDomainById(company_domain)
+    successResponse(req, res, "Company Domain retriev succesfuly", companyDomain)
+  }
+
+
+  async companyDomainApproved(
+    req: AuthRequest,
+    res: Response
+  ) {
+    try {
+      const { company_domain } = req.params;
+
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(company_domain);
+
+      if (!companyDomain) {
+        throw new HTTP400Error({
+          message: "Company domain does not exist",
+        });
+      }
+
+      const companyDomainApproval: any =
+        await companyService.approvedCompanyDomain(company_domain);
+
+      return successResponse(
+        req,
+        res,
+        `Company ${companyDomainApproval.company_id} is approved`,
+        companyDomainApproval
+      );
+    } catch (error: any) {
+      console.error("Company Domain Approval Error:", error);
+
+      if (error instanceof HTTP400Error) {
+        throw error;
+      }
+
+      throw new HTTP400Error({
+        message: error.message || "Failed to approve company domain",
+      });
+    }
+  }
+
+
+  async companyDomainInactive(req: AuthRequest, res: Response) {
+    const { company_domain } = req.params
+    const companyDomain = await companyDomainModel.getCompanyDomainById(company_domain)
+    if (!companyDomain) {
+      throw new HTTP400Error({ message: "Company domain not exists" })
+    }
+    const companyDomainInactive: any = await companyService.approvedCompanyDomain(company_domain)
+    successResponse(req, res, `Company ${companyDomainInactive.company_id} is approved`, companyDomainInactive)
+  }
+
+  async getCompanyCustomDomain(req:AuthRequest,res:Response){
+    const companyDomain:any = await companyService.getCompanyCustomDomain(req.companyId!)
+    successResponse(req, res, `Company domain retrieve successfully`,companyDomain)
+  }
+
+  async domainStatus(req:AuthRequest,res:Response){
+    const{domainId} = req.params
+    const domainStatus = await companyService.getDomainStatus(domainId)
+    successResponse(req,res,`Company domain status`,domainStatus)
   }
 
 

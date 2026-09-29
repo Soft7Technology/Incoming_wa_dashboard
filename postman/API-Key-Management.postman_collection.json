@@ -1,0 +1,71 @@
+{
+  "info": {
+    "name": "Soft7 API Key Management - User JWT",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "For account owners only. Keys are returned once. Do not distribute this collection with JWT credentials."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "jwt_token",
+      "value": ""
+    },
+    {
+      "key": "api_key_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Create user key (copy apiKey from response)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/api-keys",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "List key metadata",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/api-keys"
+      }
+    },
+    {
+      "name": "Revoke key",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/api-keys/{{api_key_id}}"
+      }
+    }
+  ]
+}

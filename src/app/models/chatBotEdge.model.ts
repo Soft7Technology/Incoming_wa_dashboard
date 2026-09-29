@@ -15,6 +15,7 @@ class chatBotEdgeModel extends BaseModel{
     }
 
     async createEdges(data: any[]) {
+      if (!data.length) return [];
       return this.query().insert(data).returning('*'); // ✅
     }
 

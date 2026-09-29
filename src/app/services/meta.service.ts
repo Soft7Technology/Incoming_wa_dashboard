@@ -1,9 +1,8 @@
+import { parseWhatsAppPhone } from '../utils/importPhone';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { bucket } from '@surefy/config/firebase.config';
-import fs from 'fs';
-import path from 'path';
 import activityLogsModel from '../models/activityLogs.model';
 
 class MetaService {
@@ -29,11 +28,21 @@ class MetaService {
    * Send a message via WhatsApp Business API
    */
   async sendMessage(phoneNumberId: string, payload: any): Promise<any> {
+    if (payload.to !== undefined) {
+      try {
+        const identity = parseWhatsAppPhone(payload.to);
+        payload = { ...payload, to: identity.country_code + identity.phone_number };
+      } catch (error: any) { throw new HTTP400Error({ message: `Invalid international recipient: ${error.message}` }); }
+    }
+    if (!payload.to) throw new HTTP400Error({ message: 'Recipient is required' });
     try {
+      console.log('Paylod', payload);
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {
-      console.log(`Sending message via Meta API to phone number ID: ${phoneNumberId} with payload: ${JSON.stringify(payload)}`);
+      console.log(
+        `Sending message via Meta API to phone number ID: ${phoneNumberId} with payload: ${JSON.stringify(payload)}`,
+      );
       console.error('Meta API Error - Send Message:', error.response?.data || error.message);
       throw new HTTP500Error({
         message: 'Failed to send message via Meta API',
@@ -72,6 +81,7 @@ class MetaService {
           limit: 100,
         },
       });
+      console.log('Respnse',response.data)
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Templates:', error.response?.data || error.message);
@@ -124,7 +134,7 @@ class MetaService {
   async getPhoneNumbers(wabaId: string): Promise<any> {
     try {
       const response = await this.client.get(`/${wabaId}/phone_numbers`);
-      console.log("Response data", response.data)
+      console.log('Response data', response.data);
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
@@ -142,10 +152,10 @@ class MetaService {
     try {
       const response = await this.client.get(`/${phoneNumberId}`, {
         params: {
-          fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status',
+          fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,whatsapp_business_manager_messaging_limit',
         },
       });
-      console.log("Response", response.data)
+      console.log('Response', response.data);
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Phone Number Details:', error.response?.data || error.message);
@@ -172,7 +182,6 @@ class MetaService {
         contentType: file.mimetype,
       });
 
-
       const headers = formData.getHeaders();
       headers['Authorization'] = `Bearer ${this.accessToken}`;
 
@@ -188,6 +197,51 @@ class MetaService {
         message: 'Failed to upload media to Meta API',
         details: error.response?.data || error.message,
       });
+    }
+  }
+
+  /**
+   * Upload sample media for template creation using Meta's Resumable Upload API.
+   * Returns the header handle string (starting with "4::...").
+   */
+  async uploadTemplateMedia(file: Express.Multer.File): Promise<string> {
+    try {
+      const fs = require('fs');
+      const fileStats = fs.statSync(file.path);
+      const fileLength = fileStats.size;
+      const fileType = file.mimetype;
+
+      // 1. Create upload session via Meta App Uploads API
+      const sessionRes = await this.client.post(`/app/uploads`, null, {
+        params: {
+          file_length: fileLength,
+          file_type: fileType,
+          access_token: this.accessToken,
+        },
+      });
+
+      const uploadSessionId = sessionRes.data.id;
+
+      // 2. Upload file content to the session
+      const fileBuffer = fs.readFileSync(file.path);
+      const uploadRes = await axios.post(
+        `https://graph.facebook.com/${this.apiVersion}/${uploadSessionId}`,
+        fileBuffer,
+        {
+          headers: {
+            Authorization: `OAuth ${this.accessToken}`,
+            file_offset: 0,
+            'Content-Type': fileType,
+          },
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity,
+        },
+      );
+
+      return uploadRes.data.h;
+    } catch (error: any) {
+      console.error('Meta API Error - Upload Template Media Handle:', error.response?.data || error.message);
+      throw error;
     }
   }
 
@@ -216,7 +270,7 @@ class MetaService {
       user_id?: string;
       company_id?: string;
       company_waba_id?: string;
-    }
+    },
   ) {
     try {
       const response = await this.client.post(`/${wabaId}/subscribed_apps`, {
@@ -229,8 +283,7 @@ class MetaService {
         throw new Error('Webhook subscription failed');
       }
 
-
-      console.log("Webhook response", response)
+      console.log('Webhook response', response);
 
       if (options?.user_id && options?.company_id) {
         await activityLogsModel.create({
@@ -242,16 +295,15 @@ class MetaService {
           description: `Subscribed WABA ${wabaId} to Meta webhooks`,
           new_data: {
             waba_id: wabaId,
-            response: response.data
+            response: response.data,
           },
           status: 'SUCCESS',
-          read: false
+          read: false,
         });
       }
 
       return response.data;
     } catch (error: any) {
-
       if (options?.user_id && options?.company_id) {
         await activityLogsModel.create({
           company_id: options.company_id,
@@ -262,17 +314,14 @@ class MetaService {
           description: `Failed to subscribe WABA ${wabaId} to Meta webhooks`,
           new_data: {
             waba_id: wabaId,
-            error: error.response?.data || error.message
+            error: error.response?.data || error.message,
           },
           status: 'FAILED',
-          read: false
+          read: false,
         });
       }
 
-      console.error(
-        'Meta API Error - Failed to subscribe to webhooks',
-        error.response?.data || error.message
-      );
+      console.error('Meta API Error - Failed to subscribe to webhooks', error.response?.data || error.message);
 
       throw new HTTP500Error({
         message: 'Failed to fetch phone number details from Meta API',
@@ -302,13 +351,15 @@ class MetaService {
   }
 
   /**
- * Handle Media,file,document
- */
+   * Handle Media,file,document
+   */
   async handleMedia(mediaId: string): Promise<any> {
     try {
       const mediaRes = await this.client.get(`/${mediaId}`);
       const mediaUrl = mediaRes.data.url;
-      console.log("📥 Media URL:", mediaUrl);
+      const mimeType = mediaRes.data.mime_type;
+      console.log('📥 Media URL:', mediaUrl);
+      console.log('📄 MIME type:', mimeType);
 
       // Step 2: Download image
       const downloadRes = await axios.get(mediaUrl, {
@@ -320,15 +371,52 @@ class MetaService {
 
       const buffer = Buffer.from(downloadRes.data);
 
-      // Step 3: Create filename
-      const fileName = `${mediaId}_${Date.now()}.jpg`;
-
       // Step 4: Upload to Firebase Storage
-      const file = bucket.file(fileName);
+      if (!bucket) throw new Error('Firebase bucket is not initialized');
+
+      // Step 4: Determine extension from MIME type
+      const extensionMap: Record<string, string> = {
+        // Images
+        'image/jpeg': '.jpg',
+        'image/jpg': '.jpg',
+        'image/png': '.png',
+        'image/webp': '.webp',
+        'image/gif': '.gif',
+
+        // Videos
+        'video/mp4': '.mp4',
+        'video/3gpp': '.3gp',
+        'video/quicktime': '.mov',
+        'video/webm': '.webm',
+
+        // Audio
+        'audio/aac': '.aac',
+        'audio/mp4': '.m4a',
+        'audio/mpeg': '.mp3',
+        'audio/amr': '.amr',
+        'audio/ogg': '.ogg',
+        'audio/opus': '.opus',
+
+        // Documents
+        'application/pdf': '.pdf',
+        'application/msword': '.doc',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+        'application/vnd.ms-excel': '.xls',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': '.xlsx',
+        'application/vnd.ms-powerpoint': '.ppt',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation': '.pptx',
+        'text/plain': '.txt',
+      };
+      const extension = extensionMap[mimeType] || '';
+
+      // Step 3: Create filename
+      const fileName = `${mediaId}_${Date.now()}${extension}`;
+
+      const file = bucket.file(`whatsapp-media/${fileName}`);
 
       await file.save(buffer, {
         metadata: {
-          contentType: 'image/jpeg',
+          contentType: mimeType || 'application/octet-stream',
         },
       });
 
@@ -337,27 +425,12 @@ class MetaService {
 
       const firebaseUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
 
-      console.log("✅ Firebase URL:", firebaseUrl);
-
-      // Optional: Save locally
-      const uploadsDir = path.join(__dirname, '../uploads');
-      fs.mkdirSync(uploadsDir, { recursive: true });
-
-      const filePath = path.join(uploadsDir, fileName);
-      fs.writeFileSync(filePath, buffer);
-
-      console.log(`✅ Image saved locally: ${filePath}`);
-
-      const imageRecord = {
+      console.log('✅ Firebase URL:', firebaseUrl);
+      return {
         firebaseUrl,
         filename: fileName,
-        path: filePath,
-        mime_type: 'image/jpeg',
+        mime_type: mimeType,
       };
-
-      console.log("📦 Image record:", imageRecord);
-
-      return imageRecord;
     } catch (error: any) {
       console.error('Meta API Error - Mark as Read:', error.response?.data || error.message);
       throw new HTTP400Error({
@@ -365,25 +438,24 @@ class MetaService {
         details: error.response?.data || error.message,
       });
     }
-
   }
 
   /**
-     * Veriified Phone Numbers
-     */
+   * Veriified Phone Numbers
+   */
   async verifiedPhoneNumbers(phoneNumberId: string): Promise<any> {
     try {
       const response = await this.client.post(`/${phoneNumberId}/register`, {
-        "messaging_product": "whatsapp",
-        "pin": "123456"
+        messaging_product: 'whatsapp',
+        pin: '123456',
       });
-      console.log("Response Verified Data data", response.data)
-      return response.data
+      console.log('Response Verified Data data', response.data);
+      return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
       throw new HTTP500Error({
         message: 'Failed to fetch phone numbers from Meta API',
-        details: error.response?.data || error.message
+        details: error.response?.data || error.message,
       });
     }
   }

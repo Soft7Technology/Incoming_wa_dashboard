@@ -21,6 +21,7 @@ class CampaignController {
       phone_number_id,
       template_id,
       contact_filters,
+      country_code,
       parameter_mapping,
       media_uploads,
       scheduled_at,
@@ -42,6 +43,7 @@ class CampaignController {
       phone_number_id,
       template_id,
       contact_filters,
+      country_code,
       parameter_mapping,
       media_uploads,
       scheduled_at,
@@ -71,7 +73,7 @@ class CampaignController {
       read: false
     });
 
-    await userPlansModel.incrementUsage(effectiveUserId, 'Campaign');
+
 
     return successResponse(req, res, 'Campaign created successfully', campaign, HttpStatusCode.CREATED);
   });
@@ -125,8 +127,20 @@ class CampaignController {
   startCampaign = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
     const result = await CampaignService.startCampaign(id);
+    return successResponse(req, res, result.message, result);
+  });
+
+
+  /**
+   * POST /v1/campaigns/:id/start
+   * Start campaign execution
+   */
+   reBroadcastCampaign = tryCatchAsync(async (req: Request, res: Response) => {
+    const { id } = req.params;
+    const result = await CampaignService.reBroadcastCampaign(id);
     return successResponse(req, res, result.message);
   });
+  
 
   /**
    * POST /v1/campaigns/:id/pause

@@ -1,8 +1,50 @@
+import { buildRecipient, parseWhatsAppPhone } from '../utils/importPhone';
 import { BaseModel } from '@surefy/models/base.model';
 
 class MessageModel extends BaseModel {
   constructor() {
     super('messages');
+  }
+
+  /** One lookup for the current contact page; never match national-number suffixes. */
+  async findLatestForContacts(contacts: any[]): Promise<{ contact_id: string; last_message: any }[]> {
+    const identities = contacts.flatMap(contact => {
+      if (!contact.user_id || !contact.company_id || !contact.phone_number_id) return [];
+      try {
+        return [{
+          contact_id: contact.id,
+          user_id: contact.user_id,
+          company_id: contact.company_id,
+          phone_number_id: contact.phone_number_id,
+          recipient: buildRecipient(contact.phone_number, contact.country_code),
+        }];
+      } catch {
+        // Unresolved legacy numbers cannot safely identify a conversation.
+        return [];
+      }
+    });
+    if (!identities.length) return [];
+
+    const result = await this.db.raw(`
+      SELECT c.contact_id, latest.last_message
+      FROM jsonb_to_recordset(?::jsonb) AS c(
+        contact_id text, user_id uuid, company_id uuid, phone_number_id uuid, recipient text
+      )
+      LEFT JOIN LATERAL (
+        SELECT to_jsonb(m) AS last_message
+        FROM messages m
+        WHERE m.user_id = c.user_id
+          AND m.company_id = c.company_id
+          AND m.phone_number_id = c.phone_number_id
+          AND (
+            (m.direction = 'inbound' AND regexp_replace(m.from_phone, '[^0-9]', '', 'g') = c.recipient)
+            OR (m.direction = 'outbound' AND regexp_replace(m.to_phone, '[^0-9]', '', 'g') = c.recipient)
+          )
+        ORDER BY m.created_at DESC NULLS LAST, m.id DESC
+        LIMIT 1
+      ) latest ON TRUE
+    `, [JSON.stringify(identities)]);
+    return result.rows;
   }
 
   async getUserDashboard(companyId: string, userId: string) {
@@ -235,6 +277,8 @@ class MessageModel extends BaseModel {
     };
   }
 
+
+
   async findByWamid(wamid: string) {
     return this.query().where({ wamid }).first();
   }
@@ -283,179 +327,39 @@ class MessageModel extends BaseModel {
     return query.first();
   }
 
-  // async getMessagesConversation(userId: string, phone_number_id: string) {
-  //   console.log("User Id",userId)
-  //   const query = this.query();
-
-  //   // ✅ FULL normalization (BEST)
-  //   const normalizedToPhoneSQL = `REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`;
-
-  //   // 🔹 Subquery: latest message per unique phone
-  //   const lastMessages = this.query()
-  //     .select([
-  //       'phone_number_id',
-  //       'direction',
-
-  //       this.db.raw(`type AS "lastMessageType"`),
-  //       this.db.raw(`status AS "lastMessageStatus"`),
-
-  //       // normalize phones
-  //       this.db.raw(`REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g') AS from_phone`),
-  //       this.db.raw(`${normalizedToPhoneSQL} AS to_phone`),
-
-  //       this.db.raw(`
-  //         CASE
-  //           WHEN type = 'template' THEN content->'template'->>'name'
-  //           WHEN type = 'text' THEN content->'text'->>'body'
-  //           ELSE content::text
-  //         END AS "lastMessageContent"
-  //       `),
-
-  //       'created_at',
-  //       'updated_at',
-  //     ])
-  //     .where('phone_number_id', phone_number_id)
-  //     .andWhere('user_id', userId)
-
-  //     // ✅ unique per CLEAN number
-  //     .distinctOn([this.db.raw(normalizedToPhoneSQL) as any])
-
-  //     // ⚠️ must match DISTINCT ON
-  //     .orderByRaw(`${normalizedToPhoneSQL}, created_at DESC`)
-  //     .as('lm');
-
-  //   // 🔹 Subquery: total messages per number
-  //   const counts = this.query()
-  //     .select([
-  //       this.db.raw(`${normalizedToPhoneSQL} AS to_phone`),
-  //       this.db.raw(`COUNT(*) AS "totalMessages"`),
-  //     ])
-  //     .where('phone_number_id', phone_number_id)
-  //     .andWhere('user_id', userId)
-  //     .groupByRaw(normalizedToPhoneSQL)
-  //     .as('counts');
-
-  //   // 🔹 Final Query
-  //   return query
-  //     .select([
-  //       'lm.phone_number_id',
-  //       'lm.direction',
-  //       'lm.lastMessageType',
-  //       'lm.lastMessageStatus',
-  //       'lm.from_phone',
-  //       'lm.to_phone',
-  //       'lm.lastMessageContent',
-  //       'lm.created_at',
-  //       'lm.updated_at',
-  //       'counts.totalMessages',
-  //     ])
-  //     .from(lastMessages)
-  //     .join(counts, 'lm.to_phone', 'counts.to_phone')
-  //     .orderBy('lm.created_at', 'desc');
-  // }
-
-  // async getLeadConversations(contactNumber: string, phone_number_id: string, userId: string) {
-  //   const db = this.db;
-  //   const query = this.query();
-
-  //   const normalizedNumber = contactNumber.slice(-10);
-
-  //   const result = await query
-  //     .leftJoin('templates as t', function () {
-  //       this.on('t.id', '=', 'messages.template_id')
-  //         .orOn((join) => {
-  //           join.on('t.name', '=', db.raw(`content->'template'->>'name'`))
-  //             .andOn('t.language', '=', db.raw(`content->'template'->'language'->>'code'`));
-  //         });
-  //     })
-  //     .select([
-  //       'messages.id',
-  //       'messages.phone_number_id',
-  //       'messages.direction',
-  //       'messages.type',
-
-  //       this.db.raw(`REPLACE(messages.from_phone, '+', '') AS from_phone`),
-  //       this.db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
-
-  //       'messages.status',
-  //       'messages.created_at',
-  //       'messages.content',
-
-  //       this.db.raw(`
-  //         CASE
-  //           WHEN messages.type = 'template'
-  //             THEN COALESCE(
-  //               NULLIF(messages.content->'template'->'components', '[]'::jsonb),
-  //               t.components,
-  //               '[]'::jsonb
-  //             )
-  //           ELSE NULL
-  //         END AS "templateComponents"
-  //       `),
-  //     ])
-  //     .where('phone_number_id', phone_number_id)
-  //     .andWhere((builder) => {
-  //       builder
-  //         .whereRaw(`RIGHT(REPLACE(from_phone, '+', ''), 10) = ?`, [normalizedNumber])
-  //         .orWhereRaw(`RIGHT(REPLACE(to_phone, '+', ''), 10) = ?`, [normalizedNumber]);
-  //     })
-  //     .orderBy('created_at', 'desc')
-  //     .limit(20);
-
-  //   const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-  //   const now = Date.now();
-
-  //   let isWindowOpen = false; // 🔥 default CLOSED
-
-  //   if (result.length > 0) {
-  //     // 🔥 find ANY template within last 24h
-  //     const validTemplate = result.find((msg) => {
-  //       if (msg.type !== 'template') return false;
-
-  //       if(msg.direction === 'inbound') return true
-
-  //       const templateTime = new Date(msg.created_at).getTime();
-  //       return now - templateTime <= TWENTY_FOUR_HOURS;
-  //     });
-
-  //     if (validTemplate) {
-  //       isWindowOpen = true; // ✅ OPEN only if template found in 24h
-  //     }
-  //   }
-
-  //   return {
-  //     isWindowOpen,
-  //     messages: result.reverse(),
-  //   };
-  // }
-
-
-  async getLeadConversations(
-    contactNumber: string,
-    phone_number_id: string,
-    userId: string
-  ) {
+  async getLeadConversations(leadNumber: string, phone_number_id: string, userId: string) {
     const db = this.db;
-    const query = this.query();
+    const normalizedNumber = leadNumber.replace(/\D/g, '');
+    const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-    const normalizedNumber = contactNumber.slice(-10);
+    const targetPhoneIds: string[] = [];
+    if (phone_number_id) {
+      const strId = String(phone_number_id).trim();
+      const isUuidStr = isUuid(strId);
 
-    const result = await query
-      .leftJoin('templates as t', function () {
-        this.on('t.id', '=', 'messages.template_id')
-          .orOn((join) => {
-            join
-              .on(
-                't.name',
-                '=',
-                db.raw(`messages.content->'template'->>'name'`)
-              )
-              .andOn(
-                't.language',
-                '=',
-                db.raw(`messages.content->'template'->'language'->>'code'`)
-              );
-          });
+      const pn = await db('phone_numbers')
+        .where('phone_number_id', strId)
+        .orWhere('display_phone_number', strId)
+        .orWhere((builder) => {
+          if (isUuidStr) builder.where('id', strId);
+        })
+        .first();
+
+      if (pn) {
+        if (pn.id) targetPhoneIds.push(String(pn.id));
+      } else if (isUuidStr) {
+        targetPhoneIds.push(strId);
+      }
+    }
+    const validUuidIds = Array.from(new Set(targetPhoneIds.filter((id) => isUuid(id))));
+
+    const result = await this.query()
+      .from('messages')
+      .leftJoin('templates as t', (builder) => {
+        builder
+          .on(db.raw('CAST(t.user_id AS VARCHAR) = CAST(messages.user_id AS VARCHAR)'))
+          .andOn(db.raw(`t.name = messages.content->'template'->>'name'`))
+          .andOn(db.raw(`t.language = messages.content->'template'->'language'->>'code'`));
       })
       .select([
         'messages.id',
@@ -482,16 +386,21 @@ class MessageModel extends BaseModel {
         END AS "templateComponents"
       `),
       ])
-      .where('messages.phone_number_id', phone_number_id)
+      .where((builder) => {
+        if (validUuidIds.length > 0) {
+          builder.whereRaw(`"messages"."phone_number_id"::text IN (${validUuidIds.map(() => '?').join(', ')})`, validUuidIds);
+        }
+      })
       .andWhere((builder) => {
+        const internationalNumber = normalizedNumber.replace(/\D/g, '');
         builder
           .whereRaw(
-            `RIGHT(REPLACE(messages.from_phone, '+', ''), 10) = ?`,
-            [normalizedNumber]
+            `REGEXP_REPLACE(messages.from_phone, '[^0-9]', '', 'g') = ?`,
+            [internationalNumber]
           )
           .orWhereRaw(
-            `RIGHT(REPLACE(messages.to_phone, '+', ''), 10) = ?`,
-            [normalizedNumber]
+            `REGEXP_REPLACE(messages.to_phone, '[^0-9]', '', 'g') = ?`,
+            [internationalNumber]
           );
       })
       .orderBy('messages.created_at', 'desc')
@@ -500,15 +409,13 @@ class MessageModel extends BaseModel {
     const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    // Open window if ANY inbound message from customer
-    // exists within last 24 hours
     const recentInboundMessage = result.find((msg) => {
       const messageTime = new Date(msg.created_at).getTime();
 
       return (
         msg.direction === 'inbound' ||
-        msg.type === 'template' &&
-        now - messageTime <= TWENTY_FOUR_HOURS
+        (msg.type === 'template' &&
+        now - messageTime <= TWENTY_FOUR_HOURS)
       );
     });
 
@@ -523,12 +430,35 @@ class MessageModel extends BaseModel {
   async getMessagesConversation(userId: string, phone_number_id: string) {
     console.log('User Id', userId);
     const db = this.db;
-    const query = this.query();
+    const isUuid = (val: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
 
-    // ✅ FULL normalization (BEST)
-    const normalizedToPhoneSQL = `REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`;
+    const targetPhoneIds: string[] = [];
+    if (phone_number_id) {
+      const strId = String(phone_number_id).trim();
+      const isUuidStr = isUuid(strId);
 
-    // 🔹 Subquery: latest message per unique phone
+      const pn = await db('phone_numbers')
+        .where('phone_number_id', strId)
+        .orWhere('display_phone_number', strId)
+        .orWhere((builder) => {
+          if (isUuidStr) builder.where('id', strId);
+        })
+        .first();
+
+      if (pn) {
+        if (pn.id) targetPhoneIds.push(String(pn.id));
+      } else if (isUuidStr) {
+        targetPhoneIds.push(strId);
+      }
+    }
+    const validUuidIds = Array.from(new Set(targetPhoneIds.filter((id) => isUuid(id))));
+
+    const contactPhoneSQL = `
+      CASE WHEN direction = 'inbound' THEN REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g')
+        ELSE REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') END
+    `.trim();
+
+    // 🔹 Subquery: latest message per unique contact phone
     const lastMessages = this.query()
       .select([
         'phone_number_id',
@@ -539,7 +469,8 @@ class MessageModel extends BaseModel {
 
         // normalize phones
         this.db.raw(`REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g') AS from_phone`),
-        this.db.raw(`${normalizedToPhoneSQL} AS to_phone`),
+        this.db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') AS to_phone`),
+        this.db.raw(`${contactPhoneSQL} AS contact_phone`),
 
         this.db.raw(`
         CASE 
@@ -552,46 +483,54 @@ class MessageModel extends BaseModel {
         'created_at',
         'updated_at',
       ])
-      .where('phone_number_id', phone_number_id)
+      .where((builder: any) => {
+        if (validUuidIds.length > 0) {
+          builder.whereIn(db.raw('"phone_number_id"::text'), validUuidIds);
+        }
+      })
       .where((builder: any) => {
         builder
           .where('user_id', userId)
           .orWhereIn(
-            db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
+            db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
+              .select(db.raw(`country_code || phone_number`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
       })
 
-      // ✅ unique per CLEAN number
-      .distinctOn([this.db.raw(normalizedToPhoneSQL) as any])
+      // ✅ unique per CLEAN contact number
+      .distinctOn([this.db.raw(contactPhoneSQL) as any])
 
       // ⚠️ must match DISTINCT ON
-      .orderByRaw(`${normalizedToPhoneSQL}, created_at DESC`)
+      .orderByRaw(`${contactPhoneSQL}, created_at DESC`)
       .as('lm');
 
-    // 🔹 Subquery: total messages per number
+    // 🔹 Subquery: total messages per contact number
     const counts = this.query()
-      .select([this.db.raw(`${normalizedToPhoneSQL} AS to_phone`), this.db.raw(`COUNT(*) AS "totalMessages"`)])
-      .where('phone_number_id', phone_number_id)
+      .select([this.db.raw(`${contactPhoneSQL} AS contact_phone`), this.db.raw(`COUNT(*) AS "totalMessages"`)])
+      .where((builder: any) => {
+        if (validUuidIds.length > 0) {
+          builder.whereIn(db.raw('"phone_number_id"::text'), validUuidIds);
+        }
+      })
       .where((builder: any) => {
         builder
           .where('user_id', userId)
           .orWhereIn(
-            db.raw(`REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g')`),
+            db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`REGEXP_REPLACE(phone_number, '[^0-9]', '', 'g')`))
+              .select(db.raw(`country_code || phone_number`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
       })
-      .groupByRaw(normalizedToPhoneSQL)
+      .groupByRaw(contactPhoneSQL)
       .as('counts');
 
     // 🔹 Final Query
-    return query
+    return this.query()
       .select([
         'lm.phone_number_id',
         'lm.direction',
@@ -599,14 +538,35 @@ class MessageModel extends BaseModel {
         'lm.lastMessageStatus',
         'lm.from_phone',
         'lm.to_phone',
+        'lm.contact_phone',
         'lm.lastMessageContent',
         'lm.created_at',
         'lm.updated_at',
         'counts.totalMessages',
       ])
       .from(lastMessages)
-      .join(counts, 'lm.to_phone', 'counts.to_phone')
+      .join(counts, 'lm.contact_phone', 'counts.contact_phone')
       .orderBy('lm.created_at', 'desc');
+  }
+
+  /** Fetch at most ten usable messages for one customer on one business number. */
+  async getRecentMessages(userId: string, companyId: string, phoneNumberId: string, phone: string, limit = 10) {
+    if (!userId || !companyId || !phoneNumberId) throw new Error('Message history requires account and sending-number scope');
+    const identity = parseWhatsAppPhone(phone);
+    // Compare the complete international identity to avoid matching another country.
+    const recipient = identity.country_code + identity.phone_number;
+    return this.query()
+      .where({ user_id: userId, company_id: companyId, phone_number_id: phoneNumberId })
+      // Queued/failed messages were not successfully exchanged and are not AI context.
+      .whereIn('status', ['received', 'sent', 'delivered', 'read'])
+      .andWhere(builder => {
+        builder.where(q => q.where('direction', 'inbound')
+          .whereRaw("REGEXP_REPLACE(from_phone, '[^0-9]', '', 'g') = ?", [recipient]))
+          .orWhere(q => q.where('direction', 'outbound')
+            .whereRaw("REGEXP_REPLACE(to_phone, '[^0-9]', '', 'g') = ?", [recipient]));
+      })
+      .orderBy('created_at', 'desc').orderBy('id', 'desc')
+      .limit(Math.max(1, Math.min(10, limit)));
   }
 }
 

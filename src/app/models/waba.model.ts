@@ -9,22 +9,14 @@ class WabaModel extends BaseModel {
     return this.query().where({ company_id: companyId, deleted_at: null });
   }
 
-async findByUserId(userId?: string, companyId?: string) {
-  return this.query()
-    .whereNull('deleted_at')
-    .andWhere((qb) => {
-      if (userId && companyId) {
-        qb.where('user_id', userId).orWhere('company_id', companyId);
-      } else if (userId) {
-        qb.where('user_id', userId);
-      } else if (companyId) {
-        qb.where('company_id', companyId);
-      }
-    });
-}
 
-
-
+  async findByUserId(userId?: string, companyId?: string) {
+    if (!userId || !companyId) throw new Error('User and company context are required');
+    return this.query()
+      .where({ 'waba_accounts.user_id': userId, 'waba_accounts.company_id': companyId })
+      .whereNull('waba_accounts.deleted_at')
+      .select('*');
+  }
 
   async findByWabaId(wabaId: string) {
     return this.query().where({ waba_id: wabaId }).first();

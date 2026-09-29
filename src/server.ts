@@ -4,10 +4,10 @@ import CampaignSchedulerService from '@surefy/console/services/campaignScheduler
 
 // Only start server if not in worker mode
 if (process.env.WORKER_MODE !== 'true') {
-  // Start the campaign scheduler
-  CampaignSchedulerService.start();
-
-  createBaseApp([{ basePath: '/v1', route: ApiRoute }]);
+  createBaseApp([{ basePath: '/v1', route: ApiRoute }], {
+    onListening: () => CampaignSchedulerService.start(),
+    onShutdown: () => CampaignSchedulerService.stop(),
+  });
 } else {
   console.log('Worker mode detected - skipping server startup');
 }

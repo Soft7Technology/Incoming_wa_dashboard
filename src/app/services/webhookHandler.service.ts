@@ -26,7 +26,8 @@ class WebhookHandlerService {
     // Handle incoming messages
     if (value.messages) {
       for (const message of value.messages) {
-        await this.handleIncomingMessage(message, value.metadata);
+        const contactProfileName = value.contacts?.find((contact: any) => contact.wa_id === message.from)?.profile?.name;
+        await this.handleIncomingMessage(message, value.metadata, contactProfileName);
       }
     }
 
@@ -83,7 +84,7 @@ class WebhookHandlerService {
 
       if (message) {
         // Try to find contact by phone number
-        const contact = await ContactModel.findByPhone(message.company_id, message.to_phone);
+        const contact = await ContactModel.findOwnedByPhone(message.user_id, message.to_phone, message.phone_number_id, message.company_id);
 
         if (contact) {
           // Determine reason
@@ -108,14 +109,16 @@ class WebhookHandlerService {
   /**
    * Handle incoming messages
    */
-  private async handleIncomingMessage(message: any, metadata: any) {
+  private async handleIncomingMessage(message: any, metadata: any, profileName?: string) {
     await MessageService.saveIncomingMessage({
       phone_number_id: metadata.phone_number_id,
       message_id: message.id,
       from: message.from,
       type: message.type,
-      content: this.extractMessageContent(message),
+      content: message,
+      raw_message: message,
       context: message.context,
+      profile_name: profileName || message.from,
     });
   }
 

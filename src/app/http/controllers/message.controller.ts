@@ -8,8 +8,6 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import { handleIncomingMessageChatBot } from  "@surefy/console/app/services/chatbot/chatbot.service"
 import activityLogsModel from '../../models/activityLogs.model';
-import phoneNumberModel from '../../models/phoneNumber.model';
-import contactModel from '../../models/contact.model';
 
 class MessageController {
   /**
@@ -17,7 +15,7 @@ class MessageController {
    * Send a message
    */
   sendMessage = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number_id, to, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
+    const { phone_number_id, to, country_code, type, profile_name, text, template, image, video, document, audio, interactive, location, contacts, sticker, reaction, context, campaign_id } = req.body;
 
     if (!phone_number_id || !to || !type) {
       throw new HTTP400Error({ message: 'Phone number ID, recipient, and message type are required' });
@@ -34,6 +32,7 @@ class MessageController {
       phone_number_id,
       profile_name,
       to,
+      country_code,
       type,
       text,
       template,
@@ -157,6 +156,8 @@ class MessageController {
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
 
+    // console.log("Entry",JSON.stringify(entry))
+
     for (const item of entry || []) {
       for (const change of item.changes || []) {
         if (change.field === 'messages') {
@@ -174,10 +175,11 @@ class MessageController {
 
           // Handle incoming messages
           for (const message of value.messages || []) {
+            const profileName = value.contacts?.find((contact: any) => contact.wa_id === message.from)?.profile?.name;
             console.log("Value",message)
-            await MessageService.saveIncomingMessage({
+            const saved = await MessageService.saveIncomingMessage({
               phone_number_id: value.metadata.phone_number_id,
-              profile_name: value.contacts?.[0]?.profile?.name || "",
+              profile_name: profileName || "",
               message_id: message.id,
               from: message.from,
               type: message.type,
@@ -185,23 +187,9 @@ class MessageController {
               context: message?.context?.id,
             });
 
-            const phoneNumber: any = await phoneNumberModel.findByPhoneNumberId(value.metadata.phone_number_id)
-
-            
-            //check exist contact
-            const existContact = await contactModel.findByPhone(phoneNumber.user_id,message.from)
-            console.log("Existing Contant",existContact)
-            if(!existContact){
-                  const newContact = await contactModel.create({
-                    user_id: phoneNumber.user_id,
-                    company_id:phoneNumber.company_id,
-                    phone_number:message.from,
-                    name:value.contacts?.[0]?.profile?.name || ""
-              })
-                  console.log("New Contact", newContact)
-                }
-
-            await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,value.contacts?.[0]?.profile?.name)
+            if (saved) {
+              await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName);
+            }
           }
         }
       }

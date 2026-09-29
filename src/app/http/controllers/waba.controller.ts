@@ -5,6 +5,7 @@ import WabaService from '@surefy/console/services/waba.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import wabaService from '@surefy/console/services/waba.service';
+import { tryCatch } from 'bullmq';
 
 class WabaController {
   /**
@@ -20,7 +21,7 @@ class WabaController {
     }
 
     const waba = await WabaService.createWaba({
-      user_id: req.userId!,
+      user_id: req.ownerId ?? req.userId!,
       company_id: req.companyId!,
       waba_id,
       name,
@@ -45,7 +46,7 @@ class WabaController {
     }
 
     const waba = await wabaService.onboardWaba({
-      user_id: req.userId!,
+      user_id: req.ownerId ?? req.userId!,
       company_id: req.companyId!,
       waba_id
     })
@@ -75,6 +76,7 @@ class WabaController {
     }
 
     const phoneNumber = await WabaService.addPhoneNumber({
+      user_id: req.ownerId ?? req.userId!,
       company_id: req.companyId!,
       waba_id: wabaId,
       phone_number_id,
@@ -143,6 +145,13 @@ class WabaController {
     const{phoneNumberId} = req.params
     const response = await WabaService.verifyNumber(phoneNumberId)
     successResponse(req,res,'Phone Number Verify successfully',response,HttpStatusCode.OK)
+  })
+
+  deleteWabaAccount = tryCatchAsync(async(req:Request,res:Response)=>{
+    const{wabaId} = req.params
+    console.log("Waba Id",wabaId)
+    const response = await wabaService.deleteWabaAccount(wabaId)
+    successResponse(req,res,'Waba Account deleted succesfully',response,HttpStatusCode.OK)
   })
 }
 

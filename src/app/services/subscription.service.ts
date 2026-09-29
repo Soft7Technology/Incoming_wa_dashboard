@@ -1,3 +1,5 @@
+import planAssignmentService from './planAssignment.service';
+import { resolveTrialDays } from '../utils/subscriptionDuration';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
 import { subscriptionPlans } from '../interfaces/subscription.interface';
@@ -93,6 +95,7 @@ class subscriptionService {
       // const balanceAfter = balanceBefore + data.amount;
 
   async createSubscriptionPlan(userId: string, companyId: string | undefined, userRole: string, data: subscriptionPlans) {
+    data = { ...data, trial_days: resolveTrialDays(data.billing_cycle, data.trial_days) };
     console.log('Creating subscription plan with data:', data, 'role:', userRole);
 
     console.log("Subscription Price",data.price)
@@ -159,11 +162,21 @@ class subscriptionService {
     return await subscriptionModel.findSubscriptionsPlans(userId, companyId, active, user.role, filters);
   }
 
-  async updateSubscriptionPlan(id: string, data: subscriptionPlans) {
+  async updateSubscriptionPlan(id: string, data: Partial<subscriptionPlans>) {
+    const existing = await subscriptionModel.findById(id);
+    if (!existing) throw new HTTP404Error({ message: 'Subscription Plan not found' });
+    const billingCycle = data.billing_cycle ?? existing.billing_cycle;
+    const trialDays = resolveTrialDays(
+      billingCycle,
+      data.trial_days !== undefined
+        ? data.trial_days
+        : billingCycle === 'Free' ? existing.trial_days ?? undefined : undefined,
+    );
     const updatedSubscriptionPlan = await subscriptionModel.update(id, {
       plan_name: data.plan_name,
       price: data.price,
       billing_cycle: data.billing_cycle,
+      trial_days: trialDays,
       description: data.description,
       active: data.active,
       features: JSON.stringify(data.features), // important
@@ -172,32 +185,8 @@ class subscriptionService {
   }
 
   async activateFreeTrial(userId: string,companyId:string,planId: string) {
-    //Check existing Free Trial already expired
-    const existingFreeTrialPlan = await userPlansModel.existingFreePlan(userId,'Free')
-    if(existingFreeTrialPlan){
-      throw new HTTP400Error({ message: 'Your are not eligible for freee trail, Upgrade your plan' });
-    }
-
-    // // Check if user already has an active subscription or trial
-    const planData = await subscriptionModel.findFreeTrial(planId);
-
-    // const userActivate = await userPlansModel.getPlanByUserId(userId);
-    // if (userActivate) {
-    //   throw new HTTP400Error({ message: 'User already has an active Trial' });
-    // }
-
-    const user = await userModel.findById(userId)
-
-    if(!user){
-      throw new HTTP400Error({ message: 'User Not found' });
-    }
-
-    // if (!planData) {
-    //   throw new HTTP400Error({ message: 'Free trial already activated' });
-    // }
-
-    const subscribePlan = await CompanyService.activateUserPlan(userId,user, planData,null);
-    return subscribePlan;
+    const result = await planAssignmentService.updateUser(userId, { assigned_plan: planId }, undefined, true);
+    return result.plan;
   }
 
   async subscribeUserPlan(userId: string, companyId: string, planId: string) {

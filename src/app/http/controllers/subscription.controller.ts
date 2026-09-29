@@ -1,3 +1,4 @@
+import companyPayments from '../../services/companyPayment.service';
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
@@ -15,12 +16,13 @@ class SubscriptionController {
    * Create Subscription Plans
    */
   createSubscription = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { plan_name, price, billing_cycle, description, active, features } = req.body;
+    const { plan_name, price, billing_cycle, trial_days, description, active, features } = req.body;
 
     const newSubscription = await subscriptionService.createSubscriptionPlan(req.userId!, req.companyId, req.userRole!, {
       plan_name,
       price,
       billing_cycle,
+      trial_days,
       description,
       active,
       features,
@@ -92,18 +94,19 @@ class SubscriptionController {
 
   updateSubscriptionPlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { plan_name, price, billing_cycle, description, active, features } = req.body;
+    const { plan_name, price, billing_cycle, trial_days, description, active, features } = req.body;
 
     const updatedSubscription = await subscriptionService.updateSubscriptionPlan(id, {
       plan_name,
       price,
       billing_cycle,
+      trial_days,
       description,
       active,
       features,
     });
 
-    const { data }: any = updatedSubscription;
+    const data: any = updatedSubscription;
 
     await activityLogsModel.create({
       company_id: data?.company_id,
@@ -146,53 +149,13 @@ class SubscriptionController {
     );
   });
 
+  // Reserve a pending user plan with a server-priced company payment order.
   subscribePlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { planId } = req.params;
-
-    const subscribedUserPlan = await subscriptionService.subscribeUserPlan(
-      req.userId!,
-      req.companyId!,
-      planId
-    );
-
-    const { data }: any = subscribedUserPlan
-
-    await activityLogsModel.create({
-      user_id: req.userId,
-      company_id: req.companyId,
-
-      action: 'SUBSCRIBE',
-      entity_type: 'SUBSCRIPTION',
-      entity_id: planId,
-      read: false,
-
-      description: `Activated subscription plan "${data?.plan_name}"`,
-
-      new_data: {
-        plan_id: planId,
-        plan_name: data?.plan_name,
-        status: data?.status,
-        active: true,
-      },
-
-      ip_address:
-        (req.headers['x-forwarded-for'] as string) ||
-        req.socket.remoteAddress ||
-        '',
-
-      user_agent: req.headers['user-agent'] || '',
-      request_method: req.method,
-      api_endpoint: req.originalUrl,
-
-      status: 'SUCCESS',
+    const order = await companyPayments.create({ userId: req.userId, companyId: req.companyId,
+      userRole: req.userRole, idempotencyKey: req.get('Idempotency-Key') }, {
+      ...req.body, mode: req.body?.mode ?? 'live', subscription_plan_id: String(req.params.planId),
     });
-
-    return successResponse(
-      req,
-      res,
-      'User Plan get Activated',
-      subscribedUserPlan
-    );
+    return successResponse(req, res, 'Subscription payment order created; plan awaits payment', order);
   });
 
   //     const generatedSignature = crypto
@@ -207,32 +170,12 @@ class SubscriptionController {
   //   });
   // }
 
+  // Use the local payment order UUID. Browser success/signature fields never grant access.
   activateUserPlanAfterPayment = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { razorpayOrderId, razorpaymentId, razorpaySignature } = req.body;
-    console.log('Payment verification data:', req.body); // Debug log
-    const generatedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!)
-      .update(`${razorpayOrderId}|${razorpaymentId}`)
-      .digest('hex');
-
-    if (generatedSignature !== razorpaySignature) {
-      console.log('Generated Signature:', generatedSignature); // Debug log
-      console.log('Received Signature:', razorpaySignature);
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid payment signature',
-      });
-    }
-
-    const updateUserSubscriptionPlan = await subscriptionService.activateUserPlanAfterPayment(
-      req.userId!,
-      razorpayOrderId,
-      razorpaymentId,
-      razorpaySignature,
-    );
-    return successResponse(req, res, 'User Plan Activated after payment', updateUserSubscriptionPlan);
+    if (typeof req.body?.order_id !== 'string') throw new HTTP400Error({ message: 'order_id (local payment order UUID) is required' });
+    const order = await companyPayments.verify({ userId: req.userId, companyId: req.companyId, userRole: req.userRole }, req.body.order_id);
+    return successResponse(req, res, 'Subscription payment status verified', order);
   });
-
 
   handleRazorWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET!;

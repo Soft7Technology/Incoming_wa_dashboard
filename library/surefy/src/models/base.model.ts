@@ -27,7 +27,7 @@ export class BaseModel {
     return this.query().where(conditions);
   }
 
-  async create(data: any) {
+  async create(data: any, trx?: Knex.Transaction) {
     // Convert arrays and objects to JSON strings for JSONB columns
     const processedData = { ...data };
     Object.keys(processedData).forEach(key => {
@@ -36,17 +36,22 @@ export class BaseModel {
       }
     });
 
-    const [result] = await this.query().insert(processedData).returning('*');
+    const [result] = await (trx ? trx(this.tableName) : this.query()).insert(processedData).returning('*');
     return result;
   }
 
-  async update(id: string | number, data: any) {
-    // Convert arrays and objects to JSON strings for JSONB columns
+  async update(id: string | number | any, data: any) {
     const processedData = { ...data };
-    Object.keys(processedData).forEach(key => {
+
+    Object.keys(processedData).forEach((key) => {
       if (processedData[key] === undefined) {
         delete processedData[key];
-      } else if (Array.isArray(processedData[key]) || (typeof processedData[key] === 'object' && processedData[key] !== null && !(processedData[key] instanceof Date))) {
+      } else if (
+        typeof processedData[key] === 'object' &&
+        processedData[key] !== null &&
+        !Array.isArray(processedData[key]) &&
+        !(processedData[key] instanceof Date)
+      ) {
         processedData[key] = JSON.stringify(processedData[key]);
       }
     });
@@ -55,11 +60,15 @@ export class BaseModel {
       return this.findOne({ id });
     }
 
-    const [result] = await this.query().where({ id }).update(processedData).returning('*');
+    const [result] = await this.query()
+      .where({ id })
+      .update(processedData)
+      .returning('*');
+
     return result;
   }
 
-  async delete(id: string | number) {
+  async delete(id: string | number | any) {
     return this.query().where({ id }).del();
   }
 

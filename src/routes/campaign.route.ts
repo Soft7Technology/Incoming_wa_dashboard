@@ -1,14 +1,15 @@
+import { validateCampaignPhones } from '../app/http/middleware/campaignPhoneValidation';
 import { Router } from 'express';
 import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
 import CampaignController from '@surefy/console/http/controllers/campaign.controller';
-import { checkPlanLimit } from "@surefy/console/app/middleware/plan.middleware"
+import { checkPlanLimit } from '@surefy/console/app/middleware/plan.middleware';
 
 const CampaignRoute = Router();
 
 // All campaign endpoints require authentication (applied at route group level)
 
 // Campaign CRUD
-CampaignRoute.post('/', checkPlanLimit('Campaign'), CampaignController.createCampaign);
+CampaignRoute.post('/', validateCampaignPhones, checkPlanLimit('Campaign'), CampaignController.createCampaign);
 // CampaignRoute.post('/', CampaignController.createCampaign);
 CampaignRoute.get('/', CampaignController.getCampaigns);
 
@@ -24,16 +25,16 @@ CampaignRoute.delete('/:id', CampaignController.deleteCampaign);
 
 // Campaign actions
 CampaignRoute.post('/:id/start', CampaignController.startCampaign);
+CampaignRoute.post('/:id/rebroadcast', CampaignController.reBroadcastCampaign);
 CampaignRoute.post('/:id/pause', CampaignController.pauseCampaign);
 CampaignRoute.post('/:id/resume', CampaignController.resumeCampaign);
 CampaignRoute.post('/:id/test', CampaignController.testCampaign);
-CampaignRoute.put('/:campaignId/assigned',CampaignController.assignedCampaignToUser)
+CampaignRoute.put('/:campaignId/assigned', CampaignController.assignedCampaignToUser);
 
 // Campaign stats
 CampaignRoute.get('/:id/stats', CampaignController.getCampaignStats);
 CampaignRoute.get('/:id/messages', CampaignController.getCampaignMessagesInfo);
 CampaignRoute.get('/:id/buttonOnClicks', CampaignController.getCampaignButtonClicks);
 CampaignRoute.get('/:id/progress', CampaignController.getCampaignProgress);
-
 
 export default CampaignRoute;

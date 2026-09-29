@@ -14,26 +14,6 @@ class userPlansModel extends BaseModel {
     return this.query().where({user_id:userId, billing_cycle:billing_cycle}).first()
   }
 
-  async incrementUsage(userId: string, feature: 'Contact' | 'Campaign' | 'Chatbot', count = 1) {
-    console.log('Feature', feature, userId, count);
-    return this.query()
-      .where('user_id', userId)
-      .update({
-        usage: this.query().client.raw(`
-        jsonb_set(
-          usage,
-          '{${feature}}',
-          to_jsonb(COALESCE((usage->>'${feature}')::int, 0) + ${count})
-        )
-      `),
-      });
-  }
-
-  async resetUsage(userId: string | number, type: 'contact' | 'campaign' | 'chatbot') {
-    const column = `${type}s_used`;
-    await this.query().where({ user_id: userId }).update(column, 0);
-  }
-
   // async updatePlanLimits(userId: string | number, limits: {contact_limit?: number, campaign_limit?: number, chatbot_limit?: number}) {
 
   async updatePlan(userId: string | number, data: any) {
@@ -49,13 +29,7 @@ class userPlansModel extends BaseModel {
 
     if (!userPlan) return null; // ✅ no error here
 
-    const durationInDays = Math.ceil(
-      (new Date(userPlan.end_date).getTime() - new Date(userPlan.start_date).getTime()) / (1000 * 60 * 60 * 24),
-    );
-
-    await this.update(userPlan.id, { duration_days: durationInDays });
-
-    return await this.query().where({ user_id: userId, active: true }).first();
+    return userPlan;
   }
 
   async getAllUserPlan(userId:string){
@@ -127,6 +101,7 @@ class userPlansModel extends BaseModel {
         'up.id',
         'up.user_id',
         'up.plan_name',
+        'up.duration_days',
         'up.price',
         'up.billing_cycle',
         'up.active',

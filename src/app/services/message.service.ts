@@ -1,9 +1,20 @@
+import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
+import { resolveCampaignPhone } from '../utils/campaignPhone';
+import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
+import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
+import ContactModel from '../models/contact.model';
 import CompanyModel from '@surefy/console/models/company.model';
 import TemplateModel from '@surefy/console/models/template.model';
 import WabaModel from '@surefy/console/models/waba.model';
-import { SendMessageDto, SendBulkMessageDto, MarkAsReadDto, MessageStatusUpdate, BulkSendMessageDto } from '@surefy/console/interfaces/message.interface';
+import {
+  SendMessageDto,
+  SendBulkMessageDto,
+  MarkAsReadDto,
+  MessageStatusUpdate,
+  BulkSendMessageDto,
+} from '@surefy/console/interfaces/message.interface';
 import MetaService from '@surefy/console/services/meta.service';
 import CreditService from '@surefy/console/services/credit.service';
 import WebhookService from '@surefy/console/services/webhook.service';
@@ -11,12 +22,11 @@ import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import webhookService from '@surefy/console/services/webhook.service';
 import { bulkMessageSendQueue } from '../../queues/bulkMessageSend.queue';
-import { v4 as uuidv4, validate as uuidValidate } from "uuid";
+import { v4 as uuidv4, validate as uuidValidate } from 'uuid';
 import messageModel from '@surefy/console/models/message.model';
 import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
-import { downloadImage } from '../utils';
-
+import { downloadMedia } from '../utils';
 
 class MessageService {
   /**
@@ -32,20 +42,20 @@ class MessageService {
     return 0.145; // Default for text messages
   }
 
-
   async getUserStats(userId: any, time_frame: any) {
-    const userStats = await userModel.getUserStats(userId, time_frame)
-    return userStats
+    const userStats = await userModel.getUserStats(userId, time_frame);
+    return userStats;
   }
 
   /**
    * Send messages
    */
-  async sendMessage(data: SendMessageDto) {
-    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
-    if (!phoneNumber) {
+  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any }) {
+    const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+    if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
+
 
     // Verify company has sufficient credits
     // const company = await CompanyModel.findById(data.company_id);
@@ -57,6 +67,14 @@ class MessageService {
     // if (company.credit_balance < messageCost) {
     //   throw new HTTP400Error({ message: 'Insufficient credits' });
     // }
+
+    try {
+      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
+      const recipient = data.country_code
+        ? parseImportedPhone(data.to, data.country_code, true)
+        : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
+      data = { ...data, to: buildRecipient(recipient.phone_number, recipient.country_code) };
+    } catch (error: any) { throw new HTTP400Error({ message: `Invalid recipient: ${error.message}` }); }
 
     // Build Meta API payload
     const metaPayload: any = {
@@ -72,16 +90,18 @@ class MessageService {
       // Format template for Meta API - language must be an object with 'code' property
       metaPayload.template = {
         ...data.template,
-        language: typeof data.template.language === 'string'
-          ? { code: data.template.language }
-          : data.template.language
+        language:
+          typeof data.template.language === 'string' ? { code: data.template.language } : data.template.language,
       };
     } else if (data.type === 'image' && data.image) {
       metaPayload.image = data.image;
     } else if (data.type === 'video' && data.video) {
       metaPayload.video = data.video;
     } else if (data.type === 'document' && data.document) {
-      metaPayload.document = data.document;
+      metaPayload.document = {
+        ...data.document,
+        filename: data.document.filename,
+      };
     } else if (data.type === 'audio' && data.audio) {
       metaPayload.audio = data.audio;
     } else if (data.type === 'interactive' && data.interactive) {
@@ -104,21 +124,18 @@ class MessageService {
 
     let templateRecordId: string | null = null;
     // Resolve template language at the wider scope so it's available for Meta API fallback
-    const templateLanguage = data.type === 'template' && data.template
-      ? (typeof data.template.language === 'string'
-        ? data.template.language
-        : (data.template.language as any)?.code)
-      : undefined;
+    const templateLanguage =
+      data.type === 'template' && data.template
+        ? typeof data.template.language === 'string'
+          ? data.template.language
+          : (data.template.language as any)?.code
+        : undefined;
 
     // Store template definition components (BODY/HEADER/FOOTER with text) for frontend display
     let templateDefinitionComponents: any[] | null = null;
 
     if (data.type === 'template' && data.template?.name && templateLanguage) {
-      const template = await TemplateModel.findByNameAndLanguage(
-        data.user_id,
-        data.template.name,
-        templateLanguage,
-      );
+      const template = resolved?.templateRecord || await TemplateModel.findByNameAndLanguage(data.company_id || data.user_id, data.template.name, templateLanguage);
       if (template) {
         templateRecordId = template.id;
         // Save template definition components for display (BODY, HEADER, FOOTER with text)
@@ -129,7 +146,7 @@ class MessageService {
     }
 
     // If template not found in DB, try to fetch from Meta API using the phone number
-    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents) {
+    if (data.type === 'template' && data.template?.name && templateLanguage && !templateDefinitionComponents && !resolved?.templateRecord) {
       try {
         // Get phone number details to access waba_id for Meta API call
         const pn = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
@@ -139,7 +156,7 @@ class MessageService {
             // Fetch all templates from Meta API and find the one we need
             const metaTemplates = await MetaService.getTemplates(waba.waba_id);
             const matchedTemplate = metaTemplates.data?.find(
-              (t: any) => t.name === data.template?.name && t.language === templateLanguage
+              (t: any) => t.name === data.template?.name && t.language === templateLanguage,
             );
             if (matchedTemplate && Array.isArray(matchedTemplate.components) && matchedTemplate.components.length > 0) {
               templateDefinitionComponents = matchedTemplate.components;
@@ -157,18 +174,16 @@ class MessageService {
     if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
       // Merge parameters from sent payload into definition components
       const mergedComponents = templateDefinitionComponents.map((defComp: any) => {
-        const type = String(defComp.type || "").toLowerCase();
+        const type = String(defComp.type || '').toLowerCase();
         let paramComp;
 
         if (type === 'buttons' || type === 'button') {
           const buttonParams = metaPayload.template.components?.filter(
-            (pc: any) => String(pc.type || "").toLowerCase() === 'button'
+            (pc: any) => String(pc.type || '').toLowerCase() === 'button',
           );
           if (buttonParams && buttonParams.length > 0) {
             const mergedButtons = defComp.buttons?.map((btn: any, btnIdx: number) => {
-              const matchingParam = buttonParams.find(
-                (bp: any) => bp.index === btnIdx.toString()
-              );
+              const matchingParam = buttonParams.find((bp: any) => bp.index === btnIdx.toString());
               return {
                 ...btn,
                 parameters: matchingParam?.parameters || [],
@@ -180,9 +195,7 @@ class MessageService {
             };
           }
         } else {
-          paramComp = metaPayload.template.components?.find(
-            (pc: any) => String(pc.type || "").toLowerCase() === type
-          );
+          paramComp = metaPayload.template.components?.find((pc: any) => String(pc.type || '').toLowerCase() === type);
         }
 
         return {
@@ -205,7 +218,7 @@ class MessageService {
       company_id: data.company_id,
       campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
-      profile_name: data.profile_name || "",
+      profile_name: data.profile_name || '',
       direction: 'outbound',
       type: data.type,
       from_phone: phoneNumber.display_phone_number,
@@ -216,7 +229,6 @@ class MessageService {
       // cost: messageCost,
       queued_at: new Date(),
     });
-
 
     try {
       // Send via Meta API
@@ -252,8 +264,7 @@ class MessageService {
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
-        error_message: error.message,
-        error_code: error.code,
+        ...getMessageError(error),
       });
 
       throw error;
@@ -262,7 +273,7 @@ class MessageService {
 
   async bulkSendMessage(data: BulkSendMessageDto) {
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
-    if (!phoneNumber) {
+    if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
@@ -276,6 +287,14 @@ class MessageService {
     // if (company.credit_balance < messageCost) {
     //   throw new HTTP400Error({ message: 'Insufficient credits' });
     // }
+
+    try {
+      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
+      const recipient = data.country_code
+        ? parseImportedPhone(data.to, data.country_code, true)
+        : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
+      data = { ...data, to: buildRecipient(recipient.phone_number, recipient.country_code) };
+    } catch (error: any) { throw new HTTP400Error({ message: `Invalid recipient: ${error.message}` }); }
 
     // Build Meta API payload
     const metaPayload: any = {
@@ -291,9 +310,8 @@ class MessageService {
       // Format template for Meta API - language must be an object with 'code' property
       metaPayload.template = {
         ...data.template,
-        language: typeof data.template.language === 'string'
-          ? { code: data.template.language }
-          : data.template.language
+        language:
+          typeof data.template.language === 'string' ? { code: data.template.language } : data.template.language,
       };
     } else if (data.type === 'image' && data.image) {
       metaPayload.image = data.image;
@@ -322,20 +340,17 @@ class MessageService {
     // const messageId = data?.messageUUID && uuidValidate(data.messageUUID) ? data.messageUUID : uuidv4();
 
     let templateRecordId: string | null = null;
-    const templateLanguage = data.type === 'template' && data.template
-      ? (typeof data.template.language === 'string'
-        ? data.template.language
-        : (data.template.language as any)?.code)
-      : undefined;
+    const templateLanguage =
+      data.type === 'template' && data.template
+        ? typeof data.template.language === 'string'
+          ? data.template.language
+          : (data.template.language as any)?.code
+        : undefined;
 
     let templateDefinitionComponents: any[] | null = null;
 
     if (data.type === 'template' && data.template?.name && templateLanguage) {
-      const template = await TemplateModel.findByNameAndLanguage(
-        data.user_id,
-        data.template.name,
-        templateLanguage,
-      );
+      const template = await TemplateModel.findByNameAndLanguage(data.user_id, data.template.name, templateLanguage);
       if (template) {
         templateRecordId = template.id;
         if (Array.isArray(template.components) && template.components.length > 0) {
@@ -352,7 +367,7 @@ class MessageService {
           if (waba) {
             const metaTemplates = await MetaService.getTemplates(waba.waba_id);
             const matchedTemplate = metaTemplates.data?.find(
-              (t: any) => t.name === data.template?.name && t.language === templateLanguage
+              (t: any) => t.name === data.template?.name && t.language === templateLanguage,
             );
             if (matchedTemplate && Array.isArray(matchedTemplate.components) && matchedTemplate.components.length > 0) {
               templateDefinitionComponents = matchedTemplate.components;
@@ -367,18 +382,16 @@ class MessageService {
     const contentToStore = { ...metaPayload };
     if (data.type === 'template' && contentToStore.template && templateDefinitionComponents) {
       const mergedComponents = templateDefinitionComponents.map((defComp: any) => {
-        const type = String(defComp.type || "").toLowerCase();
+        const type = String(defComp.type || '').toLowerCase();
         let paramComp;
 
         if (type === 'buttons' || type === 'button') {
           const buttonParams = metaPayload.template.components?.filter(
-            (pc: any) => String(pc.type || "").toLowerCase() === 'button'
+            (pc: any) => String(pc.type || '').toLowerCase() === 'button',
           );
           if (buttonParams && buttonParams.length > 0) {
             const mergedButtons = defComp.buttons?.map((btn: any, btnIdx: number) => {
-              const matchingParam = buttonParams.find(
-                (bp: any) => bp.index === btnIdx.toString()
-              );
+              const matchingParam = buttonParams.find((bp: any) => bp.index === btnIdx.toString());
               return {
                 ...btn,
                 parameters: matchingParam?.parameters || [],
@@ -390,9 +403,7 @@ class MessageService {
             };
           }
         } else {
-          paramComp = metaPayload.template.components?.find(
-            (pc: any) => String(pc.type || "").toLowerCase() === type
-          );
+          paramComp = metaPayload.template.components?.find((pc: any) => String(pc.type || '').toLowerCase() === type);
         }
 
         return {
@@ -411,6 +422,7 @@ class MessageService {
     const message = await MessageModel.create({
       id: data.messageUUID,
       user_id: data.user_id,
+      company_id: data.company_id,
       // campaign_id: data.campaign_id,
       phone_number_id: phoneNumber.id,
       direction: 'outbound',
@@ -423,8 +435,6 @@ class MessageService {
       // cost: messageCost,
       queued_at: new Date(),
     });
-
-
 
     try {
       // Send via Meta API
@@ -460,8 +470,7 @@ class MessageService {
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
-        error_message: error.message,
-        error_code: error.code,
+        ...getMessageError(error),
       });
 
       throw error;
@@ -513,138 +522,152 @@ class MessageService {
     });
   }
 
-
   /**
    * Save incoming message
    */
-/**
- * Save incoming WhatsApp message
- */
-async saveIncomingMessage(data: any) {
-  try {
-    console.log("Saving incoming message", data);
+  /**
+   * Save incoming WhatsApp message
+   */
+  async saveIncomingMessage(data: any) {
+    try {
+      console.log('Saving incoming message', data);
 
-    const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(
-      data.phone_number_id
-    );
+      const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
 
-    if (!phoneNumber) {
-      console.warn(`Phone number not found: ${data.phone_number_id}`);
-      return null;
-    }
-
-    let content = data.content;
-    const type = data.type;
-
-    // Handle media messages
-    if (["image", "video", "audio", "document"].includes(type)) {
-      let mediaId: string | undefined;
-
-      switch (type) {
-        case "image":
-          mediaId = content?.image?.id;
-          break;
-
-        case "video":
-          mediaId = content?.video?.id;
-          break;
-
-        case "audio":
-          mediaId = content?.audio?.id;
-          break;
-
-        case "document":
-          mediaId = content?.document?.id;
-          break;
+      if (!phoneNumber) {
+        console.warn(`Phone number not found: ${data.phone_number_id}`);
+        return null;
       }
 
-      if (mediaId) {
-        try {
-          const media = await downloadImage(mediaId);
+      const sender = parseWhatsAppPhone(data.from);
+      data = { ...data, from: sender.country_code + sender.phone_number };
+      let content = data.content;
+      const type = data.type;
 
-          content = {
-            type,
-            media_id: mediaId,
-            media_url: media.firebaseUrl,
-          };
-        } catch (error) {
-          console.error(`Failed to download ${type}`, error);
+      // Handle media messages
+      if (['image', 'video', 'audio', 'document'].includes(type)) {
+        let mediaId: string | undefined;
 
-          content = {
-            type,
-            media_id: mediaId,
-          };
+        switch (type) {
+          case 'image':
+            mediaId = content?.image?.id;
+            break;
+
+          case 'video':
+            mediaId = content?.video?.id;
+            break;
+
+          case 'audio':
+            mediaId = content?.audio?.id;
+            break;
+
+          case 'document':
+            mediaId = content?.document?.id;
+            break;
+        }
+
+        if (mediaId) {
+          try {
+            const media = await downloadMedia(mediaId);
+
+            content = {
+              type,
+              media_id: mediaId,
+              media_url: media.firebaseUrl,
+              mime_type: media.mime_type,
+              filename: media.filename,
+            };
+          } catch (error) {
+            console.error(`Failed to download ${type}`, error);
+
+            content = {
+              type,
+              media_id: mediaId,
+            };
+          }
         }
       }
-    }
 
-    // Handle button replies
-    if (type === "button") {
-      content = {
-        type: "button",
-        text: content?.button?.text,
-        payload: content?.button?.payload,
+      // Handle button replies
+      if (type === 'button') {
+        content = {
+          type: 'button',
+          text: content?.button?.text,
+          payload: content?.button?.payload,
+        };
+      }
+
+      // Handle text messages
+      if (type === 'text') {
+        content = {
+          type: 'text',
+          text: content?.text?.body || content?.text || '',
+        };
+      }
+
+      const messagePayload = {
+        user_id: phoneNumber.user_id,
+        company_id: phoneNumber.company_id,
+        profile_name: data.profile_name,
+
+        phone_number_id: phoneNumber.id,
+        wamid: data.message_id,
+
+        direction: 'inbound',
+        type: type === 'button' ? 'interactive' : type,
+
+        from_phone: data.from,
+        to_phone: phoneNumber.display_phone_number,
+
+        status: 'received',
+
+        content,
+        context: data.context,
+
+        delivered_at: new Date(),
       };
+
+      const contact = await ContactModel.findOrCreateIncoming({
+        user_id: phoneNumber.user_id,
+        company_id: phoneNumber.company_id,
+        phone_number_id: phoneNumber.id,
+        ...sender,
+        name: data.profile_name,
+      });
+
+      const message = await MessageModel.create(messagePayload);
+
+      console.log('Incoming message stored', message.id);
+
+      // Emit real-time event so WA_Dashboard browser clients get a toast notification
+      const extractedText =
+        typeof content === 'object' && content !== null
+          ? ((content as any).text ?? (content as any).body ?? (content as any).caption ?? '')
+          : typeof content === 'string'
+            ? content
+            : '';
+
+      await publishSocketEvent('new_message', {
+        id: message.id,
+        contactId: message.user_id,
+        userId: String(phoneNumber.user_id),
+        text: extractedText,
+        direction: 'incoming',
+        sentBy: 'customer',
+        status: 'received',
+        createdAt: new Date().toISOString(),
+        mediaType: ['image', 'video', 'audio', 'document'].includes(type) ? type : null,
+        contactName: contact.name || data.profile_name || data.from || 'New Contact',
+        contactPhone: data.from || '',
+        from: data.from || '',
+      }).catch(error => console.error('Incoming message socket notification failed', error));
+
+      return message;
+    } catch (error) {
+      console.error('Failed to save incoming message', error);
+      throw error;
     }
-
-    // Handle text messages
-    if (type === "text") {
-      content = {
-        type: "text",
-        text: content?.text?.body || content?.text || "",
-      };
-    }
-
-    const messagePayload = {
-      user_id: phoneNumber.user_id,
-      company_id: phoneNumber.company_id,
-      profile_name: data.profile_name,
-
-      phone_number_id: phoneNumber.id,
-      wamid: data.message_id,
-
-      direction: "inbound",
-      type,
-
-      from_phone: data.from,
-      to_phone: phoneNumber.display_phone_number,
-
-      status: "received",
-
-      content,
-      context: data.context,
-
-      delivered_at: new Date(),
-    };
-
-    const message = await MessageModel.create(messagePayload);
-
-    console.log("Incoming message stored", message.id);
-
-    // Emit real-time event so WA_Dashboard browser clients get a toast notification
-    await publishSocketEvent("new_message", {
-      id: message.id,
-      contactId: message.user_id,       // used for routing; closest available field
-      userId: String(phoneNumber.user_id),
-      text: typeof content === "object" && content !== null
-        ? ((content as any).text ?? (content as any).body ?? "")
-        : "",
-      direction: "incoming",
-      sentBy: "customer",
-      status: "received",
-      createdAt: new Date().toISOString(),
-      mediaType: ["image","video","audio","document"].includes(type) ? type : null,
-      contactName: data.profile_name || data.from || "",
-      contactPhone: data.from || "",
-      from: data.from || "",
-    });
-
-    return message;
-  } catch (error) {
-    console.error("Failed to save incoming message", error);
-    throw error;
   }
-}
 
   /**
    * Get messages for company
@@ -653,12 +676,20 @@ async saveIncomingMessage(data: any) {
     return MessageModel.findByUserId(companyId, userId, filters);
   }
 
-
   /**
- * Handle Send ChatBot message
- */
-  async sendChatBotMessage(phoneNumberId: string, to: string, response: any) {
-    console.log('Response', JSON.stringify(response))
+   * Handle Send ChatBot message
+   */
+  async sendChatBotMessage(phoneNumberId: string, to: string, response: any, replyToWamid?: string): Promise<any> {
+    console.log('Response', JSON.stringify(response));
+
+    if (Array.isArray(response?.messages)) {
+      return sendChatbotResponseBatch(response, (message) => this.sendChatBotMessage(phoneNumberId, to, message, replyToWamid));
+    }
+    response = normalizeChatbotResponse(response);
+    if (!response) {
+      console.warn('[Chatbot Send] Skipped empty or non-message response', { phoneNumberId });
+      return null;
+    }
 
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
     if (!phoneNumber) {
@@ -668,52 +699,38 @@ async saveIncomingMessage(data: any) {
 
     try {
       let metaPayload: any = {
-        messaging_product: "whatsapp",
+        messaging_product: 'whatsapp',
         to: to,
       };
 
-      metaPayload.type = response.type
-      metaPayload.interactive = response.interactive
+      if (replyToWamid) metaPayload.context = { message_id: replyToWamid };
+      metaPayload.type = response.type;
+      metaPayload.interactive = response.interactive;
 
       // // ✅ TEXT MESSAGE
-      if (response.type === "text") {
-        metaPayload.type = "text";
+      if (response.type === 'text') {
+        metaPayload.type = 'text';
         metaPayload.text = {
           body: response.text,
         };
       }
 
+      if (response.type === 'image') {
+        ((metaPayload.type = 'image'),
+          (metaPayload.image = {
+            link: response.image.link,
+          }));
+      }
 
-      // // ✅ INTERACTIVE BUTTON MESSAGE
-      // if (response.type === "interactive") {
-      //   metaPayload.type = "interactive";
-      //   metaPayload.interactive = {
-      //     type: "button",
-      //     body: {
-      //       text: response.interactive.body.text,
-      //     },
-      //     action: {
-      //       buttons: response.interactive.action.buttons.map((btn: any) => ({
-      //         type: "reply",
-      //         reply: {
-      //           id: btn.reply.id,
-      //           title: btn.reply.title,
-      //         },
-      //       })),
-      //     },
-      //   };
-      // }
-
-      console.log("Meta Payload Message Service", JSON.stringify(metaPayload))
+      console.log('Meta Payload Message Service', JSON.stringify(metaPayload));
       const metaResponse = await MetaService.sendMessage(phoneNumberId, metaPayload);
 
-      console.log("✅ Message Sent:", metaResponse);
-
+      console.log('✅ Message Sent:', metaResponse);
 
       const message = await MessageModel.create({
         user_id: phoneNumber.user_id,
         company_id: phoneNumber.company_id,
-        profile_name: "",
+        profile_name: '',
         phone_number_id: phoneNumber.id,
         wamid: metaResponse.messages[0].id,
         direction: 'outbound',
@@ -722,20 +739,18 @@ async saveIncomingMessage(data: any) {
         to_phone: to,
         status: 'sent',
         content: metaPayload,
-        context: "",
+        context: '',
         delivered_at: new Date(),
       });
 
-      console.log('chatbot mesage', message)
-
+      console.log('chatbot mesage', message);
 
       return metaResponse.data;
     } catch (error: any) {
-      console.error("❌ Send Message Error:", error?.response?.data || error.message);
+      console.error('❌ Send Message Error:', error?.response?.data || error.message);
       return null;
     }
   }
-
 
   async bulkSendMessages(userId: string, messages: BulkSendMessageDto[]) {
     // Validate messages array length
@@ -756,6 +771,10 @@ async saveIncomingMessage(data: any) {
     // Validate all messages have required fields
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
+      const phone = await PhoneNumberModel.findByPhoneNumberId(msg.phone_number_id);
+      if (!phone || phone.user_id !== userId || phone.company_id !== user.company_id) {
+        throw new HTTP404Error({ message: 'Phone number not found in your account' });
+      }
       if (!msg.phone_number_id || !msg.to || !msg.type) {
         throw new HTTP400Error({
           message: `Message at index ${i}: Phone number ID, recipient, and message type are required`,
@@ -777,6 +796,8 @@ async saveIncomingMessage(data: any) {
 
     const normalizedMessages = messages.map((msg) => ({
       ...msg,
+      user_id: userId,
+      company_id: user.company_id,
       messageUUID: msg.messageUUID && uuidValidate(msg.messageUUID) ? msg.messageUUID : uuidv4(),
     }));
 
@@ -808,13 +829,12 @@ async saveIncomingMessage(data: any) {
   }
 
   async getMessagesConversation(userId: string, phone_number_id: any) {
-    return MessageModel.getMessagesConversation(userId, phone_number_id)
+    return MessageModel.getMessagesConversation(userId, phone_number_id);
   }
 
   async getLeadConversations(leadNumber: any, phone_number_id: any, userId: string) {
-    return MessageModel.getLeadConversations(leadNumber, phone_number_id, userId)
+    return MessageModel.getLeadConversations(leadNumber, phone_number_id, userId);
   }
-
 
   //   async getUserDetails(userId:string,query:any){
   //     const userId = 'YOUR_USER_ID';

@@ -1,3 +1,8 @@
+import { resolveCampaignPhone, validateCampaignPhoneInputs } from '../utils/campaignPhone';
+import { buildRecipient } from '../utils/importPhone';
+import planUsageService from './planUsage.service';
+import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
+import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
 import ContactService from './contact.service';
@@ -6,14 +11,17 @@ import MessageService from './message.service';
 import MetaService from './meta.service';
 import ContactModel from '../models/contact.model';
 import ContactTagModel from '../models/contactTag.model';
+import PhoneNumberModel from '../models/phoneNumber.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
+import { getCampaignSenderCooldown } from '../../queues/campaignPacing';
 import * as fs from 'fs';
 import campaignModel from '../models/campaign.model';
 import { v4 as uuidv4 } from "uuid";
 import { uploadImage } from '@surefy/config/firebase.config';
 import db from '@surefy/database';
+import phoneNumberModel from '../models/phoneNumber.model';
 
 
 interface CreateCampaignData {
@@ -21,11 +29,12 @@ interface CreateCampaignData {
   description?: string;
   phone_number_id: string;
   template_id: string;
+  country_code?: string | number;
   contact_filters?: {
     tag_ids?: string[];
     tags?: string[];            // tag names sent by frontend
     list_ids?: string[];
-    contactNumber?: string[];   // direct phone numbers sent by frontend
+    contactNumber?: Array<string | number>;   // direct phone numbers sent by frontend
     exclude_invalid?: boolean;
     attributes?: Record<string, any>;
   };
@@ -40,9 +49,16 @@ class CampaignService {
    * Create a new campaign
    */
   async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
+    try { validateCampaignPhoneInputs(data.contact_filters, data.country_code); }
+    catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     // Verify template exists
     const template = await TemplateModel.findById(data.template_id);
-    if (!template || template.user_id !== userId) {
+    const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
+    if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
+      throw new HTTP404Error({ message: 'Phone number not found in your account' });
+    }
+    console.log('Template',template)
+    if (!template) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
@@ -55,7 +71,7 @@ class CampaignService {
     // ── Resolve tag names → tag IDs ──────────────────────────────────────
     // Frontend sends contact_filters.tags as an array of tag NAMES.
     // The contact filter query expects tag_ids (UUIDs). Resolve here.
-    const filters = { ...(data.contact_filters || {}) };
+    const filters = { ...(data.contact_filters || {}), contactNumber: data.contact_filters?.contactNumber?.map(String) };
 
     if (filters.tags && filters.tags.length > 0 && (!filters.tag_ids || filters.tag_ids.length === 0)) {
       const resolvedTagIds: string[] = [];
@@ -75,22 +91,40 @@ class CampaignService {
 
     // ── Auto-create external contact numbers ─────────────────────────────
     // If the frontend passed specific phone numbers, ensure they exist in the DB
+    let canonicalRecipientNumbers: string[] | undefined;
     if (filters.contactNumber && filters.contactNumber.length > 0) {
-      // 1. Format numbers to ensure they start with '+' (matching ContactService.createContact logic)
-      filters.contactNumber = filters.contactNumber.map((num: string) => {
-        let phone = num.toString().trim();
-        return phone.startsWith('+') ? phone : '+' + phone;
-      });
+      // Infer only from the supplied international number; never default to the sender's country.
+      const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
+      const matchedNumbers = new Set<string>();
+      const normalizedPhones = new Map<string, string>();
+      for (const value of filters.contactNumber) {
+        try {
+          const resolvedPhone = resolveCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
+            { countryCode: data.country_code === undefined ? undefined : String(data.country_code), allowBareInternational: true });
+          const parsed = { ...resolvedPhone, phone_number: buildRecipient(resolvedPhone.phone_number, resolvedPhone.country_code) };
+          if (parsed.contact) {
+            matchedNumbers.add(parsed.phone_number);
+          }
+          normalizedPhones.set(parsed.phone_number, parsed.country_code);
+        } catch (error) {
+          throw new HTTP400Error({
+            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Supply country_code for a national number or use an international number such as +6581234567`,
+          });
+        }
+      }
+      canonicalRecipientNumbers = [...normalizedPhones.keys()];
+      filters.contactNumber = canonicalRecipientNumbers;
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
-        .whereIn('phone_number', filters.contactNumber);
+        .where('phone_number_id', phoneNumberId.id)
+        .whereRaw('country_code || phone_number = ANY(?)', [canonicalRecipientNumbers]);
 
-      const existingNumbers = new Set(existingContacts.map((c: any) => c.phone_number));
+      const existingNumbers = new Set(existingContacts.map((c: any) => buildRecipient(c.phone_number, c.country_code)));
 
       // 3. Filter missing numbers
-      const missingNumbers = filters.contactNumber.filter(
-        (num: string) => !existingNumbers.has(num)
+      const missingNumbers = canonicalRecipientNumbers.filter(
+        (num: string) => !existingNumbers.has(num) && !matchedNumbers.has(num)
       );
 
       // 4. Bulk create missing numbers as new contacts
@@ -99,7 +133,9 @@ class CampaignService {
         const newContacts = missingNumbers.map((num: string) => ({
           user_id: userId,
           company_id: companyId,
-          phone_number: num,
+          phone_number_id:phoneNumberId.id,
+          phone_number: "+" + num,
+          country_code: normalizedPhones.get(num),
           name: num, // Fallback to phone number as name
           is_valid: true,
           attributes: {},
@@ -110,7 +146,10 @@ class CampaignService {
 
     // Get contacts based on filters
     const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
-    const contactList = await contacts;
+    const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
+    const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
+      !requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code))));
+    if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
 
     if (contactList.length === 0) {
@@ -121,7 +160,7 @@ class CampaignService {
     let scheduledAt: Date | null = null;
     let status = 'draft';
 
-    // send_immediately === true  →  schedule 1 minute from now
+    // Immediate campaigns are due as soon as their recipient rows are saved.
     if (data.send_immediately) {
       scheduledAt = new Date();
       status = 'scheduled';
@@ -136,39 +175,40 @@ class CampaignService {
     }
 
     // Create campaign
-    const campaign = await CampaignModel.create({
-      user_id:userId,
-      company_id:companyId,
-      phone_number_id: data.phone_number_id,
-      template_id: data.template_id,
-      name: data.name,
-      description: data.description,
-      status,
-      total_recipients: contactList.length,
-      template_params: template.components,
-      parameter_mapping: data.parameter_mapping || {},
-      media_uploads: data.media_uploads || [],
-      contact_filters: filters,
-      scheduled_at: scheduledAt,
+    const campaign = await planUsageService.run(userId, 'Campaign', async trx => {
+      const createdCampaign = await CampaignModel.create({
+        user_id:userId,
+        company_id:companyId,
+        phone_number_id: data.phone_number_id,
+        template_id: data.template_id,
+        name: data.name,
+        description: data.description,
+        status,
+        total_recipients: contactList.length,
+        template_params: template.components,
+        parameter_mapping: data.parameter_mapping || {},
+        media_uploads: data.media_uploads || [],
+        contact_filters: filters,
+        scheduled_at: scheduledAt,
+      }, trx);
+
+      // Create campaign_messages entries for each contact
+      const campaignMessages = contactList.map((contact) => ({
+        campaign_id: createdCampaign.id,
+        contact_id: contact.id,
+        status: 'pending',
+        template_variables: this.resolveTemplateVariables(
+          contact,
+          data.parameter_mapping || {}
+        ),
+      }));
+
+      await CampaignMessageModel.bulkCreate(campaignMessages, trx);
+      return createdCampaign;
     });
 
-    // Create campaign_messages entries for each contact
-    const campaignMessages = contactList.map((contact) => ({
-      campaign_id: campaign.id,
-      contact_id: contact.id,
-      status: 'pending',
-      template_variables: this.resolveTemplateVariables(
-        contact,
-        data.parameter_mapping || {}
-      ),
-    }));
-
-    await CampaignMessageModel.bulkCreate(campaignMessages);
-
-    // ── AUTO-QUEUE: If send_immediately is true, push the campaign into the
-    // BullMQ execution queue right now so it runs without needing a separate
-    // POST /start call. This is a server-side safety net on top of the
-    // frontend's /start call.
+    // All recipient writes above have completed, so the worker can start now.
+    // This also avoids waiting for the scheduled-campaign scan or a separate /start call.
     if (data.send_immediately || data.scheduled_at === 'now') {
       console.log(`[Campaign] Auto-queueing campaign ${campaign.id} for immediate execution`);
       await campaignExecutionQueue.add(
@@ -178,13 +218,8 @@ class CampaignService {
           userId,
           companyId,
         },
-        {
-          jobId: campaign.id,
-          delay: 3000, // 3-second delay so the DB write fully commits first
-        }
+        { jobId: campaign.id }
       );
-      // Update status to 'running' so the worker can start processing
-      await CampaignModel.updateStatus(campaign.id, 'scheduled');
     }
 
     return campaign;
@@ -217,7 +252,7 @@ class CampaignService {
    * Get campaign by ID
    */
   async getCampaignById(campaignId: string) {
-    const campaign = await CampaignModel.findById(campaignId);
+    const campaign = await CampaignModel.findDetailsById(campaignId);
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
@@ -225,6 +260,16 @@ class CampaignService {
     // Get stats
     const stats = await CampaignMessageModel.getCampaignStats(campaignId);
     campaign.stats = stats;
+    campaign.sent_count = Number(stats.sent_count || 0);
+    campaign.delivered_count = Number(stats.delivered_count || 0);
+    campaign.read_count = Number(stats.read_count || 0);
+    campaign.failed_count = Number(stats.failed_count || 0);
+
+    if (campaign.status === 'running') {
+      const job = await campaignExecutionQueue.getJob(campaignId);
+      campaign.job_state = job ? await job.getState() : null;
+      campaign.job_failed_reason = job?.failedReason || null;
+    }
 
     return campaign;
   }
@@ -248,33 +293,89 @@ class CampaignService {
   /**
    * Start campaign execution (queued in background)
    */
-  async startCampaign(campaignId: string) {
+  async reBroadcastCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
-    console.log('Starting campaign:', campaign);
+    console.info('[Campaign] Rebroadcast requested', { campaignId, status: campaign?.status });
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
 
-    if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused') {
+    if (!['scheduled', 'draft', 'paused', 'failed', 'completed'].includes(campaign.status)) {
+      throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
+    }
+
+    const existingJob = await campaignExecutionQueue.getJob(campaignId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'completed' || state === 'failed' || (campaign.status === 'paused' && state !== 'active')) {
+        await existingJob.remove();
+      } else {
+        return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
+      }
+    }
+    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date(), completed_at: null });
+
+    // Queue campaign execution in background worker
+    await campaignExecutionQueue.add(
+      `campaign-retry-${campaignId}`,
+      {
+        campaignId: campaignId,
+        userId: campaign.user_id,
+        status:'failed',
+        error_message:'This message was not delivered to maintain healthy ecosystem engagement.',
+        companyId: campaign.company_id,
+      },
+      {
+        jobId: campaignId, // Use campaign ID as job ID for easy tracking
+      }
+    );
+
+    return {
+      message: 'Campaign queued for execution successfully',
+      campaign_id: campaignId,
+      status: 'queued'
+    };
+  }
+
+
+    /**
+   * Start campaign execution (queued in background)
+   */
+  async startCampaign(campaignId: string) {
+    const campaign = await CampaignModel.findById(campaignId);
+    console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
+    if (!campaign) {
+      throw new HTTP404Error({ message: 'Campaign not found' });
+    }
+
+    if (!['scheduled', 'draft', 'paused', 'failed', 'completed', 'running'].includes(campaign.status)) {
       throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
     }
 
     // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
     // If so, skip adding a duplicate to avoid BullMQ errors.
-    try {
-      const existingJob = await campaignExecutionQueue.getJob(campaignId);
-      if (existingJob) {
-        const state = await existingJob.getState();
-        console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
-        return {
-          message: 'Campaign is already queued for execution',
-          campaign_id: campaignId,
-          status: state,
-        };
+    const existingJob = await campaignExecutionQueue.getJob(campaignId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'completed' || state === 'failed') {
+        await existingJob.remove();
+      } else {
+        // A paused campaign may still have its yielded job waiting in Redis.
+        if (campaign.status === 'paused') {
+          if (state === 'active') throw new HTTP400Error({ message: 'Campaign is finishing its current batch; retry start shortly' });
+          await existingJob.remove();
+        } else {
+          if (campaign.status === 'scheduled' && state === 'delayed') {
+            await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
+            await existingJob.promote();
+            return { message: 'Campaign queued to start now', campaign_id: campaignId, status: 'waiting' };
+          }
+          console.info('[Campaign] Existing job', { campaignId, state });
+          return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
+        }
       }
-    } catch (_) {
-      // If we can't check the job state, proceed with adding a new job
     }
+    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
 
     // Queue campaign execution in background worker
     await campaignExecutionQueue.add(
@@ -295,6 +396,60 @@ class CampaignService {
       status: 'queued'
     };
   }
+  
+
+
+    /**
+  //  * Start campaign execution (queued in background)
+  //  */
+  // async reBroadcastCampaign(campaignId: string) {
+  //   const campaign = await CampaignModel.findById(campaignId);
+  //   console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
+  //   if (!campaign) {
+  //     throw new HTTP404Error({ message: 'Campaign not found' });
+  //   }
+
+  //   if (campaign.status !== 'scheduled' && campaign.status !== 'draft' && campaign.status !== 'paused' && campaign.status === 'failed') {
+  //     throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
+  //   }
+
+  //   // Check if the job was already queued (e.g. auto-queued by createCampaign on send_immediately).
+  //   // If so, skip adding a duplicate to avoid BullMQ errors.
+  //   try {
+  //     const existingJob = await campaignExecutionQueue.getJob(campaignId);
+  //     if (existingJob) {
+  //       const state = await existingJob.getState();
+  //       console.log(`[Campaign] Job already exists for campaign ${campaignId} in state: ${state}`);
+  //       return {
+  //         message: 'Campaign is already queued for execution',
+  //         campaign_id: campaignId,
+  //         status: state,
+  //       };
+  //     }
+  //   } catch (_) {
+  //     // If we can't check the job state, proceed with adding a new job
+  //   }
+
+  //   // Queue campaign execution in background worker
+  //   await campaignExecutionQueue.add(
+  //     `campaign-${campaignId}`,
+  //     {
+  //       campaignId: campaignId,
+  //       userId: campaign.user_id,
+  //       companyId: campaign.company_id,
+  //     },
+  //     {
+  //       jobId: campaignId, // Use campaign ID as job ID for easy tracking
+  //     }
+  //   );
+
+  //   return {
+  //     message: 'Campaign queued for execution successfully',
+  //     campaign_id: campaignId,
+  //     status: 'queued'
+  //   };
+  // }
+
 
   /**
    * Execute campaign - send messages to all pending contacts
@@ -455,10 +610,11 @@ class CampaignService {
       const message = await MessageService.sendMessage({
         messageUUID,
         user_id: campaign.user_id,
+        company_id: campaign.company_id,
         campaign_id: campaign.id,
         profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
-        to: contact.phone_number,
+        to: buildRecipient(contact.phone_number, contact.country_code),
         type: 'template',
         template: templatePayload,
       });
@@ -480,8 +636,7 @@ class CampaignService {
       console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
 
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-        error_message: error?.message || 'Unknown error',
-        error_code: error?.code || 'UNKNOWN',
+        ...getMessageError(error),
       });
 
       await CampaignModel.incrementCount(campaign.id, 'failed_count');
@@ -561,16 +716,23 @@ class CampaignService {
             });
           }
         } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
-          const media = mediaUploads.find((m) => m.type === 'document');
+          const media = mediaUploads.find((m: any) => m.type === 'document');
           if (media) {
+            const docObj: any = {};
+            if (media.media_id) {
+              docObj.id = media.media_id;
+            } else if (media.link || media.url) {
+              docObj.link = media.link || media.url;
+            }
+            if (media.filename || media.name) {
+              docObj.filename = media.filename || media.name;
+            }
             components.push({
               type: 'header',
               parameters: [
                 {
                   type: 'document',
-                  document: {
-                    id: media.media_id,
-                  },
+                  document: docObj,
                 },
               ],
             });
@@ -659,21 +821,16 @@ class CampaignService {
       throw new HTTP400Error({ message: 'Only paused campaigns can be resumed' });
     }
 
-    // Update status before queueing so the worker sees 'running'
-    await CampaignModel.updateStatus(campaignId, 'running');
-
-    // Re-queue campaign execution through BullMQ (not fire-and-forget)
-    await campaignExecutionQueue.add(
-      `campaign-${campaignId}`,
-      {
-        campaignId,
-        userId: campaign.user_id,
-        companyId: campaign.company_id,
-      },
-      {
-        jobId: `${campaignId}-resume-${Date.now()}`, // unique job ID for resume
-      }
-    );
+    const existingJob = await campaignExecutionQueue.getJob(campaignId);
+    if (existingJob) {
+      const state = await existingJob.getState();
+      if (state === 'active') throw new HTTP400Error({ message: 'Campaign is still finishing its current batch. Retry resume shortly.' });
+      await existingJob.remove();
+    }
+    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
+    await campaignExecutionQueue.add(`campaign-${campaignId}`, {
+      campaignId, userId: campaign.user_id, companyId: campaign.company_id,
+    }, { jobId: campaignId });
 
     return {
       message: 'Campaign queued for resumption successfully',
@@ -716,6 +873,7 @@ class CampaignService {
     const message = await MessageService.sendMessage({
       messageUUID,
       user_id: campaign.user_id,
+      company_id: campaign.company_id,
       campaign_id: campaign.id,
       phone_number_id: campaign.phone_number_id,
       to: testPhoneNumber,
@@ -742,30 +900,49 @@ class CampaignService {
 
     // Get job progress from BullMQ if campaign is running
     let jobProgress = null;
-    if (campaign.status === 'running' || campaign.status === 'queued') {
+    if (campaign.status === 'scheduled' || campaign.status === 'running' || campaign.status === 'queued' || campaign.status === 'failed') {
       const job = await campaignExecutionQueue.getJob(campaignId);
       if (job) {
         jobProgress = {
           progress: await job.progress,
           state: await job.getState(),
+          failed_reason: job.failedReason || null,
+          queued_at: new Date(job.timestamp).toISOString(),
+          first_processed_at: job.processedOn ? new Date(job.processedOn).toISOString() : null,
+          attempts_made: job.attemptsMade,
         };
       }
     }
 
     const stats = await CampaignMessageModel.getCampaignStats(campaignId);
+    const pendingCount = Number(stats.pending_count || 0);
+    const deferredCount = await CampaignMessageModel.getDeferredCount(campaignId);
+    const [nextRetryAt, senderCooldownMs] = await Promise.all([
+      deferredCount > 0 ? CampaignMessageModel.getNextRetryAt(campaignId) : Promise.resolve(null),
+      campaign.status === 'running' ? getCampaignSenderCooldown(campaign.phone_number_id) : Promise.resolve(0),
+    ]);
 
     return {
       campaign_id: campaignId,
       status: campaign.status,
       progress_percentage: jobProgress?.progress || 0,
       job_state: jobProgress?.state || null,
+      job_queued_at: jobProgress?.queued_at || null,
+      job_first_processed_at: jobProgress?.first_processed_at || null,
+      job_attempts_made: jobProgress?.attempts_made ?? null,
+      failure_reason: campaign.failure_reason || jobProgress?.failed_reason || null,
+      job_failed_reason: jobProgress?.failed_reason || null,
       total_recipients: campaign.total_recipients,
-      sent_count: campaign.sent_count || 0,
-      delivered_count: campaign.delivered_count || 0,
-      read_count: campaign.read_count || 0,
-      failed_count: campaign.failed_count || 0,
+      sent_count: Number(stats.sent_count || 0),
+      delivered_count: Number(stats.delivered_count || 0),
+      read_count: Number(stats.read_count || 0),
+      failed_count: Number(stats.failed_count || 0),
       invalid_numbers_count: campaign.invalid_numbers_count || 0,
-      pending_count: stats.pending || 0,
+      pending_count: pendingCount,
+      pending_ready_count: Math.max(0, pendingCount - deferredCount),
+      deferred_count: deferredCount,
+      next_retry_at: nextRetryAt,
+      sender_cooldown_ms: senderCooldownMs,
       stats,
     };
   }
@@ -833,6 +1010,7 @@ class CampaignService {
       campaign_id: campaignId,
       name: campaign.name,
       status: campaign.status,
+      failure_reason: campaign.failure_reason || null,
       total_recipients: campaign.total_recipients,
       sent_count: stats.sent_count,
       delivered_count: stats.delivered_count,
@@ -868,15 +1046,33 @@ class CampaignService {
    * Upload media for campaign template
    */
   async uploadMedia(companyId: string, phoneNumberId: string, file: any, type: string) {
-    // Upload to Meta
-    const metaResponse = await MetaService.uploadMedia(phoneNumberId, file, type);
-    const media_url = await uploadImage(file)
+    let metaPhoneNumberId = phoneNumberId;
+    if (phoneNumberId) {
+      const phoneRecord = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
+      if (phoneRecord?.phone_number_id) {
+        metaPhoneNumberId = phoneRecord.phone_number_id;
+      }
+    }
 
-    console.log("Media Url",media_url)
+    // Upload to Meta Messages Media API (for campaigns)
+    const metaResponse = await MetaService.uploadMedia(metaPhoneNumberId, file, type);
+    const media_url = await uploadImage(file);
+
+    console.log("Media Url", media_url);
+
+    // Upload to Meta Resumable Upload API (for template creation sample handle)
+    let handle = null;
+    try {
+      handle = await MetaService.uploadTemplateMedia(file);
+      console.log("Generated Meta Template Handle:", handle);
+    } catch (error: any) {
+      console.warn("Could not generate template resumable upload handle:", error.response?.data || error.message);
+    }
 
     return {
       media_id: metaResponse.id,
-      media_url:media_url,
+      media_url: media_url,
+      handle: handle,
       type,
     };
   }

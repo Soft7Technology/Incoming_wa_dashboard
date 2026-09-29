@@ -1,3 +1,6 @@
+import { calculatePlanPeriod } from '../utils/subscriptionDuration';
+import planAssignmentService from './planAssignment.service';
+import db from '@surefy/database';
 import CompanyRepository from '@surefy/console/repository/company.repository';
 import { CreateCompanyDto, UpdateCompanyDto } from '@surefy/console/interfaces/company.interface';
 import { generateCompanyKey } from '@surefy/middleware/auth.middleware';
@@ -16,55 +19,134 @@ import { uploadImage } from '@surefy/config/firebase.config'
 import creditTransactionModel from '../models/creditTransaction.model';
 import activityLogsModel from '../models/activityLogs.model';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
-import { now } from 'lodash';
+import companyDomainModel from '../models/companyDomain.model';
+import axios from 'axios'
 
 class CompanyService {
   /**
    * Onboard new company with initial user
    */
   async onboardCompany(data: CreateCompanyDto) {
-    // Check if email already exists
-    console.log("Data", data)
-    const existingCompany = await CompanyRepository.findByEmail(data.email);
-    if (existingCompany) {
-      throw new HTTP400Error({ message: 'Company with this email already exists' });
+    if (!data.user) {
+      throw new HTTP400Error({ message: 'Initial user is required' });
     }
+    return db.transaction(async (trx) => {
+      // Check if email already exists
 
-    // Extract user data before creating company
-    const userData = data.user;
-    const { user, ...companyData } = data;
+      const existingCompany = await trx('companies').where({ email: data.email }).first();
+      if (existingCompany) {
+        throw new HTTP400Error({ message: 'Company with this email already exists' });
+      }
 
-    // Create company (without user field)
-    const company = await CompanyRepository.create(companyData);
+      // Extract user data before creating company
+      const userData = data.user;
+      const { user, ...companyData } = data;
 
-    // Generate company key for secure authentication
-    const companyKey = generateCompanyKey(company.id, process.env.API_KEY_SALT || '');
+      // Create company (without user field)
+      const company = await CompanyRepository.create(companyData, trx);
 
-    // Create initial user if user data is provided
-    let createdUser = null;
-    if (userData) {
-      createdUser = await AuthService.register({
-        name: userData.name,
-        company_id: company.id,
-        email: userData.email,
-        phone: userData.phone,
-        password: userData.password,
-        role: 'admin',
-      });
+      // Generate company key for secure authentication
+      const companyKey = generateCompanyKey(company.id, process.env.API_KEY_SALT || '');
+
+      // Create initial user if user data is provided
+      let createdUser = null;
+      if (userData) {
+        createdUser = await AuthService.register({
+          name: userData.name,
+          company_id: company.id,
+          email: userData.email,
+          phone: userData.phone,
+          password: userData.password,
+          role: 'admin',
+        }, trx);
+      }
+
+      const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id, trx);
+
+      // Return company with key and user (only returned once during onboarding)
+      return {
+        company: {
+          ...company,
+        },
+        user: createdUser,
+        apiKey: company.api_key,
+        companyKey: companyKey,
+        freePlan: freePlan,
+      };
+    });
+  }
+
+  private async createCustomerName(company_domain: any) {
+    try {
+      const payload = {
+        hostname: company_domain.domain_name,
+
+        // custom_origin_server: "app.soft7.in",
+
+        // custom_origin_sni: "app.soft7.in",
+
+        ssl: {
+          method: "txt",
+          type: "dv",
+        },
+      };
+
+      console.log("PAYLOAD:", payload, process.env.CLOUDFLARE_API_TOKEN);
+
+      const response = await axios.post(
+        "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
+        payload,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      console.log("Cloudflare Response:", response.data);
+
+      return response.data;
+    } catch (error: any) {
+      console.error("Cloudflare Custom Hostname Error");
+
+      if (error.response) {
+        console.error("Status:", error.response.status);
+        console.error("Response:", error.response.data);
+
+        throw new Error(
+          error.response.data?.errors?.[0]?.message ||
+          "Cloudflare API request failed"
+        );
+      }
+
+      if (error.request) {
+        console.error("No response received:", error.request);
+
+        throw new Error(
+          "No response received from Cloudflare. Check network connectivity."
+        );
+      }
+
+      console.error("Unexpected Error:", error.message);
+
+      throw new Error(error.message || "Unknown error occurred");
     }
+  }
 
-    const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id);
+  private async getCustomHostnameDetails(hostnameId: string) {
+    console.log("Token",process.env.CLOUDFLARE_API_TOKEN,hostnameId)
+    const response = await axios.get(
+      `https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames/${hostnameId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
 
-    // Return company with key and user (only returned once during onboarding)
-    return {
-      company: {
-        ...company,
-      },
-      user: createdUser,
-      apiKey: company.api_key,
-      companyKey: companyKey,
-      freePlan: freePlan,
-    };
+    return response.data.result;
   }
 
   async getCompanyDetails(companyId: string) {
@@ -117,8 +199,8 @@ class CompanyService {
   /**
    * Get all companies
    */
-  async getAllCompanies(companyId:string,filters: any) {
-    return CompanyRepository.getAllCompanies(companyId,filters);
+  async getAllCompanies(companyId: string, filters: any) {
+    return CompanyRepository.getAllCompanies(companyId, filters);
   }
 
   /**
@@ -153,18 +235,18 @@ class CompanyService {
     return stats;
   }
 
-  async getAllUsers(userId: string, companyId: string,role:string, filters?: any) {
+  async getAllUsers(userId: string, companyId: string, role: string, filters?: any) {
     const user = await userModel.findById(userId);
 
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     }
-    const users = await userModel.findAllUserByCompanyId(companyId,role, filters);
+    const users = await userModel.findAllUserByCompanyId(companyId, role, filters);
     return users;
   }
 
   async getUserById(userId: string) {
-    const user = await userModel.findById(userId);
+    const user = await userModel.findWithAssignedPlan(userId);
     if (!user) {
       throw new HTTP404Error({ message: 'User not found' });
     } else {
@@ -172,130 +254,9 @@ class CompanyService {
     }
   }
 
-  // async updateCompanyUser(userId: string, data: any) {
-  //   const { assigned_plan } = data;
-
-  //   //1. check if user have existing plans
-  //   //2. check if user have exists subscription plan match the subscriptonPlanId === planId
-  //   //3. if user have existingPlans want to add newPlan then calculate the existing days in the existing plan and in new plan to set endDate startDate
-
-  //   const user = await userModel.findById(userId);
-  //   if (!user) {
-  //     throw new HTTP404Error({ message: 'User not found' });
-  //   }
-
-  //   // Handle assigned_plan update if provided
-  //   if (assigned_plan) {
-  //     const existingPlan = await userPlansModel.findPlanByUserId(userId);
-  //     // Settle
-  //     // if (existingPlan) {
-  //     //   throw new HTTP400Error({ message: 'Active plan already exists for this user' });
-  //     // }
-
-  //     if (existingPlan && existingPlan.subscription_id === assigned_plan) {
-  //       throw new HTTP400Error({ message: 'User is already assigned to this subscription plan' });
-  //     }
-
-  //     const subscriptionPlanDetails = assigned_plan ? await subscriptionModel.findPlans(assigned_plan, true) : null;
-
-  //     if (assigned_plan && !subscriptionPlanDetails) {
-  //       throw new HTTP400Error({ message: 'Assigned subscription plan not found or not active' });
-  //     }
-
-  //     let userPlan = null;
-
-  //     if (!existingPlan) {
-  //       userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails);
-  //     }
-
-  //     if (existingPlan.billing_cycle !== 'Free' && subscriptionPlanDetails) {
-  //       // Settle existing plan if it's not a free trial
-  //       userPlan = await this.settleUserPlan(existingPlan.id, subscriptionPlanDetails, existingPlan, user.company_id);
-  //     } else if (subscriptionPlanDetails || existingPlan.billing_cycle === 'Free') {
-  //       //Assigned new plan if existing plan is free trial or new assigned plan is free trial
-  //       userPlan = await this.activateUserPlan(userId, subscriptionPlanDetails);
-  //     }
-  //     console.log("UserPlan",userPlan)
-
-  //     // 🔥 CRITICAL FIX
-  //     if (userPlan) {
-  //       data.assigned_plan = userPlan.id;
-  //     }
-
-  //     const updatedUserPlan = await userModel.update(userId, data);
-  //     return updatedUserPlan;
-  //   }
-
-  //   const updatedUser = await userModel.update(userId, data);
-  //   return updatedUser;
-  // }
-
-  async updateCompanyUser(userId: string, data: any) {
-    const { assigned_plan } = data;
-
-
-    const user = await userModel.findById(userId);
-    if (!user) {
-      throw new HTTP404Error({ message: 'User not found' });
-    }
-
-    console.log("User",user)
-
-    if (!assigned_plan) {
-      return await userModel.update(userId, data);
-    }
-
-    // 1. Get existing plan
-    const existingPlan = await userPlansModel.findUserPlan(user.assigned_plan);
-    console.log("Existing Plan",existingPlan)
-
-    // 2. Prevent same plan reassignment
-    if (existingPlan && existingPlan.subscription_id === assigned_plan) {
-      throw new HTTP400Error({
-        message: 'User is already assigned to this subscription plan',
-      });
-    }
-
-    // 3. Get new plan details
-    const subscriptionPlanDetails = await subscriptionModel.findPlans(assigned_plan, true);
-    console.log("Subscruption", subscriptionPlanDetails)
-
-    if (!subscriptionPlanDetails) {
-      throw new HTTP400Error({
-        message: 'Assigned subscription plan not found or not active',
-      });
-    }
-
-    let userPlan = null;
-
-    // =========================
-    // 🎯 CASE HANDLING
-    // =========================
-
-    // ✅ Case 1: No existing plan
-    if (!existingPlan) {
-      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, null);
-    }
-
-    // ✅ Case 2: Existing FREE plan → replace directly
-    else if (existingPlan.billing_cycle === 'Free') {
-      userPlan = await this.activateUserPlan(userId, user, subscriptionPlanDetails, existingPlan);
-    }
-
-    // ✅ Case 3: Existing PAID plan → settle (carry forward)
-    else {
-      userPlan = await this.settleUserPlan(existingPlan.id, user, subscriptionPlanDetails, existingPlan);
-    }
-
-    // =========================
-
-    console.log('UserPlan', userPlan);
-
-    if (userPlan) {
-      data.assigned_plan = userPlan.id;
-    }
-
-    return await userModel.update(userId, data);
+  async updateCompanyUser(userId: string, data: any, actor?: { userId?: string; companyId?: string; userRole?: string }) {
+    const result = await planAssignmentService.updateUser(userId, data, actor);
+    return result.user;
   }
 
   async createUserPlan(userId: string, companyId: string, planData: any, razorPayDetails: any) {
@@ -305,19 +266,8 @@ class CompanyService {
     console.log('Transformed limits:', limits);
     console.log('Transformed usage:', usage);
 
-    const durationDays = billing_cycle === 'Monthly' ? 30 : billing_cycle === 'Yearly' ? 365 : 3;
-
     const startDate = new Date();
-
-    const endDate = new Date(startDate);
-
-    if (billing_cycle === 'Monthly') {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else if (billing_cycle === 'Yearly') {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    } else if (billing_cycle === 'Free') {
-      endDate.setDate(endDate.getDate() + 3);
-    }
+    const { endDate, durationDays } = calculatePlanPeriod(planData, startDate);
 
     const newUserPlan = await userPlansModel.create({
       user_id: userId,
@@ -334,730 +284,6 @@ class CompanyService {
       active: false,
       duration_days: durationDays,
     });
-    return newUserPlan;
-  }
-
-  // if its monthly so from company credit_balance price of the subscription will get cut 
-  // commission to the superAdmin of 1000 on yearly and 100 on monthly 
-  // where debit of prices from company balance and in superadmin balance will add the comission of 100 and 1000 ruppes based upon the mothly yearly
-
-
-  async activateUserPlan(
-    userId: string,
-    user: any,
-    planData: any,
-    existingUserPlan?: any,
-  ) {
-    console.log("User", user)
-    if (!planData) {
-      throw new Error('planData is required');
-    }
-
-    const { plan_name, price, billing_cycle, features } = planData;
-    console.log("Plan Data", planData)
-
-    console.log('User:', userId, 'Company:', user.company_id);
-
-    // =====================================================
-    // COMPANY VALIDATION
-    // =====================================================
-
-    const companyDetails = await companyModel.findById(user.company_id);
-
-    if (!companyDetails) {
-      // =====================================================
-      // PLAN DATES
-      // =====================================================
-
-      const durationDays =
-        billing_cycle === 'Monthly'
-          ? 30
-          : billing_cycle === 'Yearly'
-            ? 365
-            : 3;
-
-      const { limits, usage } =
-        transformFeatures(features);
-
-      const startDate = new Date();
-      const endDate = new Date(startDate);
-
-      if (billing_cycle === 'Monthly') {
-        endDate.setMonth(endDate.getMonth() + 1);
-      } else if (billing_cycle === 'Yearly') {
-        endDate.setFullYear(endDate.getFullYear() + 1);
-      } else {
-        endDate.setDate(endDate.getDate() + 3);
-      }
-
-      // =====================================================
-      // CREATE USER PLAN
-      // =====================================================
-
-      const superAdmin: any =
-        await userModel.findSuperAdmin('superadmin');
-
-      console.log("Superadmin", superAdmin)
-
-      if (!superAdmin) {
-        throw new HTTP400Error({
-          message: 'Super admin not found',
-        });
-      }
-
-      const balanceBefore =
-        Number(superAdmin.credit_balance || 0);
-
-      console.log("Balance bfore", balanceBefore)
-
-      const balanceAfter =
-        balanceBefore + Number(price);
-
-      await userModel.update(superAdmin.id, {
-        credit_balance: balanceAfter,
-      });
-
-      // Credit Transaction
-      await creditTransactionModel.create({
-        user_id: superAdmin.id,
-        company_id: superAdmin.company_id,
-        type: 'credit',
-        amount: Number(price),
-        balance_before: balanceBefore,
-        balance_after: balanceAfter,
-        description: `Subscription purchase (${plan_name}) without company`,
-        created_by: userId,
-        reference_type: 'subscription',
-      });
-
-      // Activity Log
-      await activityLogsModel.create({
-        user_id: superAdmin.id,
-        company_id: superAdmin.company_id,
-
-        action: 'CREDIT',
-        entity_type: 'WALLET',
-        entity_id: superAdmin.id,
-
-        read: false,
-
-        description: `₹${price} credited from subscription purchase (${plan_name})`,
-
-        new_data: {
-          plan_name,
-          price,
-          balance_before: balanceBefore,
-          balance_after: balanceAfter,
-        },
-
-        status: 'SUCCESS',
-      });
-
-      const newUserPlan = await userPlansModel.create({
-        user_id: userId,
-        company_id: user.company_id,
-        plan_name,
-        price,
-        billing_cycle,
-
-        status: 'COMPLETED',
-
-        start_date: startDate,
-        end_date: endDate,
-
-        subscription_id: planData.id,
-
-        active: true,
-
-        limits: JSON.stringify(limits),
-        usage: JSON.stringify(usage),
-
-        duration_days: durationDays,
-      });
-
-      return newUserPlan
-    }
-
-    // =====================================================
-    // COMMISSION CALCULATION
-    // =====================================================
-
-    let commission = 0;
-
-    if (billing_cycle === 'Monthly') {
-      commission = 100.00;
-    } else if (billing_cycle === 'Yearly') {
-      commission = 1000.00;
-    }
-
-    const subscriptionAmount = Number(price);
-    const totalDeduction = commission;
-
-    const companyBalanceBefore = Number(
-      companyDetails.credit_balance || 0
-    );
-
-    if (companyBalanceBefore < commission) {
-      throw new HTTP400Error({
-        message: `Insufficient company wallet balance. Required ₹${totalDeduction}`,
-      });
-    }
-
-    const companyBalanceAfter =
-      companyBalanceBefore - commission;
-
-    // =====================================================
-    // DEBIT COMPANY WALLET
-    // =====================================================
-
-    await companyModel.update(user.company_id, {
-      credit_balance: companyBalanceAfter,
-    });
-
-    // =====================================================
-    // COMPANY TRANSACTION - SUBSCRIPTION DEBIT
-    // =====================================================
-
-    const balanceAfterSubscription =
-      companyBalanceBefore - subscriptionAmount;
-
-    // await creditTransactionModel.create({
-    //   company_id: companyId,
-    //   user_id: userId,
-    //   company_name:
-    //     companyDetails.company_name || companyDetails.name,
-
-    //   type: 'debit',
-    //   amount: subscriptionAmount,
-
-    //   balance_before: companyBalanceBefore,
-    //   balance_after: balanceAfterSubscription,
-
-    //   description: `Subscription plan (${plan_name}) assigned to ${userId}`,
-
-    //   created_by: userId,
-    //   reference_type: 'subscription',
-    // });
-
-    // =====================================================
-    // COMPANY TRANSACTION - COMMISSION DEBIT
-    // =====================================================
-
-    if (commission > 0) {
-      await creditTransactionModel.create({
-        company_id: user.company_id,
-        user_id: userId,
-        company_name:
-          companyDetails.company_name || companyDetails.name,
-
-        type: 'debit',
-        amount: -commission,
-
-        balance_before: balanceAfterSubscription,
-        balance_after: companyBalanceAfter,
-
-        description: `${commission} platform fee  transferred to Soft7`,
-
-        created_by: userId,
-        reference_type: 'subscription_commission',
-      });
-
-      await activityLogsModel.create({
-        user_id: userId,
-        company_id: user.company_id,
-
-        action: 'DEBIT',
-        entity_type: 'WALLET',
-        entity_id: user.company_id,
-
-        read: false,
-
-        description: `₹${commission} Platform fee deducted from company wallet`,
-
-        new_data: {
-          commission,
-          billing_cycle,
-          balance_before: balanceAfterSubscription,
-          balance_after: companyBalanceAfter,
-        },
-
-        status: 'SUCCESS',
-      });
-    }
-
-    // =====================================================
-    // SUPER ADMIN COMMISSION CREDIT
-    // =====================================================
-
-    if (commission > 0) {
-      const superAdmin: any =
-        await userModel.findSuperAdmin('superadmin');
-
-      if (superAdmin) {
-        const superAdminBalanceBefore = Number(
-          superAdmin.credit_balance || 0
-        );
-
-        const superAdminBalanceAfter =
-          superAdminBalanceBefore + commission;
-
-        await userModel.update(superAdmin.id, {
-          credit_balance: superAdminBalanceAfter,
-        });
-
-        await creditTransactionModel.create({
-          user_id: superAdmin.id,
-          company_id: superAdmin.company_id,
-
-          type: 'credit',
-          amount: commission,
-
-          balance_before: superAdminBalanceBefore,
-          balance_after: superAdminBalanceAfter,
-
-          description: `Platform fee received from ${companyDetails.company_name || companyDetails.name
-            } for assiging ${plan_name} to ${user.name}`,
-
-          created_by: userId,
-          reference_type: 'subscription_commission',
-        });
-
-        await activityLogsModel.create({
-          user_id: superAdmin.id,
-          company_id: superAdmin.company_id,
-
-          action: 'CREDIT',
-          entity_type: 'WALLET',
-          entity_id: superAdmin.id,
-
-          read: false,
-
-          description: `₹${commission} Platform fee received from ${companyDetails.company_name || companyDetails.name
-            }`,
-
-          new_data: {
-            commission,
-            source_company:
-              companyDetails.company_name ||
-              companyDetails.name,
-
-            balance_before: superAdminBalanceBefore,
-            balance_after: superAdminBalanceAfter,
-          },
-
-          status: 'SUCCESS',
-
-        });
-      }
-    }
-
-    // =====================================================
-    // DEACTIVATE OLD PLAN
-    // =====================================================
-    const now = new Date();
-
-    if (existingUserPlan) {
-      console.log("Existsing Plan",existingUserPlan)
-      await userPlansModel.update(existingUserPlan.id, {
-        active: false,
-        status:'EXPIRED',
-        end_date: now,
-      });
-    }
-
-    // =====================================================
-    // PLAN DATES
-    // =====================================================
-
-    const durationDays =
-      billing_cycle === 'Monthly'
-        ? 30
-        : billing_cycle === 'Yearly'
-          ? 365
-          : 3;
-
-    const { limits, usage } =
-      transformFeatures(features);
-
-    const startDate = new Date();
-    const endDate = new Date(startDate);
-
-    if (billing_cycle === 'Monthly') {
-      endDate.setMonth(endDate.getMonth() + 1);
-    } else if (billing_cycle === 'Yearly') {
-      endDate.setFullYear(endDate.getFullYear() + 1);
-    } else {
-      endDate.setDate(endDate.getDate() + 3);
-    }
-
-    // =====================================================
-    // CREATE USER PLAN
-    // =====================================================
-
-    const newUserPlan = await userPlansModel.create({
-      user_id: userId,
-      company_id: user.company_id,
-      plan_name,
-      price,
-      billing_cycle,
-
-      status: 'COMPLETED',
-
-      start_date: startDate,
-      end_date: endDate,
-
-      subscription_id: planData.id,
-
-      active: true,
-
-      limits: JSON.stringify(limits),
-      usage: JSON.stringify(usage),
-
-      duration_days: durationDays,
-    });
-
-    // =====================================================
-    // ASSIGN PLAN TO USER
-    // =====================================================
-
-    await userModel.update(userId, {
-      status:'active',
-      assigned_plan: newUserPlan.id,
-    });
-
-    // =====================================================
-    // PLAN ACTIVATION ACTIVITY
-    // =====================================================
-
-    await activityLogsModel.create({
-      user_id: userId,
-      company_id: user.company_id,
-
-      action: 'ACTIVATE',
-      entity_type: 'SUBSCRIPTION',
-      entity_id: newUserPlan.id,
-
-      read: false,
-
-      description: `${plan_name} plan activated (${billing_cycle}) for ₹${price}`,
-
-      new_data: {
-        id: newUserPlan.id,
-        plan_name: newUserPlan.plan_name,
-        billing_cycle: newUserPlan.billing_cycle,
-        price: newUserPlan.price,
-
-        commission,
-
-        total_deduction: totalDeduction,
-
-        start_date: newUserPlan.start_date,
-        end_date: newUserPlan.end_date,
-
-        active: true,
-      },
-
-      status: 'SUCCESS',
-    });
-
-    return newUserPlan;
-  }
-
-
-  async settleUserPlan(
-    userPlanId: string,
-    user: any,
-    planData: any,
-    existingUserPlan: any,
-  ) {
-    const now = new Date();
-    console.log("Settle Plan",user)
-
-    const { plan_name, price, billing_cycle, features } = planData;
-
-    // =====================================================
-    // COMPANY VALIDATION
-    // =====================================================
-
-    const companyDetails = await companyModel.findById(user.company_id);
-
-    if (!companyDetails) {
-      throw new HTTP400Error({
-        message: 'Company not found',
-      });
-    }
-
-    // =====================================================
-    // COMMISSION CALCULATION
-    // =====================================================
-
-    let commission = 0;
-
-    if (billing_cycle === 'Monthly') {
-      commission = 100.00;
-    } else if (billing_cycle === 'Yearly') {
-      commission = 1000.00;
-    }
-
-    const companyBalanceBefore = Number(
-      companyDetails.credit_balance || 0
-    );
-
-    if (companyBalanceBefore < commission) {
-      throw new HTTP400Error({
-        message: `Insufficient company wallet balance. Required ₹${commission}`,
-      });
-    }
-
-    const companyBalanceAfter =
-      companyBalanceBefore - commission;
-
-    // =====================================================
-    // DEBIT COMPANY WALLET (ONLY COMMISSION)
-    // =====================================================
-
-    await companyModel.update(companyDetails.id, {
-      credit_balance: companyBalanceAfter,
-    });
-
-    // =====================================================
-    // COMPANY COMMISSION TRANSACTION
-    // =====================================================
-
-    if (commission > 0) {
-      await creditTransactionModel.create({
-        company_id: user.company_id,
-        user_id: existingUserPlan.user_id,
-        company_name:
-          companyDetails.company_name || companyDetails.name,
-
-        type: 'debit',
-        amount: - commission,
-
-        balance_before: companyBalanceBefore,
-        balance_after: companyBalanceAfter,
-
-        description: `Platform fee deducted for plan upgrade (${existingUserPlan.plan_name} → ${plan_name}) for ${billing_cycle}`,
-
-        created_by: existingUserPlan.user_id,
-        reference_type: 'subscription_commission',
-      });
-
-      await activityLogsModel.create({
-        user_id: existingUserPlan.user_id,
-        company_id: user.company_id,
-
-        action: 'DEBIT',
-        entity_type: 'WALLET',
-        entity_id: user.companyId,
-
-        read: false,
-
-        description: `Platform fee deducted for upgrading ${existingUserPlan.plan_name}- ${existingUserPlan.billing_cycle} to ${plan_name}-${billing_cycle}`,
-
-        new_data: {
-          old_plan: existingUserPlan.plan_name,
-          new_plan: plan_name,
-          commission,
-          balance_before: companyBalanceBefore,
-          balance_after: companyBalanceAfter,
-        },
-
-        status: 'SUCCESS',
-      });
-    }
-
-    // =====================================================
-    // SUPER ADMIN COMMISSION CREDIT
-    // =====================================================
-
-    if (commission > 0) {
-      const superAdmin: any =
-        await userModel.findSuperAdmin('superadmin');
-
-      if (superAdmin) {
-        const superAdminBalanceBefore = Number(
-          superAdmin.credit_balance || 0
-        );
-
-        const superAdminBalanceAfter =
-          superAdminBalanceBefore + commission;
-
-        await userModel.update(superAdmin.id, {
-          credit_balance: superAdminBalanceAfter,
-        });
-
-        await creditTransactionModel.create({
-          user_id: superAdmin.id,
-          company_id: superAdmin.company_id,
-
-          type: 'credit',
-          amount: commission,
-
-          balance_before: superAdminBalanceBefore,
-          balance_after: superAdminBalanceAfter,
-
-          description: `Platform fee received for upgrade (${existingUserPlan.plan_name} → ${plan_name}) from ${companyDetails.company_name || companyDetails.name
-            }`,
-
-          created_by: existingUserPlan.user_id,
-          reference_type: 'subscription_commission',
-        });
-
-        await activityLogsModel.create({
-          user_id: superAdmin.id,
-          company_id: superAdmin.company_id,
-
-          action: 'CREDIT',
-          entity_type: 'WALLET',
-          entity_id: superAdmin.id,
-
-          read: false,
-
-          description: `Platform fee received for plan upgrade (${existingUserPlan.plan_name} → ${plan_name})`,
-
-          new_data: {
-            source_company:
-              companyDetails.company_name ||
-              companyDetails.name,
-
-            old_plan: existingUserPlan.plan_name,
-            new_plan: plan_name,
-
-            commission,
-
-            balance_before: superAdminBalanceBefore,
-            balance_after: superAdminBalanceAfter,
-          },
-
-          status: 'SUCCESS',
-        });
-      }
-    }
-
-    // =====================================================
-    // CALCULATE REMAINING DAYS
-    // =====================================================
-
-    const currentEndDate = new Date(
-      existingUserPlan.end_date
-    );
-
-    let remainingDays = 0;
-
-    if (currentEndDate > now) {
-      remainingDays = Math.ceil(
-        (currentEndDate.getTime() - now.getTime()) /
-        (1000 * 60 * 60 * 24)
-      );
-    }
-
-    // =====================================================
-    // FEATURE TRANSFORMATION
-    // =====================================================
-
-    const { limits, usage } =
-      transformFeatures(features);
-
-    const finalDays =
-      billing_cycle === 'Monthly'
-        ? 30 + remainingDays
-        : billing_cycle === 'Yearly'
-          ? 365 + remainingDays
-          : remainingDays;
-
-    // =====================================================
-    // CALCULATE NEW END DATE
-    // =====================================================
-
-    const newEndDate = new Date(now);
-    newEndDate.setDate(
-      newEndDate.getDate() + finalDays
-    );
-
-    // =====================================================
-    // DEACTIVATE OLD PLAN
-    // =====================================================
-
-    await userPlansModel.update(existingUserPlan.id, {
-      active: false,
-      end_date: now,
-    });
-
-    // =====================================================
-    // CREATE NEW PLAN
-    // =====================================================
-
-    const newUserPlan = await userPlansModel.create({
-      user_id: existingUserPlan.user_id,
-      company_id: user.companyId,
-
-      plan_name,
-      price,
-      billing_cycle,
-
-      status: 'COMPLETED',
-
-      subscription_id: planData.id,
-
-      active: true,
-
-      limits: JSON.stringify(limits),
-      usage: JSON.stringify(usage),
-
-      start_date: now,
-      end_date: newEndDate,
-
-      duration_days: finalDays,
-    });
-
-    // =====================================================
-    // UPDATE ASSIGNED PLAN
-    // =====================================================
-
-    await userModel.update(existingUserPlan.user_id, {
-      status:'active',
-      assigned_plan: newUserPlan.id,
-    });
-
-    // =====================================================
-    // PLAN UPGRADE ACTIVITY
-    // =====================================================
-
-    await activityLogsModel.create({
-      user_id: existingUserPlan.user_id,
-      company_id: user.companyId,
-
-      action: 'UPGRADE',
-      entity_type: 'SUBSCRIPTION',
-      entity_id: newUserPlan.id,
-
-      read: false,
-
-      description: `Plan upgraded from ${existingUserPlan.plan_name} to ${plan_name} (${billing_cycle})`,
-
-      new_data: {
-        id: newUserPlan.id,
-
-        old_plan: existingUserPlan.plan_name,
-        new_plan: plan_name,
-
-        billing_cycle,
-        price,
-
-        commission,
-
-        start_date: newUserPlan.start_date,
-        end_date: newUserPlan.end_date,
-
-        remaining_days_carried: remainingDays,
-
-        active: true,
-      },
-
-      status: 'SUCCESS',
-    });
-
     return newUserPlan;
   }
 
@@ -1197,6 +423,89 @@ class CompanyService {
     return suspendCompany
   }
 
+  async createCustomName(user_id: string, company_id: string, hostname: string) {
+    const createCustomerName = await companyDomainModel.create({
+      user_id: user_id,
+      company_id: company_id,
+      hostname: hostname,
+      domain_name: hostname,
+      status: "pending",
+      ssl_status: "pending",
+      domain_type: 'custom'
+    })
+    return createCustomerName
+  }
+
+  async createDomainName(
+    user_id: string,
+    company_id: string,
+    domain_name: string
+  ) {
+    const companyDomain = await companyDomainModel.create({
+      user_id,
+      company_id,
+      hostname: domain_name,
+      domain_name,
+      status: "pending",
+      ssl_status: "pending",
+      domain_type: "own",
+    });
+
+    const response = await this.approvedCompanyOwnDomain(
+      companyDomain.id
+    );
+
+    if (!response.success) {
+      throw new Error(
+        response.message || "Cloudflare hostname creation failed"
+      );
+    }
+
+    const details = response.data;
+
+    const ownershipVerification = {
+      type:
+        details.ownership_verification?.type || "txt",
+
+      name:
+        details.ownership_verification?.name || null,
+
+      value:
+        details.ownership_verification?.value || null,
+    };
+
+    const sslValidationRecords =
+      details.ssl?.validation_records?.map(
+        (record: any) => ({
+          type: "txt",
+          name: record.txt_name,
+          value: record.txt_value,
+        })
+      ) || [];
+
+    await companyDomainModel.update(companyDomain.id, {
+      cloudfare_hostname_id: details.id,
+
+      hostname: details.hostname,
+
+      domain_name: details.hostname,
+
+      status: details.status,
+
+      ssl_status: details.ssl?.status,
+
+      ownership_verification: ownershipVerification,
+
+      ssl_validation_records: sslValidationRecords,
+
+      cloudflare_metadata: details,
+    });
+
+    return await companyDomainModel.getCompanyDomainById(
+      companyDomain.id
+    );
+  }
+
   //   async createUser(
   //   companyId: string,
   //   userData: {
@@ -1239,6 +548,222 @@ class CompanyService {
 
   //   return createdUser;
   // }
+
+  async getCompanyDomains(userId: string) {
+    const companyDomain = await companyDomainModel.getCompanyDomains(userId)
+    return companyDomain
+  }
+
+  async getCompanyDomainById(custom_domain: string) {
+    const companyDomainDetails = await companyDomainModel.getCompanyDomainById(custom_domain)
+    return companyDomainDetails
+  }
+
+  async approvedCompanyDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      if (response.duplicate) {
+        return {
+          success: false,
+          message: "Domain already exists in Cloudflare"
+        };
+      }
+
+      await companyDomainModel.update(custom_domain, {
+        cloudfare_hostname_id: response.result.id,
+        status: "active",
+        ssl_status: "active",
+      });
+
+      return {
+        success: true
+      };
+    } catch (error: any) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message
+      };
+    }
+  }
+
+  async approvedCompanyOwnDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const createResponse =
+        await this.createCustomerName(companyDomain);
+
+      if (createResponse.duplicate) {
+        return {
+          success: false,
+          message: "Domain already exists in Cloudflare",
+        };
+      }
+
+      const hostnameId = createResponse.result.id;
+
+      const details =
+        await this.getCustomHostnameDetails(hostnameId);
+
+      const ownershipVerification = {
+        type:
+          details.ownership_verification?.type || null,
+
+        name:
+          details.ownership_verification?.name || null,
+
+        value:
+          details.ownership_verification?.value || null,
+      };
+
+      const sslValidationRecords =
+        details.ssl?.validation_records?.map(
+          (record: any) => ({
+            type: "txt",
+            name: record.txt_name,
+            value: record.txt_value,
+          })
+        ) || [];
+
+      await companyDomainModel.update(companyDomain.id, {
+        cloudfare_hostname_id: details.id,
+
+        domain_name: details.hostname,
+
+        status: details.status,
+
+        ssl_status: details.ssl?.status,
+
+        ssl_method: details.ssl?.method,
+
+        ssl_type: details.ssl?.type,
+
+        ssl_certificate_authority:
+          details.ssl?.certificate_authority,
+
+        ownership_verification:
+          ownershipVerification,
+
+        ssl_validation_records:
+          sslValidationRecords,
+
+        verification_http_url:
+          details.ownership_verification_http
+            ?.http_url,
+
+        verification_http_body:
+          details.ownership_verification_http
+            ?.http_body,
+
+        cloudflare_metadata: details,
+      });
+
+      return {
+        success: true,
+        data: details,
+      };
+    } catch (error: any) {
+      console.error(error);
+
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  async inactiveCompanyDomain(custom_domain: string) {
+    try {
+      const companyDomain =
+        await companyDomainModel.getCompanyDomainById(custom_domain);
+
+      if (!companyDomain) {
+        throw new Error("Company domain not found");
+      }
+
+      const response = await this.createCustomerName(companyDomain);
+
+      const inactiveCompanyDomain = await companyDomainModel.update(
+        custom_domain,
+        {
+          cloudfare_hostname_id: response.result.id,
+          status: response.result.status,
+          ssl_status: response.result.ssl?.status || null,
+        }
+      );
+
+      return inactiveCompanyDomain;
+    } catch (error: any) {
+      console.error(
+        "Error inactive company domain:",
+        error?.response?.data || error.message
+      );
+
+      throw new Error(
+        error?.response?.data?.errors?.[0]?.message ||
+        "Failed to inactive company domain"
+      );
+    }
+  }
+
+  async getCompanyCustomDomain(companyId: string) {
+    const customDomain = await companyDomainModel.findCompanyDomainByCompanyId(companyId)
+    return customDomain
+  }
+
+  async getDomainStatus(domainId: string) {
+    const existDomain = await companyDomainModel.domainById(domainId);
+
+    if (!existDomain) {
+      throw new HTTP401Error({
+        message: "Domain not exist",
+      });
+    }
+
+    const response = await this.getCustomHostnameDetails(
+      existDomain.cloudfare_hostname_id
+    );
+
+    const sslValidationRecords =
+      response.ssl?.validation_records?.map((record: any) => ({
+        status: record.status,
+        type: "txt",
+        name: record.txt_name,
+        value: record.txt_value,
+      })) || [];
+
+    const updateDomainDetails =
+      await companyDomainModel.update(existDomain.id, {
+        status: response.status,
+
+        ssl_status: response.ssl?.status,
+
+        ssl_validation_records: sslValidationRecords,
+
+        ownership_verification: {
+          type: response.ownership_verification?.type,
+          name: response.ownership_verification?.name,
+          value: response.ownership_verification?.value,
+        },
+      });
+
+    return updateDomainDetails;
+  }
 }
 
 export default new CompanyService();

@@ -1,4 +1,7 @@
+import { recordActivity } from '../app/middleware/activity.middleware';
+import UserApiKeyRoute from './userApiKey.route';
 import { Router } from 'express';
+import PaymentRoute from './payment.route';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
 import WabaRoute from './waba.route';
 import TemplateRoute from './template.route';
@@ -15,6 +18,7 @@ import supportRoute from './support.route';
 import teamInviteRoute from './team.route';
 import ColumnRoute from './column.route';
 import activityRoute from './activity.route';
+import aiAssistantRoute from './aiAssistant.route';
 import PipelineStageRoute from './pipelineStage.route';
 import cleanupRoute from './cleanup.route';
 import imageUploadRoute from './imageUpload.route';
@@ -23,24 +27,29 @@ const AdminRoute = Router();
 
 // Apply JWT authentication to all admin routes
 AdminRoute.use(jwtAuthMiddleware);
+AdminRoute.use(recordActivity);
+
+AdminRoute.use('/api-keys', UserApiKeyRoute);
+AdminRoute.use('/payments', PaymentRoute);
 
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
-AdminRoute.use("/support",supportRoute)
+AdminRoute.use('/support', supportRoute);
 AdminRoute.use('/subscription', SubscriptionRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);
 AdminRoute.use('/templates', TemplateRoute);
-AdminRoute.use('/messages', MessageRoute);  
+AdminRoute.use('/messages', MessageRoute);
 AdminRoute.use('/credits', CreditRoute);
 AdminRoute.use('/contacts', ContactRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
-AdminRoute.use('/chatbot',chatBotRoute ); 
-AdminRoute.use('/team',teamInviteRoute)
-AdminRoute.use('/columns',ColumnRoute)
-AdminRoute.use('/activity',activityRoute )
-AdminRoute.use('/pipeline',PipelineStageRoute)
+AdminRoute.use('/chatbot', chatBotRoute);
+AdminRoute.use('/team', teamInviteRoute);
+AdminRoute.use('/columns', ColumnRoute);
+AdminRoute.use('/activity', activityRoute);
+AdminRoute.use('/ai-assistant', aiAssistantRoute);
+AdminRoute.use('/pipeline', PipelineStageRoute);
 AdminRoute.use('/cleanup', cleanupRoute);
 AdminRoute.use('/image-upload', imageUploadRoute);
 

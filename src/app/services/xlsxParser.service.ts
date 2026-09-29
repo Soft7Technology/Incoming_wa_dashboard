@@ -1,5 +1,8 @@
+import { resolveImportColumn } from '../utils/importColumn';
+import { parseImportedPhone } from '../utils/importPhone';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
+// import { COUNTRY_PHONE_LENGTHS } from '../utils';
 
 interface ParsedContact {
   phone_number: string;
@@ -14,7 +17,7 @@ interface ParseResult {
   contacts: ParsedContact[];
   valid: number;
   invalid: number;
-  errors: Array<{ row: number; error: string }>;
+  errors: Array<{ row: number; error: string; phone_number?: unknown }>;
 }
 
 class XLSXParserService {
@@ -35,12 +38,12 @@ class XLSXParserService {
   ): Promise<ParseResult> {
     try {
       // Read file
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
       const sheetName = workbook.SheetNames[0]; // Use first sheet
       const worksheet = workbook.Sheets[sheetName];
 
-      // Convert to JSON
-      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      // Read underlying numeric values, not rounded scientific-notation display text.
+      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true });
 
       if (rawData.length === 0) {
         throw new Error('XLSX file is empty');
@@ -48,6 +51,10 @@ class XLSXParserService {
 
       // Get headers
       const headers = Object.keys(rawData[0]);
+
+      phoneColumn = resolveImportColumn(headers, phoneColumn);
+      nameColumn = resolveImportColumn(headers, nameColumn);
+      emailColumn = resolveImportColumn(headers, emailColumn);
 
       // Auto-detect phone column if not provided
       if (!phoneColumn) {
@@ -59,31 +66,23 @@ class XLSXParserService {
       }
 
       const contacts: ParsedContact[] = [];
-      const errors: Array<{ row: number; error: string }> = [];
+      const errors: Array<{ row: number; error: string; phone_number?: unknown }> = [];
       let validCount = 0;
       let invalidCount = 0;
+
+      const codeColumn = headers.find(header =>
+        ['countrycode', 'callingcode', 'dialcode', 'country'].includes(header.trim().toLowerCase().replace(/[\s_-]/g, '')),
+      );
 
       // Process each row
       rawData.forEach((row, index) => {
         try {
-          const phoneNumber = this.normalizePhoneNumber(row[phoneColumn!],country_code);
-
-          if (!phoneNumber) {
-            invalidCount++;
-            errors.push({ row: index + 2, error: 'Missing or invalid phone number' });
-            return;
-          }
-
-          // Validate phone number format
-          if (!this.isValidPhoneNumber(phoneNumber)) {
-            invalidCount++;
-            errors.push({ row: index + 2, error: `Invalid phone format: ${phoneNumber}` });
-            return;
-          }
+          const rowCode = codeColumn ? String(row[codeColumn] ?? '').trim() : '';
+          const parsedPhone = parseImportedPhone(row[phoneColumn!], rowCode || country_code || '', Boolean(rowCode), true);
 
           // Build contact object
           const contact: ParsedContact = {
-            phone_number: phoneNumber,
+            ...parsedPhone,
             attributes: {},
           };
 
@@ -111,7 +110,7 @@ class XLSXParserService {
           validCount++;
         } catch (error: any) {
           invalidCount++;
-          errors.push({ row: index + 2, error: error.message });
+          errors.push({ row: index + 2, error: error.message, phone_number: row[phoneColumn!] });
         }
       });
 
@@ -158,73 +157,14 @@ class XLSXParserService {
     return null;
   }
 
-  /**
-   * Normalize phone number to international format
-   * Removes spaces, dashes, parentheses, and ensures it starts with +
-   */
-  private normalizePhoneNumber(
-    phone: any,
-    country_code: string
-  ): string | null {
-    console.log("Phone",phone,country_code)
-    if (!phone || !country_code) return null;
-
-
-    let normalized = String(phone)
-      .trim()
-      .replace(/[^\d+]/g, '');
-
-    // If number already contains country code (+...)
-    if (normalized.startsWith('+')) {
-      return normalized;
-    }
-
-    // Remove leading zeros
-    normalized = normalized.replace(/^0+/, '');
-
-    // Add country code if provided
-    if (country_code) {
-      country_code = country_code.replace('+', '');
-      normalized = `+${country_code}${normalized}`;
-    } else {
-      normalized = `+${normalized}`;
-    }
-
-    return normalized;
-  }
-
-  /**
-   * Validate phone number format
-   * Must be international format (+[country_code][number])
-   * Length should be between 10-15 digits
-   */
-  private isValidPhoneNumber(phone: string): boolean {
-    if (!phone) return false;
-
-    // Must start with +
-    if (!phone.startsWith('+')) return false;
-
-    // Remove + and check if remaining is all digits
-    const digits = phone.substring(1);
-    if (!/^\d+$/.test(digits)) return false;
-
-    // Check length (10-15 digits after +)
-    if (digits.length < 10 || digits.length > 15) return false;
-
-    return true;
-  }
-
-  /**
-   * Get preview of XLSX file (first N rows)
-   */
   async getFilePreview(filePath: string, rows: number = 5): Promise<any> {
     try {
       console.log(`Generating preview for file: ${filePath}`);
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
-      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      const rawData: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '', raw: true });
       console.log(`Total rows in file: ${rawData.length}`);
 
       return {
@@ -250,7 +190,7 @@ class XLSXParserService {
         return { valid: false, errors };
       }
 
-      const workbook = XLSX.readFile(filePath);
+      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
 
       if (workbook.SheetNames.length === 0) {
         errors.push('No sheets found in XLSX file');

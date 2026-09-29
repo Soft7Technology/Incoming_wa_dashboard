@@ -1,4 +1,12 @@
-import { Worker, Job } from 'bullmq';
+import { buildRecipient } from '../../app/utils/importPhone';
+import { getMessageError } from '@surefy/console/app/utils/messageError';
+import { Worker, Job, DelayedError } from 'bullmq';
+import { campaignExecutionQueue } from '../campaignExecution.queue';
+import { campaignCapacity, createCapacitySampler } from '../campaignCapacity';
+import { waitForCampaignPermit, getCampaignSenderCooldown, getCampaignPairCooldown, setCampaignSenderCooldown, setCampaignPairCooldown } from '../campaignPacing';
+import { acquireCampaignUserSlot, refreshCampaignUserSlot, releaseCampaignUserSlot } from '../campaignUserSlots';
+import { isConnectionAcquireError } from '../campaignDatabaseError';
+import PhoneNumberModel from '../../app/models/phoneNumber.model';
 import redisConfig from '@surefy/config/redis.config';
 import { CampaignExecutionJobData } from '../campaignExecution.queue';
 import CampaignModel from '@surefy/console/models/campaign.model';
@@ -6,133 +14,208 @@ import CampaignMessageModel from '@surefy/console/models/campaignMessage.model';
 import ContactModel from '@surefy/console/models/contact.model';
 import TemplateModel from '@surefy/console/models/template.model';
 import MessageService from '@surefy/console/services/message.service';
-import * as os from 'os';
 import { v4 as uuidv4 } from "uuid";
 
 
-const BATCH_SIZE = 50; // Process 50 messages at a time
-const DELAY_BETWEEN_BATCHES = 2000; // 2 seconds delay between batches
+class CampaignInfrastructureError extends Error {}
+class CampaignProviderLimitError extends Error {
+  constructor(public readonly code: string, message: string, public readonly recipient: string) { super(message); }
+}
+const providerLimitCodes = new Set(['130429', '131056', '80007', '80008', '4', '17', '32', '613']);
+const capacitySampler = createCapacitySampler();
+const healthTimer = setInterval(() => {
+  capacitySampler.sample();
+  void campaignExecutionQueue.getJobCounts('active', 'waiting', 'delayed', 'failed')
+    .then(queue => console.info('[Campaign Worker] Health', {
+      ...capacitySampler.metrics(), queue,
+      concurrency: campaignCapacity.concurrency,
+      messageConcurrency: campaignCapacity.messageConcurrency,
+      maxRunningPerUser: campaignCapacity.maxRunningPerUser,
+      messagesPerSecond: campaignCapacity.messagesPerSecond,
+    }))
+    .catch(error => console.error('[Campaign Worker] Health queue inspection failed', getMessageError(error)));
+}, 15000);
+healthTimer.unref();
 
-async function processCampaignExecution(job: Job<CampaignExecutionJobData>) {
-  const { campaignId,userId, companyId } = job.data;
-
+export async function processCampaignExecution(job: Job<CampaignExecutionJobData>, token?: string) {
+  const { campaignId, companyId } = job.data;
+  const redis = await campaignExecutionQueue.client;
+  const lockKey = `campaign-execution-lock:${campaignId}`;
+  const lockOwner = uuidv4();
+  const defer = async (delay: number): Promise<never> => {
+    await job.moveToDelayed(Date.now() + delay, token);
+    throw new DelayedError();
+  };
+  if (!await redis.set(lockKey, lockOwner, 'PX', 120000, 'NX')) return defer(1000);
+  let lockLost = false;
+  let slotUserId: string | undefined;
+  let releaseSlot = false;
+  let phase = 'loading campaign';
+  const heartbeat = setInterval(() => {
+    void redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], 120000) else return 0 end",
+      1, lockKey, lockOwner).then(value => { if (!value) lockLost = true; }).catch(() => { lockLost = true; });
+    if (slotUserId) void refreshCampaignUserSlot(slotUserId, campaignId)
+      .then(ok => { if (!ok) lockLost = true; }).catch(() => { lockLost = true; });
+  }, 10000);
+  heartbeat.unref();
   try {
-    console.log(`[Job ${job.id}] Starting campaign execution: ${campaignId}`);
-
     const campaign = await CampaignModel.findById(campaignId);
-    if (!campaign) {
-      throw new Error('Campaign not found');
+    if (!campaign || campaign.deleted_at) return { status: 'removed' };
+    if (campaign.company_id !== companyId) throw new Error('Campaign does not belong to company');
+    if (['paused', 'completed'].includes(campaign.status)) {
+      await releaseCampaignUserSlot(campaign.user_id, campaignId);
+      return { status: campaign.status };
     }
-
-    if (campaign.company_id !== companyId) {
-      throw new Error('Campaign does not belong to company');
+    if (campaign.status === 'scheduled' && campaign.scheduled_at && new Date(campaign.scheduled_at).getTime() > Date.now()) {
+      console.info('[Campaign Worker] Waiting for schedule', { campaignId, scheduledAt: campaign.scheduled_at });
+      return await defer(new Date(campaign.scheduled_at).getTime() - Date.now());
     }
-
-    // Update campaign status to running
-    await CampaignModel.updateStatus(campaignId, 'running', {
-      started_at: new Date(),
-    });
-
-    // Get template
+    phase = 'acquiring user slot';
+    if (!await acquireCampaignUserSlot(campaign.user_id, campaignId)) {
+      console.info('[Campaign Worker] Waiting for user campaign slot', { campaignId, userId: campaign.user_id, limit: campaignCapacity.maxRunningPerUser });
+      return await defer(5000);
+    }
+    slotUserId = campaign.user_id;
+    phase = 'loading campaign configuration';
+    if (campaign.status !== 'running') {
+      await CampaignModel.updateStatus(campaignId, 'running', { started_at: campaign.started_at || new Date() });
+    }
     const template = await TemplateModel.findById(campaign.template_id);
-    if (!template) {
-      throw new Error('Template not found');
+    if (!template) throw new Error('Template not found');
+    const phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
+    if (!phone) throw new Error('Business phone number not found');
+    campaign.phone_number_id = phone.phone_number_id;
+    while (true) {
+    const batchStartedAt = Date.now();
+    const senderCooldown = await getCampaignSenderCooldown(campaign.phone_number_id);
+    if (senderCooldown > 0) {
+      console.info('[Campaign Worker] Waiting for sender cooldown', { campaignId, phoneNumberId: campaign.phone_number_id, delayMs: senderCooldown });
+      return await defer(senderCooldown);
     }
-
-    let hasMore = true;
-    let processedCount = 0;
-    let totalSent = 0;
-    let totalFailed = 0;
-
-    while (hasMore) {
-      // Check if campaign should still be running
+    const batchSize = capacitySampler.sample();
+    console.info('[Campaign Worker] Batch starting', { campaignId, jobId: job.id, attempt: job.attemptsMade + 1, ...capacitySampler.metrics() });
+    phase = 'selecting recipients';
+    const pending = job.data.status === 'failed'
+      ? await CampaignMessageModel.getFailedMessages(campaignId, batchSize, new Date(job.timestamp))
+      : await CampaignMessageModel.getPendingMessages(campaignId, batchSize, job.data.status, job.data.error_message);
+    if (!pending.length) {
+      const retryAt = await CampaignMessageModel.getNextRetryAt(campaignId, job.data.status === 'failed' ? new Date(job.timestamp) : undefined);
+      if (retryAt) {
+        const delayMs = Math.max(250, new Date(retryAt).getTime() - Date.now());
+        console.info('[Campaign Worker] Waiting for deferred recipients', { campaignId, delayMs });
+        return await defer(delayMs);
+      }
+      const stillPending = job.data.status === 'failed'
+        ? (await CampaignMessageModel.getFailedMessages(campaignId, 1, new Date(job.timestamp))).length > 0
+        : await CampaignMessageModel.getPendingCount(campaignId) > 0;
+      if (stillPending) return await defer(250);
+      phase = 'completing campaign';
+      const counts = await CampaignMessageModel.getCampaignStats(campaignId);
+      // Recipient failures are reported in the counts; they do not fail the execution.
+      if (!await CampaignModel.completeIfNoPendingMessages(campaignId)) {
+        const current = await CampaignModel.findById(campaignId);
+        if (current?.status === 'running') return await defer(250);
+        releaseSlot = true;
+        return { status: current?.status };
+      }
+      releaseSlot = true;
+      console.info('[Campaign Worker] Finished', { campaignId, status: 'completed', counts, errorCounts: job.data.errorCounts });
+      return { status: 'completed' };
+    }
+    const contacts = await ContactModel.findCampaignRecipients(pending.map((message: any) => message.contact_id));
+    const contactsById = new Map(contacts.map((contact: any) => [contact.id, contact]));
+    const results: PromiseSettledResult<void>[] = [];
+    phase = 'sending recipients';
+    for (let offset = 0; offset < pending.length; offset += campaignCapacity.messageConcurrency) {
       const currentCampaign = await CampaignModel.findById(campaignId);
-      if (currentCampaign.status !== 'running') {
-        console.log(`[Campaign ${campaignId}] Stopped by user, status: ${currentCampaign.status}`);
-        break;
+      if (currentCampaign?.status !== 'running') {
+        releaseSlot = true;
+        return { status: currentCampaign?.status };
       }
-
-      // Get pending messages
-      const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, BATCH_SIZE);
-
-      if (pendingMessages.length === 0) {
-        hasMore = false;
-        // Only mark 'completed' if at least some messages were sent.
-        // If EVERY message failed, mark as 'failed' so the dashboard shows the truth.
-        const finalStatus = totalSent > 0 ? 'completed' : 'failed';
-        await CampaignModel.updateStatus(campaignId, finalStatus, {
-          completed_at: new Date(),
-        });
-        console.log(`[Campaign ${campaignId}] Finished. Sent: ${totalSent}, Failed: ${totalFailed}. Status: ${finalStatus}`);
-        break;
-      }
-
-      // Process messages in batch
-      const results = await Promise.allSettled(
-        pendingMessages.map(async (campaignMessage) => {
-          return await sendCampaignMessage(campaign, campaignMessage, template);
-        })
-      );
-
-      // Count results
-      const batchSuccessful = results.filter((r) => r.status === 'fulfilled').length;
-      const batchFailed = results.filter((r) => r.status === 'rejected').length;
-
-      totalSent += batchSuccessful;
-      totalFailed += batchFailed;
-      processedCount += pendingMessages.length;
-
-      // Update job progress
-      const progress = Math.round((processedCount / campaign.total_recipients) * 100);
-      await job.updateProgress(progress);
-
-      console.log(
-        `[Campaign ${campaignId}] Batch: ${batchSuccessful} sent, ${batchFailed} failed. Total: ${totalSent} sent / ${totalFailed} failed. Progress: ${progress}%`
-      );
-
-      // If failure rate in this batch is >80% (and batch is big enough to be meaningful),
-      // pause the campaign to prevent hammering the Meta API with bad requests.
-      const failureRate = batchFailed / pendingMessages.length;
-      if (failureRate > 0.8 && pendingMessages.length >= 5) {
-        console.error(
-          `[Campaign ${campaignId}] ❌ High failure rate (${Math.round(failureRate * 100)}%). Pausing campaign to prevent further errors.`
-        );
-        await CampaignModel.updateStatus(campaignId, 'paused');
-        hasMore = false;
-        break;
-      }
-
-      // Delay between batches to avoid rate limiting
-      if (pendingMessages.length === BATCH_SIZE) {
-        await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+      const chunk = pending.slice(offset, offset + campaignCapacity.messageConcurrency);
+      const settled = await Promise.allSettled(chunk.map(async (message: any) => {
+        if (lockLost) throw new CampaignInfrastructureError('Campaign execution lock lost');
+        return sendCampaignMessage(campaign, message, contactsById.get(message.contact_id), template, phone, () => !lockLost);
+      }));
+      results.push(...settled);
+      const infrastructureFailure = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignInfrastructureError);
+      if (infrastructureFailure?.status === 'rejected') throw infrastructureFailure.reason;
+      const providerLimit = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignProviderLimitError);
+      if (providerLimit?.status === 'rejected') {
+        const delayMs = providerLimit.reason.code === '131056' ? 6000 : 30000;
+        if (providerLimit.reason.code === '131056') {
+          await setCampaignPairCooldown(campaign.phone_number_id, providerLimit.reason.recipient, delayMs);
+        } else {
+          await setCampaignSenderCooldown(campaign.phone_number_id, delayMs);
+        }
+        console.warn('[Campaign Worker] Provider limit; recipients remain pending', { campaignId, phoneNumberId: campaign.phone_number_id, code: providerLimit.reason.code, delayMs });
+        return await defer(delayMs);
       }
     }
-
-    console.log(`[Campaign ${campaignId}] Execution completed. Processed: ${processedCount}, Sent: ${totalSent}, Failed: ${totalFailed}`);
-
-    return {
-      campaign_id: campaignId,
-      processed: processedCount,
-      sent: totalSent,
-      failed: totalFailed,
-      status: totalSent > 0 ? 'completed' : 'failed',
-    };
-  } catch (error: any) {
-    console.error(`[Campaign ${campaignId}] Fatal error:`, error);
-
-    // Mark campaign as failed
-    await CampaignModel.updateStatus(campaignId, 'failed', {
-      completed_at: new Date(),
-    });
-
+    const errors = { ...(job.data.errorCounts || {}) };
+    for (const result of results) {
+      if (result.status !== 'rejected') continue;
+      const failure = getMessageError(result.reason);
+      const key = JSON.stringify([failure.error_code, failure.error_message]);
+      errors[key] = (errors[key] || 0) + 1;
+    }
+    // Preserve counters across batches without unbounded unique error storage.
+    const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
+    phase = 'updating progress';
+    // Counting every pending row after every small batch becomes quadratic for large campaigns.
+    const checkProgress = job.data.status !== 'failed' && Date.now() - (job.data.progressCheckedAt || 0) >= 20000;
+    const pendingCount = checkProgress ? await CampaignMessageModel.getPendingCount(campaignId) : undefined;
+    const progress = pendingCount === undefined ? undefined : Math.min(100, Math.round((campaign.total_recipients - pendingCount) / Math.max(1, campaign.total_recipients) * 100));
+    if (progress !== undefined) await job.updateProgress(progress);
+    await job.updateData({ ...job.data, errorCounts, progressCheckedAt: checkProgress ? Date.now() : job.data.progressCheckedAt });
+    console.info('[Campaign Worker] Batch finished', { campaignId, jobId: job.id, durationMs: Date.now() - batchStartedAt, selected: pending.length, rejected: results.filter(r => r.status === 'rejected').length, pendingCount, progress, errorCounts, ...capacitySampler.metrics() });
+    await job.log(`Batch size ${batchSize}; selected ${pending.length}; pending ${pendingCount ?? 'retry'}; progress ${progress ?? 'retry'}%`);
+    const current = await CampaignModel.findById(campaignId);
+    if (current?.status !== 'running') {
+      releaseSlot = true;
+      return { status: current?.status };
+    }
+    // Continue immediately with the next batch. Only provider or infrastructure
+    // cooldowns, deferred recipients, and an explicit pause delay this job.
+    }
+  } catch (error) {
+    if (error instanceof DelayedError) throw error;
+    if (isConnectionAcquireError(error)) {
+      console.warn('[Campaign Worker] Database pool exhausted; retrying batch without failing campaign', {
+        campaignId, jobId: job.id, userId: slotUserId, phase, delayMs: 30000,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      return await defer(30000);
+    }
+    console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, phase, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
+    if (job.attemptsMade + 1 >= (job.opts.attempts || 1)) {
+      const current = await CampaignModel.findById(campaignId);
+      if (current?.company_id === companyId && current.status === 'running') {
+        if (await CampaignModel.completeIfNoPendingMessages(campaignId)) {
+          releaseSlot = true;
+          console.info('[Campaign Worker] Completed after execution error because no recipients remain pending', { campaignId, jobId: job.id, phase });
+          return { status: 'completed' };
+        }
+        console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
+        const failure = getMessageError(error);
+        await CampaignModel.markRunningJobFailed(campaignId, `${phase}: ${failure.error_code}: ${failure.error_message}`);
+        releaseSlot = true;
+      }
+    }
     throw error;
+  } finally {
+    clearInterval(heartbeat);
+    if (releaseSlot && slotUserId) await releaseCampaignUserSlot(slotUserId, campaignId)
+      .catch(error => console.error('[Campaign Worker] User slot release failed; expires automatically', { campaignId, error }));
+    await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end", 1, lockKey, lockOwner)
+      .catch(error => console.error('[Campaign Worker] Lock release failed; expires automatically', { campaignId, message: error.message }));
   }
 }
 
-async function sendCampaignMessage(campaign: any, campaignMessage: any, template: any) {
+async function sendCampaignMessage(campaign: any, campaignMessage: any, contact: any, template: any, phone: any, ownsLock: () => boolean) {
+  let infrastructureOperation = true;
+  let recipientPhone = '';
   try {
-    // Get contact
-    const contact = await ContactModel.findById(campaignMessage.contact_id);
     if (!contact) {
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
         error_message: 'Contact not found',
@@ -149,6 +232,9 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
       return;
     }
 
+    infrastructureOperation = false;
+    // Resolve legacy local numbers using this contact's country, never the sender's country.
+    recipientPhone = buildRecipient(contact.phone_number, contact.country_code);
     // Build template payload
     const templatePayload = buildTemplatePayload(
       template,
@@ -158,48 +244,101 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, template
 
     const messageUUID = uuidv4();
 
+    infrastructureOperation = true;
+    if (!await waitForCampaignPermit(campaign.phone_number_id, recipientPhone)) {
+      const pairCooldown = await getCampaignPairCooldown(campaign.phone_number_id, recipientPhone);
+      await CampaignMessageModel.deferRetry(campaignMessage.id, Math.max(1000, pairCooldown));
+      return;
+    }
+    if (!ownsLock()) return;
+
+    infrastructureOperation = false;
     // Send message via MessageService
     const message = await MessageService.sendMessage({
       messageUUID,
-      user_id:campaign.user_id,
-      company_id:campaign.company_id,
+      user_id: campaign.user_id,
+      company_id: campaign.company_id,
       profile_name: contact.name,
-      campaign_id:campaign.id,
+      campaign_id: campaign.id,
       phone_number_id: campaign.phone_number_id,
-      to: contact.phone_number,
+      to: recipientPhone,
       type: 'template',
       template: templatePayload,
-    });
+    }, { phoneNumber: phone, templateRecord: template });
 
-    // Update campaign message status
-    await CampaignMessageModel.updateStatus(campaignMessage.id, 'sent', {
-      message_id: message.id,
-    });
-
-    // Update campaign counts
-    await CampaignModel.incrementCount(campaign.id, 'sent_count');
-    await CampaignModel.updateCounts(campaign.id, {
-      total_cost: Number(campaign.total_cost || 0) + Number(message.cost || 0),
-    });
-
-    // Update contact stats
-    await ContactModel.incrementMessageCount(contact.id);
+    infrastructureOperation = true;
+    await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
-    console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
+    if (isConnectionAcquireError(error)) {
+      console.warn('[Campaign Worker] Recipient database connection unavailable', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: error.message });
+      throw new CampaignInfrastructureError(error.message);
+    }
+    if (!infrastructureOperation) {
+      const failure = getMessageError(error);
+      if (failure.error_code === '131056') {
+        console.warn('[Campaign Worker] Pair limit; retrying only this recipient later', { campaignId: campaign.id, campaignMessageId: campaignMessage.id });
+        await setCampaignPairCooldown(campaign.phone_number_id, recipientPhone, 6000);
+        try {
+          const attempts = await CampaignMessageModel.deferRetry(campaignMessage.id, 6000, true);
+          if (attempts >= 10) {
+            await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
+              ...failure,
+              error_message: `Pair rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
+            });
+            await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+            console.error('[Campaign Worker] Recipient exhausted pair-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, attempts });
+          }
+        } catch (retryError) {
+          throw new CampaignInfrastructureError(retryError instanceof Error ? retryError.message : String(retryError));
+        }
+        return;
+      }
+      if (providerLimitCodes.has(failure.error_code)) {
+        const delayMs = 30000;
+        let attempts: number;
+        try {
+          attempts = await CampaignMessageModel.deferRetry(campaignMessage.id, delayMs, true);
+          if (attempts >= 10) {
+            await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
+              ...failure,
+              error_message: `Provider rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
+            });
+          }
+        } catch (retryError) {
+          throw new CampaignInfrastructureError(retryError instanceof Error ? retryError.message : String(retryError));
+        }
+        if (attempts >= 10) {
+          await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+          console.error('[Campaign Worker] Recipient exhausted provider-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, attempts });
+          return;
+        }
+        console.warn('[Campaign Worker] Provider temporarily rejected send; recipient deferred', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, attempts, delayMs, reason: failure.error_message });
+        throw new CampaignProviderLimitError(failure.error_code, failure.error_message, recipientPhone);
+      }
+    }
+    if (infrastructureOperation) {
+      console.error('[Campaign Worker] Recipient infrastructure error', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, error });
+      throw new CampaignInfrastructureError(error instanceof Error ? error.message : String(error));
+    }
+    console.error('[Campaign Worker] Recipient send failed', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, contactId: campaignMessage.contact_id, reason: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
 
     await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-      error_message: error?.message || 'Unknown error',
-      error_code: error?.code || 'UNKNOWN',
+      ...getMessageError(error),
     });
+    await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+    // The recipient is terminally failed. Continue with the rest of the campaign.
+    return;
+  }
+}
 
-    await CampaignModel.incrementCount(campaign.id, 'failed_count');
-
-    // Update contact failed count
-    if (campaignMessage.contact_id) {
-      await ContactModel.incrementFailedCount(campaignMessage.contact_id);
+async function recordRecipientFailureCounts(campaignId: string, contactId?: string) {
+  const updates = [CampaignModel.incrementCount(campaignId, 'failed_count')];
+  if (contactId) updates.push(ContactModel.incrementFailedCount(contactId));
+  const results = await Promise.allSettled(updates);
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error('[Campaign Worker] Failed to update recipient failure counter', { campaignId, contactId, error: result.reason });
     }
-
-    throw error; // Re-throw to mark as failed in batch results
   }
 }
 
@@ -214,12 +353,12 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: media.link} }],
+            parameters: [{ type: 'image', image: media.media_id ? { id: media.media_id } : { link: media.link || media.url } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: media.link } }],
+            parameters: [{ type: 'image', image: { link: component.example.header_handle[0] } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'VIDEO') {
@@ -227,25 +366,29 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (media) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link:  media.link } }],
+            parameters: [{ type: 'video', video: media.media_id ? { id: media.media_id } : { link: media.link || media.url } }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'video', video: { link:  media.link } }],
+            parameters: [{ type: 'video', video: { link: component.example.header_handle[0] } }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'DOCUMENT') {
         const media = mediaUploads.find((m: any) => m.type === 'document');
         if (media) {
+          const docObj: any = media.media_id ? { id: media.media_id } : { link: media.link || media.url };
+          if (media.filename || media.name) {
+            docObj.filename = media.filename || media.name;
+          }
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link:  media.link } }],
+            parameters: [{ type: 'document', document: docObj }],
           });
         } else if (component.example?.header_handle?.[0]) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'document', document: { link: media.link } }],
+            parameters: [{ type: 'document', document: { link: media?.link || component.example.header_handle[0] } }],
           });
         }
       } else if (component.type === 'BODY' && component.text) {
@@ -295,17 +438,13 @@ console.log('📡 Redis config:', {
 
 export const campaignExecutionWorker = new Worker<CampaignExecutionJobData>(
   'campaign-execution',
-  async (job) => {
+  async (job, token) => {
     console.log(`🔄 Processing campaign job ${job.id}...`);
-    return await processCampaignExecution(job);
+    return await processCampaignExecution(job, token);
   },
   {
     connection: redisConfig,
-    concurrency: 1, // Process 1 campaign at a time to avoid rate limits
-    limiter: {
-      max: 1, // Max 1 job
-      duration: 1000, // per second
-    },
+    concurrency: campaignCapacity.concurrency,
   }
 );
 
@@ -313,7 +452,11 @@ campaignExecutionWorker.on('completed', (job) => {
   console.log(`✅ Campaign job ${job.id} completed successfully`);
 });
 
+campaignExecutionWorker.on('closed', () => { clearInterval(healthTimer); capacitySampler.close(); });
+campaignExecutionWorker.on('stalled', jobId => console.warn('[Campaign Worker] Job stalled; BullMQ will recover it', { jobId }));
+
 campaignExecutionWorker.on('failed', (job, err) => {
+  console.error('[Campaign Worker] Job attempt failed', { jobId: job?.id, campaignId: job?.data.campaignId, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, reason: getMessageError(err), stack: err.stack });
   console.error(`❌ Campaign job ${job?.id} failed:`, err.message);
   console.error('Stack:', err.stack);
 });

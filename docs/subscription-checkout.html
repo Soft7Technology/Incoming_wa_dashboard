@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Subscription checkout</title>
+<style>
+  body { font: 16px system-ui; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+  label { display: block; margin: 16px 0; }
+  input, select { display: block; width: 100%; box-sizing: border-box; padding: 10px; margin-top: 5px; }
+  button { padding: 12px; margin: 8px 8px 8px 0; cursor: pointer; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f4f6; padding: 16px; }
+</style>
+<h1>Subscription checkout</h1>
+<p>Enter a subscription plan to pay its saved price. This is live checkout: completing payment charges real money.</p>
+<form id="form">
+  <label>API origin <input id="origin" type="url" placeholder="http://localhost:3000" required></label>
+  <label>Company administrator JWT <input id="token" type="password" autocomplete="off" required></label>
+  <label>Customer phone (10 digits) <input id="phone" inputmode="numeric" pattern="[0-9]{10}" required></label>
+  <label>Subscription plan ID <input id="plan" placeholder="Company subscription UUID" required></label>
+  <label>Plan recipient user ID (optional; defaults to signed-in user) <input id="recipient" placeholder="User UUID in this company"></label>
+<p>The server determines the price from the selected subscription. After payment, this page verifies the order and displays plan activation status.</p>
+  <button id="pay" type="submit">Pay for subscription</button>
+  <button id="verify" type="button" disabled>Check payment status</button>
+  <button id="reset" type="button">New payment attempt</button>
+</form>
+<pre id="result" aria-live="polite">Configure a live gateway using POST or PUT /v1/admin/payments/gateways first.</pre>
+<script>
+  // Keep tokens and checkout state in memory; never persist them in browser storage.
+  (() => {
+    const element = id => document.getElementById(id);
+    let localOrder, attemptKey = crypto.randomUUID(), context;
+    const show = value => { element('result').textContent = typeof value === 'string' ? value : JSON.stringify(value, null, 2); };
+    async function api(path, body) {
+      const response = await fetch(context.origin + '/v1/admin/payments' + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + context.token, 'Idempotency-Key': attemptKey },
+        body: JSON.stringify(body || {}),
+        signal: AbortSignal.timeout(20000),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) throw new Error(result.message || 'Payment request failed');
+      return result.data;
+    }
+    async function loadScript(url) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = url; script.onload = resolve; script.onerror = () => reject(new Error('Could not load checkout SDK'));
+        document.head.appendChild(script);
+      });
+    }
+    let checking = false;
+    async function verify(retry = false) {
+      if (!localOrder || checking) return;
+      checking = true;
+      element('verify').disabled = true;
+      element('reset').disabled = true;
+      const orderId = localOrder.id;
+      try {
+        // Capture can complete after the checkout callback. Recheck the same order;
+        // never create a second charge while waiting for its final status.
+        for (let attempt = 0; attempt < (retry ? 12 : 1); attempt++) {
+          localOrder = await api('/orders/' + orderId + '/verify');
+          show(localOrder);
+          if (localOrder.status === 'paid') {
+            show({ message: localOrder.fulfilled_at ? 'Payment verified. Your subscription is active.' : 'Payment verified. Plan activation is not yet confirmed.', order: localOrder });
+            return;
+          }
+          if (!retry) break;
+          show({ message: 'Checkout finished. Waiting for gateway payment confirmation...', order: localOrder });
+          if (attempt < 11) await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        show({ message: 'Not yet confirmed paid. Check this payment in Razorpay/Cashfree and retry Check payment status. Do not pay again for this order.', order: localOrder });
+      } catch (error) {
+        show({ message: error.name === 'TimeoutError' ? 'Verification timed out. Retry Check payment status for this same order.' : error.message, order: localOrder });
+      } finally {
+        checking = false;
+        element('verify').disabled = false;
+        element('reset').disabled = false;
+      }
+    }
+    const fields = ['origin', 'token', 'phone', 'plan', 'recipient'];
+    element('verify').onclick = () => verify(true);
+    element('reset').onclick = () => {
+      localOrder = undefined; context = undefined; attemptKey = crypto.randomUUID();
+      fields.forEach(id => { element(id).disabled = false; });
+      element('pay').disabled = false; element('verify').disabled = true; show('Ready for a new payment. Previous orders remain available through the API.');
+    };
+    element('form').onsubmit = async event => {
+      event.preventDefault(); element('pay').disabled = true; element('reset').disabled = true;
+      try {
+        if (!context) {
+          const plan = element('plan').value.trim();
+          if (!plan) throw new Error('Enter a subscription plan ID.');
+          context = { origin: new URL(element('origin').value).origin, token: element('token').value.trim(),
+            phone: element('phone').value, plan, recipient: element('recipient').value.trim() };
+          // Freeze the attempt's inputs so retries retain the same amount, mode and key.
+          fields.forEach(id => { element(id).disabled = true; });
+        }
+        // A retry reuses the same idempotency key and therefore the same order/plan.
+        localOrder = localOrder || await api('/orders', {
+          mode: 'live', subscription_plan_id: context.plan, customer_phone: context.phone,
+          ...(context.recipient ? { user_id: context.recipient } : {}),
+        });
+        show(localOrder); element('verify').disabled = false;
+        if (localOrder.is_test || !localOrder.user_plan_id) throw new Error('Expected a live subscription order.');
+        if (localOrder.status === 'paid') { await verify(); return; }
+        if (localOrder.status !== 'pending') return;
+        const checkout = localOrder.checkout;
+        if (checkout?.mode !== 'live') throw new Error('Checkout mode does not match the requested mode.');
+        if (checkout.provider === 'razorpay') {
+          if (!window.Razorpay) await loadScript('https://checkout.razorpay.com/v1/checkout.js');
+          // Resolve the SDK callback immediately. Waiting on backend fetch here can
+          // leave checkout's completion screen waiting on a stalled network request.
+          const outcome = await new Promise((resolve, reject) => {
+            const razorpay = new window.Razorpay({ key: checkout.key, order_id: checkout.order_id, amount: checkout.amount,
+              currency: checkout.currency, name: checkout.name,
+              handler: () => resolve('completed'),
+              modal: { ondismiss: () => resolve('dismissed') } });
+            razorpay.on('payment.failed', () => {
+              razorpay.close();
+              resolve('failed');
+            });
+            try { razorpay.open(); } catch (error) { reject(error); }
+          });
+          show(outcome === 'completed' ? 'Checkout completed. Verifying payment...' : 'Checkout closed. Checking the order with the gateway...');
+          await verify(true);
+        } else if (checkout.provider === 'cashfree') {
+          if (!window.Cashfree) await loadScript('https://sdk.cashfree.com/js/v3/cashfree.js');
+          await window.Cashfree({ mode: 'production' }).checkout({ paymentSessionId: checkout.payment_session_id, redirectTarget: '_modal' });
+          await verify(true);
+        } else throw new Error('Unsupported checkout provider.');
+      } catch (error) { show(error.message); }
+      finally { element('pay').disabled = localOrder?.status === 'paid'; element('reset').disabled = false; }
+    };
+  })();
+</script>
+</html>
