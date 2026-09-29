@@ -493,11 +493,13 @@ class ContactService {
 
     // Filter by custom attributes
     if (filters.attributes) {
-      for (const [key, value] of Object.entries(filters.attributes)) {
-        query = query.whereRaw(`attributes->>'${key}' = ?`, [value]);
-      }
-    }
-
+  for (const [key, value] of Object.entries(filters.attributes as Record<string, unknown>)) {
+    query = query.whereRaw(
+      `attributes->>'${key}' = ?`,
+      [String(value)]
+    );
+  }
+}
     return query;
   }
 

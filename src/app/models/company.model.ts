@@ -68,9 +68,7 @@ class CompanyModel extends BaseModel {
         this.query()
           .from('templates')
           .count('*')
-          .where('user_id', (qb: any) => {
-            qb.select('user_id').from('users').where('user_id', userId).limit(1);
-          })
+         .where('user_id', userId)
           .as('templates_count'),
       )
       .first()
