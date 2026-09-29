@@ -3,9 +3,9 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 const phone=require('../src/app/utils/importPhone');
 class HttpError extends Error{constructor({message}){super(message);}}
 function harness(){
- const rows=[{id:'a',company_id:'c',user_id:'u',phone_number_id:'p',country_code:'65',phone_number:'81234567',is_opted_out:false},
- {id:'b',company_id:'c',user_id:'u',phone_number_id:'p2',country_code:'65',phone_number:'81234567',is_opted_out:false},
- {id:'d',company_id:'d',user_id:'v',phone_number_id:'p',country_code:'65',phone_number:'81234567',is_opted_out:false}];
+ const rows=[{id:'a',company_id:'c',user_id:'u',phone_number_id:'p',country_code:'65',phone_number:'+6581234567',is_opted_out:false},
+ {id:'b',company_id:'c',user_id:'u',phone_number_id:'p2',country_code:'65',phone_number:'+6581234567',is_opted_out:false},
+ {id:'d',company_id:'d',user_id:'v',phone_number_id:'p',country_code:'65',phone_number:'+6581234567',is_opted_out:false}];
  const db=()=>{let conditions={};const query={select(){return query;},whereNull(){return query;},whereRaw(){return query;},where(values){Object.assign(conditions,values);return query;},update:async values=>{rows.filter(row=>Object.entries(conditions).every(([k,v])=>row[k]===v)).forEach(row=>Object.assign(row,values));},first:async()=>rows.find(row=>Object.entries(conditions).every(([k,v])=>row[k]===v)),then(resolve){return Promise.resolve(rows.filter(row=>Object.entries(conditions).every(([k,v])=>row[k]===v))).then(resolve);}};return query;};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/services/contactOptOut.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,{exports,Date,Set,require:id=>({'@surefy/database':db,'../utils/importPhone':phone,'@surefy/exceptions/HTTP400Error':HttpError,'@surefy/exceptions/HTTP404Error':HttpError,'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'p',company_id:'c',user_id:'u'})}}[id])});
  return {...exports,rows};

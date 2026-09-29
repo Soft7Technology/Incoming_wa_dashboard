@@ -57,13 +57,13 @@ test('incoming lookup includes country, national number, company, owner and busi
     for (const sender of ['917579380000', '17579380000', '6581234567']) {
       await model.findOrCreateIncoming({ user_id: 'owner', company_id: 'company', phone_number_id: 'business', phone_number: sender });
     }
-    assert.deepEqual(created.map(c => [c.country_code, c.phone_number]), [['91', '7579380000'], ['1', '7579380000'], ['65', '81234567']]);
+    assert.deepEqual(created.map(c => [c.country_code, c.phone_number]), [['91', '+917579380000'], ['1', '+17579380000'], ['65', '+6581234567']]);
     for (let i = 0; i < queries.length; i++) {
       const query = queries[i];
-      for (const column of ['country_code', 'phone_number', 'user_id', 'company_id', 'phone_number_id']) {
+      for (const column of ['phone_number', 'user_id', 'company_id', 'phone_number_id']) {
         assert.ok(query.sql.includes(`"${column}" = ?`));
       }
-      for (const value of ['owner', 'company', 'business', created[i].country_code, created[i].phone_number]) assert.ok(query.bindings.includes(value));
+      for (const value of ['owner', 'company', 'business', created[i].phone_number]) assert.ok(query.bindings.includes(value));
       assert.ok(!query.sql.includes('LIKE'));
     }
   } finally { await db.destroy(); }

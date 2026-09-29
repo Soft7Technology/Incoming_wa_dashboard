@@ -494,7 +494,7 @@ class MessageModel extends BaseModel {
           .orWhereIn(
             db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`country_code || phone_number`))
+              .select(db.raw(`regexp_replace(phone_number, '[^0-9]', '', 'g')`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
@@ -521,7 +521,7 @@ class MessageModel extends BaseModel {
           .orWhereIn(
             db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`country_code || phone_number`))
+              .select(db.raw(`regexp_replace(phone_number, '[^0-9]', '', 'g')`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );

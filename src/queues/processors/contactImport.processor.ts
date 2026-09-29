@@ -95,6 +95,7 @@ async function processContactImport(job: Job<ContactImportJobData>) {
               name: contactData.name || contact.name,
               email: contactData.email || contact.email,
               country_code: contactData.country_code,
+              is_valid: contactData.is_valid,
             });
           } else {
             // Create new contact
@@ -164,6 +165,8 @@ await ContactListModel.update(list.id, {
       imported: successfulCount,
       failed: failedCount,
       skipped: skippedCount,
+      invalid_count: parseResult.invalid,
+      needs_country_count: parseResult.needs_country,
       total: totalContacts + parseResult.invalid,
       errors: allErrors.slice(0, 50), // Return first 50 errors in result
     };

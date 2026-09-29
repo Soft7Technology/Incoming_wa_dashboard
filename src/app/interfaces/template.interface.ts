@@ -18,23 +18,28 @@ export interface Template {
 
 export interface CreateTemplateDto {
   company_id: string;
+  user_id: string;
   waba_id: string;
   name: string;
   language: string;
   category: 'AUTHENTICATION' | 'MARKETING' | 'UTILITY';
   components: TemplateComponent[];
+  parameter_format?: 'POSITIONAL' | 'NAMED';
+  message_send_ttl_seconds?: number;
 }
 
 export interface TemplateComponent {
-  type: 'HEADER' | 'BODY' | 'FOOTER' | 'BUTTONS';
-  format?: 'TEXT' | 'IMAGE' | 'VIDEO' | 'DOCUMENT';
+  [key: string]: unknown;
+  type: string;
+  format?: string;
   text?: string;
   example?: any;
   buttons?: TemplateButton[];
 }
 
 export interface TemplateButton {
-  type: 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER';
+  [key: string]: unknown;
+  type: string;
   text: string;
   url?: string;
   phone_number?: string;
@@ -43,4 +48,15 @@ export interface TemplateButton {
 export interface SyncTemplatesDto {
   company_id: string;
   waba_id: string;
+}
+
+export interface UpdateTemplateDto {
+  category?: CreateTemplateDto['category'];
+  components?: TemplateComponent[];
+  message_send_ttl_seconds?: number;
+}
+
+export interface TemplateAccount {
+  companyId: string;
+  userId: string;
 }

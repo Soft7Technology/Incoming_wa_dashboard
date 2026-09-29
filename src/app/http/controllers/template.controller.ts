@@ -29,7 +29,7 @@ class TemplateController {
    * Create new template
    */
   createTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { waba_id, name, language, category, components } = req.body;
+    const { waba_id, name, language, category, components, parameter_format, message_send_ttl_seconds } = req.body;
 
     if (!waba_id || !name || !language || !category || !components) {
       throw new HTTP400Error({
@@ -39,6 +39,9 @@ class TemplateController {
 
     const template = await TemplateService.createTemplate({
       company_id: req.companyId!,
+      user_id: (req.ownerId ?? req.userId)!,
+      parameter_format,
+      message_send_ttl_seconds,
       waba_id,
       name,
       language,
@@ -49,19 +52,30 @@ class TemplateController {
     return successResponse(req, res, 'Template created successfully', template, HttpStatusCode.CREATED);
   });
 
+  updateTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const template = await TemplateService.updateTemplate(req.params.id, req.body, {
+      companyId: req.companyId!, userId: (req.ownerId ?? req.userId)!,
+    });
+    return successResponse(req, res, 'Template updated successfully', template);
+  });
+
   /**
    * GET /v1/templates
    * Get all templates for company
    */
   getTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { status, category, wabaId,phoneNumberId } = req.query;
+    const { status, category, language, wabaId,phoneNumberId } = req.query;
     const effectiveUserId = req.ownerId ?? req.userId!;
-    const waba_id = wabaId
-    const phone_number_id = phoneNumberId
+    for (const value of [wabaId, phoneNumberId, status, category, language]) {
+      if (value !== undefined && typeof value !== 'string') throw new HTTP400Error({ message: 'Template filters must be strings' });
+    }
+    const waba_id = wabaId as string | undefined;
+    const phone_number_id = phoneNumberId as string | undefined;
 
     const templates = await TemplateService.getTemplates(effectiveUserId, req.companyId!, waba_id, phone_number_id,{
       status,
       category,
+      language,
     });
 
     return successResponse(req, res, 'Templates retrieved successfully', templates);
@@ -71,9 +85,9 @@ class TemplateController {
    * GET /v1/templates/:id
    * Get template by ID
    */
-  getTemplateById = tryCatchAsync(async (req: Request, res: Response) => {
+  getTemplateById = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const template = await TemplateService.getTemplateById(id);
+    const template = await TemplateService.getTemplateById(id, { companyId: req.companyId!, userId: (req.ownerId ?? req.userId)! });
     return successResponse(req, res, 'Template retrieved successfully', template);
   });
 
@@ -81,9 +95,9 @@ class TemplateController {
    * DELETE /v1/templates/:id
    * Delete template
    */
-  deleteTemplate = tryCatchAsync(async (req: Request, res: Response) => {
+  deleteTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    await TemplateService.deleteTemplate(id);
+    await TemplateService.deleteTemplate(id, { companyId: req.companyId!, userId: (req.ownerId ?? req.userId)! });
     return successResponse(req, res, 'Template deleted successfully');
   });
 }

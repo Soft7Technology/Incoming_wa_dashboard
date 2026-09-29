@@ -1,5 +1,5 @@
 import MessageModel from '../models/message.model';
-import { parseImportedPhone } from '../utils/importPhone';
+import { parseStoredContactPhone } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
@@ -9,7 +9,7 @@ import ContactTagRelationModel from '../models/contactTagRelation.model';
 import ContactListModel from '../models/contactList.model';
 import ContactListRelationModel from '../models/contactListRelation.model';
 import ImportJobModel from '../models/importJob.model';
-import XLSXParserService from './xlsxParser.service';
+import XLSXParserService, { ImportPreviewOptions } from './xlsxParser.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { contactImportQueue } from '../../queues/contactImport.queue';
@@ -25,7 +25,7 @@ class ContactService {
    */
   async createContact(userId: string, companyId: string, data: any) {
     let identity;
-    try { identity = parseImportedPhone(data.phone_number, data.country_code || '', Boolean(data.country_code)); }
+    try { identity = parseStoredContactPhone(data.phone_number, data.country_code || ''); }
     catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     const phone = identity.phone_number;
 
@@ -46,7 +46,8 @@ class ContactService {
         status: data.status,
         attributes: data.attributes || {},
         notes: data.notes,
-        country_code: identity.country_code
+        country_code: identity.country_code,
+        is_valid: identity.is_valid
       }, trx);
 
       // Tags live in contact_tag_relations; they are not columns on contacts.
@@ -559,8 +560,12 @@ class ContactService {
   /**
    * Get file preview before import
    */
-  async getXLSXPreview(filePath: string) {
-    return XLSXParserService.getFilePreview(filePath);
+  async getXLSXPreview(filePath: string, options: ImportPreviewOptions = {}) {
+    try {
+      return await XLSXParserService.getValidatedPreview(filePath, options);
+    } catch (error) {
+      throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Unable to preview import file' });
+    }
   }
 
   /**
@@ -638,7 +643,7 @@ class ContactService {
     }
 
     if (filters.contactNumber && filters.contactNumber.length > 0) {
-      query = query.whereRaw("country_code || phone_number = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
+      query = query.whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
     }
 
     // Filter by lists (OR condition)
@@ -758,20 +763,17 @@ class ContactService {
     // Sample data to include in the template
     const sampleData = [
       {
-        phone_number: '9372597458',
-        country_code: '91',
+        phone_number: '+919372597458',
         name: 'John Doe',
         email: 'john@example.com',
       },
       {
-        phone_number: '81234567',
-        country_code: '65',
+        phone_number: '+6581234567',
         name: 'Jane Smith',
         email: 'jane@example.com',
       },
       {
-        phone_number: '2025550123',
-        country_code: '1',
+        phone_number: '+12025550123',
         name: 'Bob Johnson',
         email: 'bob@example.com',
       },
@@ -783,7 +785,6 @@ class ContactService {
     // Set column widths
     worksheet['!cols'] = [
       { wch: 20 }, // phone_number
-      { wch: 15 }, // country_code
       { wch: 25 }, // name
       { wch: 30 }, // email
     ];

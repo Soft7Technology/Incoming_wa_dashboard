@@ -76,13 +76,16 @@ class MetaService {
    */
   async getTemplates(wabaId: string): Promise<any> {
     try {
-      const response = await this.client.get(`/${wabaId}/message_templates`, {
-        params: {
-          limit: 100,
-        },
-      });
-      console.log('Respnse',response.data)
-      return response.data;
+      const data: any[] = [];
+      let after: string | undefined;
+      do {
+        const response = await this.client.get(`/${wabaId}/message_templates`, { params: { limit: 100, after } });
+        data.push(...(response.data.data || []));
+        const next = response.data.paging?.next ? response.data.paging?.cursors?.after : undefined;
+        if (next && next === after) throw new Error('Meta returned a repeated pagination cursor');
+        after = next;
+      } while (after);
+      return { data };
     } catch (error: any) {
       console.error('Meta API Error - Get Templates:', error.response?.data || error.message);
       throw new HTTP500Error({
@@ -101,21 +104,44 @@ class MetaService {
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Create Template:', error.response?.data || error.message);
-      throw new HTTP500Error({
+      const ErrorType = error.response?.status === 400 ? HTTP400Error : HTTP500Error;
+      throw new ErrorType({
         message: 'Failed to create template via Meta API',
         details: error.response?.data || error.message,
       });
     }
   }
 
+  async getTemplate(templateId: string): Promise<any> {
+    try {
+      const response = await this.client.get(`/${templateId}`, {
+        params: { fields: 'id,name,language,category,status,components' },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new HTTP500Error({ message: 'Failed to fetch template from Meta', details: error.response?.data?.error || error.message });
+    }
+  }
+
+  async updateTemplate(templateId: string, payload: any): Promise<any> {
+    try {
+      const response = await this.client.post(`/${templateId}`, payload);
+      return response.data;
+    } catch (error: any) {
+      const ErrorType = error.response?.status === 400 ? HTTP400Error : HTTP500Error;
+      throw new ErrorType({ message: 'Meta rejected the template update', details: error.response?.data?.error || error.message });
+    }
+  }
+
   /**
    * Delete a message template
    */
-  async deleteTemplate(wabaId: string, templateName: string): Promise<any> {
+  async deleteTemplate(wabaId: string, templateName: string, templateId?: string): Promise<any> {
     try {
       const response = await this.client.delete(`/${wabaId}/message_templates`, {
         params: {
           name: templateName,
+          hsm_id: templateId,
         },
       });
       return response.data;

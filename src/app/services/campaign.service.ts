@@ -119,7 +119,7 @@ class CampaignService {
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
         .where('phone_number_id', phoneNumberId.id)
-        .whereRaw('country_code || phone_number = ANY(?)', [canonicalRecipientNumbers]);
+        .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [canonicalRecipientNumbers]);
 
       const existingNumbers = new Set(existingContacts.map((c: any) => buildRecipient(c.phone_number, c.country_code)));
 
@@ -150,7 +150,7 @@ class CampaignService {
     const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
     const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
-      !excludedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)) &&
+      contact.country_code && contact.is_valid !== false && !excludedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)) &&
       (!requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)))));
     if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);

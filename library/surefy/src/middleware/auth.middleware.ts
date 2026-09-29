@@ -19,7 +19,7 @@ export { generateCompanyKey };
 /** Authenticate a user API key and derive its user/company context. */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const legacyKey = req.headers['x-api-key'];
+    const legacyKey = req.headers['Authorization'];
     const authorization = req.headers.authorization;
     let bearerKey: string | undefined;
 

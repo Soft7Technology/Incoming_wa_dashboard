@@ -1,4 +1,4 @@
-import { parseImportedPhone as parsePhone, parseWhatsAppPhone } from '../utils/importPhone';
+import { parseStoredContactPhone } from '../utils/importPhone';
 import { countryCodeFilterValues } from '../utils/countryCode';
 import { BaseModel } from '@surefy/models/base.model';
 import db from '../../database';
@@ -7,7 +7,7 @@ import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 
 function parseImportedPhone(value: unknown, code = '') {
-  try { return parsePhone(value, code, Boolean(code)); }
+  try { return parseStoredContactPhone(value, code); }
   catch (error: any) { throw new HTTP400Error({ message: error.message }); }
 }
 
@@ -67,7 +67,7 @@ class ContactModel extends BaseModel {
       const existing = await transaction('contacts')
         .where({ user_id: data.user_id, company_id: data.company_id, phone_number_id: data.phone_number_id ?? null })
         .whereNull('deleted_at')
-        .where({ phone_number: normalized.phone_number, country_code: normalized.country_code })
+        .where({ phone_number: normalized.phone_number })
         .first();
       if (existing) {
         throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
@@ -81,13 +81,13 @@ class ContactModel extends BaseModel {
     if (data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
     const existing = await this.findById(id);
     return super.update(id, { ...data, ...parseImportedPhone(
-      data.phone_number ?? existing.phone_number, data.country_code ?? existing.country_code ?? '',
+      data.phone_number ?? (data.country_code && !existing.country_code ? existing.phone_number.replace(/^\+/, '') : existing.phone_number), data.country_code ?? existing.country_code ?? '',
     ) });
   }
 
   async findOrCreateIncoming(data: any) {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
-    data = { ...data, ...(data.country_code ? parseImportedPhone(data.phone_number, data.country_code) : parseWhatsAppPhone(data.phone_number)) };
+    data = { ...data, ...(data.country_code ? parseImportedPhone(data.phone_number, data.country_code) : parseImportedPhone(data.phone_number)) };
     const profileName = typeof data.name === 'string' ? data.name.trim() : '';
     const isPhoneName = (name: string) => /^[+\d\s().-]+$/.test(name) && /\d/.test(name);
     const refreshName = async (contact: any) => {
@@ -116,26 +116,26 @@ class ContactModel extends BaseModel {
     }
   }
 
-  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string, countryCode?: string) {
-    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseWhatsAppPhone(phoneNumber);
+  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string, countryCode?: string | null) {
+    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseImportedPhone(phoneNumber);
     const query = this.query()
       .where('user_id', userId)
       .where('phone_number_id', phoneNumberId ?? null)
       .whereNull('deleted_at')
-      .where(identity)
+      .where({ phone_number: identity.phone_number })
       .first();
     if (companyId) query.where('company_id', companyId);
     return query;
   }
 
-  async findByPhone(userId: string, phoneNumber: string, countryCode?: string) {
-    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseWhatsAppPhone(phoneNumber);
+  async findByPhone(userId: string, phoneNumber: string, countryCode?: string | null) {
+    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseImportedPhone(phoneNumber);
     return this.query()
       .where(function (this: any) {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
       })
-      .where(identity)
+      .where({ phone_number: identity.phone_number })
       .whereNull('deleted_at')
       .first();
   }
@@ -341,7 +341,7 @@ class ContactModel extends BaseModel {
   async findByUserPhoneNumber(userId: string, phoneNumber: string) {
     return this.query()
       .where({ user_id: userId })
-      .where(parseWhatsAppPhone(phoneNumber))
+      .where({ phone_number: parseImportedPhone(phoneNumber).phone_number })
       .whereNull('deleted_at')
       .first();
   }

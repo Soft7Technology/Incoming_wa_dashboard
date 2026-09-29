@@ -262,13 +262,18 @@ class ContactController {
       throw new HTTP400Error({ message: 'XLSX file is required' });
     }
 
-    const preview = await ContactService.getXLSXPreview(file.path);
-    console.log(`Generated preview: ${JSON.stringify(preview)}`);
-
-    // Clean up temporary file
-    fs.unlinkSync(file.path);
-
-    return successResponse(req, res, 'File preview generated successfully', preview);
+    try {
+      const { phone_column, name_column, email_column, country_code } = req.body || {};
+      const preview = await ContactService.getXLSXPreview(file.path, {
+        phone_column, name_column, email_column, country_code,
+      });
+      return successResponse(req, res, 'File preview generated successfully', preview);
+    } finally {
+      // Preview uploads are temporary, including when validation fails.
+      await fs.promises.unlink(file.path).catch(error => {
+        if (error.code !== 'ENOENT') console.error('Unable to remove import preview file:', error.message);
+      });
+    }
   });
 
 

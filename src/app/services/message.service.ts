@@ -1,4 +1,5 @@
 import contactOptOut from './contactOptOut.service';
+import { recordReminderDelivery } from './reminderDelivery.service';
 import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
 import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
@@ -136,7 +137,7 @@ class MessageService {
     let templateDefinitionComponents: any[] | null = null;
 
     if (data.type === 'template' && data.template?.name && templateLanguage) {
-      const template = resolved?.templateRecord || await TemplateModel.findByNameAndLanguage(data.company_id || data.user_id, data.template.name, templateLanguage);
+      const template = resolved?.templateRecord || await TemplateModel.findByNameAndLanguage(data.company_id || data.user_id, data.template.name, templateLanguage, phoneNumber.waba_id);
       if (template) {
         templateRecordId = template.id;
         // Save template definition components for display (BODY, HEADER, FOOTER with text)
@@ -357,7 +358,7 @@ class MessageService {
     let templateDefinitionComponents: any[] | null = null;
 
     if (data.type === 'template' && data.template?.name && templateLanguage) {
-      const template = await TemplateModel.findByNameAndLanguage(data.user_id, data.template.name, templateLanguage);
+      const template = await TemplateModel.findByNameAndLanguage(data.company_id || data.user_id, data.template.name, templateLanguage, phoneNumber.waba_id);
       if (template) {
         templateRecordId = template.id;
         if (Array.isArray(template.components) && template.components.length > 0) {
@@ -508,6 +509,7 @@ class MessageService {
    * Handle message status update from webhook
    */
   async handleStatusUpdate(statusUpdate: MessageStatusUpdate) {
+    await recordReminderDelivery(statusUpdate);
     const message = await MessageModel.findByWamid(statusUpdate.wamid);
     if (!message) {
       console.warn(`Message not found for WAMID: ${statusUpdate.wamid}`);

@@ -1,6 +1,6 @@
 import db from '@surefy/database';
 import phones from '../models/phoneNumber.model';
-import { buildRecipient, parseWhatsAppPhone } from '../utils/importPhone';
+import { buildRecipient, parseWhatsAppPhone, toContactPhone } from '../utils/importPhone';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 
@@ -136,9 +136,9 @@ class ContactOptOutService {
   }
   async isBlocked(phone: PhoneContext, recipient: string): Promise<boolean> {
     if (!phone.id || !phone.company_id || !phone.user_id) throw new HTTP400Error({ message: 'Campaign phone scope is required' });
-    const identity = parseWhatsAppPhone(recipient);
+    const identity = toContactPhone(parseWhatsAppPhone(recipient));
     return Boolean(await db('contacts').where({ company_id: phone.company_id, user_id: phone.user_id,
-      phone_number_id: phone.id, ...identity, is_opted_out: true }).first('id'));
+      phone_number_id: phone.id, phone_number: identity.phone_number, is_opted_out: true }).first('id'));
   }
   async excluded(companyId: string, userId: string, phoneNumberId: string): Promise<Set<string>> {
     const phone = await this.ownedPhone({ companyId, ownerId: userId, actorId: userId }, phoneNumberId);

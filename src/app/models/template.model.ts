@@ -20,7 +20,8 @@ class TemplateModel extends BaseModel {
   }
 
   async findByCompanyId(userId: string, companyId?: string, wabaId?: string, filters: any = {}) {
-    const query = this.query().whereNull('deleted_at');
+    const query = this.query().whereNull('deleted_at')
+      .whereIn('waba_id', this.db('waba_accounts').select('id').where({ user_id: userId, company_id: companyId }).whereNull('deleted_at'));
 
     if (companyId) {
       query.where({ company_id: companyId });
@@ -34,6 +35,8 @@ class TemplateModel extends BaseModel {
       query.where({ status: filters.status });
     }
 
+    if (filters.language) query.where({ language: filters.language });
+
     if (filters.category) {
       query.where({ category: filters.category });
     }
@@ -45,10 +48,13 @@ class TemplateModel extends BaseModel {
     return this.query().where({ waba_id: wabaId, deleted_at: null });
   }
 
-  async findByNameAndLanguage(companyId: string, name: string, language: string) {
-    return this.query()
-      .where({ company_id: companyId, name, language, deleted_at: null })
-      .first();
+  async findByNameAndLanguage(companyId: string, name: string, language: string, wabaId?: string) {
+    const query = this.query().where({ company_id: companyId, name, language, deleted_at: null });
+    if (wabaId) query.where({ waba_id: wabaId });
+    if (wabaId) return query.first();
+    // Legacy callers without a WABA must never select another account's variant arbitrarily.
+    const rows = await query.limit(2);
+    return rows.length === 1 ? rows[0] : undefined;
   }
 
   async updateSyncTimestamp(id: string) {
