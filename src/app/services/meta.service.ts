@@ -36,7 +36,6 @@ class MetaService {
     }
     if (!payload.to) throw new HTTP400Error({ message: 'Recipient is required' });
     try {
-      console.log('Paylod', payload);
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {
