@@ -1,3 +1,4 @@
+import { campaignRecipientNumber } from '../utils/campaignPhone';
 import { parseWhatsAppPhone } from '../utils/importPhone';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
@@ -27,8 +28,10 @@ class MetaService {
   /**
    * Send a message via WhatsApp Business API
    */
-  async sendMessage(phoneNumberId: string, payload: any): Promise<any> {
-    if (payload.to !== undefined) {
+  async sendMessage(phoneNumberId: string, payload: any, allowUnverifiedRecipient = false): Promise<any> {
+    if (allowUnverifiedRecipient && payload.to !== undefined) {
+      payload = { ...payload, to: campaignRecipientNumber(payload.to) };
+    } else if (payload.to !== undefined) {
       try {
         const identity = parseWhatsAppPhone(payload.to);
         payload = { ...payload, to: identity.country_code + identity.phone_number };

@@ -1,4 +1,4 @@
-import { buildRecipient } from '../../app/utils/importPhone';
+import { campaignRecipientNumber } from '../../app/utils/campaignPhone';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
@@ -224,7 +224,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     }
 
     // Skip invalid numbers
-    if (!contact.is_valid) {
+    if (!contact.is_valid && contact.invalid_reason) {
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
         error_message: `Invalid number: ${contact.invalid_reason}`,
       });
@@ -234,7 +234,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
 
     infrastructureOperation = false;
     // Resolve legacy local numbers using this contact's country, never the sender's country.
-    recipientPhone = buildRecipient(contact.phone_number, contact.country_code);
+    recipientPhone = campaignRecipientNumber(contact.phone_number, contact.country_code);
     // Build template payload
     const templatePayload = buildTemplatePayload(
       template,
@@ -264,7 +264,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
       to: recipientPhone,
       type: 'template',
       template: templatePayload,
-    }, { phoneNumber: phone, templateRecord: template });
+    }, { phoneNumber: phone, templateRecord: template, allowUnverifiedRecipient: true });
 
     infrastructureOperation = true;
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));

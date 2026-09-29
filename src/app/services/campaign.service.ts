@@ -1,6 +1,5 @@
 import contactOptOut from './contactOptOut.service';
-import { resolveCampaignPhone, validateCampaignPhoneInputs } from '../utils/campaignPhone';
-import { buildRecipient } from '../utils/importPhone';
+import { resolveOptionalCampaignPhone, campaignRecipientNumber, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
@@ -72,7 +71,7 @@ class CampaignService {
     // ── Resolve tag names → tag IDs ──────────────────────────────────────
     // Frontend sends contact_filters.tags as an array of tag NAMES.
     // The contact filter query expects tag_ids (UUIDs). Resolve here.
-    const filters = { ...(data.contact_filters || {}), contactNumber: data.contact_filters?.contactNumber?.map(String) };
+    const filters = { exclude_invalid: false, ...(data.contact_filters || {}), contactNumber: data.contact_filters?.contactNumber?.map(String) };
 
     if (filters.tags && filters.tags.length > 0 && (!filters.tag_ids || filters.tag_ids.length === 0)) {
       const resolvedTagIds: string[] = [];
@@ -97,19 +96,19 @@ class CampaignService {
       // Infer only from the supplied international number; never default to the sender's country.
       const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
       const matchedNumbers = new Set<string>();
-      const normalizedPhones = new Map<string, string>();
+      const normalizedPhones = new Map<string, string | null>();
       for (const value of filters.contactNumber) {
         try {
-          const resolvedPhone = resolveCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
-            { countryCode: data.country_code === undefined ? undefined : String(data.country_code), allowBareInternational: true });
-          const parsed = { ...resolvedPhone, phone_number: buildRecipient(resolvedPhone.phone_number, resolvedPhone.country_code) };
+          const resolvedPhone = resolveOptionalCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
+            data.country_code === undefined ? undefined : String(data.country_code));
+          const parsed = { ...resolvedPhone, phone_number: campaignRecipientNumber(resolvedPhone.phone_number, resolvedPhone.country_code) };
           if (parsed.contact) {
             matchedNumbers.add(parsed.phone_number);
           }
           normalizedPhones.set(parsed.phone_number, parsed.country_code);
         } catch (error) {
           throw new HTTP400Error({
-            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Supply country_code for a national number or use an international number such as +6581234567`,
+            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}`,
           });
         }
       }
@@ -121,7 +120,7 @@ class CampaignService {
         .where('phone_number_id', phoneNumberId.id)
         .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [canonicalRecipientNumbers]);
 
-      const existingNumbers = new Set(existingContacts.map((c: any) => buildRecipient(c.phone_number, c.country_code)));
+      const existingNumbers = new Set(existingContacts.map((c: any) => campaignRecipientNumber(c.phone_number, c.country_code)));
 
       // 3. Filter missing numbers
       const missingNumbers = canonicalRecipientNumbers.filter(
@@ -150,8 +149,8 @@ class CampaignService {
     const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
     const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
-      contact.country_code && contact.is_valid !== false && !excludedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)) &&
-      (!requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code)))));
+      !excludedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)) &&
+      (!requestedNumbers || requestedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)))));
     if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
 
@@ -587,7 +586,7 @@ class CampaignService {
       }
 
       // Skip invalid numbers
-      if (!contact.is_valid) {
+      if (!contact.is_valid && contact.invalid_reason) {
         await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
           error_message: `Invalid number: ${contact.invalid_reason}`,
         });
@@ -617,10 +616,10 @@ class CampaignService {
         campaign_id: campaign.id,
         profile_name: contact.name,
         phone_number_id: campaign.phone_number_id,
-        to: buildRecipient(contact.phone_number, contact.country_code),
+        to: campaignRecipientNumber(contact.phone_number, contact.country_code),
         type: 'template',
         template: templatePayload,
-      });
+      }, { allowUnverifiedRecipient: true });
 
       // Update campaign message status
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'sent', {

@@ -1,3 +1,4 @@
+import { campaignRecipientNumber } from '../utils/campaignPhone';
 import contactOptOut from './contactOptOut.service';
 import { recordReminderDelivery } from './reminderDelivery.service';
 import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
@@ -52,7 +53,7 @@ class MessageService {
   /**
    * Send messages
    */
-  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any }) {
+  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any; allowUnverifiedRecipient?: boolean }) {
     const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
@@ -71,11 +72,15 @@ class MessageService {
     // }
 
     try {
+      if (resolved?.allowUnverifiedRecipient) {
+        data = { ...data, to: campaignRecipientNumber(data.to, data.country_code) };
+      } else {
       const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
       const recipient = data.country_code
         ? parseImportedPhone(data.to, data.country_code, true)
         : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
       data = { ...data, to: buildRecipient(recipient.phone_number, recipient.country_code) };
+      }
     } catch (error: any) { throw new HTTP400Error({ message: `Invalid recipient: ${error.message}` }); }
 
     // Build Meta API payload
@@ -240,7 +245,7 @@ class MessageService {
 
     try {
       // Send via Meta API
-      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload);
+      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, resolved?.allowUnverifiedRecipient);
 
       // Update message with WAMID
       await MessageModel.update(message.id, {

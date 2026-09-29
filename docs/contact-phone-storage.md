@@ -29,3 +29,7 @@ Actual import uses the same parser. Unresolved contacts are included in import, 
 Apply pending migrations through `20260930000003_allow_unresolved_contact_phones.ts` with API and workers stopped, then deploy matching code together. The new migration makes country_code nullable, normalizes existing contacts, and preserves company/owner/business-number uniqueness. Duplicate normalized identities cause the migration to fail before rewriting rows. Earlier pending migrations still run their existing preflight checks and may require data cleanup first.
 
 No database migration was executed during this change. Back up existing data before migration. Automated rollback of the new migration is intentionally blocked because unresolved contacts cannot be converted safely into mandatory split-country storage.
+
+## Campaign recipient override
+
+Campaigns accept numeric recipients without a separate country_code. Unresolved numbers are preserved and attempted without guessing a country. Campaign creation includes these contacts by default; explicitly setting contact_filters.exclude_invalid to true excludes contacts marked is_valid=false. Malformed input remains rejected. Opt-outs and recorded invalid-number failures still prevent sending. This permissive sending behavior is limited to the internal campaign send path; ordinary message API validation is unchanged. Meta may reject an unresolved number, in which case the campaign records the failure.
