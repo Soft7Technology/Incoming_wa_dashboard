@@ -1,9 +1,35 @@
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { buildRecipient, parseWhatsAppPhone } from '../utils/importPhone';
 import { BaseModel } from '@surefy/models/base.model';
 
 class MessageModel extends BaseModel {
   constructor() {
     super('messages');
+  }
+
+  /** Commit the outbound row before Meta; even an uncertain outcome blocks a resend. */
+  async createOutbound(data: {
+    company_id?: string; campaign_id?: string | null; phone_number_id: string;
+    to_phone: string; [key: string]: unknown;
+  }) {
+    if (!data.campaign_id) return this.create(data);
+    const recipient = data.to_phone.replace(/[^0-9]/g, '');
+    return this.db.transaction(async trx => {
+      // Serialize competing callers across API and worker processes, using existing history.
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        `${data.company_id}:${data.campaign_id}`, `${data.phone_number_id}:${recipient}`,
+      ]);
+      const existing = await trx('messages').where({
+        company_id: data.company_id, campaign_id: data.campaign_id,
+        phone_number_id: data.phone_number_id, direction: 'outbound',
+      }).whereRaw("regexp_replace(to_phone, '[^0-9]', '', 'g') = ?", [recipient]).first('id');
+      if (existing) {
+        throw Object.assign(new HTTP400Error({ message: 'This campaign already sent or attempted this recipient. Resending is disabled.' }), {
+          code: 'CAMPAIGN_MESSAGE_EXISTS',
+        });
+      }
+      return this.create(data, trx);
+    }, { isolationLevel: 'read committed' });
   }
 
   /** One lookup for the current contact page; never match national-number suffixes. */
@@ -353,14 +379,20 @@ class MessageModel extends BaseModel {
     }
     const validUuidIds = Array.from(new Set(targetPhoneIds.filter((id) => isUuid(id))));
 
-    const result = await this.query()
+    const result: any[] = await this.query()
       .from('messages')
-      .leftJoin('templates as t', (builder) => {
-        builder
-          .on(db.raw('CAST(t.user_id AS VARCHAR) = CAST(messages.user_id AS VARCHAR)'))
-          .andOn(db.raw(`t.name = messages.content->'template'->>'name'`))
-          .andOn(db.raw(`t.language = messages.content->'template'->'language'->>'code'`));
-      })
+      // A template name can exist in several WABAs. Never multiply message rows.
+      .joinRaw(`LEFT JOIN LATERAL (
+        SELECT template.components FROM templates AS template
+        WHERE template.company_id = messages.company_id
+          AND (template.id = messages.template_id OR (
+            messages.template_id IS NULL AND template.user_id = messages.user_id
+            AND template.name = messages.content->'template'->>'name'
+            AND template.language = messages.content->'template'->'language'->>'code'
+            AND template.waba_id = (SELECT waba_id FROM phone_numbers WHERE id = messages.phone_number_id)
+          ))
+        ORDER BY template.id LIMIT 1
+      ) AS t ON true`)
       .select([
         'messages.id',
         'messages.phone_number_id',

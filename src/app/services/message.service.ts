@@ -53,7 +53,7 @@ class MessageService {
   /**
    * Send messages
    */
-  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any; allowUnverifiedRecipient?: boolean }) {
+  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any; allowUnverifiedRecipient?: boolean; source?: string; campaignMessageId?: string }) {
     const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
@@ -224,7 +224,7 @@ class MessageService {
       throw error;
     }
 
-    const message = await MessageModel.create({
+    const message = await MessageModel.createOutbound({
       id: data.messageUUID,
       user_id: data.user_id,
       company_id: data.company_id,
@@ -252,6 +252,8 @@ class MessageService {
         console.info('[Campaign Send] Calling Meta once', {
           campaignId: data.campaign_id,
           messageId: message.id,
+          source: resolved?.source || 'message-service',
+          campaignMessageId: resolved?.campaignMessageId,
           processId: process.pid,
           workerMode: process.env.WORKER_MODE === 'true',
         });

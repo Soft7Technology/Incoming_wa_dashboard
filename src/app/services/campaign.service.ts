@@ -648,7 +648,7 @@ class CampaignService {
       to: testPhoneNumber,
       type: 'template',
       template: templatePayload,
-    });
+    }, { source: 'campaign-test' });
 
     return {
       message: 'Test message sent successfully',

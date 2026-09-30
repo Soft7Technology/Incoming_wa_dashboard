@@ -68,3 +68,11 @@ test('concurrent workers for the same recipient call the sender once',async()=>{
  await Promise.all([h.run('same'),h.run('same')]);
  assert.equal(h.sends(),1);
 });
+
+test('existing campaign message is skipped without stopping remaining recipients',async()=>{
+ const h=worker({sendError:Object.assign(Error('existing message'),{code:'CAMPAIGN_MESSAGE_EXISTS'}),total:50});
+ const result=await h.process();
+ assert.equal(result.status,'completed');
+ assert.equal(h.statuses.length,50);
+ assert.ok(h.statuses.every(status=>status==='skipped'));
+});
