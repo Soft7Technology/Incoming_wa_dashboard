@@ -61,6 +61,10 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const campaign = await CampaignModel.findById(campaignId);
     if (!campaign || campaign.deleted_at) return { status: 'removed' };
     if (campaign.company_id !== companyId) throw new Error('Campaign does not belong to company');
+    if (campaign.status === 'failed' && await CampaignModel.completeIfNoPendingMessages(campaignId)) {
+      await releaseCampaignUserSlot(campaign.user_id, campaignId);
+      return { status: 'completed' };
+    }
     if (['paused', 'completed', 'failed'].includes(campaign.status)) {
       await releaseCampaignUserSlot(campaign.user_id, campaignId);
       return { status: campaign.status };
@@ -175,7 +179,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
           console.info('[Campaign Worker] Completed after execution error because no recipients remain pending', { campaignId, jobId: job.id, phase });
           return { status: 'completed' };
         }
-        console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
+        console.error('[Campaign Worker] Campaign stopped by an execution error; pending recipients remain', { campaignId, jobId: job.id, reason: getMessageError(error) });
         const failure = getMessageError(error);
         await CampaignModel.markRunningJobFailed(campaignId, `${phase}: ${failure.error_code}: ${failure.error_message}`);
         releaseSlot = true;

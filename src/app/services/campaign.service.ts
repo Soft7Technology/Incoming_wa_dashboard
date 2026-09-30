@@ -303,7 +303,8 @@ class CampaignService {
     const campaign = await CampaignModel.findById(campaignId);
     console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
     if (campaign?.status === 'failed' && !await CampaignMessageModel.getPendingCount(campaignId)) {
-      throw new HTTP400Error({ message: 'No unattempted recipients remain. Failed messages will not be retried.' });
+      await CampaignModel.completeIfNoPendingMessages(campaignId);
+      return { message: 'Campaign processing is complete. Failed messages will not be retried.', campaign_id: campaignId, status: 'completed' };
     }
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });

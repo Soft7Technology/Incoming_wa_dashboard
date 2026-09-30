@@ -58,7 +58,7 @@ test('full worker completes all 50 recipients across batches even when every sen
 test('scheduler does not fail or requeue a running campaign when its job is not visible',async()=>{
  let writes=0;
  const exports={};const js=ts.transpileModule(fs.readFileSync('src/app/services/campaignRecovery.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
- const dependencies={'../models/campaign.model':{getRunningCampaigns:async()=>[{id:'c'}],markRunningJobFailed:async()=>writes++},'../../queues/campaignExecution.queue':{campaignExecutionQueue:{getJob:async()=>null,add:async()=>writes++}}};
+ const dependencies={'../models/campaign.model':{getCampaignsForReconciliation:async()=>[{id:'c',status:'running'}],completeIfNoPendingMessages:async()=>false,markRunningJobFailed:async()=>writes++},'../../queues/campaignExecution.queue':{campaignExecutionQueue:{client:Promise.resolve({get:async()=>null}),getJob:async()=>null,add:async()=>writes++}}};
  vm.runInNewContext(js,{exports,require:n=>dependencies[n],console:{warn(){},error(){},info(){}}});
  await exports.reconcileFailedCampaignJobs();assert.equal(writes,0);
 });
@@ -76,3 +76,18 @@ test('existing campaign message is skipped without stopping remaining recipients
  assert.equal(h.statuses.length,50);
  assert.ok(h.statuses.every(status=>status==='skipped'));
 });
+
+for (const locked of [false,true]) {
+ test(`failed campaign without pending recipients is finalized only without a live sender: ${locked}`,async()=>{
+  let completed=0,queued=0;
+  const exports={};
+  const js=ts.transpileModule(fs.readFileSync('src/app/services/campaignRecovery.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
+  const deps={
+   '../models/campaign.model':{getCampaignsForReconciliation:async()=>[{id:'c',status:'failed'}],completeIfNoPendingMessages:async()=>{completed++;return true;},markRunningJobFailed:async()=>assert.fail('must not mark campaign failed')},
+   '../../queues/campaignExecution.queue':{campaignExecutionQueue:{client:Promise.resolve({get:async()=>locked?'owner':null}),getJob:async()=>assert.fail('completion needs no queue job'),add:async()=>queued++}}
+  };
+  vm.runInNewContext(js,{exports,require:n=>deps[n],console:{info(){},warn(){},error(e){throw e;}}});
+  await exports.reconcileFailedCampaignJobs();
+  assert.equal(completed,locked?0:1);assert.equal(queued,0);
+ });
+}
