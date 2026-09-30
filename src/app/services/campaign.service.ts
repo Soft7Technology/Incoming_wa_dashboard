@@ -296,56 +296,15 @@ class CampaignService {
    * Start campaign execution (queued in background)
    */
   async reBroadcastCampaign(campaignId: string) {
-    const campaign = await CampaignModel.findById(campaignId);
-    console.info('[Campaign] Rebroadcast requested', { campaignId, status: campaign?.status });
-    if (!campaign) {
-      throw new HTTP404Error({ message: 'Campaign not found' });
-    }
-
-    if (!['scheduled', 'draft', 'paused', 'failed', 'completed'].includes(campaign.status)) {
-      throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
-    }
-
-    const existingJob = await campaignExecutionQueue.getJob(campaignId);
-    if (existingJob) {
-      const state = await existingJob.getState();
-      if (state === 'completed' || state === 'failed' || (campaign.status === 'paused' && state !== 'active')) {
-        await existingJob.remove();
-      } else {
-        return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
-      }
-    }
-    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date(), completed_at: null });
-
-    // Queue campaign execution in background worker
-    await campaignExecutionQueue.add(
-      `campaign-retry-${campaignId}`,
-      {
-        campaignId: campaignId,
-        userId: campaign.user_id,
-        status:'failed',
-        error_message:'This message was not delivered to maintain healthy ecosystem engagement.',
-        companyId: campaign.company_id,
-      },
-      {
-        jobId: campaignId, // Use campaign ID as job ID for easy tracking
-      }
-    );
-
-    return {
-      message: 'Campaign queued for execution successfully',
-      campaign_id: campaignId,
-      status: 'queued'
-    };
+    throw new HTTP400Error({ message: 'Campaign retries are disabled. Failed or unconfirmed recipients will not be resent.' });
   }
 
-
-    /**
-   * Start campaign execution (queued in background)
-   */
   async startCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
     console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
+    if (campaign?.status === 'failed') {
+      throw new HTTP400Error({ message: 'Failed campaigns cannot be restarted; automatic and manual retries are disabled' });
+    }
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
@@ -609,6 +568,7 @@ class CampaignService {
       const messageUUID = uuidv4();
 
       // // Send message via MessageService
+      if (!await CampaignMessageModel.claimSingleAttempt(campaignMessage.id)) return;
       const message = await MessageService.sendMessage({
         messageUUID,
         user_id: campaign.user_id,

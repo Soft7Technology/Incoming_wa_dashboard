@@ -8,11 +8,7 @@ export async function reconcileFailedCampaignJobs() {
     try {
       const job = await campaignExecutionQueue.getJob(campaign.id);
       if (!job) {
-        // BullMQ deduplicates this ID if another scheduler enqueues it first.
-        await campaignExecutionQueue.add(`campaign-${campaign.id}`, {
-          campaignId: campaign.id, userId: campaign.user_id, companyId: campaign.company_id,
-        }, { jobId: campaign.id });
-        console.warn('[Campaign Recovery] Requeued running campaign with missing job', { campaignId: campaign.id });
+        await CampaignModel.markRunningJobFailed(campaign.id, 'Campaign execution job missing; automatic recovery is disabled');
         continue;
       }
       if (await job.getState() !== 'failed') continue;

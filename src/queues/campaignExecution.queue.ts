@@ -14,11 +14,7 @@ export interface CampaignExecutionJobData {
 export const campaignExecutionQueue = new Queue<CampaignExecutionJobData>('campaign-execution', {
   connection: redisConfig,
   defaultJobOptions: {
-    attempts: 3,
-    backoff: {
-      type: 'exponential',
-      delay: 10000, // Start with 10 seconds
-    },
+    attempts: 1,
     removeOnComplete: {
       age: 48 * 3600, // Keep completed jobs for 48 hours
       count: 200, // Keep max 200 completed jobs

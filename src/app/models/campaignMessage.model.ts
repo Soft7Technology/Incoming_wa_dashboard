@@ -120,6 +120,16 @@ class CampaignMessageModel extends BaseModel {
     return query.orderBy('campaign_messages.created_at').orderBy('campaign_messages.id');
   }
 
+  /** Failed-unconfirmed is deliberately terminal: uncertain sends require review, not resending. */
+  async claimSingleAttempt(id: string): Promise<boolean> {
+    const rows = await this.query().where({ id, status: 'pending' }).whereNull('message_id')
+      .update({ status: 'failed', failed_at: new Date(), retry_after: null,
+        error_code: 'SEND_OUTCOME_UNCONFIRMED',
+        error_message: 'Send attempt reserved; delivery outcome not confirmed. Automatic retries disabled.' })
+      .returning('id');
+    return rows.length === 1;
+  }
+
   async recordSent(id: string, campaignId: string, contactId: string, messageId: string, cost: number) {
     return this.db.transaction(async trx => {
       await trx('campaign_messages').where({ id }).update({

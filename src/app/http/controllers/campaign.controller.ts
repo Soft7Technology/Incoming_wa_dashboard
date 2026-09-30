@@ -137,8 +137,7 @@ class CampaignController {
    */
    reBroadcastCampaign = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const result = await CampaignService.reBroadcastCampaign(id);
-    return successResponse(req, res, result.message);
+    await CampaignService.reBroadcastCampaign(id);
   });
   
 
