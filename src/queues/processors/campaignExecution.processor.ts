@@ -207,15 +207,6 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
       return;
     }
 
-    // Skip invalid numbers
-    if (!contact.is_valid && contact.invalid_reason) {
-      await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
-        error_message: `Invalid number: ${contact.invalid_reason}`,
-      });
-      await CampaignModel.incrementCount(campaign.id, 'invalid_numbers_count');
-      return;
-    }
-
     infrastructureOperation = false;
     // Resolve legacy local numbers using this contact's country, never the sender's country.
     recipientPhone = campaignRecipientNumber(contact.phone_number, contact.country_code);
@@ -263,7 +254,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     if (attemptReserved) {
       // The recipient is already durably failed/unconfirmed. Failure to save an
       // outcome must neither resend it nor stop unrelated recipients.
-      const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_MESSAGE_EXISTS'].includes(error.code);
+      const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_MESSAGE_EXISTS', 'TEMPLATE_DUPLICATE_WINDOW'].includes(error.code);
       console.error('[Campaign Worker] Recipient attempt ended without confirmation', {
         campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: getMessageError(error),
       });

@@ -266,6 +266,8 @@ class CampaignService {
     campaign.delivered_count = Number(stats.delivered_count || 0);
     campaign.read_count = Number(stats.read_count || 0);
     campaign.failed_count = Number(stats.failed_count || 0);
+    campaign.pending_count = Number(stats.pending_count || 0);
+    campaign.skipped_count = Number(stats.skipped_count || 0);
 
     if (campaign.status === 'running') {
       const job = await campaignExecutionQueue.getJob(campaignId);

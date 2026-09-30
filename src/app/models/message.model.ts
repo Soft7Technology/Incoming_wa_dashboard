@@ -12,21 +12,42 @@ class MessageModel extends BaseModel {
     company_id?: string; campaign_id?: string | null; phone_number_id: string;
     to_phone: string; [key: string]: unknown;
   }) {
-    if (!data.campaign_id) return this.create(data);
+    const content = data.content as { template?: { name?: string } } | undefined;
+    const templateName = data.type === 'template' ? content?.template?.name : undefined;
+    if (!data.campaign_id && !templateName) return this.create(data);
     const recipient = data.to_phone.replace(/[^0-9]/g, '');
     return this.db.transaction(async trx => {
       // Serialize competing callers across API and worker processes, using existing history.
       await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
-        `${data.company_id}:${data.campaign_id}`, `${data.phone_number_id}:${recipient}`,
+        `${data.company_id}:${data.phone_number_id}`, recipient,
       ]);
-      const existing = await trx('messages').where({
-        company_id: data.company_id, campaign_id: data.campaign_id,
-        phone_number_id: data.phone_number_id, direction: 'outbound',
-      }).whereRaw("regexp_replace(to_phone, '[^0-9]', '', 'g') = ?", [recipient]).first('id');
-      if (existing) {
-        throw Object.assign(new HTTP400Error({ message: 'This campaign already sent or attempted this recipient. Resending is disabled.' }), {
-          code: 'CAMPAIGN_MESSAGE_EXISTS',
-        });
+      if (data.campaign_id) {
+        const existing = await trx('messages').where({
+          company_id: data.company_id, campaign_id: data.campaign_id,
+          phone_number_id: data.phone_number_id, direction: 'outbound',
+        }).whereRaw("regexp_replace(to_phone, '[^0-9]', '', 'g') = ?", [recipient]).first('id');
+        if (existing) {
+          throw Object.assign(new HTTP400Error({ message: 'This campaign already sent or attempted this recipient. Resending is disabled.' }), {
+            code: 'CAMPAIGN_MESSAGE_EXISTS',
+          });
+        }
+      }
+      if (templateName) {
+        // Include failed/queued outcomes: a timeout does not prove Meta rejected the send.
+        // Match by template name across languages and parameter values, as requested.
+        const recent = await trx('messages').where({
+          company_id: data.company_id, phone_number_id: data.phone_number_id,
+          direction: 'outbound', type: 'template',
+        }).whereRaw("regexp_replace(to_phone, '[^0-9]', '', 'g') = ?", [recipient])
+          .whereRaw("content->'template'->>'name' = ?", [templateName])
+          .where('created_at', '>', trx.raw("clock_timestamp() - interval '5 minutes'"))
+          .first('id');
+        if (recent) {
+          throw Object.assign(new HTTP400Error({
+            message: 'This template was already sent or attempted to this recipient within the last 5 minutes.',
+            details: { code: 'TEMPLATE_DUPLICATE_WINDOW', window_seconds: 300 },
+          }), { code: 'TEMPLATE_DUPLICATE_WINDOW' });
+        }
       }
       return this.create(data, trx);
     }, { isolationLevel: 'read committed' });

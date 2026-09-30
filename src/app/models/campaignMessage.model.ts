@@ -228,6 +228,7 @@ class CampaignMessageModel extends BaseModel {
       .select(
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'sent')     AS sent_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'pending')  AS pending_count`),
+        this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'skipped') AS skipped_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'delivered') AS delivered_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'read')    AS read_count`),
         this.db.raw(`

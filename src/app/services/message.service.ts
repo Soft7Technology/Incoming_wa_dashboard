@@ -445,7 +445,7 @@ class MessageService {
     }
 
     // Create message record
-    const message = await MessageModel.create({
+    const message = await MessageModel.createOutbound({
       id: data.messageUUID,
       user_id: data.user_id,
       company_id: data.company_id,
