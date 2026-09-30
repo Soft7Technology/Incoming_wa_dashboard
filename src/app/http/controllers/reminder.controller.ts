@@ -10,6 +10,11 @@ function requestScope(req: JWTAuthRequest): ReminderScope {
 }
 
 class ReminderController {
+  getSummary = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const result = await ReminderService.summary(requestScope(req), req.query.timezone);
+    return successResponse(req, res, 'Reminder summary retrieved', result);
+  });
+
   getTemplates = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const scope = requestScope(req);
     const result = await ReminderService.templates(scope, req.query.phone_number_id as string);

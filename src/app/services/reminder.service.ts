@@ -198,6 +198,15 @@ class ReminderService {
     return this.formatReminder(row);
   }
 
+  async summary(scope: ReminderScope, timezone: unknown = 'UTC') {
+    if (typeof timezone !== 'string' || !timezone.trim()) {
+      throw new HTTP400Error({ message: 'timezone must be an IANA timezone such as Asia/Kolkata' });
+    }
+    try { timezone = new Intl.DateTimeFormat('en', { timeZone: timezone }).resolvedOptions().timeZone; }
+    catch { throw new HTTP400Error({ message: 'Invalid timezone' }); }
+    return ReminderModel.summary(scope, timezone as string);
+  }
+
   async list(scope: ReminderScope, filter: any) {
     const { limit, offset } = this.pagination(filter);
     if (filter.status && !['upcoming', 'sending', 'sent', 'failed', 'paused', 'cancelled'].includes(filter.status)) {

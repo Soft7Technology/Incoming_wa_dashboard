@@ -226,6 +226,31 @@ class ContactModel extends BaseModel {
     return Promise.all(promises);
   }
 
+  /** Sort before pagination so the latest conversation can appear on the first page. */
+  orderByLastMessage(query: Knex.QueryBuilder, direction: 'asc' | 'desc') {
+    return query.select('contacts.*').joinRaw(`LEFT JOIN LATERAL (
+      SELECT m.updated_at AS last_message_at
+      FROM messages m
+      WHERE m.company_id = contacts.company_id
+        AND m.user_id = contacts.user_id
+        AND m.phone_number_id = contacts.phone_number_id
+        AND CASE WHEN m.direction = 'inbound'
+          THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+          ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END =
+          CASE
+            WHEN contacts.phone_number LIKE '00%'
+            THEN substring(regexp_replace(contacts.phone_number, '[^0-9]', '', 'g') FROM 3)
+            WHEN contacts.phone_number LIKE '+%' OR COALESCE(contacts.country_code, '') = ''
+            THEN regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
+            ELSE regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
+          END
+      ORDER BY m.created_at DESC NULLS LAST, m.id DESC LIMIT 1
+    ) AS contact_activity ON true`)
+      .select('contact_activity.last_message_at')
+      .orderBy('contact_activity.last_message_at', direction, 'last')
+      .orderBy('contacts.id', 'asc');
+  }
+
   findWithFilters(
     userId: string,
     filters: any = {},

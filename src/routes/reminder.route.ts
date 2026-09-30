@@ -7,6 +7,7 @@ const ReminderRoute = Router();
 ReminderRoute.use(accountScope);
 
 // Register static paths before the reminder ID routes.
+ReminderRoute.get('/summary', ReminderController.getSummary);
 ReminderRoute.get('/templates', ReminderController.getTemplates);
 ReminderRoute.post('/preview', ReminderController.preview);
 ReminderRoute.get('/', ReminderController.getReminders);

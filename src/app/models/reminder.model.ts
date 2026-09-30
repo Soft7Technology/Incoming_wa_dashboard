@@ -64,6 +64,25 @@ class ReminderModel extends BaseModel {
       .first();
   }
 
+  /** Aggregate visible schedules without loading the full reminder list. */
+  async summary(scope: ReminderScope, timezone: string) {
+    const row = await this.scopedQuery(scope).select(
+      this.db.raw('COUNT(*) AS total_schedules'),
+      this.db.raw("COUNT(*) FILTER (WHERE status = 'upcoming') AS upcoming"),
+      this.db.raw(`COUNT(*) FILTER (
+        WHERE status = 'upcoming'
+          AND next_send_at >= (date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE ?) AT TIME ZONE ?)
+          AND next_send_at < ((date_trunc('week', CURRENT_TIMESTAMP AT TIME ZONE ?) + interval '1 week') AT TIME ZONE ?)
+      ) AS this_week`, [timezone, timezone, timezone, timezone]),
+    ).first();
+    return {
+      total_schedules: Number(row?.total_schedules || 0),
+      this_week: Number(row?.this_week || 0),
+      upcoming: Number(row?.upcoming || 0),
+      timezone,
+    };
+  }
+
   async findPage(
     scope: ReminderScope,
     filter: { status?: string; contact_id?: string; limit: number; offset: number },

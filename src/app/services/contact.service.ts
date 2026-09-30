@@ -95,7 +95,10 @@ class ContactService {
     const offset = (page - 1) * limit;
 
     const sortBy = filters.sortBy || "created_at";
-    const sortOrder = filters.sortOrder || "desc";
+    const sortOrder = String(filters.sortOrder || 'desc').toLowerCase();
+    if (sortOrder !== 'asc' && sortOrder !== 'desc') {
+      throw new HTTP400Error({ message: 'sortOrder must be asc or desc' });
+    }
 
     let query = ContactModel.findWithFilters(
       userId,
@@ -174,8 +177,10 @@ class ContactService {
     // -------------------------
     // FETCH CONTACTS
     // -------------------------
-    const contacts = await query
-      .orderBy(sortBy, sortOrder)
+    const sortedQuery = ['last_message', 'last_message_at'].includes(sortBy)
+      ? ContactModel.orderByLastMessage(query, sortOrder)
+      : query.orderBy(sortBy, sortOrder);
+    const contacts = await sortedQuery
       .limit(limit)
       .offset(offset);
 
@@ -227,7 +232,11 @@ class ContactService {
     const latestMessages = await MessageModel.findLatestForContacts(contacts);
     const latestByContact = new Map(latestMessages.map(row => [row.contact_id, row.last_message]));
     contacts.forEach((contact: any) => {
-      contact.last_message = latestByContact.get(contact.id) ?? null;
+      const lastMessage = latestByContact.get(contact.id) ?? null;
+      const timestamp = lastMessage?.updated_at ?? null;
+      contact.last_message = lastMessage ? { ...lastMessage, timestamp } : null;
+      // Expose the same activity timestamp inside and outside the message object.
+      contact.last_message_at = timestamp;
     });
 
     console.log(
