@@ -3,7 +3,7 @@ module.exports = {
     // 🔹 API SERVER
     {
       name: "console-api",
-      cwd: "C:\\Users\\Administrator\\Desktop\\Incoming_wa_dashboard",
+      cwd: __dirname, // Run the API and worker from this deployed checkout.
 
       script: "dist/src/server.js", // ✅ your actual entry after build
 
@@ -27,7 +27,7 @@ module.exports = {
     // 🔹 WORKER
     {
       name: "console-worker",
-      cwd: "C:\\Users\\Administrator\\Desktop\\Incoming_wa_dashboard",
+      cwd: __dirname, // Run the API and worker from this deployed checkout.
 
       script: "dist/src/workers/index.js",
 

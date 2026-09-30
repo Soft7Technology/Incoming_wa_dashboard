@@ -74,11 +74,10 @@ class CampaignMessageModel extends BaseModel {
     return Number(row?.count || 0);
   }
 
-  async deferRetry(id: string, delayMs: number, countAttempt = false): Promise<number> {
-    const updateData: any = { retry_after: new Date(Date.now() + delayMs) };
-    if (countAttempt) updateData.retry_attempts = this.db.raw('COALESCE(retry_attempts, 0) + 1');
-    const [row] = await this.query().where({ id }).update(updateData).returning('retry_attempts');
-    return Number(row?.retry_attempts || 0);
+  /** Pacing delays only recipients that have not been sent; failures stay terminal. */
+  async deferPendingRecipient(id: string, delayMs: number): Promise<void> {
+    await this.query().where({ id, status: 'pending' }).whereNull('message_id')
+      .update({ retry_after: new Date(Date.now() + delayMs) });
   }
 
   async getNextRetryAt(campaignId: string, failedBefore?: Date): Promise<Date | null> {
@@ -134,7 +133,7 @@ class CampaignMessageModel extends BaseModel {
     return this.db.transaction(async trx => {
       await trx('campaign_messages').where({ id }).update({
         status: 'sent', message_id: messageId, sent_at: new Date(),
-        error_message: null, error_code: null, failed_at: null, retry_after: null, retry_attempts: 0,
+        error_message: null, error_code: null, failed_at: null, retry_after: null,
       });
       await trx('campaigns').where({ id: campaignId }).update({
         sent_count: trx.raw('COALESCE(sent_count, 0) + 1'),

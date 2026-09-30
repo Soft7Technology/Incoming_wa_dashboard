@@ -1,4 +1,3 @@
-import campaignSendAttempt from '../models/campaignSendAttempt.model';
 import { campaignRecipientNumber } from '../utils/campaignPhone';
 import contactOptOut from './contactOptOut.service';
 import { recordReminderDelivery } from './reminderDelivery.service';
@@ -225,17 +224,6 @@ class MessageService {
       throw error;
     }
 
-    // Never release this reservation: a timeout may hide a successful Meta send.
-    if (data.campaign_id) {
-      const reserved = await campaignSendAttempt.reserve(data.company_id!, data.campaign_id, phoneNumber.id,
-        campaignRecipientNumber(data.to));
-      if (!reserved) {
-        const duplicate: any = new Error('This campaign has already attempted this recipient; resending is disabled');
-        duplicate.code = 'CAMPAIGN_ALREADY_ATTEMPTED';
-        throw duplicate;
-      }
-    }
-
     const message = await MessageModel.create({
       id: data.messageUUID,
       user_id: data.user_id,
@@ -258,6 +246,15 @@ class MessageService {
       // Send via Meta API
       if (!await CompanyModel.canSend(phoneNumber.company_id, phoneNumber.user_id)) {
         throw new HTTP400Error({ message: 'Sending account or company is inactive, suspended or deleted' });
+      }
+      // Correlate duplicate reports with the exact process and outbound record.
+      if (data.campaign_id) {
+        console.info('[Campaign Send] Calling Meta once', {
+          campaignId: data.campaign_id,
+          messageId: message.id,
+          processId: process.pid,
+          workerMode: process.env.WORKER_MODE === 'true',
+        });
       }
       const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, resolved?.allowUnverifiedRecipient);
 

@@ -97,15 +97,13 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (job.data.status && job.data.status !== 'pending') throw new Error('Campaign recipient retries are disabled');
     const pending = await CampaignMessageModel.getPendingMessages(campaignId, batchSize);
     if (!pending.length) {
-      const retryAt = await CampaignMessageModel.getNextRetryAt(campaignId, job.data.status === 'failed' ? new Date(job.timestamp) : undefined);
+      const retryAt = await CampaignMessageModel.getNextRetryAt(campaignId);
       if (retryAt) {
         const delayMs = Math.max(250, new Date(retryAt).getTime() - Date.now());
         console.info('[Campaign Worker] Waiting for deferred recipients', { campaignId, delayMs });
         return await defer(delayMs);
       }
-      const stillPending = job.data.status === 'failed'
-        ? (await CampaignMessageModel.getFailedMessages(campaignId, 1, new Date(job.timestamp))).length > 0
-        : await CampaignMessageModel.getPendingCount(campaignId) > 0;
+      const stillPending = await CampaignMessageModel.getPendingCount(campaignId) > 0;
       if (stillPending) return await defer(250);
       phase = 'completing campaign';
       const counts = await CampaignMessageModel.getCampaignStats(campaignId);
@@ -151,7 +149,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
     phase = 'updating progress';
     // Counting every pending row after every small batch becomes quadratic for large campaigns.
-    const checkProgress = job.data.status !== 'failed' && Date.now() - (job.data.progressCheckedAt || 0) >= 20000;
+    const checkProgress = Date.now() - (job.data.progressCheckedAt || 0) >= 20000;
     const pendingCount = checkProgress ? await CampaignMessageModel.getPendingCount(campaignId) : undefined;
     const progress = pendingCount === undefined ? undefined : Math.min(100, Math.round((campaign.total_recipients - pendingCount) / Math.max(1, campaign.total_recipients) * 100));
     if (progress !== undefined) await job.updateProgress(progress);
@@ -229,7 +227,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     infrastructureOperation = true;
     if (!await waitForCampaignPermit(campaign.phone_number_id, recipientPhone)) {
       const pairCooldown = await getCampaignPairCooldown(campaign.phone_number_id, recipientPhone);
-      await CampaignMessageModel.deferRetry(campaignMessage.id, Math.max(1000, pairCooldown));
+      await CampaignMessageModel.deferPendingRecipient(campaignMessage.id, Math.max(1000, pairCooldown));
       return;
     }
     if (!ownsLock()) return;
@@ -260,7 +258,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     if (attemptReserved) {
       // The recipient is already durably failed/unconfirmed. Failure to save an
       // outcome must neither resend it nor stop unrelated recipients.
-      const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_ALREADY_ATTEMPTED'].includes(error.code);
+      const skipped = error.code === 'CONTACT_OPTED_OUT';
       console.error('[Campaign Worker] Recipient attempt ended without confirmation', {
         campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: getMessageError(error),
       });

@@ -1,5 +1,8 @@
 import { Knex } from 'knex';
 
+// Historical migration retained for databases that already recorded it.
+// Campaign execution no longer uses this table or retries failed sends.
+
 export async function up(knex: Knex): Promise<void> {
   await knex.schema.createTable('campaign_send_attempts', table => {
     table.uuid('company_id').notNullable();
