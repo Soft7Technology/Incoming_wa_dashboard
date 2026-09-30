@@ -1,3 +1,4 @@
+import campaignSendAttempt from '../models/campaignSendAttempt.model';
 import { campaignRecipientNumber } from '../utils/campaignPhone';
 import contactOptOut from './contactOptOut.service';
 import { recordReminderDelivery } from './reminderDelivery.service';
@@ -218,11 +219,21 @@ class MessageService {
       };
     }
 
-    // Create message record
     if (data.campaign_id && await contactOptOut.isBlocked(phoneNumber, metaPayload.to)) {
       const error: any = new Error('Contact opted out of campaign messages');
       error.code = 'CONTACT_OPTED_OUT';
       throw error;
+    }
+
+    // Never release this reservation: a timeout may hide a successful Meta send.
+    if (data.campaign_id) {
+      const reserved = await campaignSendAttempt.reserve(data.company_id!, data.campaign_id, phoneNumber.id,
+        campaignRecipientNumber(data.to));
+      if (!reserved) {
+        const duplicate: any = new Error('This campaign has already attempted this recipient; resending is disabled');
+        duplicate.code = 'CAMPAIGN_ALREADY_ATTEMPTED';
+        throw duplicate;
+      }
     }
 
     const message = await MessageModel.create({

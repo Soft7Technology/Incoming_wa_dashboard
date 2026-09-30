@@ -62,3 +62,10 @@ test('scheduler does not fail or requeue a running campaign when its job is not 
  vm.runInNewContext(js,{exports,require:n=>dependencies[n],console:{warn(){},error(){},info(){}}});
  await exports.reconcileFailedCampaignJobs();assert.equal(writes,0);
 });
+
+test('duplicate campaign recipient is skipped and remaining recipients continue',async()=>{
+ const h=worker({sendError:Object.assign(Error('already attempted'),{code:'CAMPAIGN_ALREADY_ATTEMPTED'}),total:50});
+ const result=await h.process();
+ assert.equal(result.status,'completed');assert.equal(h.statuses.length,50);
+ assert.ok(h.statuses.every(status=>status==='skipped'));
+});
