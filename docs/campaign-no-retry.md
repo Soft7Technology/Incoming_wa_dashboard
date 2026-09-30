@@ -7,3 +7,5 @@ Before contacting Meta, the worker atomically reserves a pending campaign recipi
 Normal scheduling, queue-slot waits and pacing of never-attempted recipients continue. They do not repeat a Meta send. Existing pending recipients deferred by the older policy can still receive their first attempt under the new policy; previously completed attempts cannot be reconstructed from missing history.
 
 Deploy API and all campaign workers together, stopping old workers first. No database migration is required. Already running old code cannot be changed retroactively, and in-flight requests cannot be recalled. Creating a separate campaign can intentionally send to the same contact again; this guard applies to a campaign recipient row, not every future campaign.
+
+Recipient rejection or failure to persist an outcome after reservation does not abort the campaign. The worker retains the durable failed/unconfirmed reservation, logs any persistence failure and continues to other recipients. Failures before safe reservation, campaign-wide database outages or lock loss can still stop execution; they cannot safely be treated as a confirmed recipient failure.

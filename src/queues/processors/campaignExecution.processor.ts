@@ -196,6 +196,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
 async function sendCampaignMessage(campaign: any, campaignMessage: any, contact: any, template: any, phone: any, ownsLock: () => boolean) {
   let infrastructureOperation = true;
   let recipientPhone = '';
+  let attemptReserved = false;
   try {
     if (!contact) {
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
@@ -237,7 +238,10 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     // Send message via MessageService
     // Persist a terminal reservation BEFORE calling Meta. If the process dies or
     // acknowledgement persistence fails, this recipient cannot be selected again.
+    infrastructureOperation = true;
     if (!await CampaignMessageModel.claimSingleAttempt(campaignMessage.id)) return;
+    attemptReserved = true;
+    infrastructureOperation = false;
     const message = await MessageService.sendMessage({
       messageUUID,
       user_id: campaign.user_id,
@@ -253,6 +257,25 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     infrastructureOperation = true;
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
+    if (attemptReserved) {
+      // The recipient is already durably failed/unconfirmed. Failure to save an
+      // outcome must neither resend it nor stop unrelated recipients.
+      const skipped = error.code === 'CONTACT_OPTED_OUT';
+      console.error('[Campaign Worker] Recipient attempt ended without confirmation', {
+        campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: getMessageError(error),
+      });
+      try {
+        await CampaignMessageModel.updateStatus(campaignMessage.id, skipped ? 'skipped' : 'failed', {
+          ...getMessageError(error), retry_after: null,
+        });
+      } catch (saveError) {
+        console.error('[Campaign Worker] Retaining failed/unconfirmed reservation', {
+          campaignId: campaign.id, campaignMessageId: campaignMessage.id, error: saveError,
+        });
+      }
+      if (!skipped) await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+      return;
+    }
     if (error.code === 'CONTACT_OPTED_OUT') {
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', { error_code: error.code, error_message: error.message, retry_after: null });
       return;
