@@ -302,8 +302,8 @@ class CampaignService {
   async startCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
     console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
-    if (campaign?.status === 'failed') {
-      throw new HTTP400Error({ message: 'Failed campaigns cannot be restarted; automatic and manual retries are disabled' });
+    if (campaign?.status === 'failed' && !await CampaignMessageModel.getPendingCount(campaignId)) {
+      throw new HTTP400Error({ message: 'No unattempted recipients remain. Failed messages will not be retried.' });
     }
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
@@ -330,6 +330,11 @@ class CampaignService {
             await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
             await existingJob.promote();
             return { message: 'Campaign queued to start now', campaign_id: campaignId, status: 'waiting' };
+          }
+          if (campaign.status === 'failed') {
+            await CampaignModel.updateStatus(campaignId, state === 'active' ? 'running' : 'scheduled', {
+              scheduled_at: new Date(), completed_at: null,
+            });
           }
           console.info('[Campaign] Existing job', { campaignId, state });
           return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };

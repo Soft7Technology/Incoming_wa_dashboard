@@ -8,10 +8,15 @@ export async function reconcileFailedCampaignJobs() {
     try {
       const job = await campaignExecutionQueue.getJob(campaign.id);
       if (!job) {
-        await CampaignModel.markRunningJobFailed(campaign.id, 'Campaign execution job missing; automatic recovery is disabled');
+        // A scheduler may be connected to a different Redis DB/instance than the
+        // worker. Absence here is not evidence that execution has stopped.
+        // Do not enqueue a duplicate job or overwrite the worker's running status.
+        console.warn('[Campaign Recovery] Job not visible; preserving running campaign', { campaignId: campaign.id });
         continue;
       }
       if (await job.getState() !== 'failed') continue;
+      const redis = await campaignExecutionQueue.client;
+      if (await redis.get(`campaign-execution-lock:${campaign.id}`)) continue;
       if (await CampaignModel.completeIfNoPendingMessages(campaign.id)) {
         console.info('[Campaign Recovery] Completed campaign with no pending recipients despite failed job', { campaignId: campaign.id, jobId: job.id });
         continue;
