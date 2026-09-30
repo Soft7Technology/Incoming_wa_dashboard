@@ -5,6 +5,13 @@ class CompanyModel extends BaseModel {
     super('companies');
   }
 
+  /** Background sends must recheck account state even when no JWT request is involved. */
+  async canSend(companyId: string, userId: string) {
+    return this.db('companies as c').join('users as u', 'u.company_id', 'c.id')
+      .where({ 'c.id': companyId, 'u.id': userId, 'c.status': 'active', 'u.status': 'active' })
+      .whereNull('c.deleted_at').whereNull('u.deleted_at').first('c.id');
+  }
+
   async findById(id: string) {
     return this.query().where({ id }).first();
   }

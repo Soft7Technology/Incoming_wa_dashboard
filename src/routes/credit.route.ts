@@ -19,7 +19,7 @@ CreditRoute.get('/transactions', CreditController.getTransactionHistory);
 // Add credits (admin/superadmin only)
 CreditRoute.post('/add', requireRole('superadmin'), CreditController.addCredit);
 
-CreditRoute.get('/superadmin/transaction', creditController.superAdminTransaction);
+CreditRoute.get('/superadmin/transaction', requireRole('superadmin'), creditController.superAdminTransaction);
 
 // Refund credits (admin/superadmin only)
 CreditRoute.post('/refund', requireRole('admin', 'superadmin'), CreditController.refundCredit);

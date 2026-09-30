@@ -49,7 +49,6 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
 
     try {
       decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
-      console.log("Decode",decoded)
     } catch (error) {
       throw new HTTP401Error({ message: 'Invalid or expired token' });
     }
@@ -59,26 +58,26 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
     // users immediately even if they hold a valid JWT token.
     const user = await db('users')
       .where({ id: decoded.userId })
-      .select('status')
+      .whereNull('deleted_at')
+      .select('status', 'role', 'company_id')
       .first();
 
     if (!user) {
       throw new HTTP401Error({ message: 'User not found' });
     }
 
-    if (user.status === 'suspended' || user.status === 'suspend') {
-      throw new HTTP401Error({ message: 'Your account has been suspended. Please contact your administrator.' });
+    if (user.status !== 'active') {
+      throw new HTTP401Error({ message: 'Your account is not active. Please contact your administrator.' });
     }
-
-    // if (user.status === 'inactive') {
-    //   throw new HTTP401Error({ message: 'Account is inactive' });
-    // }
-    // ─────────────────────────────────────────────────────────────
+    if (user.role !== 'superadmin' && user.company_id) {
+      const company = await db('companies').where({ id: user.company_id, status: 'active' }).whereNull('deleted_at').first('id');
+      if (!company) throw new HTTP401Error({ message: 'Your company is not active. Please contact your administrator.' });
+    }
 
     // Attach user info to request
     req.userId = decoded.userId;
-    req.userRole = decoded.role;
-    req.companyId = decoded.companyId;
+    req.userRole = user.role;
+    req.companyId = user.company_id;
     req.email = decoded.email;
     req.phone = decoded.phone;
     // req.assigned_plan = decoded.assigned_plan

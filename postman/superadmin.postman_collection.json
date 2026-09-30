@@ -1,0 +1,538 @@
+{
+  "info": {
+    "name": "Superadmin API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{superadminToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "superadminToken",
+      "value": ""
+    },
+    {
+      "key": "companyId",
+      "value": ""
+    },
+    {
+      "key": "userId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": ""
+    },
+    {
+      "key": "ticketId",
+      "value": ""
+    },
+    {
+      "key": "targetSuperadminId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Overview",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/overview"
+      }
+    },
+    {
+      "name": "Companies with filters",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies?page=1&limit=25&status=active"
+      }
+    },
+    {
+      "name": "Company details",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}"
+      }
+    },
+    {
+      "name": "All users",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/users?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company users",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users?page=1&limit=25"
+      }
+    },
+    {
+      "name": "All domains",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/domains?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company domains",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/domains?page=1&limit=25"
+      }
+    },
+    {
+      "name": "All activities",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/activities?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company activities",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/activities?page=1&limit=25"
+      }
+    },
+    {
+      "name": "All credits",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/credits?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company credits",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/credits?page=1&limit=25"
+      }
+    },
+    {
+      "name": "All audit",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/audit?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company audit",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/audit?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Create company",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Example Company\",\n  \"email\": \"company@example.com\",\n  \"user\": {\n    \"name\": \"Admin\",\n    \"email\": \"admin@example.com\",\n    \"password\": \"ReplaceWithAStrongPassword123!\"\n  },\n  \"reason\": \"Approved onboarding\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Edit company",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Updated Company\",\n  \"reason\": \"Profile correction\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Suspend company",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"suspended\",\n  \"reason\": \"Account review\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Activate company",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"active\",\n  \"reason\": \"Review completed\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Edit user",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Updated User\",\n  \"reason\": \"Profile correction\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "suspended user",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"suspended\",\n  \"reason\": \"User review\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "active user",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/status",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"active\",\n  \"reason\": \"User review\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Add credits (reuse requestId only for retries)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/credits",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": \"1000.00\",\n  \"request_id\": \"{{requestId}}\",\n  \"reason\": \"Approved top-up\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Soft delete company",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"Approved closure\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "subscriptions/overview",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/subscriptions/overview",
+        "header": []
+      }
+    },
+    {
+      "name": "subscriptions/revenue",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/subscriptions/revenue",
+        "header": []
+      }
+    },
+    {
+      "name": "subscriptions/revenue/companies",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/subscriptions/revenue/companies",
+        "header": []
+      }
+    },
+    {
+      "name": "subscriptions",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/subscriptions",
+        "header": []
+      }
+    },
+    {
+      "name": "subscription-plans",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/subscription-plans",
+        "header": []
+      }
+    },
+    {
+      "name": "payments",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/payments",
+        "header": []
+      }
+    },
+    {
+      "name": "tickets",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/tickets",
+        "header": []
+      }
+    },
+    {
+      "name": "tickets/forward",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/tickets/forward",
+        "header": []
+      }
+    },
+    {
+      "name": "tickets/{{ticketId}}/conversations",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/v1/super-admin/tickets/{{ticketId}}/conversations",
+        "header": []
+      }
+    },
+    {
+      "name": "tickets/{{ticketId}}/forward",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/v1/super-admin/tickets/{{ticketId}}/forward",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"superadmin_id\": \"{{targetSuperadminId}}\",\n  \"reason\": \"Escalated billing issue\"\n}"
+        }
+      }
+    },
+    {
+      "name": "tickets/{{ticketId}}/forward/reply",
+      "request": {
+        "method": "POST",
+        "url": "{{baseUrl}}/v1/super-admin/tickets/{{ticketId}}/forward/reply",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"message\": \"We are reviewing this issue.\",\n  \"reason\": \"Support response\"\n}"
+        }
+      }
+    },
+    {
+      "name": "tickets/{{ticketId}}/status",
+      "request": {
+        "method": "PATCH",
+        "url": "{{baseUrl}}/v1/super-admin/tickets/{{ticketId}}/status",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"status\": \"resolved\",\n  \"reason\": \"Issue fixed\"\n}"
+        }
+      }
+    }
+  ]
+}

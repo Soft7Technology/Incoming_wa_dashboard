@@ -245,6 +245,9 @@ class MessageService {
 
     try {
       // Send via Meta API
+      if (!await CompanyModel.canSend(phoneNumber.company_id, phoneNumber.user_id)) {
+        throw new HTTP400Error({ message: 'Sending account or company is inactive, suspended or deleted' });
+      }
       const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, resolved?.allowUnverifiedRecipient);
 
       // Update message with WAMID
@@ -451,6 +454,9 @@ class MessageService {
 
     try {
       // Send via Meta API
+      if (!await CompanyModel.canSend(phoneNumber.company_id, phoneNumber.user_id)) {
+        throw new HTTP400Error({ message: 'Sending account or company is inactive, suspended or deleted' });
+      }
       const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload);
 
       // Update message with WAMID
