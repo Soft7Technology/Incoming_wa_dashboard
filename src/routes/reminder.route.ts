@@ -16,7 +16,7 @@ ReminderRoute.get('/:id', ReminderController.getReminder);
 
 // Only account owners and team members may change reminder schedules.
 ReminderRoute.post('/', requireRole('user', 'member'), ReminderController.createReminder);
-ReminderRoute.patch('/:id', requireRole('user', 'member'), ReminderController.updateReminder);
+ReminderRoute.put('/:id', requireRole('user', 'member'), ReminderController.updateReminder);
 ReminderRoute.post('/:id/pause', requireRole('user', 'member'), ReminderController.pauseReminder);
 ReminderRoute.post('/:id/resume', requireRole('user', 'member'), ReminderController.resumeReminder);
 ReminderRoute.post('/:id/cancel', requireRole('user', 'member'), ReminderController.cancelReminder);
