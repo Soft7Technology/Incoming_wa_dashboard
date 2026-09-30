@@ -170,6 +170,13 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     }
   } catch (error) {
     if (error instanceof DelayedError) throw error;
+    // Database availability must not turn a recipient failure into a stopped campaign.
+    // Resume pending rows only; the durable pre-send claim excludes attempted rows.
+    if (isConnectionAcquireError(error)) {
+      console.warn('[Campaign Worker] Waiting for database connection; no message resend', { campaignId, phase });
+      releaseSlot = true;
+      return await defer(5000);
+    }
     console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, phase, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
     {
       const current = await CampaignModel.findById(campaignId);

@@ -1,17 +1,17 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
-function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,total=0,invalidReason=null}={}) {
- let sends=0;const claimed=new Set();const statuses=[];
+function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,total=0,invalidReason=null,connectionFailure=false}={}) {
+ let selectionCalls=0;let sends=0;const claimed=new Set();const statuses=[];
  let campaignStatus='running';const recipients=Array.from({length:total},(_,i)=>({id:String(i),contact_id:String(i)}));
  class Worker{on(){return this;}}
  const deps={bullmq:{Worker,DelayedError:class extends Error{}},'../campaignExecution.queue':{campaignExecutionQueue:{client:Promise.resolve({set:async()=> 'OK',eval:async()=>1})}},
  '../campaignCapacity':{campaignCapacity:{concurrency:1,messageConcurrency:3},createCapacitySampler:()=>({sample:()=>6,metrics:()=>({})})},
  '../campaignPacing':{getCampaignSenderCooldown:async()=>0,waitForCampaignPermit:async()=>true},'../campaignUserSlots':{acquireCampaignUserSlot:async()=>true,releaseCampaignUserSlot:async()=>{}},
- '../campaignDatabaseError':{isConnectionAcquireError:()=>false},
+ '../campaignDatabaseError':{isConnectionAcquireError:e=>/Unable to acquire a connection/.test(e.message)},
  '../../app/utils/campaignPhone':{campaignRecipientNumber:n=>n.replace('+','')},
  '@surefy/console/app/utils/messageError':{getMessageError:e=>({error_code:String(e.code||'UNKNOWN'),error_message:e.message})},
  '@surefy/console/models/campaignMessage.model':{
- getPendingMessages:async()=>recipients.filter(r=>!claimed.has(r.id)).slice(0,6),getNextRetryAt:async()=>null,getPendingCount:async()=>recipients.filter(r=>!claimed.has(r.id)).length,getCampaignStats:async()=>({}),
+ getPendingMessages:async()=>{selectionCalls++;if(connectionFailure&&selectionCalls===2)throw Error('Unable to acquire a connection');return recipients.filter(r=>!claimed.has(r.id)).slice(0,6);},getNextRetryAt:async()=>null,getPendingCount:async()=>recipients.filter(r=>!claimed.has(r.id)).length,getCampaignStats:async()=>({}),
  claimSingleAttempt:async(id)=>{if(!claim||claimed.has(id))return false;claimed.add(id);return true;},
  recordSent:async()=>{if(saveError)throw Error('database write failed');},
  updateStatus:async(id,status)=>{if(statusError)throw Error('status database failure');statuses.push(status);}},
@@ -22,7 +22,7 @@ function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,to
  const exports={};const js=ts.transpileModule(fs.readFileSync('src/queues/processors/campaignExecution.processor.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
  vm.runInNewContext(js+';exports.sendOne=sendCampaignMessage;', {exports,require:n=>deps[n]||{},console:{log(){},info(){},error(){},warn(){}},setInterval:()=>({unref(){}}),clearInterval(){},process});
  const run=(id='cm')=>exports.sendOne({id:'c',user_id:'u',company_id:'co',phone_number_id:'p'},{id,contact_id:'contact'}, {id:'contact',phone_number:'+6581234567',is_valid:!invalidReason,invalid_reason:invalidReason},{name:'test',language:'en',components:[]},{},()=>true);
- return {run,sends:()=>sends,statuses,process:()=>exports.processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co'},opts:{attempts:1},attemptsMade:0,discard(){},updateProgress:async()=>{},updateData:async()=>{},log:async()=>{}}),campaignStatus:()=>campaignStatus};
+ return {run,sends:()=>sends,statuses,process:()=>exports.processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co'},opts:{attempts:1},attemptsMade:0,moveToDelayed:async()=>{},discard(){},updateProgress:async()=>{},updateData:async()=>{},log:async()=>{}}),campaignStatus:()=>campaignStatus};
 }
 test('provider rate limit stays failed without a second send',async()=>{
  const h=worker({sendError:Object.assign(Error('rate limited'),{code:131056})});
@@ -97,4 +97,13 @@ test('stored invalid-number flag does not skip a numeric campaign recipient',asy
  await h.run();await h.run();
  assert.equal(h.sends(),1);
  assert.deepEqual(h.statuses,[]);
+});
+
+test('database loss after first batch defers then completes 243 failed recipients without resending',async()=>{
+ const h=worker({total:243,failFirst:243,connectionFailure:true});
+ await assert.rejects(h.process());
+ assert.equal(h.sends(),6);assert.equal(h.campaignStatus(),'running');
+ const result=await h.process();
+ assert.equal(result.status,'completed');assert.equal(h.sends(),243);
+ assert.equal(h.statuses.length,243);
 });
