@@ -210,12 +210,30 @@ export const menuFlow = async ({
       Boolean(incomingId) && e.sourceHandle === incomingId
   );
 
+  // Match visible option titles even when edges only store an opaque reply ID.
+  const normalize = (value: any) => typeof value === 'string'
+    ? value.toLowerCase().trim().replace(/\s+/g, ' ') : '';
+  const action = currentNode.data?.attributes?.message?.interactive?.action;
+  const buttons = currentNode.data?.attributes ? action?.buttons || [] : currentNode.data?.buttons || [];
+  const options = [
+    ...buttons.map((button: any, index: number) => ({
+      id: button?.reply?.id || button?.id || `btn_${index}`,
+      title: button?.reply?.title ?? button?.title ?? (typeof button === 'string' ? button : ''),
+    })),
+    ...(action?.sections || []).flatMap((section: any) => section.rows || []),
+  ];
+  const matchingOptionIds = options
+    .filter((option: any) => normalize(incomingText) && normalize(option.title) === normalize(incomingText))
+    .map((option: any) => option.id);
+
   // fallback text matching
   if (!matchedEdge) {
     matchedEdge = edges.find(
-      (e: any) =>
-        (e.label || "").toLowerCase().trim() ===
-        incomingText?.toLowerCase()?.trim()
+      (e: any) => Boolean(normalize(incomingText)) && (
+        normalize(e.label) === normalize(incomingText) ||
+        [e.sourceHandle, e.data?.sourceHandle, e.data?.buttonId, e.data?.button_id]
+          .some(id => id && matchingOptionIds.includes(id))
+      )
     );
   }
 

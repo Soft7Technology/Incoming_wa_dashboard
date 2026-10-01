@@ -278,7 +278,7 @@ class chatBotService {
     }
 
     const isDefault = triggerWords.length === 0;
-    // An empty mapping reserves the receiving number's default flow, including drafts.
+    // Default mappings keep their existing reservation behavior.
     const mappingWords = isDefault ? [''] : triggerWords;
     triggerNode.data = {
       ...triggerNode.data,
@@ -310,21 +310,35 @@ class chatBotService {
       
       if (!currentBot) throw new HTTP400Error({ message: 'ChatBot not found' });
      
+      const inactiveTriggerIds: string[] = [];
       for (const id of canonicalPhoneIds) {
         await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`chatbot-phone:${id}`]);
 
         const phone = selectedPhones.get(id);
 
         const conflicts = await trx('chatbot_triggers')
-          .whereIn('phone_number_id', [id, phone.id])
-          .whereNot('chatbot_id', chatBotId)
-          .whereRaw("LOWER(TRIM(REGEXP_REPLACE(trigger_word, '[[:space:]]+', ' ', 'g'))) = ANY(?::text[])", [mappingWords])
-          .select('chatbot_id', 'phone_number_id', 'trigger_word');
+          .leftJoin('chat_bot as trigger_bot', 'trigger_bot.id', 'chatbot_triggers.chatbot_id')
+          .whereIn('chatbot_triggers.phone_number_id', [id, phone.id])
+          .whereNot('chatbot_triggers.chatbot_id', chatBotId)
+          .whereRaw("LOWER(TRIM(REGEXP_REPLACE(chatbot_triggers.trigger_word, '[[:space:]]+', ' ', 'g'))) = ANY(?::text[])", [mappingWords])
+          .select('chatbot_triggers.id', 'chatbot_triggers.chatbot_id', 'chatbot_triggers.phone_number_id',
+            'chatbot_triggers.trigger_word', 'chatbot_triggers.active', 'trigger_bot.published');
 
-        if (conflicts.length) throw new HTTP400Error({
+        const blockingConflicts = conflicts.filter((trigger: any) =>
+          isDefault || trigger.active === true || trigger.published === true);
+        inactiveTriggerIds.push(...conflicts
+          .filter((trigger: any) => !isDefault && trigger.active !== true && trigger.published !== true)
+          .map((trigger: any) => trigger.id));
+
+        if (blockingConflicts.length) throw new HTTP400Error({
           message: isDefault ? 'A default chatbot is already assigned to this phone number' : 'Trigger keyword is already assigned to another chatbot on this phone number',
-          details: { code: isDefault ? 'CHATBOT_DEFAULT_CONFLICT' : 'CHATBOT_TRIGGER_CONFLICT', phoneNumberId: id, conflicts },
+          details: { code: isDefault ? 'CHATBOT_DEFAULT_CONFLICT' : 'CHATBOT_TRIGGER_CONFLICT', phoneNumberId: id, conflicts: blockingConflicts },
         });
+      }
+
+      // Remove only the reclaimed mappings after all receiving numbers pass validation.
+      if (inactiveTriggerIds.length) {
+        await trx('chatbot_triggers').whereIn('id', inactiveTriggerIds).delete();
       }
 
     // ---------------------------------

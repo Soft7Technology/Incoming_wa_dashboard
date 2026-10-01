@@ -30,10 +30,12 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     const incomingId =
       message?.interactive?.button_reply?.id ||
       message?.interactive?.list_reply?.id ||
+      message?.button?.payload ||
       null;
 
     const incomingText = (
       message?.text?.body ||
+      message?.button?.text ||
       message?.interactive?.button_reply?.title ||
       message?.interactive?.list_reply?.title ||
       ""
@@ -44,7 +46,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
 
     // 1️⃣ Get bot
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
-    let bot: any = message?.text?.body
+    // Match visible reply text against triggers scoped to the receiving number.
+    let bot: any = incomingText
       ? await getRuntimeBot(phoneNumberId, undefined, incomingText)
       : null;
 

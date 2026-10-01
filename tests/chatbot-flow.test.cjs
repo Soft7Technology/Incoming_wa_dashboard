@@ -3,9 +3,9 @@ const assert = require('node:assert/strict');
 const ts = require('typescript');
 const fs = require('node:fs');
 const vm = require('node:vm');
-function setup(conflicts) {
-  const writes=[]; const bot={id:'bot',user_id:'user',published:false,name:'Bot'};
-  function trx(table) { const q={where(){return q},whereIn(){return q},whereNot(){return q},whereRaw(){return q},forUpdate(){return q},first:async()=>bot,select:async()=>conflicts,update:async data=>writes.push({table,data}),delete:async()=>writes.push({table,deleted:true}),insert:async data=>writes.push({table,data})}; return q; }
+function setup(conflicts, published=false) {
+  const writes=[]; const bot={id:'bot',user_id:'user',published,name:'Bot'};
+  function trx(table) { const q={where(){return q},leftJoin(){return q},whereIn(){return q},whereNot(){return q},whereRaw(){return q},forUpdate(){return q},first:async()=>bot,select:async()=>conflicts,update:async data=>writes.push({table,data}),delete:async()=>writes.push({table,deleted:true}),insert:async data=>writes.push({table,data})}; return q; }
   trx.raw=async()=>{};
   const deps={'../utils/chatbotMessage':{validateChatbotMessage(){}},'@surefy/database':{transaction:async fn=>fn(trx)},'../models/chatbot.model':{findById:async()=>bot},'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'uuid',phone_number_id:'meta',user_id:'user'})},'uuid':{v4:()=> 'generated'},'@surefy/exceptions/HTTP400Error':class extends Error{constructor(data){super(data.message);this.details=data.details}}};
   const exports={};
@@ -15,7 +15,7 @@ function setup(conflicts) {
 }
 const payload={chatBotId:'bot',phoneNumberIds:['uuid','meta'],nodes:[{id:'t',type:'trigger',data:{attributes:{keywords:[' HI ','hi']}}},{id:'m',type:'message',data:{}}],edges:[{source:'t',target:'m'}]};
 test('conflicting keyword rejects before any flow writes',async()=>{
-  const {api,writes}=setup([{chatbot_id:'other',trigger_word:'hi'}]);
+  const {api,writes}=setup([{id:'old',chatbot_id:'other',trigger_word:'hi',active:true,published:true}]);
   await assert.rejects(api.createFlow('user',payload),/already assigned/);
   assert.equal(writes.length,0);
 });
@@ -64,4 +64,29 @@ test('saving a replacement graph closes sessions that reference old node IDs',as
   const deletion=writes.findIndex(w=>w.table==='chat_bot_node' && w.deleted);
   assert.ok(reset>=0 && reset<deletion);
   assert.equal(writes[reset].data.current_node_id,null);
+});
+
+for (const published of [false, true]) {
+  test('reclaims an inactive keyword with new mapping publication state ' + published, async()=>{
+    const {api,writes}=setup([{id:'old',chatbot_id:'other',trigger_word:'hi',active:false,published:false}],published);
+    await api.createFlow('user',structuredClone(payload));
+    const removed=writes.findIndex(w=>w.table==='chatbot_triggers' && w.deleted);
+    const added=writes.findIndex(w=>w.table==='chatbot_triggers' && w.data);
+    assert.ok(removed>=0 && removed<added);
+    assert.equal(writes[added].data.chatbot_id,'bot');
+    assert.equal(writes[added].data.active,published);
+  });
+}
+test('published keyword remains protected even if its mapping is inactive',async()=>{
+  const {api,writes}=setup([{id:'old',chatbot_id:'other',trigger_word:'hi',active:false,published:true}]);
+  await assert.rejects(api.createFlow('user',structuredClone(payload)),/already assigned/);
+  assert.equal(writes.length,0);
+});
+test('mixed active and inactive conflicts reject without deleting anything',async()=>{
+  const {api,writes}=setup([
+    {id:'old',chatbot_id:'draft',trigger_word:'hi',active:false,published:false},
+    {id:'live',chatbot_id:'live',trigger_word:'hi',active:true,published:true},
+  ]);
+  await assert.rejects(api.createFlow('user',structuredClone(payload)),/already assigned/);
+  assert.equal(writes.length,0);
 });

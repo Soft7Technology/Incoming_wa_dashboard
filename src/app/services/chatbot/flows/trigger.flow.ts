@@ -280,7 +280,7 @@ export const triggerFlow = async ({
   // Check trigger words
   const matchedBot = await getRuntimeBot(
     phoneNumberId,
-    undefined, incomingText, bot.isDefault === true
+    bot.id, incomingText, bot.isDefault === true
   );
 
   if (!matchedBot || matchedBot.id !== bot.id) {
