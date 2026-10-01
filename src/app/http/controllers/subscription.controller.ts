@@ -151,10 +151,33 @@ class SubscriptionController {
 
   // Reserve a pending user plan with a server-priced company payment order.
   subscribePlan = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const planId = String(req.params.planId);
     const order = await companyPayments.create({ userId: req.userId, companyId: req.companyId,
       userRole: req.userRole, idempotencyKey: req.get('Idempotency-Key') }, {
-      ...req.body, mode: req.body?.mode ?? 'live', subscription_plan_id: String(req.params.planId),
+      ...req.body, mode: req.body?.mode ?? 'live', subscription_plan_id: planId,
     });
+
+    await activityLogsModel.create({
+      user_id: req.userId,
+      company_id: req.companyId,
+      action: 'CREATE',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: order?.id,
+      read: false,
+      description: `Created subscription payment order${order?.user_plan_id ? ` (plan ${planId})` : ''} — ₹${((order?.amount_paise ?? 0) / 100).toLocaleString('en-IN')}`,
+      new_data: {
+        order_id: order?.id,
+        amount_paise: order?.amount_paise,
+        status: order?.status,
+        subscription_plan_id: planId,
+      },
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
+      user_agent: req.headers['user-agent'] || '',
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+      status: 'SUCCESS',
+    });
+
     return successResponse(req, res, 'Subscription payment order created; plan awaits payment', order);
   });
 
@@ -174,6 +197,31 @@ class SubscriptionController {
   activateUserPlanAfterPayment = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     if (typeof req.body?.order_id !== 'string') throw new HTTP400Error({ message: 'order_id (local payment order UUID) is required' });
     const order = await companyPayments.verify({ userId: req.userId, companyId: req.companyId, userRole: req.userRole }, req.body.order_id);
+
+    const isPaid = order?.status === 'paid';
+    await activityLogsModel.create({
+      user_id: req.userId,
+      company_id: req.companyId,
+      action: isPaid ? 'ACTIVATE' : 'UPDATE',
+      entity_type: 'SUBSCRIPTION',
+      entity_id: req.body.order_id,
+      read: false,
+      description: isPaid
+        ? `Payment verified and subscription activated — ₹${((order?.amount_paise ?? 0) / 100).toLocaleString('en-IN')}`
+        : `Payment verification checked — status: ${order?.status ?? 'unknown'}`,
+      new_data: {
+        order_id: req.body.order_id,
+        status: order?.status,
+        paid_at: order?.paid_at,
+        fulfilled_at: order?.fulfilled_at,
+      },
+      ip_address: (req.headers['x-forwarded-for'] as string) || req.socket.remoteAddress || '',
+      user_agent: req.headers['user-agent'] || '',
+      request_method: req.method,
+      api_endpoint: req.originalUrl,
+      status: 'SUCCESS',
+    });
+
     return successResponse(req, res, 'Subscription payment status verified', order);
   });
 
