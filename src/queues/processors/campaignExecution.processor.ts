@@ -261,7 +261,7 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     if (attemptReserved) {
       // The recipient is already durably failed/unconfirmed. Failure to save an
       // outcome must neither resend it nor stop unrelated recipients.
-      const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_MESSAGE_EXISTS', 'TEMPLATE_DUPLICATE_WINDOW'].includes(error.code);
+      const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_MESSAGE_EXISTS'].includes(error.code);
       console.error('[Campaign Worker] Recipient attempt ended without confirmation', {
         campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: getMessageError(error),
       });

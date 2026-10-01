@@ -41,6 +41,16 @@ test('latest-message lookup batches full country identities and restricts accoun
   assert.match(sql, /ORDER BY m.created_at DESC NULLS LAST, m.id DESC\s+LIMIT 1/);
   assert.match(sql, /LEFT JOIN LATERAL/);
   assert.ok(!sql.includes('RIGHT(') && !sql.includes('LIKE'));
+  const countsSql = sql.slice(sql.indexOf('COUNT(*) FILTER'));
+  assert.match(countsSql, /WHERE m.status = 'read' OR m.read_at IS NOT NULL/);
+  assert.match(countsSql, /WHERE m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL/);
+  assert.match(countsSql, /m.direction = 'inbound'/);
+  assert.match(countsSql, /m.status IS DISTINCT FROM 'deleted'/);
+  for (const column of ['user_id', 'company_id', 'phone_number_id']) {
+    assert.ok(countsSql.includes(`m.${column} = c.${column}`));
+  }
+  assert.match(countsSql, /regexp_replace\(m.from_phone, '\[\^0-9\]', '', 'g'\) = c.recipient/);
+  assert.ok(!countsSql.includes('LIMIT'));
 });
 test('empty pages and contacts without reliable country or business scope perform no message query', async () => {
   const { model, calls } = modelHarness();
@@ -65,15 +75,38 @@ test('contact list attaches full message or null while retaining tags and pagina
     '../models/contact.model': { findWithFilters: () => query },
     '../models/contactTagRelation.model': { getContactsWithTags: async () => [{ contact_id: 'sg', tags: ['vip'] }] },
     '../models/message.model': { findLatestForContacts: async page => {
-      assert.equal(page, contacts); lookups++; return [{ contact_id: 'sg', last_message: message }];
+      assert.equal(page, contacts); lookups++; return [{ contact_id: 'sg', last_message: message,
+        read_count: '12', unread_count: '3' }];
     } },
   });
   const result = await service.getContacts('owner', { page: 2, limit: 20 }, 'business', 'company');
   assert.equal(lookups, 1);
-  assert.equal(result.contacts[0].last_message, message);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.contacts[0].last_message)), { ...message, timestamp: null });
+  assert.equal(result.contacts[0].read_count, 12);
+  assert.equal(result.contacts[0].unread_count, 3);
+  assert.equal(result.contacts[1].read_count, 0);
+  assert.equal(result.contacts[1].unread_count, 0);
   assert.equal(result.contacts[1].last_message, null);
   assert.deepEqual(result.contacts[0].tags, ['vip']);
   assert.equal(result.pagination.total, 21);
   assert.equal(result.pagination.page, 2);
   assert.equal(result.pagination.total_pages, 2);
+});
+
+test('single-contact lookup returns numeric counts and defaults missing history to zero', async () => {
+  for (const summary of [{ read_count: '5', unread_count: '2' }, undefined]) {
+    const contact = { ...base, id: 'sg', phone_number: '81234567', country_code: '65' };
+    const service = load('src/app/services/contact.service.ts', {
+      '../models/contact.model': { findById: async () => contact },
+      '../models/contactTagRelation.model': { findByContact: async () => [] },
+      '../models/message.model': { findLatestForContacts: async contacts => {
+        assert.equal(contacts.length, 1);
+        assert.equal(contacts[0], contact);
+        return summary ? [{ contact_id: contact.id, ...summary }] : [];
+      } },
+    });
+    const result = await service.getContactById(contact.id);
+    assert.equal(result.read_count, summary ? 5 : 0);
+    assert.equal(result.unread_count, summary ? 2 : 0);
+  }
 });

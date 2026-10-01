@@ -12,9 +12,7 @@ class MessageModel extends BaseModel {
     company_id?: string; campaign_id?: string | null; phone_number_id: string;
     to_phone: string; [key: string]: unknown;
   }) {
-    const content = data.content as { template?: { name?: string } } | undefined;
-    const templateName = data.type === 'template' ? content?.template?.name : undefined;
-    if (!data.campaign_id && !templateName) return this.create(data);
+    if (!data.campaign_id) return this.create(data);
     const recipient = data.to_phone.replace(/[^0-9]/g, '');
     return this.db.transaction(async trx => {
       // Serialize competing callers across API and worker processes, using existing history.
@@ -32,29 +30,14 @@ class MessageModel extends BaseModel {
           });
         }
       }
-      if (templateName) {
-        // Include failed/queued outcomes: a timeout does not prove Meta rejected the send.
-        // Match by template name across languages and parameter values, as requested.
-        const recent = await trx('messages').where({
-          company_id: data.company_id, phone_number_id: data.phone_number_id,
-          direction: 'outbound', type: 'template',
-        }).whereRaw("regexp_replace(to_phone, '[^0-9]', '', 'g') = ?", [recipient])
-          .whereRaw("content->'template'->>'name' = ?", [templateName])
-          .where('created_at', '>', trx.raw("clock_timestamp() - interval '5 minutes'"))
-          .first('id');
-        if (recent) {
-          throw Object.assign(new HTTP400Error({
-            message: 'This template was already sent or attempted to this recipient within the last 5 minutes.',
-            details: { code: 'TEMPLATE_DUPLICATE_WINDOW', window_seconds: 300 },
-          }), { code: 'TEMPLATE_DUPLICATE_WINDOW' });
-        }
-      }
       return this.create(data, trx);
     }, { isolationLevel: 'read committed' });
   }
 
   /** One lookup for the current contact page; never match national-number suffixes. */
-  async findLatestForContacts(contacts: any[]): Promise<{ contact_id: string; last_message: any }[]> {
+  async findLatestForContacts(contacts: any[]): Promise<{
+    contact_id: string; last_message: any; read_count: string | number; unread_count: string | number;
+  }[]> {
     const identities = contacts.flatMap(contact => {
       if (!contact.user_id || !contact.company_id || !contact.phone_number_id) return [];
       try {
@@ -73,7 +56,7 @@ class MessageModel extends BaseModel {
     if (!identities.length) return [];
 
     const result = await this.db.raw(`
-      SELECT c.contact_id, latest.last_message
+      SELECT c.contact_id, latest.last_message, counts.read_count, counts.unread_count
       FROM jsonb_to_recordset(?::jsonb) AS c(
         contact_id text, user_id uuid, company_id uuid, phone_number_id uuid, recipient text
       )
@@ -90,6 +73,18 @@ class MessageModel extends BaseModel {
         ORDER BY m.created_at DESC NULLS LAST, m.id DESC
         LIMIT 1
       ) latest ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) FILTER (WHERE m.status = 'read' OR m.read_at IS NOT NULL) AS read_count,
+          COUNT(*) FILTER (WHERE m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL) AS unread_count
+        FROM messages m
+        WHERE m.user_id = c.user_id
+          AND m.company_id = c.company_id
+          AND m.phone_number_id = c.phone_number_id
+          AND m.direction = 'inbound'
+          AND m.status IS DISTINCT FROM 'deleted'
+          AND regexp_replace(m.from_phone, '[^0-9]', '', 'g') = c.recipient
+      ) counts ON TRUE
     `, [JSON.stringify(identities)]);
     return result.rows;
   }
