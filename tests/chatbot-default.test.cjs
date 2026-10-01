@@ -15,7 +15,7 @@ function handler({keyword=null,session=null,sessionBot=null,defaultBot={id:'defa
   const lookups=[],routed=[],sent=[];
   const api=load('src/app/services/chatbot/chatbot.service.ts',{
     './runtimeBot':{getRuntimeBot:async (phone,id,text,defaultOnly)=>{
-      lookups.push({id,text,defaultOnly}); return defaultOnly?defaultBot:id?sessionBot:keyword;
+      lookups.push({phone,id,text,defaultOnly}); return defaultOnly?defaultBot:id?sessionBot:keyword;
     }},
     '@surefy/console/app/models/chatSession.model':{findActiveByPhoneNumberId:async()=>session,deactivateOtherBots:async()=>{}},
     './flow.route':{flowRouter:async args=>{routed.push(args);return {text:'started'}}},
@@ -131,4 +131,68 @@ test('default flow restarts immediately when an existing session refers to a del
   });
   await api.flowRouter({bot:{id:'default',isDefault:true,nodes:[{id:'new-node'}]},phone:'sender',phoneNumberId:'meta',incomingText:'hello'});
   assert.equal(starts,1);assert.equal(resets,1);
+});
+
+for (const [label, reply, expectedId] of [
+  ['interactive button', {interactive:{button_reply:{id:'button-1',title:'  SUPPORT  '}}}, 'button-1'],
+  ['template quick reply', {button:{payload:'opaque-payload',text:'  SUPPORT  '}}, 'opaque-payload'],
+  ['list reply', {interactive:{list_reply:{id:'row-1',title:'  SUPPORT  '}}}, 'row-1'],
+]) {
+  test(label + ' text selects the receiving phones keyword flow over an active session', async () => {
+    const h=handler({keyword:{id:'support'},session:{chatbot_id:'old'},sessionBot:{id:'old'}});
+    await h.run(reply);
+    assert.equal(h.lookups.length,1);
+    assert.equal(h.lookups[0].phone,'meta');
+    assert.equal(h.lookups[0].text,'support');
+    assert.equal(h.routed[0].bot.id,'support');
+    assert.equal(h.routed[0].triggerMatched,true);
+    assert.equal(h.routed[0].incomingId,expectedId);
+    assert.equal(h.sent.length,1);
+  });
+  test(label + ' without a keyword match continues its active session', async () => {
+    const h=handler({session:{chatbot_id:'active'},sessionBot:{id:'active'}});
+    await h.run(reply);
+    assert.equal(h.routed[0].bot.id,'active');
+    assert.equal(h.routed[0].triggerMatched,false);
+    assert.equal(h.routed[0].incomingId,expectedId);
+    assert.equal(h.lookups.some(x=>x.defaultOnly),false);
+  });
+}
+test('button payload alone does not select a keyword or default flow', async () => {
+  const h=handler({keyword:{id:'support'}});
+  await h.run({button:{payload:'support'}});
+  assert.equal(h.routed.length,0);
+  assert.equal(h.lookups.length,0);
+});
+
+test('typed option titles follow button and list edges without edge labels', async () => {
+  const executed=[];
+  const api=load('src/app/services/chatbot/flows/menu.flow.ts',{
+    '@surefy/console/app/models/chatSession.model':{update:async()=>{}},
+    '@surefy/console/services/chatbot/engine/executeNode':{executeNode:async args=>{executed.push(args);return {text:'response'}}}
+  });
+  for (const action of [
+    {buttons:[{reply:{id:'choice',title:'Contact Support'}}]},
+    {sections:[{rows:[{id:'choice',title:'Contact Support'}]}]},
+  ]) {
+    const bot={nodes:[{id:'menu',data:{attributes:{message:{interactive:{action}}}}},{id:'next'}],
+      edges:[{source:'menu',target:'next',sourceHandle:'choice'}]};
+    const session={id:'session',current_node_id:'menu'};
+    await api.menuFlow({bot,session,incomingText:' CONTACT   support '});
+    assert.equal(executed.at(-1).currentNode.id,'next');
+    assert.equal((await api.menuFlow({bot,session,incomingText:''})).ignoreMessage,true);
+  }
+  assert.equal(executed.length,2);
+});
+
+test('matching a keyword restarts the same chatbot before continuing its session', async () => {
+  let reset, started=false;
+  const api=load('src/app/services/chatbot/flow.route.ts',{
+    '../../models/chatSession.model':{deactivateActiveSession:async args=>{reset=args},findActiveSession:async()=>{throw Error('Should restart first')}},
+    './flows/trigger.flow':{triggerFlow:async()=>{started=true;return {text:'welcome'}}}
+  });
+  await api.flowRouter({bot:{id:'bot'},phone:'sender',phoneNumberId:'meta',incomingText:'hello',triggerMatched:true});
+  assert.equal(reset.chatbotId,'bot');
+  assert.equal(reset.phoneNumberId,'meta');
+  assert.equal(started,true);
 });
