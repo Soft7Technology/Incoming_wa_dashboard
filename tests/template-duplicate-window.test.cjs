@@ -18,14 +18,18 @@ function model(){
  const send=(overrides={})=>exports.default.createOutbound({company_id:'co',phone_number_id:'sender',to_phone:'+6581234567',direction:'outbound',type:'template',status:'queued',content:{template:{name:'greeting',language:{code:'en'}}},...overrides});
  return {send,rows,advance:n=>now+=n};
 }
-test('concurrent requests across campaigns create only one outbound row',async()=>{
+test('concurrent campaigns can send the same template to the same recipient',async()=>{
  const h=model();const results=await Promise.allSettled([h.send({campaign_id:'one'}),h.send({campaign_id:'two',to_phone:'6581234567'})]);
- assert.equal(h.rows.length,1);assert.equal(results[1].reason.code,'TEMPLATE_DUPLICATE_WINDOW');
+ assert.equal(h.rows.length,2);assert.ok(results.every(result=>result.status==='fulfilled'));
 });
-test('failed outcomes block changed variables and language until five minutes expire',async()=>{
- const h=model();await h.send({status:'failed'});h.advance(299999);
- await assert.rejects(h.send({content:{template:{name:'greeting',language:{code:'hi'},components:[]}}}),{code:'TEMPLATE_DUPLICATE_WINDOW'});
- h.advance(1);await h.send();assert.equal(h.rows.length,2);
+test('direct template sends can repeat immediately including after a failed attempt',async()=>{
+ const h=model();await h.send({status:'failed'});await h.send();await h.send();
+ await h.send({content:{template:{name:'greeting',language:{code:'hi'},components:[]}}});
+ assert.equal(h.rows.length,4);
+});
+test('campaign and direct sends do not block each other for the same template',async()=>{
+ const h=model();await h.send();await h.send({campaign_id:'one'});await h.send();
+ assert.equal(h.rows.length,3);
 });
 test('different recipients, senders, templates and companies remain independent',async()=>{
  const h=model();await h.send();await h.send({to_phone:'+6581234568'});await h.send({phone_number_id:'other'});await h.send({company_id:'other'});await h.send({content:{template:{name:'other'}}});assert.equal(h.rows.length,5);
