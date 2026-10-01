@@ -12,7 +12,7 @@ import ImportJobModel from '../models/importJob.model';
 import XLSXParserService, { ImportPreviewOptions } from './xlsxParser.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
-import { contactImportQueue } from '../../queues/contactImport.queue';
+import { processContactImport } from './contactImport.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { filter } from 'lodash';
@@ -352,9 +352,9 @@ class ContactService {
   }
 
   /**
-   * Queue contact import job (async processing)
+   * Import contacts in the API process and persist progress
    */
-  async queueContactImport(
+  async importContactsDirect(
     userId: string,
     companyId: string,
     phone_number_id:string,
@@ -368,7 +368,7 @@ class ContactService {
       tagIds?: string[];
     } = {}
   ) {
-    // Quick validation of file before queuing
+    // Validate the file before creating an import record
     const validation = await XLSXParserService.validateFile(filePath);
     if (!validation.valid) {
       console.log("Invalid File", validation)
@@ -402,7 +402,7 @@ class ContactService {
       file_headers: preview.headers,
       total_rows: preview.total_rows,
       import_options: {
-        list_name: listName,
+        execution_mode: 'api', list_name: listName,
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
@@ -410,27 +410,17 @@ class ContactService {
       },
     });
 
-    console.log(`Queued contact import job ${JSON.stringify(importJob)} for company ${userId}`);
-
-    // Add job to BullMQ queue
-    await contactImportQueue.add(
-      `contact-import-${importJob.id}`,
-      {
-        jobId: importJob.id,
-        companyId,
-        phone_number_id,
-        country_code,
-        userId,
-        filePath,
-        listName,
-        options,
-      },
-      {
-        jobId: importJob.id, // Use database job ID as BullMQ job ID for tracking
-      }
-    );
-
-    return importJob;
+    const result = await processContactImport({
+      jobId: importJob.id, companyId, phone_number_id, country_code,
+      userId, filePath, listName, options,
+    });
+    return {
+      ...importJob,
+      status: 'completed',
+      total_rows: result.total,
+      progress_percentage: 100,
+      result,
+    };
   }
 
   /**
@@ -443,7 +433,9 @@ class ContactService {
     }
 
     // Get BullMQ job details if available
-    const bullJob = await contactImportQueue.getJob(jobId);
+    const bullJob = job.import_options?.execution_mode === 'api'
+      ? null
+      : await (await import('../../queues/contactImport.queue')).contactImportQueue.getJob(jobId);
 
     return {
       id: job.id,
