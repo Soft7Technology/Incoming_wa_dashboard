@@ -23,6 +23,15 @@ class teamController {
       }
       // permission is a flat array of nav keys e.g. ["dashboard", "contact"]
       const permissionArray: string[] = Array.isArray(permission) ? permission : [];
+      if (permissionArray.length === 0) {
+        return sendResponse(
+          res,
+          HttpStatusCode.BAD_REQUEST,
+          false,
+          'Please select at least one permission for the team member.',
+          { error: 'At least one permission is required' }
+        );
+      }
       const invite_sent_by = req.ownerId ?? req.userId!;
       const company_id = req.companyId!;
       const assigned_plan = req.assigned_plan!;
