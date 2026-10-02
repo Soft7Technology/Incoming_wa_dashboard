@@ -2,6 +2,7 @@ import operations from '../app/http/controllers/superAdminOperations.controller'
 import { Router } from 'express';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
 import controller from '../app/http/controllers/superAdmin.controller';
+import userPlans from '../app/http/controllers/superAdminUserPlan.controller';
 
 const SuperAdminRoute = Router();
 // Every route checks the actor's live database role. API keys cannot enter this group.
@@ -15,6 +16,10 @@ SuperAdminRoute.patch('/companies/:companyId/status', controller.companyStatus);
 SuperAdminRoute.delete('/companies/:companyId', controller.deleteCompany);
 SuperAdminRoute.patch('/companies/:companyId/users/:userId', controller.updateUser);
 SuperAdminRoute.patch('/companies/:companyId/users/:userId/status', controller.userStatus);
+SuperAdminRoute.get('/companies/:companyId/users/:userId/available-plans', userPlans.available);
+SuperAdminRoute.post('/companies/:companyId/users/:userId/plans', userPlans.assign);
+SuperAdminRoute.get('/companies/:companyId/users/:userId/plans/:userPlanId', userPlans.details);
+SuperAdminRoute.patch('/companies/:companyId/users/:userId/plans/:userPlanId/status', userPlans.changeStatus);
 SuperAdminRoute.post('/companies/:companyId/credits', controller.addCredit);
 
 for (const resource of ['users', 'domains', 'activities', 'credits', 'audit'] as const) {

@@ -255,3 +255,61 @@ test('user lists attach only the assigned plan for the same company and user',as
  model.page=async()=>({items:[],pagination:{total:0}});
  await model.collection('users',{page:1,limit:25});assert.equal(reads,1);
 });
+
+test('company status cascades only to non-deleted users in the same transaction', async () => {
+  for (const status of ['active', 'suspended', 'inactive']) {
+    for (const failAudit of [false, true]) {
+      let companyStatus = 'active';
+      const users = [
+        { company_id: id, status: 'inactive', deleted_at: null },
+        { company_id: id, status: 'suspended', deleted_at: null },
+        { company_id: 'other', status: 'active', deleted_at: null },
+        { company_id: id, status: 'inactive', deleted_at: 'deleted' },
+      ];
+      const db = (table) => {
+        let filters = {}, nonDeleted = false, changes;
+        const q = {
+          where(value) { Object.assign(filters, value); return q; },
+          whereNull() { nonDeleted = true; return q; },
+          update(value) { changes = value; return q; },
+          first: async () => undefined,
+          returning: async () => { companyStatus = changes.status; return [{ id, status: companyStatus }]; },
+          then(resolve, reject) {
+            return Promise.resolve().then(() => {
+              for (const user of users) {
+                if (Object.entries(filters).every(([key, value]) => user[key] === value) && (!nonDeleted || !user.deleted_at))
+                  user.status = changes.status;
+              }
+            }).then(resolve, reject);
+          },
+        };
+        return q;
+      };
+      db.fn = { now: () => 'now' };
+      db.transaction = async (fn) => {
+        const before = [companyStatus, users.map(user => user.status)];
+        try { return await fn(db); }
+        catch (error) { companyStatus = before[0]; users.forEach((user, i) => user.status = before[1][i]); throw error; }
+      };
+      class BaseModel { constructor() { this.db = db; } }
+      const model = load('src/app/models/superAdmin.model.ts', {
+        '@surefy/models/base.model': { BaseModel },
+        '@surefy/exceptions/HTTP400Error': HttpError,
+        '@surefy/exceptions/HTTP404Error': HttpError,
+        './subscription.model': {},
+      }).default;
+      model.company = async () => ({ id, status: companyStatus });
+      model.audit = async () => { if (failAudit) throw Error('audit failed'); };
+      const operation = model.updateCompany('actor', id, { status }, 'Status changed');
+      if (failAudit) {
+        await assert.rejects(operation, /audit failed/);
+        assert.equal(companyStatus, 'active');
+        assert.deepEqual(users.map(user => user.status), ['inactive', 'suspended', 'active', 'inactive']);
+      } else {
+        await operation;
+        assert.equal(companyStatus, status);
+        assert.deepEqual(users.map(user => user.status), [status, status, 'active', 'inactive']);
+      }
+    }
+  }
+});

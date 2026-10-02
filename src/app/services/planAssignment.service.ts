@@ -9,7 +9,8 @@ import { calculatePlanPeriod } from '../utils/subscriptionDuration';
 interface Actor { userId?: string; companyId?: string; userRole?: string }
 
 class PlanAssignmentService {
-  async updateUser(userId: string, data: any, actor?: Actor, trialOnly = false) {
+  async updateUser(userId: string, data: any, actor?: Actor, trialOnly = false,
+    management?: { companyId: string; reason: string }) {
     const result = await db.transaction(async trx => {
       const planId = data.assigned_plan;
       const plan = planId
@@ -26,7 +27,10 @@ class PlanAssignmentService {
       // Stable row order prevents assignments to the fee recipient deadlocking.
       const users = await trx('users').whereIn('id', recipient ? [userId, recipient.id] : [userId]).orderBy('id').forUpdate();
       const user = users.find(row => row.id === userId);
-      if (!user) throw new HTTP404Error({ message: 'User not found' });
+      if (!user || user.deleted_at || management && user.company_id !== management.companyId)
+        throw new HTTP404Error({ message: 'User not found in this company' });
+      if (management && user.role === 'superadmin')
+        throw new HTTP403Error({ message: 'Superadmin plans cannot be managed here' });
       if (actor && actor.userRole !== 'superadmin' &&
           (!actor.companyId || actor.companyId !== user.company_id || !['admin', 'company'].includes(actor.userRole || ''))) {
         throw new HTTP403Error({ message: 'Not authorized to update this company user' });
@@ -50,6 +54,8 @@ class PlanAssignmentService {
       if (plan.company_id && plan.company_id !== user.company_id) {
         throw new HTTP400Error({ message: 'Subscription plan belongs to another company' });
       }
+      if (management && plan.company_id !== user.company_id)
+        throw new HTTP400Error({ message: 'Select an active subscription plan belonging to the user company' });
       const price = Number(plan.price);
       if (!Number.isFinite(price) || price < 0 || (plan.billing_cycle === 'Free' && price !== 0)) {
         throw new HTTP400Error({ message: 'Invalid subscription price; Free plans must have zero price' });
@@ -119,7 +125,7 @@ class PlanAssignmentService {
         duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage),
       }).returning('*');
       const [updated] = await trx('users').where({ id: userId }).update({
-        ...updates, status: 'active', assigned_plan: newPlan.id,
+        ...updates, ...(management ? {} : { status: 'active' }), assigned_plan: newPlan.id,
       }).returning('*');
       await trx('activity_logs').insert({
         user_id: actor?.userId || userId, company_id: user.company_id,
@@ -127,6 +133,11 @@ class PlanAssignmentService {
         read: false, status: 'SUCCESS', description: `Assigned ${plan.plan_name} to ${user.name}`,
         new_data: JSON.stringify({ assigned_plan: newPlan.id, subscription_id: plan.id,
           commission: fee, start_date: now, end_date: endDate, remaining_days_carried: remainingDays }),
+      });
+      if (management) await trx('superadmin_audit_logs').insert({
+        actor_id: actor!.userId, company_id: user.company_id, target_id: newPlan.id,
+        action: 'user_plan.assign', reason: management.reason,
+        changes: JSON.stringify({ user_id: userId, subscription_id: plan.id, assigned_plan: newPlan.id }),
       });
       return { user: { ...updated, plan_name: newPlan.plan_name, duration_days: newPlan.duration_days }, plan: newPlan };
     });

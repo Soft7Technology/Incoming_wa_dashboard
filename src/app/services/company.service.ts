@@ -367,32 +367,12 @@ class CompanyService {
   }
 
   async activateUser(companyId: string) {
-    const companyUser = await userModel.findCompanyUsers(companyId)
-    if (!companyUser) {
-      throw new HTTP401Error({ message: "Company not have any active user" })
-    }
-
-    for (const user of companyUser) {
-      await userModel.update(user.id, { status: "active" })
-    }
-
-    const activeCompany = await companyModel.update(companyId, { status: "active" })
-    return activeCompany
+    return companyModel.changeStatus(companyId, "active");
   }
 
 
   async inactiveUser(companyId: string) {
-    const companyUser = await userModel.findCompanyUsers(companyId)
-    if (!companyUser) {
-      throw new HTTP401Error({ message: "Company not have any active user" })
-    }
-
-    for (const user of companyUser) {
-      await userModel.update(user.id, { status: "inactive" })
-    }
-
-    const activeCompany = await companyModel.update(companyId, { status: "inactive" })
-    return activeCompany
+    return companyModel.changeStatus(companyId, "inactive");
   }
 
   async deleteUser(companyId: string) {
@@ -410,17 +390,7 @@ class CompanyService {
   }
 
   async suspendCompany(companyId: string) {
-    const companyActiveUser = await userModel.findCompanyUsers(companyId)
-    if (!companyActiveUser) {
-      throw new HTTP401Error({ message: "Company not have any active user to suspend" })
-    }
-
-    for (const user of companyActiveUser) {
-      await userModel.update(user.id, { status: "suspend" })
-    }
-
-    const suspendCompany = await companyModel.update(companyId, { status: 'suspend' })
-    return suspendCompany
+    return companyModel.changeStatus(companyId, "suspended");
   }
 
   async createCustomName(user_id: string, company_id: string, hostname: string) {

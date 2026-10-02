@@ -41,6 +41,14 @@
     {
       "key": "targetSuperadminId",
       "value": ""
+    },
+    {
+      "key": "userPlanId",
+      "value": ""
+    },
+    {
+      "key": "subscriptionId",
+      "value": ""
     }
   ],
   "item": [
@@ -533,6 +541,93 @@
           "raw": "{\n  \"status\": \"resolved\",\n  \"reason\": \"Issue fixed\"\n}"
         }
       }
+    },
+    {
+      "name": "User plan management",
+      "item": [
+        {
+          "name": "Available active company plans",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/available-plans?page=1&limit=25"
+          }
+        },
+        {
+          "name": "Assign company plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/plans",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subscription_id\": \"{{subscriptionId}}\",\n  \"reason\": \"Approved plan assignment\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Individual user plan details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/plans/{{userPlanId}}"
+          }
+        },
+        {
+          "name": "Activate user plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/plans/{{userPlanId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\",\n  \"reason\": \"Resume user plan\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Suspend user plan",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/plans/{{userPlanId}}/status",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"suspended\",\n  \"reason\": \"Suspend user plan\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }
