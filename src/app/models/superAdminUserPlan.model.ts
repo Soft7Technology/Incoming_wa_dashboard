@@ -26,6 +26,12 @@ class SuperAdminUserPlanModel extends BaseModel {
 
   async available(companyId: string, userId: string, page: number, limit: number) {
     await this.user(companyId, userId);
+    return this.availableForCompany(companyId, page, limit);
+  }
+
+  async availableForCompany(companyId: string, page: number, limit: number) {
+    const company = await this.db('companies').where({ id: companyId }).whereNull('deleted_at').first('id');
+    if (!company) throw new HTTP404Error({ message: 'Company not found' });
     const query = this.db('subscription_plans').where({ company_id: companyId, active: true });
     const count = await query.clone().count('* as total').first();
     const items = await query.clone().select('id', 'company_id', 'plan_name', 'price', 'billing_cycle', 'active', 'features')

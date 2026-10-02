@@ -313,3 +313,62 @@ test('company status cascades only to non-deleted users in the same transaction'
     }
   }
 });
+
+test('individual user details scope counts, exclude deleted records and private fields', async () => {
+  const rows = {
+    users: [{ id: 'u', company_id: 'c', name: 'User', assigned_plan: 'p', password: 'secret', api_key: 'secret' }],
+    campaigns: [{ user_id: 'u', company_id: 'c', status: 'running' }, { user_id: 'u', company_id: 'c', status: 'running' },
+      { user_id: 'u', company_id: 'c', status: 'failed' }, { user_id: 'u', company_id: 'other', status: 'running' },
+      { user_id: 'other', company_id: 'c', status: 'running' }, { user_id: 'u', company_id: 'c', status: 'running', deleted_at: 'deleted' }],
+    contacts: [{ user_id: 'u', company_id: 'c' }, { user_id: 'u', company_id: 'c', deleted_at: 'deleted' }, { user_id: 'other', company_id: 'c' }],
+    user_plans: [{ id: 'p', user_id: 'u', company_id: 'c', active: false, status: 'COMPLETED' }],
+  };
+  const db = table => {
+    const filters = {}; let soft = false, counting = false;
+    const selected = () => rows[table].filter(row => Object.entries(filters).every(([k,v]) => row[k] === v) && (!soft || !row.deleted_at));
+    const q = {
+      where(value) { Object.assign(filters,value); return q; }, whereNull() { soft = true; return q; },
+      select() { return q; }, count() { counting = true; return q; },
+      async first(...columns) {
+        if (counting) return { count: String(selected().length) };
+        const row = selected()[0];
+        if (!row) return undefined;
+        const keys = columns.flat(); return Object.fromEntries(keys.filter(k => k in row).map(k => [k,row[k]]));
+      },
+      async groupBy() {
+        const groups = new Map(); for (const row of selected()) groups.set(row.status,(groups.get(row.status)||0)+1);
+        return Array.from(groups, ([status,count]) => ({ status,count:String(count) }));
+      },
+    }; return q;
+  };
+  class BaseModel { constructor() { this.db = db; } }
+  const model = load('src/app/models/superAdmin.model.ts', {
+    '@surefy/models/base.model': { BaseModel }, '@surefy/exceptions/HTTP400Error': HttpError,
+    '@surefy/exceptions/HTTP404Error': HttpError, './subscription.model': {},
+  }).default;
+  const result = await model.userDetails('u','c');
+  assert.equal(result.stats.contacts_count,1);
+  assert.equal(result.stats.campaigns_count,3);
+  assert.equal(result.stats.campaigns_by_status.find(group => group.status === 'running').count,2);
+  assert.equal(result.user.password,undefined); assert.equal(result.user.api_key,undefined);
+  assert.equal(result.user.plan_details.active,false);
+  await assert.rejects(model.userDetails('u','other'), /User not found/);
+  rows.user_plans[0].user_id = 'other';
+  assert.equal((await model.userDetails('u')).user.plan_details,null);
+  rows.campaigns = []; rows.contacts = [];
+  const empty = await model.userDetails('u');
+  assert.equal(empty.stats.campaigns_count,0); assert.equal(empty.stats.contacts_count,0);
+  assert.equal(empty.stats.campaigns_by_status.length,0);
+  rows.users[0].deleted_at = 'deleted';
+  await assert.rejects(model.userDetails('u'), /User not found/);
+});
+
+test('user details service validates route identifiers before database reads', async () => {
+  let calls = 0;
+  const s = service({ userDetails: async () => { calls++; return {}; } });
+  assert.throws(() => s.userDetails('bad'), /UUID/);
+  assert.throws(() => s.userDetails(id,'bad'), /UUID/);
+  assert.equal(calls,0);
+  await s.userDetails(id,id);
+  assert.equal(calls,1);
+});

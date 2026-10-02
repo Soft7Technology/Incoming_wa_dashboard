@@ -17,6 +17,12 @@ class SuperAdminUserPlanService {
     const { page, limit } = v.filters(query);
     return model.available(companyId, userId, page, limit);
   }
+  availableForCompany(query: Record<string, unknown>) {
+    v.allowed(query, ['company_id', 'page', 'limit']);
+    const companyId = v.uuid(query.company_id, 'company_id');
+    const { page, limit } = v.filters(query);
+    return model.availableForCompany(companyId, page, limit);
+  }
   assign(actor: string, companyId: string, userId: string, body: unknown) {
     this.scope(companyId, userId);
     const data = v.object(body); v.allowed(data, ['subscription_id', 'reason']);

@@ -55,7 +55,7 @@ class CampaignService {
     const template = await TemplateModel.findById(data.template_id);
     const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
     if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
-      throw new HTTP404Error({ message: 'Phone number not found in your account' });
+      throw new HTTP404Error({ message: 'Campaign cannot be created: the selected sending phone number is not connected to your user account.' });
     }
     console.log('Template',template)
     if (!template) {
@@ -85,6 +85,11 @@ class CampaignService {
       }
       if (resolvedTagIds.length > 0) {
         filters.tag_ids = resolvedTagIds;
+      } else {
+        throw new HTTP400Error({
+          message: 'Campaign cannot be created: none of the selected contact tags exist in your account. Select existing tags and try again.',
+          details: { code: 'CAMPAIGN_CONTACT_TAGS_NOT_FOUND' },
+        });
       }
       console.log(`[Campaign] Resolved tag names ${JSON.stringify(filters.tags)} → IDs ${JSON.stringify(resolvedTagIds)}`);
     }
@@ -117,6 +122,7 @@ class CampaignService {
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
+        .where('contacts.company_id', companyId)
         .where('phone_number_id', phoneNumberId.id)
         .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [canonicalRecipientNumbers]);
 
@@ -145,7 +151,8 @@ class CampaignService {
     }
 
     // Get contacts based on filters
-    const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
+    const matchingContacts = await ContactService.getContactsByFilters(userId, companyId, filters);
+    const contacts = matchingContacts.filter(contact => contact.phone_number_id === phoneNumberId.id);
     const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
     const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
@@ -155,7 +162,18 @@ class CampaignService {
     console.log('Found contacts for campaign:', contactList.length);
 
     if (contactList.length === 0) {
-      throw new HTTP400Error({ message: 'No contacts found matching the specified filters' });
+      const matchingRequested = contacts.filter(contact => !requestedNumbers ||
+        requestedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)));
+      const optedOut = matchingRequested.length > 0 && matchingRequested.every(contact =>
+        excludedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)));
+      throw new HTTP400Error({
+        message: optedOut
+          ? 'Campaign cannot be created: all matching contacts have opted out for the selected sending phone number.'
+          : filters.contactNumber?.length
+            ? 'Campaign cannot be created: none of the selected contact numbers match your contact filters. Check the numbers, tags, lists and attributes.'
+            : 'Campaign cannot be created: no contacts match the selected filters for the selected sending phone number. Select contacts connected to that phone number and try again.',
+        details: { code: optedOut ? 'CAMPAIGN_CONTACTS_OPTED_OUT' : 'CAMPAIGN_NO_MATCHING_CONTACTS' },
+      });
     }
 
     // ── Determine scheduled time ─────────────────────────────────────────

@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
-function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,total=0,invalidReason=null,connectionFailure=false}={}) {
+function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,total=0,invalidReason=null,connectionFailure=false,wrongSender=false}={}) {
  let selectionCalls=0;let sends=0;const claimed=new Set();const statuses=[];
  let campaignStatus='running';const recipients=Array.from({length:total},(_,i)=>({id:String(i),contact_id:String(i)}));
  class Worker{on(){return this;}}
@@ -16,7 +16,7 @@ function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,to
  recordSent:async()=>{if(saveError)throw Error('database write failed');},
  updateStatus:async(id,status)=>{if(statusError)throw Error('status database failure');statuses.push(status);}},
  '@surefy/console/models/campaign.model':{incrementCount:async()=>{},findById:async()=>({id:'c',company_id:'co',user_id:'u',status:campaignStatus,template_id:'t',phone_number_id:'p',total_recipients:total}),completeIfNoPendingMessages:async()=>{if(claimed.size===total){campaignStatus='completed';return true;}return false;},markRunningJobFailed:async()=>{campaignStatus='failed';}},
- '@surefy/console/models/contact.model':{incrementFailedCount:async()=>{},findCampaignRecipients:async ids=>ids.map(id=>({id,phone_number:'+6581234567',is_valid:true}))},'../../app/models/phoneNumber.model':{findByPhoneNumberId:async()=>({phone_number_id:'p'})},'@surefy/console/models/template.model':{findById:async()=>({name:'test',language:'en',components:[]})},
+ '@surefy/console/models/contact.model':{incrementFailedCount:async()=>{},findCampaignRecipients:async ids=>ids.map(id=>({id,phone_number:'+6581234567',is_valid:true}))},'../../app/models/phoneNumber.model':{findByPhoneNumberId:async()=>({phone_number_id:'p',user_id:wrongSender?'other':'u',company_id:'co'})},'@surefy/console/models/template.model':{findById:async()=>({name:'test',language:'en',components:[]})},
  '@surefy/console/services/message.service':{sendMessage:async()=>{sends++;if(sendError)throw sendError;if(sends<=failFirst)throw Error('recipient rejected');return {id:'message'};}},
  '@surefy/config/redis.config':{},uuid:{v4:()=> 'message-id'}};
  const exports={};const js=ts.transpileModule(fs.readFileSync('src/queues/processors/campaignExecution.processor.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
@@ -106,4 +106,11 @@ test('database loss after first batch defers then completes 243 failed recipient
  const result=await h.process();
  assert.equal(result.status,'completed');assert.equal(h.sends(),243);
  assert.equal(h.statuses.length,243);
+});
+
+test('campaign worker rejects a sender moved to another user before sending',async()=>{
+ const h=worker({wrongSender:true,total:1});
+ await assert.rejects(h.process(),/sending phone number is not connected/);
+ assert.equal(h.sends(),0);
+ assert.equal(h.campaignStatus(),'failed');
 });

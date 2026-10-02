@@ -10,6 +10,9 @@ class SuperAdminUserPlanController {
   available = tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
     successResponse(req, res, 'Available company plans retrieved',
       await service.available(req.params.companyId, req.params.userId, req.query)));
+  availableForCompany = tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
+    successResponse(req, res, 'Available company plans retrieved',
+      await service.availableForCompany(req.query)));
   assign = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const result = await service.assign(req.userId!, req.params.companyId, req.params.userId, req.body);
     return successResponse(req, res, 'User plan assigned', { user: {

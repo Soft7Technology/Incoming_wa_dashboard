@@ -14,6 +14,11 @@ class SuperAdminService {
   overview() { return model.overview(); }
   companies(query: Record<string, unknown>) { return model.companies(validate.filters(query)); }
   company(id: string) { return model.details(validate.uuid(id, 'companyId')); }
+  userDetails(id: string, companyId?: string) {
+    validate.uuid(id, 'userId');
+    if (companyId !== undefined) validate.uuid(companyId, 'companyId');
+    return model.userDetails(id, companyId);
+  }
   async collection(resource: CompanyCollection, query: Record<string, unknown>, companyId?: string) {
     const filters = validate.filters(query);
     if (companyId) {

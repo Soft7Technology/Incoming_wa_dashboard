@@ -186,6 +186,7 @@ All routes use the live superadmin JWT guard and the `/v1/super-admin` prefix.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| GET | `/available-plans?company_id=COMPANY_UUID&page=1&limit=25` | Active catalogue plans belonging to the supplied company, including features |
 | GET | `/companies/:companyId/users/:userId/available-plans?page=1&limit=25` | Active catalogue plans belonging to the target user's company, including features |
 | POST | `/companies/:companyId/users/:userId/plans` | Assign an active company catalogue plan and create its user plan snapshot |
 | GET | `/companies/:companyId/users/:userId/plans/:userPlanId` | Individual user plan details, including limits, usage, dates and assigned user |
@@ -197,7 +198,7 @@ Assignment body:
 { "subscription_id": "CATALOGUE_PLAN_UUID", "reason": "Approved plan assignment" }
 ```
 
-Select `subscription_id` from the available-plans response. The response contains `plan.id`, the new user plan UUID; this is also saved to `users.assigned_plan`. Catalogue IDs and user plan IDs refer to different tables. Assignment retains existing duration, usage snapshot, wallet commission and replacement rules: Monthly costs 100 wallet credits in platform fees, Yearly costs 1000, Free costs zero. Assignment and its audit commit together. User account status is preserved.
+Pass the target user's `company_id` to `/available-plans`; a valid company UUID is required. Missing, invalid or unknown query parameters are rejected; nonexistent or deleted companies return 404. The existing user-specific route is also supported. Both routes return active `subscription_plans` catalogue records for assignment. Select `subscription_id` from the available-plans response. The response contains `plan.id`, the new user plan UUID; this is also saved to `users.assigned_plan`. Catalogue IDs and user plan IDs refer to different tables. Assignment retains existing duration, usage snapshot, wallet commission and replacement rules: Monthly costs 100 wallet credits in platform fees, Yearly costs 1000, Free costs zero. Assignment and its audit commit together. User account status is preserved.
 
 Status body:
 
@@ -208,3 +209,9 @@ Status body:
 Use `active` to resume. Suspension sets `active=false` and preserves status, dates, limits and usage. Suspension does not pause the expiry clock or refund wallet fees. Reactivation requires a COMPLETED plan within its original dates and no other active plan; it updates `users.assigned_plan` without charging another fee. Expired, cancelled, future and unpaid plans cannot be resumed. Assign a new catalogue plan to renew instead. User and company account statuses remain independent of subscription activation. Deleted users and mismatched company/user/plan ownership are rejected. Superadmin user plans cannot be mutated here. Status changes and audit entries commit in one transaction.
 
 Postman examples are in the User plan management folder of `postman/superadmin.postman_collection.json`.
+
+## Individual user details
+
+`GET /v1/super-admin/users/:userId` returns an allowlisted user profile and its assigned plan in `data.user`, with `data.stats.contacts_count`, `campaigns_count`, and `campaigns_by_status` (status/count entries). `GET /v1/super-admin/companies/:companyId/users/:userId` also validates that the user belongs to the company in the path. Both require the existing live superadmin JWT guard.
+
+Counts include only non-deleted records owned by that user and matching that user's company; campaigns assigned to the user but owned by another user are excluded. Campaign totals are the sum of the status groups. Users with no records return zero counts and an empty status array. Missing or deleted users return 404. Plan details are null for an absent or mismatched assignment; expired/suspended snapshots retain their actual status. Passwords, API keys, gateway credentials and raw user settings are not returned. Counts and profile reads may change during concurrent writes.
