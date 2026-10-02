@@ -61,7 +61,7 @@ PATCH `/companies/:companyId/status`:
 { "status": "suspended", "reason": "Account review" }
 ```
 
-Use `active` to reactivate, or `inactive` to disable. A suspended/deleted company cannot use authenticated dashboard routes; the main message send paths recheck company and sender status before contacting Meta. Already in-flight sends cannot be recalled. API-key authentication already requires active accounts. Company status changes preserve individual user statuses, so reactivation does not reactivate separately suspended users. Companies containing a superadmin cannot be disabled through this API.
+Use `active` to reactivate, or `inactive` to disable. A suspended/deleted company cannot use authenticated dashboard routes; the main message send paths recheck company and sender status before contacting Meta. Already in-flight sends cannot be recalled. API-key authentication already requires active accounts. Company status changes also set every non-deleted company user to the same status in one transaction. Reactivation reactivates separately suspended or inactive users too; deleted users remain unchanged. Companies containing a superadmin cannot be disabled through this API.
 
 PATCH `/companies/:companyId/users/:userId/status`:
 
@@ -179,3 +179,32 @@ Other distinct operations remain at their existing endpoints: `/v1/auth/create-a
 ## Assigned plan in user lists
 
 `GET /v1/super-admin/companies/:companyId/users` and `GET /v1/super-admin/users` include `assigned_plan` and `plan_details` for each user. `plan_details` contains the assigned user_plans snapshot: id, user_id, company_id, subscription_id, plan_name, price, billing_cycle, status, active, start_date, end_date, duration_days, limits and usage. This is the user's purchased/assigned plan, not the current catalogue price. Expired or cancelled assignments remain visible with their actual status. Missing, unassigned or mismatched-owner plans return null. Existing search and pagination are unchanged.
+
+## Superadmin user plan management
+
+All routes use the live superadmin JWT guard and the `/v1/super-admin` prefix.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| GET | `/companies/:companyId/users/:userId/available-plans?page=1&limit=25` | Active catalogue plans belonging to the target user's company, including features |
+| POST | `/companies/:companyId/users/:userId/plans` | Assign an active company catalogue plan and create its user plan snapshot |
+| GET | `/companies/:companyId/users/:userId/plans/:userPlanId` | Individual user plan details, including limits, usage, dates and assigned user |
+| PATCH | `/companies/:companyId/users/:userId/plans/:userPlanId/status` | Suspend or resume an existing user plan |
+
+Assignment body:
+
+```json
+{ "subscription_id": "CATALOGUE_PLAN_UUID", "reason": "Approved plan assignment" }
+```
+
+Select `subscription_id` from the available-plans response. The response contains `plan.id`, the new user plan UUID; this is also saved to `users.assigned_plan`. Catalogue IDs and user plan IDs refer to different tables. Assignment retains existing duration, usage snapshot, wallet commission and replacement rules: Monthly costs 100 wallet credits in platform fees, Yearly costs 1000, Free costs zero. Assignment and its audit commit together. User account status is preserved.
+
+Status body:
+
+```json
+{ "status": "suspended", "reason": "Subscription review" }
+```
+
+Use `active` to resume. Suspension sets `active=false` and preserves status, dates, limits and usage. Suspension does not pause the expiry clock or refund wallet fees. Reactivation requires a COMPLETED plan within its original dates and no other active plan; it updates `users.assigned_plan` without charging another fee. Expired, cancelled, future and unpaid plans cannot be resumed. Assign a new catalogue plan to renew instead. User and company account statuses remain independent of subscription activation. Deleted users and mismatched company/user/plan ownership are rejected. Superadmin user plans cannot be mutated here. Status changes and audit entries commit in one transaction.
+
+Postman examples are in the User plan management folder of `postman/superadmin.postman_collection.json`.

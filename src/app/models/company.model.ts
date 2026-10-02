@@ -1,4 +1,6 @@
 import { BaseModel } from '@surefy/models/base.model';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 
 class CompanyModel extends BaseModel {
   constructor() {
@@ -14,6 +16,23 @@ class CompanyModel extends BaseModel {
 
   async findById(id: string) {
     return this.query().where({ id }).first();
+  }
+
+  async changeStatus(id: string, status: 'active' | 'inactive' | 'suspended') {
+    return this.db.transaction(async (trx) => {
+      const company = await trx('companies').where({ id }).whereNull('deleted_at').forUpdate().first('id');
+      if (!company) throw new HTTP404Error({ message: 'Company not found' });
+      if (status !== 'active') {
+        const administrator = await trx('users').where({ company_id: id, role: 'superadmin' })
+          .whereNull('deleted_at').first('id');
+        if (administrator) throw new HTTP400Error({ message: 'Cannot disable a company containing a superadmin' });
+      }
+      const [updated] = await trx('companies').where({ id })
+        .update({ status, updated_at: trx.fn.now() }).returning('*');
+      await trx('users').where({ company_id: id }).whereNull('deleted_at')
+        .update({ status, updated_at: trx.fn.now() });
+      return updated;
+    });
   }
 
   async findAll(conditions: any = {}) {

@@ -265,6 +265,10 @@ class SuperAdminModel extends BaseModel {
           updated_at: trx.fn.now(),
         })
         .returning(companyColumns);
+      if (!remove && changes.status) {
+        await trx('users').where({ company_id: id }).whereNull('deleted_at')
+          .update({ status: changes.status, updated_at: trx.fn.now() });
+      }
       await this.audit(trx, actor, id, id, remove ? 'company.delete' : 'company.update', reason, {
         before: Object.fromEntries(Object.keys(changes).map((key) => [key, before[key]])),
         after: remove ? { deleted: true } : changes,
