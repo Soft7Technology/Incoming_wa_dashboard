@@ -7,10 +7,13 @@ import userPlans from '../app/http/controllers/superAdminUserPlan.controller';
 const SuperAdminRoute = Router();
 // Every route checks the actor's live database role. API keys cannot enter this group.
 SuperAdminRoute.use(jwtAuthMiddleware, controller.authorize);
+SuperAdminRoute.get('/available-plans', userPlans.availableForCompany);
 SuperAdminRoute.get('/overview', controller.overview);
 SuperAdminRoute.get('/companies', controller.companies);
 SuperAdminRoute.post('/companies', controller.createCompany);
 SuperAdminRoute.get('/companies/:companyId', controller.company);
+SuperAdminRoute.get('/users/:userId', controller.userDetails);
+SuperAdminRoute.get('/companies/:companyId/users/:userId', controller.userDetails);
 SuperAdminRoute.patch('/companies/:companyId', controller.updateCompany);
 SuperAdminRoute.patch('/companies/:companyId/status', controller.companyStatus);
 SuperAdminRoute.delete('/companies/:companyId', controller.deleteCompany);

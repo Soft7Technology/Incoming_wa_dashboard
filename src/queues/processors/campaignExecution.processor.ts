@@ -87,6 +87,9 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (!template) throw new Error('Template not found');
     const phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
     if (!phone) throw new Error('Business phone number not found');
+    if (phone.user_id !== campaign.user_id || phone.company_id !== campaign.company_id) {
+      throw new Error('Campaign cannot run: the selected sending phone number is not connected to the campaign user account.');
+    }
     campaign.phone_number_id = phone.phone_number_id;
     while (true) {
     const batchStartedAt = Date.now();

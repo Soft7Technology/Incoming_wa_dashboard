@@ -38,3 +38,9 @@ After applying the `add_campaign_failure_reason` migration, terminal job errors 
 Workers drain active jobs before closing the database on SIGINT/SIGTERM. Give your process manager sufficient termination grace for outbound requests. Abrupt termination after Meta accepts a message but before its database status is saved still risks a duplicate on recovery; this implementation does not provide exactly-once delivery.
 
 Validation: `node --test tests/campaign-worker.test.cjs` and `npx tsc --noEmit`. Tests use mocked dependencies and send no messages.
+
+## Campaign recipient selection
+
+Campaign recipient numbers are selected from contacts owned by the campaign user and company and connected to the payload sender's internal phone number ID. Contacts connected to another sender are excluded. Explicit contactNumber inputs reuse saved country-code context only for that sender; new external numbers retain existing auto-create behavior. The campaign payload phone_number_id selects the sending number. Creation validates its user/company ownership, and the worker rechecks ownership before executing. Sender-specific opt-outs remain enforced.
+
+If no eligible recipients match, creation returns HTTP 400 before saving a campaign, campaign messages, consuming campaign quota or queueing a send. The response message explains whether selected numbers did not match filters, all matching recipients opted out, or selected tag names could not be found. Error details include CAMPAIGN_NO_MATCHING_CONTACTS, CAMPAIGN_CONTACTS_OPTED_OUT or CAMPAIGN_CONTACT_TAGS_NOT_FOUND. Frontends should display the API message from the failed creation response. Contacts may still be auto-created for new explicit numbers before later filter validation rejects the campaign.

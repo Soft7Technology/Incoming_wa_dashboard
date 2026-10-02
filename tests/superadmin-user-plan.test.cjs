@@ -74,3 +74,54 @@ test('audit failure rolls back suspension and activation pointer changes', async
     assert.deepEqual(f.state(),before);
   }
 });
+
+test('available company plans require company_id and validate pagination and query keys', async () => {
+  const companyId = '87af00e3-cdf0-4c59-9950-143dbadf5ebc';
+  function load(file, dependencies) {
+    const exports = {};
+    vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+    }).outputText, { exports, require: name => { assert.ok(name in dependencies, name); return dependencies[name]; } });
+    return exports;
+  }
+  const validation = load('src/app/utils/superAdminValidation.ts', {
+    uuid: require('uuid'), '@surefy/exceptions/HTTP400Error': HttpError,
+  });
+  let selected;
+  const service = load('src/app/services/superAdminUserPlan.service.ts', {
+    '../models/superAdminUserPlan.model': { availableForCompany: async (...args) => { selected = args; return []; } },
+    './planAssignment.service': {}, '../utils/superAdminValidation': validation,
+  }).default;
+  for (const query of [{}, { company_id: 'bad' }, { company_id: [companyId] },
+    { company_id: companyId, active: 'false' }, { company_id: companyId, limit: '101' }]) {
+    assert.throws(() => service.availableForCompany(query));
+  }
+  await service.availableForCompany({ company_id: companyId, page: '2', limit: '10' });
+  assert.deepEqual(selected, [companyId, 2, 10]);
+});
+
+test('available plans select only active catalogue records in the supplied company', async () => {
+  const queries = [];
+  let companyExists = true;
+  const db = table => {
+    const filters = {}, q = {
+      where(values) { Object.assign(filters, values); return q; },
+      whereNull() { return q; },
+      first: async () => table === 'companies' ? (companyExists ? { id: 'c' } : undefined) : { total: 1 },
+      clone() { return q; }, count() { return q; }, select() { return q; },
+      orderBy() { return q; }, limit() { return q; }, offset() { return q; },
+      then(resolve, reject) { queries.push({ table, filters }); return Promise.resolve([{ id: 'catalogue' }]).then(resolve, reject); },
+    }; return q;
+  };
+  class BaseModel { constructor() { this.db = db; } }
+  const exports = {};
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/models/superAdminUserPlan.model.ts', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+  }).outputText, { exports, require: name => name.includes('base.model') ? { BaseModel } : HttpError });
+  await exports.default.availableForCompany('c', 1, 25);
+  assert.equal(queries[0].table, 'subscription_plans');
+  assert.equal(queries[0].filters.company_id, 'c');
+  assert.equal(queries[0].filters.active, true);
+  companyExists = false;
+  await assert.rejects(exports.default.availableForCompany('missing', 1, 25), /Company not found/);
+});

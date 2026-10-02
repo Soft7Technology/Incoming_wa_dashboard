@@ -137,6 +137,30 @@ class SuperAdminModel extends BaseModel {
     };
   }
 
+  async userDetails(id: string, companyId?: string) {
+    const query = this.db('users').where({ id }).whereNull('deleted_at');
+    if (companyId) query.where({ company_id: companyId });
+    const user = await query.first(userColumns);
+    if (!user) throw new HTTP404Error({ message: 'User not found' });
+    const scope = { user_id: user.id, company_id: user.company_id };
+    const [campaigns, contacts, plan] = await Promise.all([
+      this.db('campaigns').where(scope).whereNull('deleted_at')
+        .select('status').count('* as count').groupBy('status'),
+      this.db('contacts').where(scope).whereNull('deleted_at').count('* as count').first(),
+      user.assigned_plan ? this.db('user_plans').where({ id: user.assigned_plan, ...scope })
+        .first('id', 'user_id', 'company_id', 'subscription_id', 'plan_name', 'price',
+          'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage') : null,
+    ]);
+    return {
+      user: { ...user, plan_details: plan ?? null },
+      stats: {
+        contacts_count: Number(contacts?.count || 0),
+        campaigns_count: campaigns.reduce((total, row) => total + Number(row.count), 0),
+        campaigns_by_status: campaigns.map(row => ({ status: row.status, count: Number(row.count) })),
+      },
+    };
+  }
+
   async collection(resource: CompanyCollection, f: SuperAdminFilters) {
     const definitions = {
       users: { table: 'users', columns: userColumns, search: ['name', 'email', 'phone'], soft: true },

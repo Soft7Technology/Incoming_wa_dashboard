@@ -23,6 +23,10 @@ class SuperAdminController {
   company = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     return successResponse(req, res, 'Company details retrieved', await service.company(req.params.companyId));
   });
+  userDetails = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    return successResponse(req, res, 'User details retrieved',
+      await service.userDetails(req.params.userId, req.params.companyId));
+  });
   collection = (resource: CompanyCollection) =>
     tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
       return successResponse(

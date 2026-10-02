@@ -550,7 +550,7 @@
           "request": {
             "method": "GET",
             "header": [],
-            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}/available-plans?page=1&limit=25"
+            "url": "{{baseUrl}}/v1/super-admin/available-plans?company_id={{companyId}}&page=1&limit=25"
           }
         },
         {
@@ -625,6 +625,27 @@
                 }
               }
             }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Individual user details",
+      "item": [
+        {
+          "name": "User details and counts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/users/{{userId}}"
+          }
+        },
+        {
+          "name": "Company user details and counts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/users/{{userId}}"
           }
         }
       ]
