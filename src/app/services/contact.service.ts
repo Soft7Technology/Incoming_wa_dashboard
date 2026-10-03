@@ -76,6 +76,25 @@ class ContactService {
     if (!userId || !companyId) {
       throw new HTTP400Error({ message: 'Company context is required to fetch contacts by phone number ID' });
     }
+    if (phoneNumberId !== undefined) {
+      const sender = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
+      if (!sender || sender.user_id !== userId || sender.company_id !== companyId || sender.deleted_at) {
+        throw new HTTP404Error({ message: 'Phone number not found in your account' });
+      }
+      phoneNumberId = sender.id;
+    }
+    const parseBoolean = (value: unknown, name: string): boolean | undefined => {
+      if (value === undefined) return undefined;
+      if (value === true || value === 'true') return true;
+      if (value === false || value === 'false') return false;
+      throw new HTTP400Error({ message: `${name} must be true or false` });
+    };
+    const optedOut = parseBoolean(filters.is_opted_out, 'is_opted_out');
+    const optedIn = parseBoolean(filters.opt_in_status, 'opt_in_status');
+    if (optedOut !== undefined && optedIn !== undefined && optedOut === optedIn) {
+      throw new HTTP400Error({ message: 'opt_in_status and is_opted_out conflict' });
+    }
+    const preference = optedOut ?? (optedIn === undefined ? undefined : !optedIn);
     if (filters.country_code !== undefined) {
       try {
         filters = { ...filters, country_code: normalizeCountryCodes(filters.country_code) };
@@ -110,6 +129,7 @@ class ContactService {
     if (companyId) {
       query.where('contacts.company_id', companyId);
     }
+    if (preference !== undefined) query.where('contacts.is_opted_out', preference);
 
     console.log(
       "Initial Query:",
@@ -135,6 +155,7 @@ class ContactService {
       );
 
       if (!listContactIds.length) {
+        if (filters.unpaginated) return { contacts: [], total: 0 };
         console.log(
           "No contacts found for supplied lists"
         );
@@ -181,9 +202,9 @@ class ContactService {
     const sortedQuery = ['last_message', 'last_message_at'].includes(sortBy)
       ? ContactModel.orderByLastMessage(query, sortOrder)
       : query.orderBy(sortBy, sortOrder);
-    const contacts = await sortedQuery
-      .limit(limit)
-      .offset(offset);
+    const contacts = await (filters.unpaginated
+      ? sortedQuery
+      : sortedQuery.limit(limit).offset(offset));
 
     console.log(
       "Contacts Found:",
@@ -249,6 +270,7 @@ class ContactService {
       JSON.stringify(contacts, null, 2)
     );
 
+    if (filters.unpaginated) return { contacts, total: contacts.length };
     return {
       contacts,
       pagination: {

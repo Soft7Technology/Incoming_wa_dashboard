@@ -72,6 +72,7 @@ test('contact list attaches full message or null while retaining tags and pagina
     toSQL() { return { toNative: () => ({}) }; }, count() { return this; }, first: async () => ({ count: '21' }),
     orderBy() { return this; }, limit() { return this; }, offset: async () => contacts };
   const service = load('src/app/services/contact.service.ts', {
+    '../models/phoneNumber.model': { findByPhoneNumberId: async () => ({ id: 'business', user_id: 'owner', company_id: 'company' }) },
     '../models/contact.model': { findWithFilters: () => query },
     '../models/contactTagRelation.model': { getContactsWithTags: async () => [{ contact_id: 'sg', tags: ['vip'] }] },
     '../models/message.model': { findLatestForContacts: async page => {
