@@ -41,6 +41,7 @@ class ContactService {
         user_id: userId,
         company_id: companyId,
         phone_number: phone,
+        source: 'manually',
         phone_number_id:data.phone_number_id,
         name: data.name,
         email: data.email,

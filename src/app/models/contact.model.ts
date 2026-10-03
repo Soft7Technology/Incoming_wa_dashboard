@@ -83,7 +83,7 @@ class ContactModel extends BaseModel {
       }
       data = { ...data, phone_number_id: phone.id };
     }
-    const normalized = { ...data, ...parseImportedPhone(data.phone_number, data.country_code || '') };
+    const normalized = { ...data, source: data.source ?? 'manually', ...parseImportedPhone(data.phone_number, data.country_code || '') };
     const insert = async (transaction: Knex.Transaction) => {
       // Serialize creates for the same owner, business number and normalized phone.
       const key = JSON.stringify([data.company_id, data.user_id, data.phone_number_id ?? null, normalized.country_code, normalized.phone_number]);
@@ -129,7 +129,7 @@ class ContactModel extends BaseModel {
     const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id, data.country_code);
     if (existing) return refreshName(existing);
     try {
-      return await this.create({ ...data, name: profileName || data.phone_number });
+      return await this.create({ ...data, name: profileName || data.phone_number, source: 'whatsApp' });
     } catch (error) {
       // Another incoming request may have inserted this contact while we waited.
       if (error instanceof HTTP400Error) {
@@ -232,7 +232,7 @@ class ContactModel extends BaseModel {
 
   async bulkCreate(contacts: any[]) {
     return this.query().insert(contacts.map(contact => ({
-      ...contact, ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
+      ...contact, source: contact.source ?? 'manually', ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
     }))).returning('*');
   }
 
