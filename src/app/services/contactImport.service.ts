@@ -106,6 +106,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
               phone_number_id:phone_number_id,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,
+              source: 'import',
             }, trx));
           }
 

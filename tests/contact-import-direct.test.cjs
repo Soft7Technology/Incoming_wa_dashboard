@@ -70,6 +70,7 @@ function importer(fatal = false) {
       findOwnedByPhone: async () => null,
       create: async (row, trx) => {
         assert.equal(trx, 'transaction');
+        assert.equal(row.source, 'import');
         if (row.phone_number === '222') throw Error('row rejected');
         return { ...row, id: 'contact' };
       },

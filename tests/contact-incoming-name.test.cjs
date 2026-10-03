@@ -47,6 +47,8 @@ test('new unnamed contact falls back to phone and later incoming profile can enr
     env.model.create=async value=>value;
     const created=await env.model.findOrCreateIncoming({...data,name:'  '});
     assert.equal(created.name,'+919876543210');
+    assert.equal(created.source,'whatsApp');
+    assert.equal(created.phone_number_id,'business');
     const named=await env.model.findOrCreateIncoming(data); assert.equal(named.name,'Alice');
   } finally {await env.db.destroy()}
 });
