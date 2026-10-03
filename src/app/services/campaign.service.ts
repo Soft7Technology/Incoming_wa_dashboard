@@ -45,26 +45,32 @@ interface CreateCampaignData {
 }
 
 class CampaignService {
+  async previewRecipients(userId: string, companyId: string,
+    data: Pick<CreateCampaignData, 'phone_number_id' | 'contact_filters' | 'country_code'>) {
+    return this.createCampaign(userId, companyId, { ...data, name: '', template_id: '' }, true);
+  }
+
   /**
    * Create a new campaign
    */
-  async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
+  async createCampaign(userId: string, companyId: string, data: CreateCampaignData, preview = false): Promise<any> {
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
     try { validateCampaignPhoneInputs(data.contact_filters, data.country_code); }
     catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     // Verify template exists
-    const template = await TemplateModel.findById(data.template_id);
+    const template = preview ? undefined : await TemplateModel.findById(data.template_id);
     const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
     if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
       throw new HTTP404Error({ message: 'Campaign cannot be created: the selected sending phone number is not connected to your user account.' });
     }
     console.log('Template',template)
-    if (!template) {
+    if (!preview && !template) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
     console.log('Creating campaign with data:', data);
 
-    if (template.status !== 'APPROVED') {
+    if (!preview && template!.status !== 'APPROVED') {
       throw new HTTP400Error({ message: 'Template must be approved before use in campaigns' });
     }
 
@@ -97,6 +103,7 @@ class CampaignService {
     // ── Auto-create external contact numbers ─────────────────────────────
     // If the frontend passed specific phone numbers, ensure they exist in the DB
     let canonicalRecipientNumbers: string[] | undefined;
+    let previewNewContacts: any[] = [];
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // Infer only from the supplied international number; never default to the sender's country.
       const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
@@ -146,13 +153,21 @@ class CampaignService {
           is_valid: true,
           attributes: {},
         }));
-        await ContactModel.bulkCreate(newContacts);
+        if (preview) {
+          // New contacts have no list/tag relations or custom attributes yet.
+          if (!filters.list_ids?.length && !filters.tag_ids?.length &&
+              !Object.keys(filters.attributes || {}).length) {
+            previewNewContacts = newContacts.map(contact => ({ ...contact, id: null }));
+          }
+        } else {
+          await ContactModel.bulkCreate(newContacts);
+        }
       }
     }
 
     // Get contacts based on filters
     const matchingContacts = await ContactService.getContactsByFilters(userId, companyId, filters);
-    const contacts = matchingContacts.filter(contact => contact.phone_number_id === phoneNumberId.id);
+    const contacts = [...matchingContacts, ...previewNewContacts].filter(contact => contact.phone_number_id === phoneNumberId.id);
     const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
     const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
@@ -160,6 +175,22 @@ class CampaignService {
       (!requestedNumbers || requestedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)))));
     if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
+
+    if (preview) {
+      return {
+        total_recipients: contactList.length,
+        contacts: contactList.map(contact => ({
+          id: contact.id,
+          name: contact.name,
+          phone_number: contact.phone_number,
+          country_code: contact.country_code,
+          recipient_number: campaignRecipientNumber(contact.phone_number, contact.country_code),
+          email: contact.email ?? null,
+          attributes: contact.attributes ?? {},
+          is_valid: contact.is_valid,
+        })),
+      };
+    }
 
     if (contactList.length === 0) {
       const matchingRequested = contacts.filter(contact => !requestedNumbers ||
@@ -211,7 +242,7 @@ class CampaignService {
         description: data.description,
         status,
         total_recipients: contactList.length,
-        template_params: template.components,
+        template_params: template!.components,
         parameter_mapping: data.parameter_mapping || {},
         media_uploads: data.media_uploads || [],
         contact_filters: filters,
