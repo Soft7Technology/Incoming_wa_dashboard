@@ -138,11 +138,13 @@ class ContactOptOutService {
     if (!phone.id || !phone.company_id || !phone.user_id) throw new HTTP400Error({ message: 'Campaign phone scope is required' });
     const identity = { phone_number: '+' + campaignRecipientNumber(recipient) };
     return Boolean(await db('contacts').where({ company_id: phone.company_id, user_id: phone.user_id,
-      phone_number_id: phone.id, phone_number: identity.phone_number, is_opted_out: true }).first('id'));
+      phone_number_id: phone.id, phone_number: identity.phone_number, is_opted_out: true })
+      .whereNull('deleted_at').first('id'));
   }
   async excluded(companyId: string, userId: string, phoneNumberId: string): Promise<Set<string>> {
     const phone = await this.ownedPhone({ companyId, ownerId: userId, actorId: userId }, phoneNumberId);
-    const rows = await db('contacts').where({ company_id: companyId, user_id: userId, phone_number_id: phone.id, is_opted_out: true }).select('country_code', 'phone_number');
+    const rows = await db('contacts').where({ company_id: companyId, user_id: userId, phone_number_id: phone.id, is_opted_out: true })
+      .whereNull('deleted_at').select('country_code', 'phone_number');
     const numbers = new Set<string>();
     for (const row of rows) {
       try { numbers.add(campaignRecipientNumber(row.phone_number, row.country_code)); } catch { /* Malformed stored identities cannot be compared. */ }

@@ -6,7 +6,7 @@ function harness(){
  const rows=[{id:'a',company_id:'c',user_id:'u',phone_number_id:'p',country_code:'65',phone_number:'+6581234567',is_opted_out:false},
  {id:'b',company_id:'c',user_id:'u',phone_number_id:'p2',country_code:'65',phone_number:'+6581234567',is_opted_out:false},
  {id:'d',company_id:'d',user_id:'v',phone_number_id:'p',country_code:'65',phone_number:'+6581234567',is_opted_out:false}];
- const db=()=>{let conditions={};const query={select(){return query;},whereNull(){return query;},whereRaw(){return query;},where(values){Object.assign(conditions,values);return query;},update:async values=>{rows.filter(row=>Object.entries(conditions).every(([k,v])=>row[k]===v)).forEach(row=>Object.assign(row,values));},first:async()=>rows.find(row=>Object.entries(conditions).every(([k,v])=>row[k]===v)),then(resolve){return Promise.resolve(rows.filter(row=>Object.entries(conditions).every(([k,v])=>row[k]===v))).then(resolve);}};return query;};
+ const db=()=>{let conditions={};const query={select(){return query;},whereNull(key){conditions[key]=null;return query;},whereRaw(){return query;},where(values){Object.assign(conditions,values);return query;},update:async values=>{rows.filter(row=>Object.entries(conditions).every(([k,v])=>(v===null ? row[k]==null : row[k]===v))).forEach(row=>Object.assign(row,values));},first:async()=>rows.find(row=>Object.entries(conditions).every(([k,v])=>(v===null ? row[k]==null : row[k]===v))),then(resolve){return Promise.resolve(rows.filter(row=>Object.entries(conditions).every(([k,v])=>(v===null ? row[k]==null : row[k]===v)))).then(resolve);}};return query;};
  const exports={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/services/contactOptOut.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,{exports,Date,Set,require:id=>({'@surefy/database':db,'../utils/importPhone':phone,'../utils/campaignPhone':require('../src/app/utils/campaignPhone'),'@surefy/exceptions/HTTP400Error':HttpError,'@surefy/exceptions/HTTP404Error':HttpError,'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'p',company_id:'c',user_id:'u'})}}[id])});
  return {...exports,rows};
 }
@@ -62,4 +62,17 @@ test('campaign opt-out guard still blocks unresolved numeric recipients',async()
  const h=harness();
  h.rows[0].phone_number='+9372597458';h.rows[0].country_code=null;h.rows[0].is_opted_out=true;
  assert.equal(await h.default.isBlocked({id:'p',company_id:'c',user_id:'u'},'9372597458'),true);
+});
+
+
+test('deleted opted-out duplicates do not block current contacts for that sender',async()=>{
+ const h=harness(),business={id:'p',company_id:'c',user_id:'u'};
+ h.rows.push({...h.rows[0],id:'deleted-copy',is_opted_out:true,deleted_at:new Date()});
+ assert.equal(await h.default.isBlocked(business,'6581234567'),false);
+ assert.equal((await h.default.excluded('c','u','p')).has('6581234567'),false);
+ h.rows[1].is_opted_out=true;
+ assert.equal((await h.default.excluded('c','u','p')).has('6581234567'),false);
+ h.rows.push({...h.rows[0],id:'live-opt-out',is_opted_out:true});
+ assert.equal(await h.default.isBlocked(business,'6581234567'),true);
+ assert.equal((await h.default.excluded('c','u','p')).has('6581234567'),true);
 });

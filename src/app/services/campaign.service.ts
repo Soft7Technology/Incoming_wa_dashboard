@@ -172,7 +172,13 @@ class CampaignService {
           : filters.contactNumber?.length
             ? 'Campaign cannot be created: none of the selected contact numbers match your contact filters. Check the numbers, tags, lists and attributes.'
             : 'Campaign cannot be created: no contacts match the selected filters for the selected sending phone number. Select contacts connected to that phone number and try again.',
-        details: { code: optedOut ? 'CAMPAIGN_CONTACTS_OPTED_OUT' : 'CAMPAIGN_NO_MATCHING_CONTACTS' },
+        details: {
+          code: optedOut ? 'CAMPAIGN_CONTACTS_OPTED_OUT' : 'CAMPAIGN_NO_MATCHING_CONTACTS',
+          phone_number_id: data.phone_number_id,
+          sender_contact_phone_number_id: phoneNumberId.id,
+          ...(optedOut ? { opted_out_numbers: [...new Set(matchingRequested.map(contact =>
+            campaignRecipientNumber(contact.phone_number, contact.country_code)))].slice(0, 20) } : {}),
+        },
       });
     }
 
