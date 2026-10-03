@@ -29,6 +29,43 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
 
+test('campaign mappings resolve dynamic columns, custom fields, literals and missing-value fallbacks', async()=>{
+ const contact={id:'contact',name:'NK',phone_number:'+919372597458',phone_number_id:'sender-db',source:'import',
+  custom_fields:{tier:'gold',balance:0,active:false,'Company name':'Soft7'},attributes:{city:'Pune'}};
+ const f=fixture({contacts:[contact]});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':'fullName','2':'source','3':'tier','4':{field:'custom_fields.balance',fallbackValue:'missing'},
+  '5':{field:'custom_fields.active'},'6':{field:'custom_fields.unknown',fallbackValue:'Guest'},
+  '7':{value:'name'},'8':'2','9':{field:'attributes.city'},'10':'vb_phoneno',
+  '11':{field:'custom_fields.Company name'},'12':{fallbackValue:'Default'},
+ }});
+ assert.deepEqual(JSON.parse(JSON.stringify(f.writes.find(w=>w.messages).messages[0].template_variables)),{
+  '1':'NK','2':'import','3':'gold','4':'0','5':'false','6':'Guest','7':'name','8':'2',
+  '9':'Pune','10':'+919372597458','11':'Soft7','12':'Default',
+ });
+});
+
+test('campaign name mapping preserves existing values and falls back for null or missing names', async()=>{
+ const contacts=['Alice',null,undefined,''].map((name,index)=>({
+  id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',
+  ...(name === undefined ? {} : {name}),
+ }));
+ const f=fixture({contacts});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':{field:'contact.name',fallbackValue:'Guest'},
+ }});
+ assert.deepEqual(Array.from(f.writes.find(w=>w.messages).messages,message=>message.template_variables['1']),
+  ['Alice','Guest','Guest','']);
+});
+
+test('invalid parameter mappings reject before contact writes', async()=>{
+ for (const mapping of [[], 'bad', {'1':null}, {'1':{field:'name',value:'literal'}}, {'1':{field:123}}]) {
+  const f=fixture();
+  await assert.rejects(f.service.createCampaign('u','c',{...payload,parameter_mapping:mapping}),/parameter_mapping/);
+  assert.equal(f.writes.length,0);
+ }
+});
+
 test('recipient preview counts unique list matches for the sender, excluding opt-outs, without writes', async()=>{
  const contacts=[
   {id:'first',name:'First',phone_number:'+919372597458',phone_number_id:'sender-db'},
