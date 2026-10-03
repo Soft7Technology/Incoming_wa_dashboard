@@ -1,0 +1,151 @@
+{
+  "info": {
+    "name": "Campaign eligible contacts",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "phoneNumberId",
+      "value": ""
+    },
+    {
+      "key": "tagId",
+      "value": ""
+    },
+    {
+      "key": "listId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "All eligible contacts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/admin/campaigns/eligible-contacts?phone_number_id={{phoneNumberId}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "admin",
+            "campaigns",
+            "eligible-contacts"
+          ],
+          "query": [
+            {
+              "key": "phone_number_id",
+              "value": "{{phoneNumberId}}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Search eligible contacts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/admin/campaigns/eligible-contacts?phone_number_id={{phoneNumberId}}&search=parth",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "admin",
+            "campaigns",
+            "eligible-contacts"
+          ],
+          "query": [
+            {
+              "key": "phone_number_id",
+              "value": "{{phoneNumberId}}"
+            },
+            {
+              "key": "search",
+              "value": "parth"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "Filter eligible contacts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/v1/admin/campaigns/eligible-contacts?phone_number_id={{phoneNumberId}}&search=parth&country_code=91&tag_ids={{tagId}}&list_ids={{listId}}&is_valid=true&is_opted_out=false&sortBy=name&sortOrder=asc",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "v1",
+            "admin",
+            "campaigns",
+            "eligible-contacts"
+          ],
+          "query": [
+            {
+              "key": "phone_number_id",
+              "value": "{{phoneNumberId}}"
+            },
+            {
+              "key": "search",
+              "value": "parth"
+            },
+            {
+              "key": "country_code",
+              "value": "91"
+            },
+            {
+              "key": "tag_ids",
+              "value": "{{tagId}}"
+            },
+            {
+              "key": "list_ids",
+              "value": "{{listId}}"
+            },
+            {
+              "key": "is_valid",
+              "value": "true"
+            },
+            {
+              "key": "is_opted_out",
+              "value": "false"
+            },
+            {
+              "key": "sortBy",
+              "value": "name"
+            },
+            {
+              "key": "sortOrder",
+              "value": "asc"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -28,6 +28,34 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
   return {service:exports.default,writes,predicates};
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
+
+test('recipient preview counts unique list matches for the sender, excluding opt-outs, without writes', async()=>{
+ const contacts=[
+  {id:'first',name:'First',phone_number:'+919372597458',phone_number_id:'sender-db'},
+  {id:'duplicate',phone_number:'+919372597458',phone_number_id:'sender-db'},
+  {id:'blocked',phone_number:'+919372597459',phone_number_id:'sender-db'},
+  {id:'foreign',phone_number:'+919372597460',phone_number_id:'other-sender'},
+ ];
+ const f=fixture({contacts,excluded:['919372597459']});
+ const result=await f.service.previewRecipients('u','c',{phone_number_id:'payload-sender',contact_filters:{list_ids:['list']}});
+ assert.equal(result.total_recipients,1);
+ assert.equal(result.contacts[0].id,'first');
+ assert.equal(result.contacts[0].recipient_number,'919372597458');
+ assert.equal(f.writes.length,0);
+});
+
+test('preview returns zero matches and previews external numbers without creating contacts',async()=>{
+ const empty=fixture();
+ assert.equal((await empty.service.previewRecipients('u','c',payload)).total_recipients,0);
+ const external=fixture();
+ const result=await external.service.previewRecipients('u','c',{...payload,contact_filters:{contactNumber:['+919372597458']}});
+ assert.equal(result.total_recipients,1);
+ assert.equal(result.contacts[0].id,null);
+ assert.equal(external.writes.length,0);
+ const filtered=fixture();
+ assert.equal((await filtered.service.previewRecipients('u','c',{...payload,contact_filters:{contactNumber:['+919372597458'],list_ids:['list']}})).total_recipients,0);
+ assert.equal(filtered.writes.length,0);
+});
 test('empty filter matches reject campaign before writes or queueing',async()=>{
  const f=fixture();
  await assert.rejects(f.service.createCampaign('u','c',{...payload,send_immediately:true}),error=>{
