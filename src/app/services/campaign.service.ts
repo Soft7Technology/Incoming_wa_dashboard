@@ -24,6 +24,12 @@ import db from '@surefy/database';
 import phoneNumberModel from '../models/phoneNumber.model';
 
 
+type ParameterMapping = Record<string, string | {
+  field?: string;
+  value?: string;
+  fallbackValue?: string;
+}>;
+
 interface CreateCampaignData {
   name: string;
   description?: string;
@@ -38,7 +44,7 @@ interface CreateCampaignData {
     exclude_invalid?: boolean;
     attributes?: Record<string, any>;
   };
-  parameter_mapping?: Record<string, string>; // template_param -> contact_attribute
+  parameter_mapping?: ParameterMapping;
   media_uploads?: Array<{ type: string; media_id: string; url?: string }>;
   scheduled_at?: Date | 'now';
   send_immediately?: boolean;   // frontend sends this flag
@@ -55,6 +61,7 @@ class CampaignService {
    */
   async createCampaign(userId: string, companyId: string, data: CreateCampaignData, preview = false): Promise<any> {
     if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    if (!preview) this.resolveTemplateVariables({}, data.parameter_mapping ?? {});
     try { validateCampaignPhoneInputs(data.contact_filters, data.country_code); }
     catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     // Verify template exists
@@ -285,21 +292,49 @@ class CampaignService {
   /**
    * Resolve template variables from contact attributes
    */
-  private resolveTemplateVariables(contact: any, mapping: Record<string, string>): Record<string, any> {
+  private resolveTemplateVariables(contact: any, mapping: ParameterMapping): Record<string, string> {
+    if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
+      throw new HTTP400Error({ message: 'parameter_mapping must be an object' });
+    }
     const variables: Record<string, any> = {};
-
-    for (const [templateParam, contactAttribute] of Object.entries(mapping)) {
-      if (contactAttribute === 'fullName') {
-        variables[templateParam] = contact.name || '';
-      } else if (contactAttribute === 'phone_number') {
-        variables[templateParam] = contact.phone_number || '';
-      } else if (contactAttribute === 'email') {
-        variables[templateParam] = contact.email || '';
-      } else if (contact.attributes && contact.attributes[contactAttribute]) {
-        variables[templateParam] = contact.attributes[contactAttribute];
-      } else {
-        variables[templateParam] = contactAttribute;
+    const own = (object: any, key: string) => object && Object.prototype.hasOwnProperty.call(object, key);
+    const fieldValue = (field: string): { found: boolean; value?: unknown } => {
+      const aliases: Record<string, string> = { fullName: 'name', vb_phoneno: 'phone_number' };
+      for (const prefix of ['custom_fields.', 'attributes.', 'contact.']) {
+        if (field.startsWith(prefix)) {
+          const key = field.slice(prefix.length);
+          const source = prefix === 'contact.' ? contact : contact[prefix.slice(0, -1)];
+          return { found: true, value: own(source, key) ? source[key] : undefined };
+        }
       }
+      const key = own(aliases, field) ? aliases[field] : field;
+      if (own(contact, key)) return { found: true, value: contact[key] };
+      for (const source of [contact.custom_fields, contact.attributes]) {
+        if (own(source, field)) return { found: true, value: source[field] };
+      }
+      return { found: own(aliases, field) || ['name', 'phone_number', 'email'].includes(field) };
+    };
+    const text = (value: unknown): string => value == null ? '' :
+      typeof value === 'object' ? JSON.stringify(value) : String(value);
+
+    for (const [templateParam, entry] of Object.entries(mapping)) {
+      let value: unknown;
+      if (typeof entry === 'string') {
+        const resolved = fieldValue(entry);
+        value = resolved.found ? resolved.value : entry;
+      } else {
+        if (!entry || Array.isArray(entry) || typeof entry !== 'object' ||
+            Object.keys(entry).some(key => !['field', 'value', 'fallbackValue'].includes(key)) ||
+            Object.values(entry).some(value => typeof value !== 'string') ||
+            (entry.field !== undefined && entry.value !== undefined) ||
+            (entry.field === undefined && entry.value === undefined && entry.fallbackValue === undefined) ||
+            entry.field === '') {
+          throw new HTTP400Error({ message: `Invalid parameter_mapping entry for ${templateParam}: use a string or { field, fallbackValue } or { value }` });
+        }
+        value = entry.field !== undefined ? fieldValue(entry.field).value : entry.value;
+        if (value == null) value = entry.fallbackValue ?? '';
+      }
+      Object.defineProperty(variables, templateParam, { value: text(value), enumerable: true, configurable: true });
     }
 
     return variables;
