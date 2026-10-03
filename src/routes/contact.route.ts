@@ -31,6 +31,7 @@ ContactRoute.delete('/tags/:id', ownedResource('contact_tags', 'id'), ContactCon
 // Contact CRUD
 ContactRoute.post('/', ownedPhone, checkPlanLimit('Contact'), ContactController.createContact);
 ContactRoute.get('/', ContactController.getContacts);
+ContactRoute.get('/all', ContactController.getAllContacts);
 ContactRoute.get('/phone-number/:phoneNumberId', ownedPhone, ContactController.getContactByPhoneNumberId);
 // Retain the existing phone-number URL; use /by-id/:id for contact detail.
 ContactRoute.get('/:phoneNumberId', ownedPhone, ContactController.getContactByPhoneNumberId);

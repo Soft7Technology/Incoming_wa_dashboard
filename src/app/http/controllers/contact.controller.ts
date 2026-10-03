@@ -84,7 +84,22 @@ class ContactController {
    * GET /v1/contacts
    * Get all contacts with filters
    */
+  getAllContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    return this.retrieveContacts(req, res, true);
+  });
+
   getContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    return this.retrieveContacts(req, res);
+  });
+
+  private async retrieveContacts(req: JWTAuthRequest, res: Response, unpaginated = false) {
+    const phoneNumberId = req.query.phone_number_id;
+    if (unpaginated && !phoneNumberId) {
+      throw new HTTP400Error({ message: 'phone_number_id is required' });
+    }
+    if (phoneNumberId !== undefined && (typeof phoneNumberId !== 'string' || !phoneNumberId.trim())) {
+      throw new HTTP400Error({ message: 'phone_number_id must be a non-empty string' });
+    }
     const effectiveUserId = req.ownerId ?? req.userId!;
     console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
 
@@ -93,6 +108,9 @@ class ContactController {
     const isTeamMember = req.userId !== req.ownerId;
 
     const filters = {
+      unpaginated,
+      opt_in_status: req.query.opt_in_status,
+      is_opted_out: req.query.is_opted_out ?? (unpaginated ? false : undefined),
       is_valid: req.query.is_valid,
       country_code: req.query.country_code,
       search: req.query.search,
@@ -108,9 +126,9 @@ class ContactController {
 
     console.log('Filters', filters)
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters, undefined, req.companyId);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId as string | undefined, req.companyId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
-  });
+  }
 
 
   /**
@@ -127,6 +145,8 @@ class ContactController {
     const { phoneNumberId } = req.params
 
     const filters = {
+      opt_in_status: req.query.opt_in_status,
+      is_opted_out: req.query.is_opted_out,
       is_valid: req.query.is_valid,
       country_code: req.query.country_code,
       search: req.query.search,
