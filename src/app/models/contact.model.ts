@@ -5,6 +5,7 @@ import db from '../../database';
 import phoneNumberModel from './phoneNumber.model';
 import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { CampaignContactSelection } from '../interfaces/campaignContacts.interface';
 
 function parseImportedPhone(value: unknown, code = '') {
   try { return parseStoredContactPhone(value, code); }
@@ -28,6 +29,29 @@ function orAssignedTo(query: any, userId: string) {
 class ContactModel extends BaseModel {
   constructor() {
     super('contacts');
+  }
+
+  findCampaignSelection(userId: string, companyId: string, phoneNumberId: string, selection: CampaignContactSelection) {
+    if (!userId || !companyId || !phoneNumberId) {
+      throw new HTTP400Error({ message: 'User, company and sending phone context are required' });
+    }
+    const query = this.findWithFilters(userId, selection.filters, phoneNumberId)
+      .where('contacts.company_id', companyId)
+      .where('contacts.is_opted_out', false);
+
+    if (selection.filters.list_ids?.length) {
+      query.whereIn('contacts.id', builder => {
+        builder.select('contact_id').from('contact_list_relations')
+          .whereIn('list_id', selection.filters.list_ids!);
+      });
+    }
+    if (selection.filters.status !== undefined) {
+      query.where('contacts.status', selection.filters.status);
+    }
+
+    return query.select('contacts.*')
+      .orderBy(`contacts.${selection.sortBy}`, selection.sortOrder)
+      .orderBy('contacts.id', 'asc');
   }
 
   async findCampaignPhoneCandidates(userId: string, companyId: string, numbers: string[]) {
