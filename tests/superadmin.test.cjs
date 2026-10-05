@@ -316,6 +316,7 @@ test('company status cascades only to non-deleted users in the same transaction'
 
 test('individual user details scope counts, exclude deleted records and private fields', async () => {
   const rows = {
+    companies: [{ id: 'c' }, { id: 'other' }],
     users: [{ id: 'u', company_id: 'c', name: 'User', assigned_plan: 'p', password: 'secret', api_key: 'secret' }],
     campaigns: [{ user_id: 'u', company_id: 'c', status: 'running' }, { user_id: 'u', company_id: 'c', status: 'running' },
       { user_id: 'u', company_id: 'c', status: 'failed' }, { user_id: 'u', company_id: 'other', status: 'running' },

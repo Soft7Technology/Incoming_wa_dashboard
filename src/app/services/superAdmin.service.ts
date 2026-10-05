@@ -1,6 +1,6 @@
 import bcrypt from 'bcrypt';
 import model from '../models/superAdmin.model';
-import { CompanyFields, CompanyCollection } from '../interfaces/superAdmin.interface';
+import { CompanyFields, CompanyCollection, UserCollection } from '../interfaces/superAdmin.interface';
 import * as validate from '../utils/superAdminValidation';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -20,11 +20,32 @@ class SuperAdminService {
     if (companyId !== undefined) validate.uuid(companyId, 'companyId');
     return model.userDetails(id, companyId);
   }
+  userOverview(companyId: string, userId: string) {
+    validate.uuid(companyId, 'companyId');
+    validate.uuid(userId, 'userId');
+    return model.userOverview(companyId, userId);
+  }
+  userActivePlan(companyId: string, userId: string) {
+    validate.uuid(companyId, 'companyId');
+    validate.uuid(userId, 'userId');
+    return model.userActivePlan(companyId, userId);
+  }
+  async userCollection(resource: UserCollection, query: Record<string, unknown>, companyId: string, userId: string) {
+    validate.uuid(companyId, 'companyId');
+    validate.uuid(userId, 'userId');
+    const filters = validate.filters(query);
+    validate.requireInput(!filters.domain_status, 'domain_status is not a filter for this resource');
+    // URL scope always wins over valid query scope, including for count queries.
+    filters.company_id = companyId;
+    filters.user_id = userId;
+    await model.user(userId, companyId);
+    return model.collection(resource, filters);
+  }
   async collection(resource: CompanyCollection, query: Record<string, unknown>, companyId?: string) {
     const filters = validate.filters(query);
     if (resource === 'activities')
       validate.requireInput(!filters.domain_status, 'domain_status is not a filter for this resource');
-    if (resource === 'messages' || resource === 'campaigns') {
+    if (resource === 'messages' || resource === 'campaigns' || resource === 'contacts') {
       validate.requireInput(companyId, 'companyId is required for this resource');
       validate.requireInput(!filters.domain_status, 'domain_status is not a filter for this resource');
     }

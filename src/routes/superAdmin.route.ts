@@ -53,4 +53,13 @@ SuperAdminRoute.post('/tickets/:ticketId/forward', operations.changeTicket('forw
 SuperAdminRoute.post('/tickets/:ticketId/forward/reply', operations.changeTicket('reply'));
 SuperAdminRoute.patch('/tickets/:ticketId/status', operations.changeTicket('status'));
 
+// Keep the short user paths after named company resources such as /users and /domains.
+SuperAdminRoute.get('/companies/:companyId/:userId/activity', controller.userCollection('activities'));
+SuperAdminRoute.get('/companies/:companyId/:userId/campaign', controller.userCollection('campaigns'));
+SuperAdminRoute.get('/companies/:companyId/:userId/messages', controller.userCollection('messages'));
+SuperAdminRoute.get('/companies/:companyId/:userId/overview', controller.userOverview);
+SuperAdminRoute.get('/companies/:companyId/:userId/contacts', controller.userCollection('contacts'));
+SuperAdminRoute.get('/companies/:companyId/:userId/active-plan', controller.userActivePlan);
+SuperAdminRoute.get('/companies/:companyId/:userId', controller.userDetails);
+
 export default SuperAdminRoute;

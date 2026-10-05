@@ -3,7 +3,7 @@ import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import service from '../../services/superAdmin.service';
-import { CompanyCollection } from '../../interfaces/superAdmin.interface';
+import { CompanyCollection, UserCollection } from '../../interfaces/superAdmin.interface';
 
 class SuperAdminController {
   authorize = async (req: JWTAuthRequest, res: Response, next: NextFunction) => {
@@ -30,6 +30,19 @@ class SuperAdminController {
     return successResponse(req, res, 'User details retrieved',
       await service.userDetails(req.params.userId, req.params.companyId));
   });
+  userOverview = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    return successResponse(req, res, 'User overview retrieved',
+      await service.userOverview(req.params.companyId, req.params.userId));
+  });
+  userActivePlan = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const data = await service.userActivePlan(req.params.companyId, req.params.userId);
+    return successResponse(req, res, data.active_plan ? 'User active plan retrieved' : 'No active plan', data);
+  });
+  userCollection = (resource: UserCollection) =>
+    tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+      return successResponse(req, res, `User ${resource} retrieved`,
+        await service.userCollection(resource, req.query, req.params.companyId, req.params.userId));
+    });
   collection = (resource: CompanyCollection) =>
     tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
       return successResponse(
