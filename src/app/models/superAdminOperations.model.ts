@@ -116,6 +116,15 @@ class SuperAdminOperationsModel extends BaseModel {
         columns: ['id', 'company_id', 'user_id', 'plan_name', 'price', 'billing_cycle', 'active', 'created_at'],
         search: 'plan_name',
       },
+      active_plans: {
+        table: 'user_plans',
+        columns: [
+          'id', 'company_id', 'user_id', 'subscription_id', 'plan_name', 'price',
+          'billing_cycle', 'active', 'status', 'start_date', 'end_date',
+          'duration_days', 'limits', 'usage', 'created_at',
+        ],
+        search: 'plan_name',
+      },
       payments: {
         table: 'company_payment_orders',
         columns: [
@@ -141,6 +150,12 @@ class SuperAdminOperationsModel extends BaseModel {
     };
     const d = definitions[resource];
     const query = this.scope(this.db(d.table), f);
+    if (resource === 'active_plans') {
+      const now = new Date();
+      query.where({ active: true, status: 'COMPLETED' })
+        .where('start_date', '<=', now)
+        .where('end_date', '>', now);
+    }
     if (f.status) query.where('status', f.status);
     if (f.search && d.search) query.whereILike(d.search, `%${f.search.replace(/[\\%_]/g, '\\$&')}%`);
     if (resource === 'tickets') {

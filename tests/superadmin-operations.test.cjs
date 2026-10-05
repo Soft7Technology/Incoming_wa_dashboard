@@ -29,9 +29,10 @@ const validation = load('src/app/utils/superAdminValidation.ts', {
   '@surefy/exceptions/HTTP400Error': HttpError,
 });
 const id = '87af00e3-cdf0-4c59-9950-143dbadf5ebc';
-function service(model) {
+function service(model, companyModel = {}) {
   return load('src/app/services/superAdminOperations.service.ts', {
     '../models/superAdminOperations.model': model,
+    '../models/superAdmin.model': companyModel,
     '../utils/superAdminValidation': validation,
   }).default;
 }

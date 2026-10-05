@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Facebook Messenger · Support dashboard</title>
+    <link rel="stylesheet" href="/v1/facebook/style.css" />
+    <script defer src="/v1/facebook/app.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/v1/facebook/page" class="brand">Support dashboard <span class="badge">Messenger</span></a>
+      <div><span id="identity"></span> <button id="logout" class="quiet" hidden>Log out</button></div>
+    </header>
+    <main>
+      <section id="login-panel" class="login card">
+        <p class="eyebrow">Facebook Messenger workspace</p>
+        <h1>Log into your application</h1>
+        <p class="muted">Use your existing company or authorized team account.</p>
+        <form id="login-form">
+          <label>Email<input id="email" type="email" autocomplete="username" required /></label
+          ><label>Password<input id="password" type="password" autocomplete="current-password" required /></label
+          ><label
+            >Company login domain<input id="domain" placeholder="Your existing SaaS login domain" required /><small
+              >Use the domain assigned to your company. For local development use localhost.</small
+            ></label
+          ><button id="login-button" type="submit">Log in</button>
+        </form>
+      </section>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="workspace" hidden>
+        <nav aria-label="Workspace">
+          <button id="integration-tab" class="tab active">Settings → Integrations</button
+          ><button id="inbox-tab" class="tab">Messenger inbox</button><span id="sync" class="muted"></span>
+        </nav>
+        <section id="integrations">
+          <p class="eyebrow">Settings / Integrations / Facebook Messenger</p>
+          <div class="heading">
+            <div>
+              <h1>Facebook Messenger</h1>
+              <p class="muted">Connect a business Page and help customers from this dashboard.</p>
+            </div>
+            <button id="connect">Connect Facebook Page</button>
+          </div>
+          <div id="configuration" class="callout" hidden></div>
+          <div class="permission-grid">
+            <div>
+              <strong>pages_show_list</strong>
+              <p>Show the Pages you manage so you can choose the right business Page.</p>
+            </div>
+            <div>
+              <strong>pages_messaging</strong>
+              <p>Receive customer messages and send your support replies in Messenger.</p>
+            </div>
+            <div>
+              <strong>pages_manage_metadata</strong>
+              <p>Subscribe the selected Page to message, echo, delivery and read webhooks.</p>
+            </div>
+          </div>
+          <section id="selection" class="card" hidden>
+            <h2>Select your Facebook Page</h2>
+            <p class="muted">These Pages were returned by Meta for your authorization.</p>
+            <label>Page<select id="page-select"></select></label><button id="select-page">Connect selected Page</button>
+          </section>
+          <h2>Connected Pages</h2>
+          <div id="pages" class="page-grid"></div>
+          <p class="muted">
+            Replies are available for 24 hours after the customer's latest message. Disconnect removes credentials;
+            Delete stored integration also deletes conversation history.
+          </p>
+        </section>
+        <section id="inbox" hidden>
+          <div class="heading">
+            <div>
+              <p class="eyebrow">Customer support</p>
+              <h1>Messenger inbox</h1>
+            </div>
+            <span class="badge">Facebook Messenger</span>
+          </div>
+          <div class="inbox-layout card">
+            <aside>
+              <h2>Conversations</h2>
+              <div id="conversations"></div>
+              <button id="more-conversations" class="quiet" hidden>Load more conversations</button>
+            </aside>
+            <section class="thread">
+              <div id="thread-header">
+                <h2>Select a conversation</h2>
+                <p class="muted">Ask an eligible customer to message your connected Page in native Messenger.</p>
+              </div>
+              <button id="older" class="quiet" hidden>Load older messages</button>
+              <div id="messages" aria-live="polite"></div>
+              <p id="window-note" class="muted"></p>
+              <form id="reply-form">
+                <label for="reply">Text reply</label
+                ><textarea
+                  id="reply"
+                  rows="3"
+                  maxlength="2000"
+                  placeholder="Type your support reply…"
+                  disabled
+                ></textarea>
+                <div class="reply-footer">
+                  <small id="reply-state">Select a conversation to reply.</small
+                  ><button id="send" disabled>Send reply</button>
+                </div>
+              </form>
+            </section>
+          </div>
+        </section>
+      </section>
+      <footer>
+        <a href="/v1/facebook/privacy" target="_blank" rel="noopener">Privacy notice</a> ·
+        <a href="/v1/facebook/data-deletion" target="_blank" rel="noopener">Data deletion</a>
+      </footer>
+    </main>
+  </body>
+</html>

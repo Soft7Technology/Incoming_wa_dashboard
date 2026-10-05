@@ -1,5 +1,6 @@
 import { recordActivity } from '../app/middleware/activity.middleware';
 import UserApiKeyRoute from './userApiKey.route';
+import FacebookMessengerRoute from './facebookMessenger.route';
 import { Router } from 'express';
 import PaymentRoute from './payment.route';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
@@ -29,6 +30,7 @@ const AdminRoute = Router();
 // Apply JWT authentication to all admin routes
 AdminRoute.use(jwtAuthMiddleware);
 AdminRoute.use(recordActivity);
+AdminRoute.use('/facebook-messenger', FacebookMessengerRoute);
 
 AdminRoute.use('/api-keys', UserApiKeyRoute);
 AdminRoute.use('/payments', PaymentRoute);

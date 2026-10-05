@@ -558,3 +558,7 @@ For issues or questions, please contact the development team or create an issue 
 
 ISC
 # Incoming_wa_dashboard
+
+## Facebook Messenger review workspace
+
+The separate Messenger page is served at `/v1/facebook/page`; authenticated integration and inbox APIs are under `/v1/admin/facebook-messenger`. See [Facebook Messenger setup, testing and recording guide](docs/facebook-messenger.md) for environment variables, migrations, Meta callback URLs, reviewer access, and the live verification checklist.

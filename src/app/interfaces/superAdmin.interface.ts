@@ -1,4 +1,12 @@
 export type AccountStatus = 'active' | 'inactive' | 'suspended';
+export interface CompanyOverviewStats {
+  total_message: number;
+  delivered_messages: number;
+  failed_messages: number;
+  received_messages: number;
+  templates: number;
+  message_templates: number;
+}
 export interface SuperAdminFilters {
   page: number;
   limit: number;
@@ -30,4 +38,4 @@ export interface CreditInput {
   reason: string;
   request_id: string;
 }
-export type CompanyCollection = 'users' | 'domains' | 'activities' | 'credits' | 'audit';
+export type CompanyCollection = 'users' | 'domains' | 'activities' | 'credits' | 'audit' | 'messages' | 'campaigns';

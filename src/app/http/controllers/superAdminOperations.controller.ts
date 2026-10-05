@@ -32,6 +32,15 @@ class SuperAdminOperationsController {
     tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
       successResponse(req, res, `${resource} retrieved`, await service.list(resource, req.query)),
     );
+  companyList = (resource: 'plans' | 'active_plans') =>
+    tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
+      successResponse(
+        req,
+        res,
+        resource === 'plans' ? 'Company subscription plans retrieved' : 'Company active user plans retrieved',
+        await service.companyList(resource, req.params.companyId, req.query),
+      ),
+    );
   conversation = tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
     successResponse(
       req,
