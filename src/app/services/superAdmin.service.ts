@@ -14,6 +14,7 @@ class SuperAdminService {
   overview() { return model.overview(); }
   companies(query: Record<string, unknown>) { return model.companies(validate.filters(query)); }
   company(id: string) { return model.details(validate.uuid(id, 'companyId')); }
+  companyOverview(id: string) { return model.companyOverview(validate.uuid(id, 'companyId')); }
   userDetails(id: string, companyId?: string) {
     validate.uuid(id, 'userId');
     if (companyId !== undefined) validate.uuid(companyId, 'companyId');
@@ -21,6 +22,12 @@ class SuperAdminService {
   }
   async collection(resource: CompanyCollection, query: Record<string, unknown>, companyId?: string) {
     const filters = validate.filters(query);
+    if (resource === 'activities')
+      validate.requireInput(!filters.domain_status, 'domain_status is not a filter for this resource');
+    if (resource === 'messages' || resource === 'campaigns') {
+      validate.requireInput(companyId, 'companyId is required for this resource');
+      validate.requireInput(!filters.domain_status, 'domain_status is not a filter for this resource');
+    }
     if (companyId) {
       filters.company_id = validate.uuid(companyId, 'companyId');
       await model.company(companyId);

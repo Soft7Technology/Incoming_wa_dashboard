@@ -16,6 +16,7 @@ RUN pnpm install
 
 # Copy source code (this will NOT overwrite node_modules due to .dockerignore)
 COPY src ./src
+COPY scripts/copy-facebook-assets.cjs ./scripts/copy-facebook-assets.cjs
 
 # Build TypeScript to JavaScript
 RUN pnpm run build

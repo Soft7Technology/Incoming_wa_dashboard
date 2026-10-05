@@ -1,4 +1,5 @@
 import model from '../models/superAdminOperations.model';
+import companyModel from '../models/superAdmin.model';
 import { ReportResource, OperationsFilters } from '../interfaces/superAdminOperations.interface';
 import * as v from '../utils/superAdminValidation';
 
@@ -18,7 +19,7 @@ class SuperAdminOperationsService {
         forwarded === undefined && assigned_to === undefined,
         'Ticket filters do not apply to this report',
       );
-    if (['plans', 'revenue', 'company_revenue'].includes(resource))
+    if (['plans', 'active_plans', 'revenue', 'company_revenue'].includes(resource))
       v.requireInput(!filters.status, 'status is not supported for this report');
     if (['tickets', 'payments', 'revenue'].includes(resource))
       v.requireInput(!filters.search, 'search is not supported for this report');
@@ -32,6 +33,13 @@ class SuperAdminOperationsService {
   }
   list(resource: ReportResource, query: Record<string, unknown>) {
     return model.list(resource, this.filters(query, resource));
+  }
+  async companyList(resource: 'plans' | 'active_plans', companyId: string, query: Record<string, unknown>) {
+    const id = v.uuid(companyId, 'companyId');
+    const filters = this.filters(query, resource);
+    filters.company_id = id;
+    await companyModel.company(id);
+    return model.list(resource, filters);
   }
   conversation(id: string, query: Record<string, unknown>) {
     v.allowed(query, ['page', 'limit']);

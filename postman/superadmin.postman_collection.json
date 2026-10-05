@@ -79,6 +79,59 @@
       }
     },
     {
+      "name": "Company overview",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/overview"
+      }
+    },
+    {
+      "name": "Company activity",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/activity?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company subscription plans",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/subscription-plans?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company active plans",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/active-plans?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company messages",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/messages?page=1&limit=25"
+      }
+    },
+    {
+      "name": "Company campaigns",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/campaign?page=1&limit=25"
+      }
+    },
+    {
       "name": "Company details",
       "request": {
         "method": "GET",

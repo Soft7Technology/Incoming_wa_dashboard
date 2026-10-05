@@ -1,6 +1,6 @@
 import { BaseModel } from '@surefy/models/base.model';
 import { Knex } from 'knex';
-import { CompanyFields, SuperAdminFilters, CompanyCollection, CreditInput } from '../interfaces/superAdmin.interface';
+import { CompanyFields, SuperAdminFilters, CompanyCollection, CreditInput, CompanyOverviewStats } from '../interfaces/superAdmin.interface';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import subscriptionModel from './subscription.model';
@@ -116,6 +116,33 @@ class SuperAdminModel extends BaseModel {
     return { companies, users, domains };
   }
 
+  async companyOverview(id: string) {
+    const company = await this.company(id);
+    const [messages, templates] = await Promise.all([
+      this.db('messages')
+        .where({ company_id: id })
+        .whereNot('status', 'deleted')
+        .select(this.db.raw(`
+          COUNT(*) AS total_message,
+          COUNT(*) FILTER (WHERE direction = 'outbound' AND status IN ('delivered', 'read')) AS delivered_messages,
+          COUNT(*) FILTER (WHERE direction = 'outbound' AND status = 'failed') AS failed_messages,
+          COUNT(*) FILTER (WHERE direction = 'inbound') AS received_messages,
+          COUNT(*) FILTER (WHERE direction = 'outbound' AND type = 'template') AS message_templates
+        `))
+        .first(),
+      this.db('templates').where({ company_id: id }).whereNull('deleted_at').count('* as total').first(),
+    ]);
+    const stats: CompanyOverviewStats = {
+      total_message: Number(messages?.total_message || 0),
+      delivered_messages: Number(messages?.delivered_messages || 0),
+      failed_messages: Number(messages?.failed_messages || 0),
+      received_messages: Number(messages?.received_messages || 0),
+      templates: Number(templates?.total || 0),
+      message_templates: Number(messages?.message_templates || 0),
+    };
+    return { company, stats };
+  }
+
   async details(id: string) {
     const company = await this.company(id);
     const [users, domains, campaigns, contacts] = await Promise.all([
@@ -165,6 +192,28 @@ class SuperAdminModel extends BaseModel {
     const definitions = {
       users: { table: 'users', columns: userColumns, search: ['name', 'email', 'phone'], soft: true },
       domains: { table: 'company_domains', columns: domainColumns, search: ['domain_name', 'hostname'], soft: false },
+      messages: {
+        table: 'messages',
+        columns: [
+          'id', 'company_id', 'user_id', 'phone_number_id', 'wamid', 'direction', 'type',
+          'from_phone', 'to_phone', 'status', 'error_message', 'error_code', 'content', 'context',
+          'template_id', 'campaign_id', 'cost', 'queued_at', 'sent_at', 'delivered_at',
+          'read_at', 'failed_at', 'created_at', 'updated_at',
+        ],
+        search: ['from_phone', 'to_phone', 'wamid', 'error_message'],
+        soft: false,
+      },
+      campaigns: {
+        table: 'campaigns',
+        columns: [
+          'id', 'company_id', 'user_id', 'phone_number_id', 'template_id', 'name', 'description',
+          'status', 'total_recipients', 'sent_count', 'delivered_count', 'read_count', 'failed_count',
+          'invalid_numbers_count', 'total_cost', 'failure_reason', 'scheduled_at', 'started_at',
+          'completed_at', 'created_at', 'updated_at',
+        ],
+        search: ['name', 'description'],
+        soft: true,
+      },
       activities: {
         table: 'activity_logs',
         columns: [
@@ -209,9 +258,11 @@ class SuperAdminModel extends BaseModel {
     const d = definitions[resource];
     const query = this.db(d.table);
     if (d.soft) query.whereNull('deleted_at');
+    if (resource === 'messages') query.whereNot('status', 'deleted');
     if (f.user_id && resource === 'users') query.where('id', f.user_id);
     if (f.user_id && resource === 'activities') query.where('user_id', f.user_id);
     if (f.user_id && resource === 'audit') query.where('actor_id', f.user_id);
+    if (f.user_id && (resource === 'messages' || resource === 'campaigns')) query.where('user_id', f.user_id);
     const result = await this.page(this.applyFilters(query, f, d.search, 'company_id'), d.columns, f);
     if (resource !== 'users') return result;
 

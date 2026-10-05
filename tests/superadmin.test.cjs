@@ -372,3 +372,166 @@ test('user details service validates route identifiers before database reads', a
   await s.userDetails(id,id);
   assert.equal(calls,1);
 });
+
+function companyOverviewHarness(rows) {
+  const sqlDb = knex({ client: 'pg' });
+  const calls = [];
+  const db = table => {
+    const query = sqlDb(table);
+    query.first = async (...columns) => {
+      calls.push({ table, ...query.clone().first(...columns).toSQL() });
+      const row = rows[table];
+      if (!row || !columns.length) return row;
+      return Object.fromEntries(columns.flat().filter(key => key in row).map(key => [key, row[key]]));
+    };
+    return query;
+  };
+  db.raw = (...args) => sqlDb.raw(...args);
+  class BaseModel { constructor() { this.db = db; } }
+  const model = load('src/app/models/superAdmin.model.ts', {
+    '@surefy/models/base.model': { BaseModel },
+    '@surefy/exceptions/HTTP400Error': HttpError,
+    '@surefy/exceptions/HTTP404Error': HttpError,
+    './subscription.model': {},
+  }).default;
+  return { model, calls, sqlDb };
+}
+
+test('company messaging overview scopes SQL, defines metrics and returns numeric counts without secrets', async () => {
+  const h = companyOverviewHarness({
+    companies: { id, name: 'Example', api_key: 'secret', config: { secret: true } },
+    messages: { total_message: '150', delivered_messages: '100', failed_messages: '10',
+      received_messages: '30', message_templates: '80' },
+    templates: { total: '5' },
+  });
+  const result = await h.model.companyOverview(id);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.stats)), {
+    total_message: 150, delivered_messages: 100, failed_messages: 10,
+    received_messages: 30, templates: 5, message_templates: 80,
+  });
+  assert.equal(result.company.api_key, undefined);
+  assert.equal(result.company.config, undefined);
+  assert.equal(h.calls.length, 3);
+  const company = h.calls.find(call => call.table === 'companies');
+  assert.match(company.sql, /"deleted_at" is null/);
+  assert.equal(company.bindings[0], id);
+  const messages = h.calls.find(call => call.table === 'messages');
+  assert.match(messages.sql, /where "company_id" = \? and not "status" = \?/);
+  assert.equal(messages.bindings[0], id);
+  assert.equal(messages.bindings[1], 'deleted');
+  assert.match(messages.sql, /COUNT\(\*\) AS total_message/);
+  assert.match(messages.sql, /direction = 'outbound' AND status IN \('delivered', 'read'\)/);
+  assert.match(messages.sql, /direction = 'outbound' AND status = 'failed'/);
+  assert.match(messages.sql, /WHERE direction = 'inbound'\) AS received_messages/);
+  assert.match(messages.sql, /direction = 'outbound' AND type = 'template'/);
+  const templates = h.calls.find(call => call.table === 'templates');
+  assert.match(templates.sql, /where "company_id" = \? and "deleted_at" is null/);
+  assert.equal(templates.bindings[0], id);
+});
+
+test('company overview returns zeros when empty and stops before metrics for a missing company', async () => {
+  const empty = companyOverviewHarness({ companies: { id }, messages: {}, templates: { total: '0' } });
+  const result = await empty.model.companyOverview(id);
+  assert.equal(Object.keys(result.stats).length, 6);
+  for (const count of Object.values(result.stats)) assert.equal(count, 0);
+  const missing = companyOverviewHarness({});
+  await assert.rejects(missing.model.companyOverview(id), /Company not found/);
+  assert.equal(missing.calls.length, 1);
+});
+
+test('company overview validates company UUID before accessing the model', async () => {
+  let requested;
+  const s = service({ companyOverview: async companyId => { requested = companyId; return {}; } });
+  assert.throws(() => s.companyOverview('bad'), /companyId must be a UUID/);
+  assert.equal(requested, undefined);
+  await s.companyOverview(id);
+  assert.equal(requested, id);
+});
+
+test('company message and campaign lists validate filters, require company scope and reject missing companies', async () => {
+  for (const resource of ['messages', 'campaigns']) {
+    const calls = [];
+    const s = service({
+      company: async companyId => { calls.push(['company', companyId]); },
+      collection: async (name, filters) => { calls.push([name, filters]); return { items: [] }; },
+    });
+    await assert.rejects(s.collection(resource, {}, 'bad'), /companyId must be a UUID/);
+    await assert.rejects(s.collection(resource, {}), /companyId is required/);
+    await assert.rejects(s.collection(resource, { domain_status: 'active' }, id), /domain_status/);
+    await assert.rejects(s.collection(resource, { limit: '101' }, id), /Pagination/);
+    await assert.rejects(s.collection(resource, { user_id: 'bad' }, id), /UUID/);
+    await assert.rejects(s.collection(resource, { sort: 'config' }, id), /Unsupported/);
+    await assert.rejects(s.collection(resource, { from: '2026-10-05', to: '2026-10-01' }, id), /from must precede/);
+    assert.equal(calls.length, 0);
+    await s.collection(resource, {
+      company_id: 'ae815512-cf4b-4e7e-8472-16d3c2d4bb18', page: '2', limit: '10', user_id: id,
+    }, id);
+    assert.equal(calls[0][1], id);
+    assert.equal(calls[1][1].company_id, id);
+    assert.equal(calls[1][1].user_id, id);
+    assert.equal(calls[1][1].page, 2);
+    assert.equal(calls[1][1].limit, 10);
+    let listed = false;
+    const missing = service({
+      company: async () => { throw new HttpError({ message: 'Company not found' }); },
+      collection: async () => { listed = true; },
+    });
+    await assert.rejects(missing.collection(resource, {}, id), /Company not found/);
+    assert.equal(listed, false);
+  }
+});
+
+test('company message and campaign list/count queries share scope, deletion and search filters with bounded pagination', async () => {
+  for (const resource of ['messages', 'campaigns']) {
+    const h = companyOverviewHarness({});
+    const queries = [];
+    let empty = false;
+    h.sqlDb.client.runner = builder => ({
+      run: async () => {
+        queries.push(builder.toSQL());
+        if (builder._method === 'first') return { total: empty ? '0' : '2' };
+        return empty ? [] : [{ id: 'record' }];
+      },
+    });
+    const filters = {
+      company_id: id, user_id: id, status: 'failed', search: 'test%_', page: 2, limit: 10,
+      from: '2026-10-01T00:00:00.000Z', to: '2026-10-05T00:00:00.000Z',
+    };
+    const result = await h.model.collection(resource, filters);
+    assert.equal(result.items[0].id, 'record');
+    assert.equal(result.pagination.total, 2);
+    assert.equal(result.pagination.page, 2);
+    assert.equal(result.pagination.limit, 10);
+    assert.equal(queries.length, 2);
+    for (const query of queries) {
+      assert.match(query.sql, /"company_id" = \?/);
+      assert.match(query.sql, /"user_id" = \?/);
+      assert.equal(query.bindings.filter(value => value === id).length, 2);
+      assert.match(query.sql, /"status" = \?/);
+      assert.ok(query.bindings.includes('failed'));
+      assert.match(query.sql, /"created_at" >= \? and "created_at" < \?/);
+      assert.ok(query.bindings.includes(filters.from));
+      assert.ok(query.bindings.includes(filters.to));
+      assert.ok(query.bindings.includes('%test\\%\\_%'));
+      if (resource === 'messages') {
+        assert.match(query.sql, /not "status" = \?/);
+        assert.ok(query.bindings.includes('deleted'));
+        assert.doesNotMatch(query.sql, /"deleted_at"/);
+        assert.match(query.sql, /"from_phone" ilike \? or "to_phone" ilike \?/);
+      } else {
+        assert.match(query.sql, /"deleted_at" is null/);
+        assert.match(query.sql, /"name" ilike \? or "description" ilike \?/);
+      }
+    }
+    const list = queries.find(query => query.method === 'select');
+    assert.match(list.sql, /order by "created_at" desc, "id" desc limit \? offset \?/);
+    assert.equal(list.bindings.at(-2), 10);
+    assert.equal(list.bindings.at(-1), 10);
+    assert.doesNotMatch(list.sql, /select \*|"api_key"|"config"|"password"/);
+    assert.match(list.sql, resource === 'messages' ? /"content"/ : /"total_recipients"/);
+    empty = true;
+    const noRecords = await h.model.collection(resource, { company_id: id, page: 1, limit: 25 });
+    assert.equal(noRecords.items.length, 0);
+    assert.equal(noRecords.pagination.total, 0);
+  }
+});

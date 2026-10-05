@@ -17,6 +17,24 @@ Base path: `/v1/super-admin`. Send `Authorization: Bearer <superadmin-login-JWT>
 
 Each collection also supports `/companies/:companyId/users`, `/domains`, `/activities`, `/credits` and `/audit` under that company path. Company path scope takes precedence over query company_id.
 
+Company activity and plan endpoints:
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/companies/:companyId/activity` | All recorded application activities for company users; alias of `/companies/:companyId/activities` |
+| GET | `/companies/:companyId/subscription-plans` | Company's `subscription_plans` catalogue, including enabled and disabled plans |
+| GET | `/companies/:companyId/active-plans` | Assigned `user_plans` with `active=true`, `status=COMPLETED`, `start_date <= now` and `end_date > now` |
+
+These endpoints require an active superadmin JWT and return `{ items, pagination: { page, limit, total } }` inside the standard response's `data`. Invalid company UUIDs return 400; missing or soft-deleted companies return 404. The company in the URL takes precedence over a valid query `company_id`. Without `user_id`, results cover all company users.
+
+All three accept `page` (default 1), `limit` (default 25, maximum 100), `user_id`, `search`, `from`, and `to` (exclusive UTC boundary). Activity search matches description/action and accepts `status`. Plan search matches `plan_name`; plan endpoints reject `status`, since catalogue plans have no status and active assignments use a fixed completed status. Unknown filters and `domain_status` return 400. Active plan rows include the purchased plan snapshot's duration, limits and usage. Expired, future, suspended, cancelled and pending assignments are excluded even if their active flag is stale. Activity lists contain recorded logs with the requested company_id and exclude soft-deleted logs.
+
+```text
+GET /v1/super-admin/companies/COMPANY_UUID/activity?page=1&limit=25
+GET /v1/super-admin/companies/COMPANY_UUID/subscription-plans?search=Monthly
+GET /v1/super-admin/companies/COMPANY_UUID/active-plans?page=1&limit=25
+```
+
 Pagination: `page=1&limit=25` (maximum 100). Supported common filters: `search`, `company_id`, `from`, `to` (exclusive). Dates accept YYYY-MM-DD or UTC ISO timestamps. Results use `data.items` and `data.pagination`. Ordering is created_at descending, then id descending. Counts and lists are separate queries and can change during concurrent writes.
 
 Use `status` for company/user/domain/activity lists. `domain_status` on the company list filters companies by a matching domain's status. `user_id` selects users, activity actors or audit actors. Search matches company/user name/email/phone, domain name/hostname, or activity/credit/audit descriptions. Example:
@@ -24,6 +42,51 @@ Use `status` for company/user/domain/activity lists. `domain_status` on the comp
 `GET /companies?search=soft&status=active&domain_status=active&page=1&limit=25`
 
 Private fields such as passwords, API keys, gateway secrets, webhook verification tokens and raw configuration are not included. Domain status is the stored database status; these endpoints do not contact the DNS/SSL provider or provision a domain.
+
+## Company messaging overview
+
+GET `/companies/:companyId/overview` returns the company profile and lifetime WhatsApp message/template counts across all its users and phone numbers. It requires the same active superadmin JWT as the other endpoints. Invalid company UUIDs return 400; missing or soft-deleted companies return 404.
+
+Example `data`:
+
+```json
+{
+  "company": { "id": "87af00e3-cdf0-4c59-9950-143dbadf5ebc", "name": "Example Company" },
+  "stats": {
+    "total_message": 150,
+    "delivered_messages": 100,
+    "failed_messages": 10,
+    "received_messages": 30,
+    "templates": 5,
+    "message_templates": 80
+  }
+}
+```
+
+- `total_message`: all stored inbound and outbound messages, including queued/sent messages, excluding status `deleted`.
+- `delivered_messages`: outbound messages with status `delivered` or `read`.
+- `failed_messages`: outbound messages with status `failed`.
+- `received_messages`: inbound messages, including those subsequently marked as read.
+- `templates`: saved template definitions, excluding soft-deleted templates, across all template statuses.
+- `message_templates`: outbound messages with type `template`, across all non-deleted message statuses.
+
+Template messages overlap the other message counts. Templates are definitions, not sent messages. Messages are counted from `messages` only; campaign tracking rows are not added again. Counts are numbers, and an empty company returns zeros. Message and template counts are separate queries and can change during concurrent writes. No schema migration is required.
+
+## Company messages and campaigns
+
+- GET `/companies/:companyId/messages`: paginated WhatsApp messages for the company, including content, direction, type, status, errors, template/campaign references and delivery timestamps. Messages with status `deleted` are excluded. Search matches sender/recipient phone, WhatsApp message ID and error message.
+- GET `/companies/:companyId/campaign`: paginated campaigns for the company, including name, description, status, recipient/send/delivery/read/failure counters, cost, failure reason and schedule timestamps. Soft-deleted campaigns are excluded. Search matches name and description. The route uses singular `campaign`.
+
+Both require an active superadmin JWT and accept `page` (default 1), `limit` (default 25, maximum 100), `status`, `search`, `user_id`, `from` and `to` (exclusive). `user_id` matches the record's owner. Without it, all company users are included. A query `company_id` cannot override the company in the URL. Unknown filters and `domain_status` return 400. Invalid company UUIDs return 400; missing or soft-deleted companies return 404.
+
+Examples:
+
+```text
+GET /v1/super-admin/companies/COMPANY_UUID/messages?page=1&limit=25&status=failed
+GET /v1/super-admin/companies/COMPANY_UUID/campaign?page=1&limit=25&status=running
+```
+
+Both return `data.items` and `data.pagination` (`page`, `limit`, numeric `total`), sorted by `created_at` descending, then `id` descending. Empty results return `items: []` with `total: 0`. These are read-only endpoints and require no new migration.
 
 ## Create a company and its initial administrator
 

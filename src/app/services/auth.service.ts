@@ -341,7 +341,7 @@ class AuthService {
       company_id,
       password: hashedPassword,
       role: data.role,
-      status: 'inactive'
+      status: 'active'
     }, trx);
 
     console.log("Domain register",company_id)

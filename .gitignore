@@ -7,6 +7,7 @@ build/
 *.log
 .DS_Store
 coverage/
+.facebook-test-runtime/
 .vscode/
 .idea/
 docker-compose.yml
