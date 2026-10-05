@@ -38,4 +38,5 @@ export interface CreditInput {
   reason: string;
   request_id: string;
 }
-export type CompanyCollection = 'users' | 'domains' | 'activities' | 'credits' | 'audit' | 'messages' | 'campaigns';
+export type UserCollection = 'activities' | 'campaigns' | 'messages' | 'contacts';
+export type CompanyCollection = 'users' | 'domains' | 'activities' | 'credits' | 'audit' | 'messages' | 'campaigns' | 'contacts';

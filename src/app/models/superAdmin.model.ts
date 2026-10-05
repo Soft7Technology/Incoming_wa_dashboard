@@ -118,9 +118,17 @@ class SuperAdminModel extends BaseModel {
 
   async companyOverview(id: string) {
     const company = await this.company(id);
+    return { company, stats: await this.messagingStats({ company_id: id }) };
+  }
+
+  private async messagingStats(scope: { company_id: string; user_id?: string }): Promise<CompanyOverviewStats> {
+    const templateQuery = this.db('templates').where({ company_id: scope.company_id }).whereNull('deleted_at');
+    // Templates belong to a user's WABA accounts; templates has no user_id column.
+    if (scope.user_id) templateQuery.whereIn('waba_id', this.db('waba_accounts')
+      .select('id').where(scope).whereNull('deleted_at'));
     const [messages, templates] = await Promise.all([
       this.db('messages')
-        .where({ company_id: id })
+        .where(scope)
         .whereNot('status', 'deleted')
         .select(this.db.raw(`
           COUNT(*) AS total_message,
@@ -130,7 +138,7 @@ class SuperAdminModel extends BaseModel {
           COUNT(*) FILTER (WHERE direction = 'outbound' AND type = 'template') AS message_templates
         `))
         .first(),
-      this.db('templates').where({ company_id: id }).whereNull('deleted_at').count('* as total').first(),
+      templateQuery.count('* as total').first(),
     ]);
     const stats: CompanyOverviewStats = {
       total_message: Number(messages?.total_message || 0),
@@ -140,7 +148,26 @@ class SuperAdminModel extends BaseModel {
       templates: Number(templates?.total || 0),
       message_templates: Number(messages?.message_templates || 0),
     };
-    return { company, stats };
+    return stats;
+  }
+
+  async userOverview(companyId: string, userId: string) {
+    const user = await this.user(userId, companyId);
+    return { user, stats: await this.messagingStats({ company_id: companyId, user_id: userId }) };
+  }
+
+  async userActivePlan(companyId: string, userId: string) {
+    await this.user(userId, companyId);
+    const now = new Date();
+    const plan = await this.db('user_plans')
+      .where({ company_id: companyId, user_id: userId, active: true, status: 'COMPLETED' })
+      .where('start_date', '<=', now)
+      .where('end_date', '>', now)
+      .orderBy('created_at', 'desc')
+      .orderBy('id', 'desc')
+      .first('id', 'user_id', 'company_id', 'subscription_id', 'plan_name', 'price',
+        'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage', 'created_at');
+    return { active_plan: plan ?? null };
   }
 
   async details(id: string) {
@@ -164,11 +191,17 @@ class SuperAdminModel extends BaseModel {
     };
   }
 
-  async userDetails(id: string, companyId?: string) {
+  async user(id: string, companyId?: string) {
+    if (companyId) await this.company(companyId);
     const query = this.db('users').where({ id }).whereNull('deleted_at');
     if (companyId) query.where({ company_id: companyId });
     const user = await query.first(userColumns);
     if (!user) throw new HTTP404Error({ message: 'User not found' });
+    return user;
+  }
+
+  async userDetails(id: string, companyId?: string) {
+    const user = await this.user(id, companyId);
     const scope = { user_id: user.id, company_id: user.company_id };
     const [campaigns, contacts, plan] = await Promise.all([
       this.db('campaigns').where(scope).whereNull('deleted_at')
@@ -212,6 +245,18 @@ class SuperAdminModel extends BaseModel {
           'completed_at', 'created_at', 'updated_at',
         ],
         search: ['name', 'description'],
+        soft: true,
+      },
+      contacts: {
+        table: 'contacts',
+        columns: [
+          'id', 'company_id', 'user_id', 'phone_number_id', 'name', 'email', 'phone_number',
+          'country_code', 'attributes', 'custom_fields', 'is_valid', 'invalid_reason',
+          'is_opted_out', 'assigned_to', 'source', 'notes',
+          'status', 'message_count', 'failed_count', 'last_contacted_at', 'last_invalid_at',
+          'created_at', 'updated_at',
+        ],
+        search: ['name', 'email', 'phone_number'],
         soft: true,
       },
       activities: {
@@ -262,7 +307,7 @@ class SuperAdminModel extends BaseModel {
     if (f.user_id && resource === 'users') query.where('id', f.user_id);
     if (f.user_id && resource === 'activities') query.where('user_id', f.user_id);
     if (f.user_id && resource === 'audit') query.where('actor_id', f.user_id);
-    if (f.user_id && (resource === 'messages' || resource === 'campaigns')) query.where('user_id', f.user_id);
+    if (f.user_id && (resource === 'messages' || resource === 'campaigns' || resource === 'contacts')) query.where('user_id', f.user_id);
     const result = await this.page(this.applyFilters(query, f, d.search, 'company_id'), d.columns, f);
     if (resource !== 'users') return result;
 

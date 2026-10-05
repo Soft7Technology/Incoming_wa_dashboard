@@ -683,6 +683,68 @@
       ]
     },
     {
+      "name": "Company user dashboard",
+      "item": [
+        {
+          "name": "User details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}"
+          }
+        },
+        {
+          "name": "User activity",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}/activity?page=1&limit=25"
+          }
+        },
+        {
+          "name": "User campaigns",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}/campaign?page=1&limit=25"
+          }
+        },
+        {
+          "name": "User messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}/messages?page=1&limit=25"
+          }
+        },
+        {
+          "name": "User overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}/overview"
+          }
+        },
+        {
+          "name": "User contacts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}/contacts?page=1&limit=25"
+          }
+        },
+        {
+          "name": "User active plan",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/v1/super-admin/companies/{{companyId}}/{{userId}}/active-plan",
+            "description": "Returns the active, completed plan within its valid period. If none exists, returns HTTP 200 with message No active plan and data.active_plan null."
+          }
+        }
+      ]
+    },
+    {
       "name": "Individual user details",
       "item": [
         {

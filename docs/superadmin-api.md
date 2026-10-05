@@ -88,6 +88,48 @@ GET /v1/super-admin/companies/COMPANY_UUID/campaign?page=1&limit=25&status=runni
 
 Both return `data.items` and `data.pagination` (`page`, `limit`, numeric `total`), sorted by `created_at` descending, then `id` descending. Empty results return `items: []` with `total: 0`. These are read-only endpoints and require no new migration.
 
+## Company user dashboard
+
+All paths below use base `/v1/super-admin` and require an active superadmin JWT:
+
+| Method | Path | Result |
+| --- | --- | --- |
+| GET | `/companies/:companyId/:userId` | User profile with assigned plan snapshot and contact/campaign counts; alias of `/companies/:companyId/users/:userId` |
+| GET | `/companies/:companyId/:userId/activity` | Paginated activity logs for this user |
+| GET | `/companies/:companyId/:userId/campaign` | Paginated campaigns owned by this user |
+| GET | `/companies/:companyId/:userId/messages` | Paginated messages owned by this user |
+| GET | `/companies/:companyId/:userId/overview` | `{ user, stats }` with the same messaging metrics as company overview, scoped to this user |
+| GET | `/companies/:companyId/:userId/contacts` | Paginated contacts owned by this user, including custom fields, source, validity and opt-out state |
+| GET | `/companies/:companyId/:userId/active-plan` | `{ active_plan }` with the user's current plan snapshot, limits and usage, or `active_plan: null` |
+
+Invalid company/user UUIDs return 400. Missing or soft-deleted companies/users, and users belonging to a different company, return 404. Existing named company routes such as `/companies/:companyId/users` retain their original behavior.
+
+The four collection endpoints accept `page` (default 1), `limit` (default 25, maximum 100), `search`, `status`, `from` and `to` (exclusive UTC boundary), and return `data.items` and `data.pagination`. Valid query `company_id` and `user_id` values cannot override either URL identifier. Unknown filters and `domain_status` return 400. Results are ordered by `created_at` descending, then `id` descending. Soft-deleted contacts, campaigns and activities, and messages with status `deleted`, are excluded. Contact search matches name, email and phone number. Contacts owned by another user are excluded even when assigned to the requested user.
+
+User overview excludes deleted messages and template definitions. Its `templates` count includes definitions attached to non-deleted WABA accounts owned by the requested user in this company; it does not assume a `templates.user_id` column. Counts use the definitions documented under company messaging overview.
+
+An active plan must have `active=true`, `status=COMPLETED`, `start_date <= now` and `end_date > now`. Expired, future, suspended, cancelled and pending plans are excluded even when the assignment pointer or active flag is stale. No active plan is a successful HTTP 200 response:
+
+```json
+{
+  "success": true,
+  "message": "No active plan",
+  "data": { "active_plan": null }
+}
+```
+
+With an active plan, the message is `User active plan retrieved` and `data.active_plan` contains the purchased plan snapshot. The response also includes the standard `meta.timestamp`. No new migration is required.
+
+```text
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}/activity?page=1&limit=25
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}/campaign
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}/messages
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}/overview
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}/contacts
+GET {{prod_url}}/v1/super-admin/companies/{{companyId}}/{{userId}}/active-plan
+```
+
 ## Create a company and its initial administrator
 
 POST `/companies`:
