@@ -5,7 +5,7 @@ Send `parameter_mapping` in the existing campaign creation payload. Keys match t
 ```json
 {
   "parameter_mapping": {
-    "1": { "field": "contact.name", "fallbackValue": "Guest" },
+    "1": { "field": "contact.name" },
     "2": { "field": "contact.phone_number" },
     "3": { "field": "custom_fields.Company name", "fallbackValue": "your company" },
     "4": { "field": "custom_fields.tier", "fallbackValue": "standard" },
@@ -14,7 +14,7 @@ Send `parameter_mapping` in the existing campaign creation payload. Keys match t
 }
 ```
 
-`field` reads a contact value; `value` supplies literal text. A missing or null field uses `fallbackValue`, or empty text if no fallback is supplied. Existing values, including empty strings, zero and false, are preserved as text. For example, `{ "field": "contact.name", "fallbackValue": "Guest" }` uses the contact's name when present and `Guest` when the name is null or missing. Prefixes `contact.`, `custom_fields.` and `attributes.` select the source explicitly. The remainder is the exact key, including spaces or dots.
+`field` reads a contact value; `value` supplies literal text. `fallbackValue` is optional and may be omitted or set to `null` when creating a campaign. A missing or null field uses a supplied string `fallbackValue`; otherwise its variable is saved as JSON `null` and passed as `null` in the outgoing campaign template parameter. Existing values, including empty strings, zero and false, are preserved as text. For example, `{ "field": "contact.name" }` uses the contact's name when present and `null` when the name is null or missing. Adding `"fallbackValue": "Guest"` uses `Guest` instead for null or missing names. Prefixes `contact.`, `custom_fields.` and `attributes.` select the source explicitly. The remainder is the exact key, including spaces or dots.
 
 Existing string entries remain supported: `fullName` maps to `name`, `vb_phoneno` maps to `phone_number`, and other keys look up contact columns, then `custom_fields`, then legacy `attributes`. Unrecognized strings remain literal text for compatibility, so prefer explicit `{ "field": "custom_fields.key" }` for custom fields that may be missing.
 

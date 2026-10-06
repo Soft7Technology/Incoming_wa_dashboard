@@ -58,8 +58,45 @@ test('campaign name mapping preserves existing values and falls back for null or
   ['Alice','Guest','Guest','']);
 });
 
+test('campaigns without fallbacks save null for missing values and still queue immediately', async()=>{
+ const contacts=['Alice',null,undefined,'',0,false].map((name,index)=>({
+  id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',
+  ...(name === undefined ? {} : {name}),custom_fields:{company:null},
+ }));
+ const f=fixture({contacts});
+ const campaign=await f.service.createCampaign('u','c',{...payload,send_immediately:true,parameter_mapping:{
+  '1':{field:'contact.name'},'2':{field:'contact.name',fallbackValue:null},
+  '3':'fullName','4':{field:'custom_fields.company'},'5':{field:'attributes.missing'},
+  '6':{field:'contact.name',fallbackValue:''},
+ }});
+ const messages=JSON.parse(JSON.stringify(f.writes.find(w=>w.messages).messages));
+ assert.equal(campaign.total_recipients,6);
+ assert.equal(campaign.status,'scheduled');
+ assert.equal(f.writes.at(-1),'queue');
+ for (const key of ['1','2','3']) {
+  assert.deepEqual(messages.map(message=>message.template_variables[key]),['Alice',null,null,'','0','false']);
+ }
+ for (const message of messages) {
+  assert.equal(message.template_variables['4'],null);
+  assert.equal(message.template_variables['5'],null);
+ }
+ assert.deepEqual(messages.map(message=>message.template_variables['6']),['Alice','','','','0','false']);
+});
+
+test('campaign test payload preserves resolved null template parameters',()=>{
+ const f=fixture();
+ const variables=f.service.resolveTemplateVariables({name:null},{
+  '1':{field:'contact.name'},'2':{field:'custom_fields.missing',fallbackValue:'Guest'},'3':{value:''},
+ });
+ const result=f.service.buildTemplatePayload({name:'test',language:'en',components:[{type:'BODY',text:'Hi {{1}} {{2}} {{3}}'}]},variables);
+ assert.deepEqual(JSON.parse(JSON.stringify(result.components[0].parameters)),[
+  {type:'text',text:null},{type:'text',text:'Guest'},{type:'text',text:''},
+ ]);
+});
+
 test('invalid parameter mappings reject before contact writes', async()=>{
- for (const mapping of [[], 'bad', {'1':null}, {'1':{field:'name',value:'literal'}}, {'1':{field:123}}]) {
+ for (const mapping of [[], 'bad', {'1':null}, {'1':{field:'name',value:'literal'}}, {'1':{field:123}},
+  {'1':{field:'name',fallbackValue:123}}, {'1':{field:null}}, {'1':{value:null}}]) {
   const f=fixture();
   await assert.rejects(f.service.createCampaign('u','c',{...payload,parameter_mapping:mapping}),/parameter_mapping/);
   assert.equal(f.writes.length,0);

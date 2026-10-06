@@ -27,7 +27,7 @@ import phoneNumberModel from '../models/phoneNumber.model';
 type ParameterMapping = Record<string, string | {
   field?: string;
   value?: string;
-  fallbackValue?: string;
+  fallbackValue?: string | null;
 }>;
 
 interface CreateCampaignData {
@@ -292,11 +292,11 @@ class CampaignService {
   /**
    * Resolve template variables from contact attributes
    */
-  private resolveTemplateVariables(contact: any, mapping: ParameterMapping): Record<string, string> {
+  private resolveTemplateVariables(contact: any, mapping: ParameterMapping): Record<string, string | null> {
     if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
       throw new HTTP400Error({ message: 'parameter_mapping must be an object' });
     }
-    const variables: Record<string, any> = {};
+    const variables: Record<string, string | null> = {};
     const own = (object: any, key: string) => object && Object.prototype.hasOwnProperty.call(object, key);
     const fieldValue = (field: string): { found: boolean; value?: unknown } => {
       const aliases: Record<string, string> = { fullName: 'name', vb_phoneno: 'phone_number' };
@@ -314,7 +314,7 @@ class CampaignService {
       }
       return { found: own(aliases, field) || ['name', 'phone_number', 'email'].includes(field) };
     };
-    const text = (value: unknown): string => value == null ? '' :
+    const text = (value: unknown): string | null => value == null ? null :
       typeof value === 'object' ? JSON.stringify(value) : String(value);
 
     for (const [templateParam, entry] of Object.entries(mapping)) {
@@ -325,14 +325,14 @@ class CampaignService {
       } else {
         if (!entry || Array.isArray(entry) || typeof entry !== 'object' ||
             Object.keys(entry).some(key => !['field', 'value', 'fallbackValue'].includes(key)) ||
-            Object.values(entry).some(value => typeof value !== 'string') ||
+            Object.entries(entry).some(([key, value]) => typeof value !== 'string' && !(key === 'fallbackValue' && value === null)) ||
             (entry.field !== undefined && entry.value !== undefined) ||
             (entry.field === undefined && entry.value === undefined && entry.fallbackValue === undefined) ||
             entry.field === '') {
-          throw new HTTP400Error({ message: `Invalid parameter_mapping entry for ${templateParam}: use a string or { field, fallbackValue } or { value }` });
+          throw new HTTP400Error({ message: `Invalid parameter_mapping entry for ${templateParam}: use a string or { field, fallbackValue? } or { value }` });
         }
         value = entry.field !== undefined ? fieldValue(entry.field).value : entry.value;
-        if (value == null) value = entry.fallbackValue ?? '';
+        if (value == null) value = entry.fallbackValue ?? null;
       }
       Object.defineProperty(variables, templateParam, { value: text(value), enumerable: true, configurable: true });
     }
@@ -618,7 +618,7 @@ class CampaignService {
           if (bodyVariables.length > 0) {
             const parameters = bodyVariables.map((varName) => ({
               type: 'text',
-              text: variables[varName] || '',
+              text: variables[varName] === undefined ? '' : variables[varName],
             }));
 
             components.push({
