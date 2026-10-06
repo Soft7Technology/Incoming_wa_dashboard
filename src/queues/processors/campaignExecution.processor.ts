@@ -369,7 +369,7 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (bodyVariables.length > 0) {
           const parameters = bodyVariables.map((varName: string) => ({
             type: 'text',
-            text: variables[varName] || '',
+            text: variables[varName] === undefined ? '' : variables[varName],
           }));
 
           components.push({
