@@ -17,7 +17,8 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
   const controllerModule = load('src/app/http/controllers/facebookMessenger.controller.ts', {
     '../../services/facebookMessenger.service': { __esModule: true, default: service }, '../../utils/facebook': utils,
   });
-  const deps = { '../app/http/controllers/facebookMessenger.controller': controllerModule };
+  const deps = { '../app/http/controllers/facebookMessenger.controller': controllerModule,
+    './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts') };
   const app = express();
   app.use(express.json({ verify: (req, _res, body) => { req.rawBody = body; } }));
   app.post('/v1/auth/login', (_req, res) => res.json({ success: true, data: { token: 'BROWSER_TEST_JWT', data: { name: 'Test Owner' } } }));

@@ -29,6 +29,61 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
 
+test('contact-prefixed custom fields resolve independently per recipient into worker parameters', async()=>{
+ const contacts=['Hello','Welcome'].map((check,index)=>({
+  id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',
+  custom_fields:{check},
+ }));
+ const f=fixture({contacts});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':{field:'contact.custom_fields.check'},'2':{field:'contact.custom_fields.check'},
+ }});
+ const messages=f.writes.find(w=>w.messages).messages;
+ const exports={};
+ const deps={
+  'bullmq':{Worker:class {on(){}}},
+  '../campaignCapacity':{campaignCapacity:{},createCapacitySampler:()=>({})},
+ };
+ const js=ts.transpileModule(fs.readFileSync('src/queues/processors/campaignExecution.processor.ts','utf8'),{
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
+ }).outputText;
+ vm.runInNewContext(js+'\nexports.buildTemplatePayloadForTest = buildTemplatePayload;',{
+  exports,require:name=>deps[name]||{},console:{log(){}},setInterval:()=>({unref(){}}),
+ });
+ for (const [index,message] of messages.entries()) {
+  assert.equal(message.contact_id,contacts[index].id);
+  const result=exports.buildTemplatePayloadForTest({name:'ordersw',language:'en_US',components:[
+   {type:'HEADER',format:'IMAGE'},
+   {type:'BODY',text:'Hiii {{1}} HOw are you doing {{2}}\nLooking forward'},
+  ]},message.template_variables,[{type:'image',link:'https://example.com/image.jpg'}]);
+  assert.deepEqual(JSON.parse(JSON.stringify(result.components)),[
+   {type:'header',parameters:[{type:'image',image:{link:'https://example.com/image.jpg'}}]},
+   {type:'body',parameters:[{type:'text',text:contacts[index].custom_fields.check},
+    {type:'text',text:contacts[index].custom_fields.check}]},
+  ]);
+ }
+});
+
+test('nested contact fields retain exact dotted keys, fallback rules and own-property lookup',()=>{
+ const contact={name:'Parth',source:'manual',custom_fields:{
+  check:'Hello','Company name':'Soft7','order.total':42,order:{total:99,paid:false},
+ },attributes:{address:{city:'Pune'},count:0}};
+ const f=fixture();
+ const variables=f.service.resolveTemplateVariables(contact,{
+  '1':{field:'contact.custom_fields.Company name'},'2':{field:'contact.custom_fields.order.total'},
+  '3':{field:'custom_fields.order.total'},'4':{field:'contact.custom_fields.order.paid'},
+  '5':{field:'contact.attributes.address.city'},'6':{field:'contact.attributes.count'},
+  '7':{field:'contact.custom_fields.unknown',fallbackValue:'Guest'},
+  '8':'contact.custom_fields.check','9':{field:'contact.source'},
+  '10':{field:'contact.custom_fields.toString',fallbackValue:'safe'},
+  '11':{field:'attributes.address.city'},'12':{field:'custom_fields.order.paid'},
+ });
+ assert.deepEqual(JSON.parse(JSON.stringify(variables)),{
+  '1':'Soft7','2':'42','3':'42','4':'false','5':'Pune','6':'0','7':'Guest',
+  '8':'Hello','9':'manual','10':'safe','11':'Pune','12':'false',
+ });
+});
+
 test('campaign mappings resolve dynamic columns, custom fields, literals and missing-value fallbacks', async()=>{
  const contact={id:'contact',name:'NK',phone_number:'+919372597458',phone_number_id:'sender-db',source:'import',
   custom_fields:{tier:'gold',balance:0,active:false,'Company name':'Soft7'},attributes:{city:'Pune'}};

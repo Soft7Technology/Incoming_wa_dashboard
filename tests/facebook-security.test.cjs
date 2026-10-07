@@ -55,6 +55,17 @@ test('Page discovery follows cursors, filters messaging tasks and never follows 
     : { data: [{ id: 'b', access_token: 'token', tasks: ['MESSAGING'] }] }; };
   assert.equal((await graph.pages('token'))[0].id, 'b'); assert.equal(calls[1].path, 'me/accounts'); assert.equal(calls[1].params.after, 'next');
 });
+test('Page discovery accepts Meta profile-plus messaging tasks and still requires a Page token', async () => {
+  const { FacebookGraph } = load('src/app/services/facebookGraph.service.ts', { axios: {}, '../utils/facebook': utils });
+  const graph = new FacebookGraph();
+  graph.call = async () => ({ data: [
+    { id: 'modern', access_token: 'TEST_PAGE_TOKEN', tasks: ['PROFILE_PLUS_ANALYZE', 'PROFILE_PLUS_FACEBOOK_ACCESS', 'PROFILE_PLUS_MESSAGING', 'PROFILE_PLUS_MANAGE'] },
+    { id: 'legacy', access_token: 'TEST_PAGE_TOKEN', tasks: ['MESSAGE'] },
+    { id: 'no-messaging', access_token: 'TEST_PAGE_TOKEN', tasks: ['PROFILE_PLUS_ANALYZE', 'PROFILE_PLUS_MANAGE'] },
+    { id: 'no-token', tasks: ['PROFILE_PLUS_MESSAGING'] },
+  ] });
+  assert.deepEqual(Array.from(await graph.pages('TEST_USER_TOKEN'), page => page.id), ['modern', 'legacy']);
+});
 test('browser assets contain no simulated authorization or hardcoded success requests', () => {
   const js = fs.readFileSync('src/web/facebook/app.js', 'utf8');
   new Function(js);

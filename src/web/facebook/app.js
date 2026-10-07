@@ -101,7 +101,7 @@ $('login-form').onsubmit = async (event) => {
       body: JSON.stringify({
         identifier: $('email').value,
         password: $('password').value,
-        domain_name: $('domain').value,
+        domain_name: location.hostname,
       }),
     });
     const result = await response.json();

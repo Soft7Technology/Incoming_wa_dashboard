@@ -11,7 +11,7 @@ function load(file, deps = {}) {
     compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
   }).outputText;
   vm.runInNewContext(js, { exports, require: id => Object.hasOwn(deps, id) ? deps[id] : require(id),
-    process, Buffer, Date, URL, Error, console, setTimeout, clearTimeout,
+    process, Buffer, Date, URL, URLSearchParams, Error, console, setTimeout, clearTimeout,
     __dirname: path.dirname(path.resolve(file)), __filename: path.resolve(file) });
   return exports;
 }

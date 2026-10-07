@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Facebook Login · Developer test</title>
+    <link rel="stylesheet" href="/v1/facebook/login-test/style.css" />
+    <script defer src="/v1/facebook/login-test/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <section class="card" aria-labelledby="title">
+        <span class="badge">DEVELOPER TEST</span>
+        <h1 id="title">Test Facebook Login</h1>
+        <p>Sign in through Facebook to check your app's login flow with your developer or tester account.</p>
+        <div id="notice" role="status" aria-live="polite">Checking configuration…</div>
+        <button id="login" type="button" disabled>Continue with Facebook</button>
+        <small>Your password is entered on Facebook. This page never asks for it.</small>
+        <section id="profile" hidden aria-labelledby="profile-title">
+          <h2 id="profile-title">Login successful</h2>
+          <dl>
+            <dt>Name</dt>
+            <dd id="name"></dd>
+            <dt>App-scoped user ID</dt>
+            <dd id="user-id"></dd>
+          </dl>
+          <h3>Permissions</h3>
+          <ul id="permissions"></ul>
+          <p id="expiry"></p>
+          <button id="logout" type="button" class="secondary">Clear test session</button>
+          <small>This clears this page's session. You remain signed in on Facebook.</small>
+        </section>
+      </section>
+      <section class="card setup" aria-labelledby="setup-title">
+        <h2 id="setup-title">Before you test</h2>
+        <ol>
+          <li>
+            Enable Facebook Login in your
+            <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer"
+              >Meta app dashboard</a
+            >.
+          </li>
+          <li>Add your Facebook account as an app administrator, developer or tester. Accept any role invitation.</li>
+          <li>
+            Set your app ID, app secret and supported Graph API version in <code>.env</code>, then restart the server.
+          </li>
+          <li>
+            Register the exact callback below in your app's valid OAuth redirect URIs. For a hosted test, use HTTPS.
+          </li>
+        </ol>
+        <dl>
+          <dt>App ID</dt>
+          <dd id="app-id">Not configured</dd>
+          <dt>Login mode</dt>
+          <dd id="mode">—</dd>
+          <dt>Callback URL</dt>
+          <dd id="callback">Available after configuration</dd>
+        </dl>
+        <p>
+          This tests Facebook authorization only. To connect a business Page and test messaging, use the
+          <a href="/v1/facebook/page">Messenger dashboard</a> in the main API.
+        </p>
+        <small
+          >Tokens stay on the server and are discarded after the profile check. The test session expires in 10
+          minutes.</small
+        >
+      </section>
+    </main>
+  </body>
+</html>

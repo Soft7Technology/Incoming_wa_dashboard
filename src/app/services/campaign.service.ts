@@ -290,7 +290,7 @@ class CampaignService {
   }
 
   /**
-   * Resolve template variables from contact attributes
+   * Resolve template variables from each recipient's columns and nested fields.
    */
   private resolveTemplateVariables(contact: any, mapping: ParameterMapping): Record<string, string | null> {
     if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
@@ -298,19 +298,35 @@ class CampaignService {
     }
     const variables: Record<string, string | null> = {};
     const own = (object: any, key: string) => object && Object.prototype.hasOwnProperty.call(object, key);
+    const readPath = (source: any, path: string): { found: boolean; value?: unknown } => {
+      let remaining = path;
+      while (source != null) {
+        // Prefer exact keys so custom field names containing dots still work.
+        if (own(source, remaining)) return { found: true, value: source[remaining] };
+        const separator = remaining.indexOf('.');
+        if (separator < 1) break;
+        const key = remaining.slice(0, separator);
+        if (!own(source, key)) break;
+        source = source[key];
+        remaining = remaining.slice(separator + 1);
+      }
+      return { found: false };
+    };
     const fieldValue = (field: string): { found: boolean; value?: unknown } => {
       const aliases: Record<string, string> = { fullName: 'name', vb_phoneno: 'phone_number' };
       for (const prefix of ['custom_fields.', 'attributes.', 'contact.']) {
         if (field.startsWith(prefix)) {
           const key = field.slice(prefix.length);
           const source = prefix === 'contact.' ? contact : contact[prefix.slice(0, -1)];
-          return { found: true, value: own(source, key) ? source[key] : undefined };
+          return { found: true, value: readPath(source, key).value };
         }
       }
       const key = own(aliases, field) ? aliases[field] : field;
-      if (own(contact, key)) return { found: true, value: contact[key] };
+      const column = readPath(contact, key);
+      if (column.found) return column;
       for (const source of [contact.custom_fields, contact.attributes]) {
-        if (own(source, field)) return { found: true, value: source[field] };
+        const resolved = readPath(source, field);
+        if (resolved.found) return resolved;
       }
       return { found: own(aliases, field) || ['name', 'phone_number', 'email'].includes(field) };
     };

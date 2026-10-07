@@ -21,8 +21,8 @@
           <label>Email<input id="email" type="email" autocomplete="username" required /></label
           ><label>Password<input id="password" type="password" autocomplete="current-password" required /></label
           ><label
-            >Company login domain<input id="domain" placeholder="Your existing SaaS login domain" required /><small
-              >Use the domain assigned to your company. For local development use localhost.</small
+            >Company login domain<input id="domain" autocomplete="off" readonly required /><small
+              >Detected automatically from this page's URL.</small
             ></label
           ><button id="login-button" type="submit">Log in</button>
         </form>
