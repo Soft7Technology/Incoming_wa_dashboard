@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import path from 'path';
+import FacebookLoginTestRoute from './facebookLoginTest.route';
 import controller, { facebookError } from '../app/http/controllers/facebookMessenger.controller';
 
 const route = Router();
+route.use('/login-test', FacebookLoginTestRoute);
 route.use(controller.noStore);
 route.use((_req, res, next) => {
   res.set(

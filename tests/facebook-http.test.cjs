@@ -13,6 +13,7 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
   });
   const publicRoute = load('src/routes/facebookPublic.route.ts', {
     '../app/http/controllers/facebookMessenger.controller': controllerModule,
+    './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts'),
   }).default;
   const protectedRoute = load('src/routes/facebookMessenger.route.ts', {
     '../app/http/controllers/facebookMessenger.controller': controllerModule,

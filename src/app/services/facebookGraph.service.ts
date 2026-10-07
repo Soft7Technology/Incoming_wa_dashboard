@@ -87,7 +87,9 @@ export class FacebookGraph {
       pages.push(...(response.data || []));
       if (!response.paging?.next)
         return pages.filter(
-          (p) => p.access_token && (p.tasks || []).some((t: string) => ['MESSAGE', 'MESSAGING'].includes(t)),
+          (p) =>
+            p.access_token &&
+            (p.tasks || []).some((t: string) => ['MESSAGE', 'MESSAGING', 'PROFILE_PLUS_MESSAGING'].includes(t)),
         );
       after = response.paging.cursors?.after;
       if (!after) break;

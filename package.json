@@ -4,6 +4,7 @@
   "description": "Console API is a surefy meta services microservice for WhatsApp Business API management",
   "main": "index.js",
   "scripts": {
+    "facebook:login": "node scripts/facebook-login-test.cjs",
     "build": "tsc && tsc-alias && node scripts/copy-facebook-assets.cjs",
     "test:facebook": "node --test tests/facebook-*.test.cjs",
     "start": "node dist/src/server.js",
