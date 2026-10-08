@@ -45,10 +45,6 @@ class ContactModel extends BaseModel {
           .whereIn('list_id', selection.filters.list_ids!);
       });
     }
-    if (selection.filters.status !== undefined) {
-      query.where('contacts.status', selection.filters.status);
-    }
-
     return query.select('contacts.*')
       .orderBy(`contacts.${selection.sortBy}`, selection.sortOrder)
       .orderBy('contacts.id', 'asc');
@@ -325,6 +321,14 @@ class ContactModel extends BaseModel {
 
     // Ignore deleted contacts
     query.whereNull("deleted_at");
+
+    if (filters.status !== undefined) {
+      if (typeof filters.status !== 'string' ||
+          !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(filters.status.trim())) {
+        throw new HTTP400Error({ message: 'status must be a contact stage UUID' });
+      }
+      query.where('contacts.status', filters.status.trim());
+    }
 
     if (filters.read_status === 'all') {
       // The combined inbox includes only contacts with a latest message.

@@ -159,17 +159,19 @@ class ContactService {
     // -------------------------
     // COUNT
     // -------------------------
-    // Clone before applying sorting and pagination to keep totals accurate.
+    // All filters must be complete here. Count the entire matching dataset and
+    // paginate a separate copy so page size and ordering cannot affect totals.
     const countQuery = filters.unpaginated ? undefined : query.clone().count("* as count").first();
+    const pageQuery = query.clone();
 
     // -------------------------
     // FETCH CONTACTS
     // -------------------------
-    if (filters.read_status === 'all') ContactModel.orderByReadStatus(query);
+    if (filters.read_status === 'all') ContactModel.orderByReadStatus(pageQuery);
     const sortedQuery = ['last_message', 'last_message_at'].includes(sortBy)
-      ? ContactModel.orderByLastMessage(query, sortOrder)
-      : query.orderBy(sortBy, sortOrder);
-    if (filters.read_status === 'all' && !['last_message', 'last_message_at'].includes(sortBy)) {
+      ? ContactModel.orderByLastMessage(pageQuery, sortOrder)
+      : pageQuery.orderBy(sortBy, sortOrder);
+    if (!['last_message', 'last_message_at'].includes(sortBy)) {
       sortedQuery.orderBy('contacts.id', 'asc');
     }
     const [totalResult, contacts] = await Promise.all([

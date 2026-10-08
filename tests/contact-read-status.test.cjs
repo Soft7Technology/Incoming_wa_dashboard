@@ -122,6 +122,126 @@ test('read status works for unpaginated selection and rejects invalid query valu
   } finally { await db.destroy(); }
 });
 
+test('contact stage status filters totals and rows on both global and sender-specific listings', async () => {
+  const { db, service, model, queries } = fixture();
+  const status = '6ddf72ae-bae1-49f6-9013-1f0a6ee10871';
+  try {
+    for (const sender of [undefined, 'meta-sender']) {
+      for (const read_status of [undefined, 'all', 'read', 'unread']) {
+        queries.length = 0;
+        await service.getContacts('owner', { status, read_status, page: 2, limit: 10,
+          sortBy: 'created_at', sortOrder: 'desc', search: 'Customer', list_ids: ['list'],
+          onlyAssignedToUserId: 'member' }, sender, 'company');
+        assert.equal(queries.length, 2);
+        for (const query of queries) {
+          assert.match(query.sql, /"contacts"\."status" = \?/);
+          assert.equal(query.bindings.filter(value => value === status).length, 1);
+          assert.match(query.sql, /"contacts"\."user_id" = \?/);
+          assert.match(query.sql, /"contacts"\."company_id" = \?/);
+          assert.match(query.sql, /assigned_to @>/);
+          assert.match(query.sql, /"deleted_at" is null/);
+          assert.match(query.sql, /"name" ilike/);
+          assert.match(query.sql, /"id" in \(\?\)/);
+          assert.equal(query.bindings.includes('sender'), Boolean(sender));
+        }
+        assert.match(queries[0].sql, /^select count\(\*\)/);
+        assert.match(queries[1].sql, /"created_at" desc, "contacts"\."id" asc limit \? offset \?/);
+        assert.deepEqual(queries[1].bindings.slice(-2), [10, 10]);
+      }
+    }
+    assert.ok(!model.findWithFilters('owner').toSQL().sql.includes('"contacts"."status"'));
+    queries.length = 0;
+    for (const status of ['', 'all', 'read', 'not-a-uuid', null, {}, ['6ddf72ae-bae1-49f6-9013-1f0a6ee10871']]) {
+      await assert.rejects(service.getContacts('owner', { status }, undefined, 'company'), /status must be a contact stage UUID/);
+    }
+    assert.equal(queries.length, 0);
+  } finally { await db.destroy(); }
+});
+
+test('status filtering paginates only matching contacts and composes with inbox state using indexed queries',
+  { skip: !DatabaseSync }, async () => {
+    const { db, model, service } = fixture();
+    const memory = new DatabaseSync(':memory:');
+    memory.function('btrim', value => value == null ? null : value.trim());
+    memory.function('regexp_replace', (value, pattern, replacement, flags) =>
+      value == null ? null : value.replace(new RegExp(pattern, flags), replacement));
+    const status = '6ddf72ae-bae1-49f6-9013-1f0a6ee10871';
+    const otherStatus = '1308d117-f311-4a0d-8246-a47de193d8df';
+    memory.exec(`CREATE TABLE contacts (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      phone_number TEXT, country_code TEXT, status TEXT, created_at TEXT, deleted_at TEXT);
+      CREATE TABLE messages (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      direction TEXT, from_phone TEXT, to_phone TEXT, status TEXT, read_at TEXT, inbox_read_at TEXT, created_at TEXT);`);
+    try {
+      const insert = memory.prepare('INSERT INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      for (let i = 0; i < 20; i++) insert.run(String(i).padStart(2, '0'), 'owner', 'company', 'sender',
+        `+9190000000${String(i).padStart(2, '0')}`, '91', i < 15 ? status : otherStatus, '2026-10-08', null);
+      insert.run('50', 'owner', 'company', 'other-phone', '+919000000050', '91', status, '2026-10-08', null);
+      insert.run('no-stage', 'owner', 'company', 'sender', '+919000000060', '91', null, '2026-10-08', null);
+      insert.run('foreign-owner', 'other', 'company', 'sender', '+919000000061', '91', status, '2026-10-08', null);
+      insert.run('foreign-company', 'owner', 'other', 'sender', '+919000000062', '91', status, '2026-10-08', null);
+      insert.run('deleted', 'owner', 'company', 'sender', '+919000000063', '91', status, '2026-10-08', '2026-10-08');
+      memory.exec(`INSERT INTO messages VALUES ('incoming-0', 'owner', 'company', 'sender', 'inbound',
+        '919000000000', 'business', 'received', NULL, NULL, '2026-10-08');
+        INSERT INTO messages VALUES ('incoming-1', 'owner', 'company', 'sender', 'inbound',
+        '919000000001', 'business', 'received', NULL, '2026-10-08', '2026-10-08');`);
+      db.client.runner = builder => ({ run: async () => {
+        const query = builder.toSQL();
+        const statement = memory.prepare(query.sql);
+        const values = query.bindings.map(value => typeof value === 'boolean' ? Number(value) : value);
+        return query.method === 'first' ? statement.get(...values) : statement.all(...values);
+      } });
+      const first = await service.getContacts('owner', { status, page: 1, limit: 10 }, undefined, 'company');
+      const second = await service.getContacts('owner', { status, page: 2, limit: 10 }, undefined, 'company');
+      assert.equal(first.pagination.total, 16);
+      assert.equal(first.pagination.total_pages, 2);
+      assert.deepEqual(first.contacts.map(row => row.id), Array.from({ length: 10 }, (_, i) => String(i).padStart(2, '0')));
+      assert.deepEqual(second.contacts.map(row => row.id), ['10', '11', '12', '13', '14', '50']);
+      assert.ok([...first.contacts, ...second.contacts].every(row => row.status === status));
+      // These matches all fall beyond the first unfiltered page. Filtering a
+      // fetched page in JavaScript would return empty or incomplete pages.
+      const matchingPages = [];
+      for (const senderId of [undefined, 'sender']) {
+        for (let page = 1; page <= 3; page++) {
+          const result = await service.getContacts('owner', {
+            status: otherStatus, page: String(page), limit: '2', sortBy: 'created_at', sortOrder: 'desc',
+          }, senderId, 'company');
+          assert.deepEqual({ ...result.pagination }, { total: 5, page, limit: 2, total_pages: 3 });
+          const expected = [['15', '16'], ['17', '18'], ['19']][page - 1];
+          assert.deepEqual(result.contacts.map(row => row.id), expected);
+          assert.ok(result.contacts.every(row => row.status === otherStatus));
+          if (senderId === undefined) matchingPages.push(...result.contacts.map(row => row.id));
+        }
+      }
+      assert.equal(new Set(matchingPages).size, 5, 'no duplicates across filtered pages with tied sort values');
+      const outside = await service.getContacts('owner', { status: otherStatus, page: 4, limit: 2 }, undefined, 'company');
+      assert.equal(outside.contacts.length, 0);
+      assert.deepEqual({ ...outside.pagination }, { total: 5, page: 4, limit: 2, total_pages: 3 });
+      const sender = await service.getContacts('owner', { status, unpaginated: true }, 'sender', 'company');
+      assert.equal(sender.total, 15);
+      const read = await service.getContacts('owner', { status, read_status: 'read' }, 'sender', 'company');
+      const unread = await service.getContacts('owner', { status, read_status: 'unread' }, 'sender', 'company');
+      const all = await service.getContacts('owner', { status, read_status: 'all' }, 'sender', 'company');
+      assert.deepEqual(read.contacts.map(row => row.id), ['01']);
+      assert.deepEqual(unread.contacts.map(row => row.id), ['00']);
+      assert.deepEqual(all.contacts.map(row => row.id), ['00', '01']);
+      const missing = await service.getContacts('owner', { status: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, undefined, 'company');
+      assert.equal(missing.pagination.total, 0);
+      assert.equal(missing.contacts.length, 0);
+
+      const migration = load('src/database/migrations/20261008000003_index_contact_status_queries.ts', {});
+      assert.equal(migration.config.transaction, false);
+      await migration.up({ raw: async sql => memory.exec(sql.replace(/ CONCURRENTLY/g, '')) });
+      for (const phone of [undefined, 'sender']) {
+        const query = model.findWithFilters('owner', { status }, phone).where('contacts.company_id', 'company')
+          .orderBy('contacts.created_at', 'desc').orderBy('contacts.id', 'asc').limit(10).toSQL();
+        const plan = memory.prepare(`EXPLAIN QUERY PLAN ${query.sql}`).all(...query.bindings);
+        assert.ok(plan.some(row => /SEARCH contacts USING INDEX contacts_(account|phone)_status_created_idx/.test(row.detail)));
+        assert.ok(!plan.some(row => /TEMP B-TREE/.test(row.detail)));
+      }
+      await migration.down({ raw: async sql => memory.exec(sql.replace(/ CONCURRENTLY/g, '')) });
+    } finally { memory.close(); await db.destroy(); }
+  });
+
 test('conversation indexes avoid scanning message history for every contact without changing filter results',
   { skip: !DatabaseSync }, async () => {
     const { db, model } = fixture();
@@ -210,7 +330,8 @@ test('contact URL handlers forward read_status and retain team account scope', a
   });
   for (const read_status of ['all', 'read', 'unread']) {
     const req = { ownerId: 'owner', userId: 'member', companyId: 'company',
-      params: { phoneNumberId: 'sender' }, query: { page: '1', limit: '50', read_status, phone_number_id: 'sender' } };
+      params: { phoneNumberId: 'sender' }, query: { page: '1', limit: '50', read_status, phone_number_id: 'sender',
+        status: '6ddf72ae-bae1-49f6-9013-1f0a6ee10871' } };
     await controller.getContactByPhoneNumberId(req, {});
     await controller.getContacts(req, {});
     await controller.getAllContacts(req, {});
@@ -222,6 +343,7 @@ test('contact URL handlers forward read_status and retain team account scope', a
     assert.equal(company, 'company');
     assert.equal(filters.onlyAssignedToUserId, 'member');
     assert.equal(filters.read_status, ['all', 'read', 'unread'][Math.floor(index / 3)]);
+    assert.equal(filters.status, '6ddf72ae-bae1-49f6-9013-1f0a6ee10871');
     assert.equal(filters.page, '1');
     assert.equal(filters.limit, '50');
   }
