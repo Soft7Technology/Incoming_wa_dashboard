@@ -8,7 +8,8 @@ const vm=require('node:vm');
 function load(file,deps) {
   const exports={};
   const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
-  vm.runInNewContext(js,{exports,require:id=>deps[id] || {},console:{log(){},info(){},warn(){},error(){}},process:{env:{}}});
+  vm.runInNewContext(js,{exports,require:id=>deps[id] || (id.endsWith('/interactiveChoice')
+    ? require('../src/app/services/chatbot/interactiveChoice') : {}),console:{log(){},info(){},warn(){},error(){}},process:{env:{}}});
   return exports;
 }
 function handler({keyword=null,session=null,sessionBot=null,defaultBot={id:'default',isDefault:true}}={}) {
@@ -245,6 +246,81 @@ test('button payload alone does not select a keyword or default flow', async () 
   await h.run({button:{payload:'support'}});
   assert.equal(h.routed.length,0);
   assert.equal(h.lookups.length,0);
+});
+
+test('attached Freelancer graph routes every latest-menu choice and earlier-menu navigation without restarting', async () => {
+  const graph=require('./fixtures/doveknot-freelancer-routing.json');
+  // Runtime rows store handles in data, not in a sourceHandle database column.
+  const bot={...structuredClone(graph),id:'freelancer',user_id:'owner'};
+  bot.edges=bot.edges.map(({sourceHandle,...edge})=>edge);
+  const byTitle=title=>bot.nodes.find(node=>node.data.title.trim()===title);
+  const main=byTitle('Main Menu');
+  const session={id:'session',chatbot_id:bot.id,current_node_id:main.id,variables:{customer:'kept'}};
+  const sessions={findActiveByPhoneNumberId:async()=>session,
+    findActiveSession:async()=>{throw Error('Routing must reuse the selected session, not read another active row')},
+    update:async(id,fields)=>{assert.equal(id,session.id);Object.assign(session,fields)},
+    deactivateOtherBots:async()=>{throw Error('A connected selection must not switch chatbots')},
+    deactivateActiveSession:async()=>{throw Error('A connected selection must not restart the menu')}};
+  const sent=[],lookups=[];
+  const menu=load('src/app/services/chatbot/flows/menu.flow.ts',{
+    '@surefy/console/app/models/chatSession.model':sessions,
+    '@surefy/console/services/chatbot/engine/executeNode':{executeNode:async({currentNode})=>({text:currentNode.data.title.trim()})},
+  });
+  const router=load('src/app/services/chatbot/flow.route.ts',{
+    '../../models/chatSession.model':sessions,'./flows/menu.flow':menu,
+    './flows/trigger.flow':{triggerFlow:async()=>{throw Error('Keyword collision must not restart the trigger')}},
+  });
+  const api=load('src/app/services/chatbot/chatbot.service.ts',{
+    './runtimeBot':{getRuntimeBot:async(_phone,id,text)=>{lookups.push({id,text});return bot}},
+    '@surefy/console/app/models/chatSession.model':sessions,'./flow.route':router,
+    '@surefy/console/services/message.service':{sendChatBotMessage:async(_sender,_phone,response)=>sent.push(response.text)},
+    '@surefy/console/models/contact.model':{findOrCreateIncoming:async()=>{}},
+    '../../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'sender',user_id:'owner',company_id:'company'})},
+    nodemailer:{createTransport:()=>({})},
+  });
+  const click=async(source,title)=>{
+    const reply=source.data.attributes.message.interactive.action.buttons.find(button=>button.reply.title.trim()===title).reply;
+    await api.handleIncomingMessageChatBot('983205234883054',{
+      from:'customer',type:'interactive',interactive:{button_reply:reply},
+    },'Customer');
+    assert.equal(sent.at(-1),title);
+    assert.equal(session.current_node_id,byTitle(title).id);
+  };
+  // Services is tested first on the latest menu, independently of Freelancer Form.
+  for(const title of ['Services','Freelancer Form','Social Media']){
+    session.current_node_id=main.id;
+    await click(main,title);
+  }
+  // Follow every declared connection in the actual attachment, including loops.
+  for(const source of bot.nodes.filter(node=>node.data.attributes.message.interactive.action)){
+    for(const button of source.data.attributes.message.interactive.action.buttons){
+      session.current_node_id=source.id;
+      await click(source,button.reply.title.trim());
+    }
+  }
+  session.current_node_id=main.id;
+  await click(main,'Freelancer Form');
+  await click(main,'Services');
+  await click(byTitle('Services'),'Social Media');
+  await click(byTitle('Social Media'),'Main Menu');
+  await api.handleIncomingMessageChatBot('983205234883054',{from:'customer',text:{body:'  SERVICES  '}},'Customer');
+  assert.equal(sent.at(-1),'Services');
+  assert.equal(session.current_node_id,byTitle('Services').id);
+  assert.equal(session.variables.customer,'kept');
+  assert.ok(lookups.every(lookup=>lookup.id===bot.id && lookup.text===undefined));
+});
+
+test('unknown, deleted and ambiguous older-menu IDs cannot select an arbitrary graph branch',()=>{
+  const {resolveInteractiveEdge}=require('../src/app/services/chatbot/interactiveChoice');
+  const choice=id=>({id,data:{attributes:{message:{interactive:{action:{buttons:[{reply:{id:'reused',title:'Services'}}]}}}}}});
+  const bot={nodes:[{id:'current'},choice('menu-a'),choice('menu-b'),{id:'services'},{id:'other'}],edges:[
+    {source:'menu-a',target:'services',sourceHandle:'reused'},
+    {source:'menu-b',target:'other',sourceHandle:'reused'},
+    {source:'menu-a',target:'deleted',sourceHandle:'missing'},
+  ]};
+  for(const id of ['reused','missing','unknown'])assert.equal(resolveInteractiveEdge(bot,'current',id,'Services'),undefined);
+  assert.equal(resolveInteractiveEdge(bot,'deleted','reused'),undefined);
+  assert.equal(resolveInteractiveEdge(bot,'menu-a','reused').target,'services');
 });
 
 test('typed option titles follow button and list edges without edge labels', async () => {

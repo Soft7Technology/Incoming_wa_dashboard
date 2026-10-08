@@ -402,7 +402,8 @@ class chatBotService {
         source: nodeIdMap[edge.source],
         target: nodeIdMap[edge.target],
         label: edge.label || null,
-        data: JSON.stringify(edge.data || {}),
+        data: JSON.stringify({ ...edge.data,
+          sourceHandle: edge.sourceHandle ?? edge.data?.sourceHandle }),
         created_at: new Date(),
       })
     );

@@ -8,6 +8,8 @@ Only one default flow may be assigned to each number, including draft reservatio
 
 Incoming routing priority is an exact normalized keyword match, then an active conversation, then the published default for any nonempty text. Replies in an active conversation continue its flow. Media, blank text, and interactive replies do not start a default flow on their own. Default starts bypass the legacy FPO phone-number registration interpretation so numeric messages can start the configured flow normally.
 
+Connected button/list replies take priority over keyword matching, including names such as Services or Social Media that also appear in trigger keywords. Typed option titles continue the current menu too. Recognized reply IDs from earlier messages can follow their original connections within the same active chatbot; labels alone never select a branch on another node. Unknown IDs, missing targets and ambiguous reused IDs cannot jump to an arbitrary branch. The resolver indexes nodes and connections once per loaded graph and reuses the same selected session when executing the branch. Saving preserves top-level `sourceHandle` values inside persisted edge data.
+
 The default phone assignment is stored in `chatbot_triggers` with an empty `trigger_word`. Existing active/published handling applies; no new column is required. Runtime default lookup is explicit and does not participate in keyword lookup.
 
 This repository contains the backend. A separate flow-editor frontend must permit an empty keyword list when submitting the flow.

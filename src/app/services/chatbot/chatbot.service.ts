@@ -1,5 +1,6 @@
 import chatSessionModel from '@surefy/console/app/models/chatSession.model';
 import { getRuntimeBot } from './runtimeBot';
+import { resolveInteractiveEdge } from './interactiveChoice';
 import chatBotNodeModel from '@surefy/console/models/chatBotNode.model';
 import chatBotEdgeModel from '@surefy/console/models/chatBotEdge.model';
 import messageService from "@surefy/console/services/message.service"
@@ -48,19 +49,21 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     console.log("🔍 Finding bot for phone number:", phoneNumberId);
     // A connected reply belongs to the current conversation, even when its title
     // is also a trigger keyword (for example, the Services button).
-    const activeSession = incomingId
-      ? await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId)
-      : null;
+    const activeSession = await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId);
     const sessionBot = activeSession
       ? await getRuntimeBot(phoneNumberId, activeSession.chatbot_id)
       : null;
-    const connectedReply = Boolean(incomingId && sessionBot?.nodes?.some(
-      (node: any) => node.id === activeSession.current_node_id
-    ) && sessionBot?.edges?.some((edge: any) =>
-      edge.source === activeSession.current_node_id &&
-      [edge.sourceHandle, edge.data?.sourceHandle, edge.data?.buttonId, edge.data?.button_id].includes(incomingId) &&
-      sessionBot.nodes.some((node: any) => node.id === edge.target)
-    ));
+    const choice = sessionBot && resolveInteractiveEdge(
+      sessionBot, activeSession.current_node_id, incomingId, incomingText
+    );
+    const connectedReply = Boolean(choice);
+    if (choice) console.info('[Chatbot Routing] Choice selected', {
+      chatbotId: sessionBot.id, phoneNumberId, source: choice.source, target: choice.target,
+    });
+    else if (incomingId) console.warn('[Chatbot Routing] Interactive choice not connected', {
+      phoneNumberId, chatbotId: activeSession?.chatbot_id, currentNodeId: activeSession?.current_node_id,
+      incomingId, hasActiveSession: Boolean(activeSession), hasPublishedFlow: Boolean(sessionBot),
+    });
 
     // Unconnected replies can still start a keyword flow, including template buttons.
     let bot: any = connectedReply ? sessionBot : incomingText
@@ -73,12 +76,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       await chatSessionModel.deactivateOtherBots(phone, phoneNumberId, bot.id);
     } else if (!bot) {
       console.info('[Chatbot Routing] No keyword flow selected; checking active session', { phoneNumberId });
-      if (incomingId) {
-        bot = sessionBot;
-      } else {
-        const textSession = await chatSessionModel.findActiveByPhoneNumberId(phone, phoneNumberId);
-        bot = textSession ? await getRuntimeBot(phoneNumberId, textSession.chatbot_id) : null;
-      }
+      bot = sessionBot;
       if (!bot && message?.text?.body && incomingText) {
         bot = await getRuntimeBot(phoneNumberId, undefined, undefined, true);
         triggerMatched = Boolean(bot);
@@ -139,6 +137,7 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
       incomingId,
       message,
       triggerMatched,
+      session: connectedReply || bot === sessionBot ? activeSession : undefined,
       phoneNumberId
     })
 

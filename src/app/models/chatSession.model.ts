@@ -21,6 +21,7 @@ class chatSessionModel extends BaseModel {
         return this.query()
             .where({ phone_number: phone, phoneNumberId, active: true })
             .orderBy("updated_at", "desc")
+            .orderBy("id", "desc")
             .first();
     }
 
@@ -55,6 +56,8 @@ class chatSessionModel extends BaseModel {
                 phoneNumberId,
                 active: true,
             })
+            .orderBy('updated_at', 'desc')
+            .orderBy('id', 'desc')
             .first();
     }
 

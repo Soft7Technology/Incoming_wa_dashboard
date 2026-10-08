@@ -2,6 +2,7 @@
 
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
 import { executeNode } from "@surefy/console/services/chatbot/engine/executeNode"
+import { resolveInteractiveEdge } from '../interactiveChoice';
 
 export const menuFlow = async ({
   bot,
@@ -32,13 +33,9 @@ export const menuFlow = async ({
   // GLOBAL INTERACTIVE Actions
   // ========================================
   if(incomingId){
-    // Find ANY edges globally
+    // Resolve current and recognized earlier-message choices inside this bot.
     console.log("Global")
-    const globalEdge = bot.edges.find(
-      (e:any)=> e.source === currentNodeId &&
-        (e?.data?.buttonId === incomingId || e?.data?.button_id === incomingId ||
-          e?.data?.sourceHandle === incomingId || e.sourceHandle === incomingId)
-    )
+    const globalEdge = resolveInteractiveEdge(bot, currentNodeId, incomingId);
 
     console.log("Global Edge",globalEdge)
 
@@ -59,7 +56,8 @@ export const menuFlow = async ({
       await chatSessionModel.update(session.id,{
         current_node_id: nextNode.id,
         variables: updatedVariables,
-        last_message: incomingText
+        last_message: incomingText,
+        updated_at: new Date(),
       })
 
       // Execute Target Node
@@ -200,42 +198,7 @@ export const menuFlow = async ({
   // 4. INTERACTIVE FLOW
   // =========================================
 
-  const edges = bot.edges.filter(
-    (e: any) => e.source === currentNodeId
-  );
-
-  // Match button/list reply ID
-  let matchedEdge = edges.find(
-    (e: any) =>
-      Boolean(incomingId) && e.sourceHandle === incomingId
-  );
-
-  // Match visible option titles even when edges only store an opaque reply ID.
-  const normalize = (value: any) => typeof value === 'string'
-    ? value.toLowerCase().trim().replace(/\s+/g, ' ') : '';
-  const action = currentNode.data?.attributes?.message?.interactive?.action;
-  const buttons = currentNode.data?.attributes ? action?.buttons || [] : currentNode.data?.buttons || [];
-  const options = [
-    ...buttons.map((button: any, index: number) => ({
-      id: button?.reply?.id || button?.id || `btn_${index}`,
-      title: button?.reply?.title ?? button?.title ?? (typeof button === 'string' ? button : ''),
-    })),
-    ...(action?.sections || []).flatMap((section: any) => section.rows || []),
-  ];
-  const matchingOptionIds = options
-    .filter((option: any) => normalize(incomingText) && normalize(option.title) === normalize(incomingText))
-    .map((option: any) => option.id);
-
-  // fallback text matching
-  if (!matchedEdge) {
-    matchedEdge = edges.find(
-      (e: any) => Boolean(normalize(incomingText)) && (
-        normalize(e.label) === normalize(incomingText) ||
-        [e.sourceHandle, e.data?.sourceHandle, e.data?.buttonId, e.data?.button_id]
-          .some(id => id && matchingOptionIds.includes(id))
-      )
-    );
-  }
+  const matchedEdge = resolveInteractiveEdge(bot, currentNodeId, incomingId, incomingText);
 
   if (!matchedEdge) {
     console.log("❌ No matched edge");
@@ -257,6 +220,7 @@ export const menuFlow = async ({
   await chatSessionModel.update(session.id, {
     current_node_id: nextNode.id,
     last_message: incomingText,
+    updated_at: new Date(),
   });
 
   console.log("➡️ Next Node:", nextNode.data?.title);

@@ -5,7 +5,8 @@ const ts=require('typescript'), fs=require('fs'), vm=require('vm');
 function load(file,deps={}) {
  const exports={};
  vm.runInNewContext(ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText,
- {exports,require:id=>deps[id]||{},console:{warn(){},log(){},error(){}},Date});
+ {exports,require:id=>deps[id]||(id.endsWith('/interactiveChoice')
+  ? require('../src/app/services/chatbot/interactiveChoice') : {}),console:{warn(){},log(){},error(){}},Date});
  return exports;
 }
 function provider(assistant={}) {
