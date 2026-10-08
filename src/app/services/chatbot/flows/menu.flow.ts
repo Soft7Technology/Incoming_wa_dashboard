@@ -43,7 +43,7 @@ export const menuFlow = async ({
     console.log("Global Edge",globalEdge)
 
     if(globalEdge){
-      console.log("🌍 GLOBAL ACTION:",globalEdge.data.action);
+      console.log("🌍 GLOBAL ACTION:",globalEdge.data?.action);
 
       const nextNode = bot.nodes.find(
         (n:any)=> n.id === globalEdge.target

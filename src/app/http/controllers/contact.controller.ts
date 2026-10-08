@@ -101,7 +101,6 @@ class ContactController {
       throw new HTTP400Error({ message: 'phone_number_id must be a non-empty string' });
     }
     const effectiveUserId = req.ownerId ?? req.userId!;
-    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
 
     // Team members must only see contacts assigned to them.
     // Permission flags control what actions they can perform, not what data they see.
@@ -125,8 +124,6 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    console.log('Filters', filters)
-
     const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId as string | undefined, req.companyId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   }
@@ -138,7 +135,6 @@ class ContactController {
    */
   getContactByPhoneNumberId = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
-    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
 
     // Team members must only see contacts assigned to them.
     // Permission flags control what actions they can perform, not what data they see.

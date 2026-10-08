@@ -76,20 +76,23 @@ class MessageController {
   });
 
   /**
-   * POST /v1/messages/mark-read
-   * Mark message as read
+   * POST /v1/admin/messages/mark-read
+   * Save the inbox read state through a message, or the contact's latest message.
    */
   markAsRead = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const { phone_number_id, message_id } = req.body;
+    const { phone_number_id, message_id, contact_id } = req.body;
 
-    if (!phone_number_id || !message_id) {
-      throw new HTTP400Error({ message: 'Phone number ID and message ID are required' });
+    if (!phone_number_id || (!message_id && !contact_id)) {
+      throw new HTTP400Error({ message: 'Phone number ID and either message ID or contact ID are required' });
     }
 
     const result = await MessageService.markAsRead({
       company_id: req.companyId!,
+      user_id: (req.ownerId ?? req.userId)!,
+      actor_id: req.userId,
       phone_number_id,
       message_id,
+      contact_id,
     });
 
     return successResponse(req, res, 'Message marked as read', result);

@@ -138,12 +138,13 @@ for (const [label, reply, expectedId] of [
   ['template quick reply', {button:{payload:'opaque-payload',text:'  SUPPORT  '}}, 'opaque-payload'],
   ['list reply', {interactive:{list_reply:{id:'row-1',title:'  SUPPORT  '}}}, 'row-1'],
 ]) {
-  test(label + ' text selects the receiving phones keyword flow over an active session', async () => {
+  test(label + ' without a connected active choice can select the receiving phones keyword flow', async () => {
     const h=handler({keyword:{id:'support'},session:{chatbot_id:'old'},sessionBot:{id:'old'}});
     await h.run(reply);
-    assert.equal(h.lookups.length,1);
-    assert.equal(h.lookups[0].phone,'meta');
-    assert.equal(h.lookups[0].text,'support');
+    assert.equal(h.lookups.length,2);
+    assert.equal(h.lookups[0].id,'old');
+    assert.equal(h.lookups[1].phone,'meta');
+    assert.equal(h.lookups[1].text,'support');
     assert.equal(h.routed[0].bot.id,'support');
     assert.equal(h.routed[0].triggerMatched,true);
     assert.equal(h.routed[0].incomingId,expectedId);
@@ -157,7 +158,88 @@ for (const [label, reply, expectedId] of [
     assert.equal(h.routed[0].incomingId,expectedId);
     assert.equal(h.lookups.some(x=>x.defaultOnly),false);
   });
+  for (const field of ['sourceHandle', 'data.sourceHandle', 'data.buttonId', 'data.button_id']) {
+    test(label + ' follows its active connection before a colliding keyword using ' + field, async () => {
+      const edge = {source:'menu',target:'services'};
+      if (field === 'sourceHandle') edge.sourceHandle=expectedId;
+      else edge.data={[field.slice(5)]:expectedId};
+      const h=handler({keyword:{id:'keyword'},session:{chatbot_id:'active',current_node_id:'menu'},
+        sessionBot:{id:'active',nodes:[{id:'menu'},{id:'services'}],edges:[edge]}});
+      await h.run(reply);
+      assert.equal(h.lookups.length,1);
+      assert.equal(h.lookups[0].id,'active');
+      assert.equal(h.routed[0].bot.id,'active');
+      assert.equal(h.routed[0].triggerMatched,false);
+      assert.equal(h.routed[0].incomingId,expectedId);
+      assert.equal(h.sent.length,1);
+    });
+  }
 }
+
+test('a button from another node or a deleted target does not override keyword routing', async () => {
+  for (const edge of [{source:'other-node',target:'services',sourceHandle:'choice'},
+    {source:'menu',target:'deleted',sourceHandle:'choice'}]) {
+    const h=handler({keyword:{id:'keyword'},session:{chatbot_id:'active',current_node_id:'menu'},
+      sessionBot:{id:'active',nodes:[{id:'menu'},{id:'services'}],edges:[edge]}});
+    await h.run({interactive:{button_reply:{id:'choice',title:'Support'}}});
+    assert.equal(h.routed[0].bot.id,'keyword');
+    assert.equal(h.routed[0].triggerMatched,true);
+  }
+});
+
+test('DoveKnot Services clicks follow Welcome and Quote connections without restarting or rewriting the graph', async () => {
+  const welcome='15d05532-e31f-4833-89c3-e737356e06af';
+  const services='cb3d90d7-bf3b-4a16-8ceb-8b55f9696568';
+  const quote='33ebc7e7-dc90-4277-ae47-6273d0553507';
+  const welcomeServices='btn_cc78c472-8539-4bc8-8c6b-94a0b3f46182_0';
+  const quoteServices='btn_1526f6d0-db22-4853-bc1d-c0a1819885a0_54b9bb0a-c576-4222-9cb0-ee169b81192b';
+  const getQuote='btn_cebf55a2-0017-4cac-9fbd-213ec209929a_0';
+  const bot={id:'doveknot',user_id:'owner',nodes:[
+    {id:'trigger',type:'trigger',data:{attributes:{keywords:['hi','services','quote']}}},
+    ...[[welcome,'WELCOME MESSAGE'],[services,'Services'],[quote,'Get a Quote']].map(([id,title])=>
+      ({id,type:'action',data:{key:'@whatsapp/send-button-message',title}})),
+  ],edges:[{source:'trigger',sourceHandle:'default',target:welcome},
+    {source:welcome,sourceHandle:welcomeServices,target:services},
+    {source:services,sourceHandle:getQuote,target:quote},
+    {source:quote,sourceHandle:quoteServices,target:services}]};
+  const original=JSON.stringify(bot);
+  const session={id:'session',chatbot_id:bot.id,current_node_id:welcome,variables:{event:'wedding'}};
+  const sent=[],lookups=[];
+  let restarts=0;
+  const sessions={findActiveByPhoneNumberId:async()=>session,findActiveSession:async()=>session,
+    update:async(_id,data)=>Object.assign(session,data),
+    deactivateOtherBots:async()=>{throw Error('Connected choice must not deactivate bots')},
+    deactivateActiveSession:async()=>{throw Error('Connected choice must not reset the session')}};
+  const menu=load('src/app/services/chatbot/flows/menu.flow.ts',{
+    '@surefy/console/app/models/chatSession.model':sessions,
+    '@surefy/console/services/chatbot/engine/executeNode':{executeNode:async({currentNode})=>({text:currentNode.data.title})},
+  });
+  const router=load('src/app/services/chatbot/flow.route.ts',{
+    '../../models/chatSession.model':sessions,'./flows/menu.flow':menu,
+    './flows/trigger.flow':{triggerFlow:async()=>{restarts++;return {text:'WELCOME MESSAGE'}}},
+  });
+  const api=load('src/app/services/chatbot/chatbot.service.ts',{
+    './runtimeBot':{getRuntimeBot:async(_phone,id,text)=>{lookups.push({id,text});return bot}},
+    '@surefy/console/app/models/chatSession.model':sessions,
+    './flow.route':router,
+    '@surefy/console/services/message.service':{sendChatBotMessage:async(_sender,_phone,response)=>sent.push(response.text)},
+    '@surefy/console/models/contact.model':{findOrCreateIncoming:async()=>{}},
+    '../../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'sender',user_id:'owner',company_id:'company'})},
+    nodemailer:{createTransport:()=>({})},
+  });
+  for (const [id,title,expected] of [[welcomeServices,'Services',services],[getQuote,'Get a Quote',quote],
+    [quoteServices,'Services',services]]) {
+    await api.handleIncomingMessageChatBot('1262112183641961',{
+      from:'919876543210',type:'interactive',interactive:{button_reply:{id,title}},
+    },'Customer');
+    assert.equal(session.current_node_id,expected);
+  }
+  assert.deepEqual(sent,['Services','Get a Quote','Services']);
+  assert.equal(restarts,0);
+  assert.ok(lookups.every(lookup=>lookup.id===bot.id && lookup.text===undefined));
+  assert.equal(session.variables.event,'wedding');
+  assert.equal(JSON.stringify(bot),original);
+});
 test('button payload alone does not select a keyword or default flow', async () => {
   const h=handler({keyword:{id:'support'}});
   await h.run({button:{payload:'support'}});

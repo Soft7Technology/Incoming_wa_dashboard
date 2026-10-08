@@ -510,20 +510,60 @@ class MessageService {
    * Mark message as read
    */
   async markAsRead(data: MarkAsReadDto) {
+    if (!data.company_id || !data.user_id || typeof data.phone_number_id !== 'string' || !data.phone_number_id.trim()) {
+      throw new HTTP400Error({ message: 'Account context and phone number ID are required' });
+    }
+    if ((data.message_id !== undefined && (typeof data.message_id !== 'string' || !data.message_id.trim())) ||
+        (data.contact_id !== undefined && (typeof data.contact_id !== 'string' || !uuidValidate(data.contact_id))) ||
+        (!data.message_id && !data.contact_id) || (data.message_id && data.contact_id)) {
+      throw new HTTP400Error({ message: 'Provide either message_id (database ID or WhatsApp ID) or a valid contact_id' });
+    }
     const phoneNumber = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
-    if (!phoneNumber) {
-      throw new HTTP404Error({ message: 'Phone number not found' });
+    if (!phoneNumber || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id || phoneNumber.deleted_at) {
+      throw new HTTP404Error({ message: 'Phone number not found in your account' });
     }
 
-    await MetaService.markAsRead(phoneNumber.phone_number_id, data.message_id);
+    let contact: any;
+    let recipient: string | undefined;
+    if (data.contact_id) {
+      contact = await ContactModel.findById(data.contact_id);
+      if (!contact || contact.user_id !== data.user_id || contact.company_id !== data.company_id ||
+          contact.phone_number_id !== phoneNumber.id || contact.deleted_at) {
+        throw new HTTP404Error({ message: 'Contact not found in your account' });
+      }
+      try {
+        recipient = buildRecipient(contact.phone_number, contact.country_code);
+      } catch {
+        throw new HTTP400Error({ message: 'Contact needs a valid international phone number to identify its conversation' });
+      }
+    }
+    const message = await MessageModel.findForInboxRead({
+      user_id: data.user_id, company_id: data.company_id, phone_number_id: phoneNumber.id,
+    }, { identifier: data.message_id?.trim(), recipient });
+    if (!message) throw new HTTP404Error({ message: 'Message not found in this conversation' });
 
-    // Update local message if exists
-    const message = await MessageModel.findByWamid(data.message_id);
-    if (message) {
-      await MessageModel.updateStatus(data.message_id, 'read');
+    if (data.actor_id && data.actor_id !== data.user_id) {
+      contact = contact || await ContactModel.findOwnedByPhone(data.user_id,
+        message.direction === 'inbound' ? message.from_phone : message.to_phone, phoneNumber.id, data.company_id);
+      if (!contact || !Array.isArray(contact.assigned_to) || !contact.assigned_to.includes(data.actor_id)) {
+        throw new HTTP404Error({ message: 'Conversation is not assigned to you' });
+      }
     }
 
-    return { success: true };
+    const updated = await MessageModel.markInboxReadThrough(message);
+    let readReceiptSent = false;
+    // Viewing an outgoing/failed message never changes its delivery status.
+    // A provider failure must not undo the agent's saved inbox read state.
+    if (message.direction === 'inbound' && message.wamid) {
+      try {
+        await MetaService.markAsRead(phoneNumber.phone_number_id, message.wamid);
+        readReceiptSent = true;
+      } catch {
+        console.warn('[Inbox] Read state saved; WhatsApp read receipt failed', { messageId: message.id });
+      }
+    }
+    return { success: true, inbox_read: true, message_id: message.id,
+      updated_count: updated.length, read_receipt_sent: readReceiptSent };
   }
 
   /**

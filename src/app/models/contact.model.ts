@@ -278,7 +278,7 @@ class ContactModel extends BaseModel {
   /** Shared by filtering and ordering so both use the same latest message. */
   private latestMessageReadStateSql() {
     return `(
-      SELECT (COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL)
+      SELECT (m.inbox_read_at IS NOT NULL OR COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL)
       FROM messages m
       WHERE m.user_id = contacts.user_id
         AND m.company_id = contacts.company_id
@@ -310,13 +310,6 @@ class ContactModel extends BaseModel {
     filters: any = {},
     phoneNumberId?: string
   ) {
-    console.log("=================================");
-    console.log("findWithFilters");
-    console.log("User ID:", userId);
-    console.log("Phone Number ID:", phoneNumberId);
-    console.log("Filters:", JSON.stringify(filters, null, 2));
-    console.log("=================================");
-
     let query = this.query();
 
     // Filter by phone number
@@ -384,11 +377,6 @@ class ContactModel extends BaseModel {
         }
       );
     }
-
-    console.log(
-      "Generated Query:",
-      query.clone().toSQL().toNative()
-    );
 
     return query;
   }

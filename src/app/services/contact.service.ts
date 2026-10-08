@@ -107,13 +107,6 @@ class ContactService {
       }
     }
 
-    console.log("=================================");
-    console.log("GET CONTACTS START");
-    console.log("User ID:", userId);
-    console.log("Phone Number ID:", phoneNumberId);
-    console.log("Filters:", JSON.stringify(filters, null, 2));
-    console.log("=================================");
-
     const page = Number(filters.page) || 1;
     const limit = Number(filters.limit) || 20;
     const offset = (page - 1) * limit;
@@ -135,35 +128,19 @@ class ContactService {
     }
     if (preference !== undefined) query.where('contacts.is_opted_out', preference);
 
-    console.log(
-      "Initial Query:",
-      query.clone().toSQL().toNative()
-    );
-
     // Country and tag filters are applied together by ContactModel.findWithFilters.
 
     // -------------------------
     // LIST FILTER
     // -------------------------
     if (filters.list_ids?.length) {
-      console.log("List IDs:", filters.list_ids);
-
       const listContactIds =
         await ContactListRelationModel.getContactIdsByLists(
           filters.list_ids
         );
 
-      console.log(
-        "Contact IDs from Lists:",
-        listContactIds
-      );
-
       if (!listContactIds.length) {
         if (filters.unpaginated) return { contacts: [], total: 0 };
-        console.log(
-          "No contacts found for supplied lists"
-        );
-
         return {
           contacts: [],
           pagination: {
@@ -177,28 +154,13 @@ class ContactService {
 
       query.whereIn("id", listContactIds);
 
-      console.log(
-        "Query After List Filter:",
-        query.clone().toSQL().toNative()
-      );
     }
-
-    console.log(
-      "Final Query Before Count:",
-      query.clone().toSQL().toNative()
-    );
 
     // -------------------------
     // COUNT
     // -------------------------
-    const totalResult = await query
-      .clone()
-      .count("* as count")
-      .first();
-
-    console.log("Total Result:", totalResult);
-
-    const total = Number(totalResult?.count || 0);
+    // Clone before applying sorting and pagination to keep totals accurate.
+    const countQuery = filters.unpaginated ? undefined : query.clone().count("* as count").first();
 
     // -------------------------
     // FETCH CONTACTS
@@ -210,76 +172,37 @@ class ContactService {
     if (filters.read_status === 'all' && !['last_message', 'last_message_at'].includes(sortBy)) {
       sortedQuery.orderBy('contacts.id', 'asc');
     }
-    const contacts = await (filters.unpaginated
-      ? sortedQuery
-      : sortedQuery.limit(limit).offset(offset));
-
-    console.log(
-      "Contacts Found:",
-      contacts.length
-    );
-
-    console.log(
-      "Contacts:",
-      JSON.stringify(contacts, null, 2)
-    );
+    const [totalResult, contacts] = await Promise.all([
+      countQuery,
+      filters.unpaginated ? sortedQuery : sortedQuery.limit(limit).offset(offset),
+    ]);
+    const total = filters.unpaginated ? contacts.length : Number(totalResult?.count || 0);
 
     // -------------------------
     // FETCH TAGS
     // -------------------------
-    if (contacts.length > 0) {
-      const contactIds = contacts.map(
-        (contact: any) => contact.id
-      );
-
-      console.log(
-        "Contact IDs for Tag Lookup:",
-        contactIds
-      );
-
-      const tagsData =
-        await ContactTagRelationModel.getContactsWithTags(
-          contactIds
-        );
-
-      console.log(
-        "Tags Data:",
-        JSON.stringify(tagsData, null, 2)
-      );
-
-      const tagsMap = new Map();
-
-      tagsData.forEach((item: any) => {
-        tagsMap.set(item.contact_id, item.tags);
-      });
-
-      contacts.forEach((contact: any) => {
-        contact.tags =
-          tagsMap.get(contact.id) || [];
-      });
-    }
-
-    const latestMessages = await MessageModel.findLatestForContacts(contacts);
+    const contactIds = contacts.map((contact: any) => contact.id);
+    const [tagsData, latestMessages] = await Promise.all([
+      contacts.length ? ContactTagRelationModel.getContactsWithTags(contactIds) : [],
+      MessageModel.findLatestForContacts(contacts),
+    ]);
+    const tagsMap = new Map(tagsData.map((item: any) => [item.contact_id, item.tags]));
     const latestByContact = new Map(latestMessages.map(row => [row.contact_id, row]));
     contacts.forEach((contact: any) => {
+      contact.tags = tagsMap.get(contact.id) || [];
       const summary = latestByContact.get(contact.id);
       const lastMessage = summary?.last_message ?? null;
       // Inbox counts cover incoming messages only; outgoing read receipts are separate.
       contact.read_count = Number(summary?.read_count ?? 0);
       contact.unread_count = Number(summary?.unread_count ?? 0);
       contact.read_status = lastMessage
-        ? (lastMessage.status === 'read' || lastMessage.read_at != null ? 'read' : 'unread')
+        ? (lastMessage.inbox_read_at != null || lastMessage.status === 'read' || lastMessage.read_at != null ? 'read' : 'unread')
         : null;
       const timestamp = lastMessage?.updated_at ?? null;
       contact.last_message = lastMessage ? { ...lastMessage, timestamp } : null;
       // Expose the same activity timestamp inside and outside the message object.
       contact.last_message_at = timestamp;
     });
-
-    console.log(
-      "Final Contacts Response:",
-      JSON.stringify(contacts, null, 2)
-    );
 
     if (filters.unpaginated) return { contacts, total: contacts.length };
     return {

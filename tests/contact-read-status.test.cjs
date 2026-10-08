@@ -13,8 +13,8 @@ function load(file, deps) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: name => deps[name] || {}, console: { log() {} } });
-  return exports.default;
+  vm.runInNewContext(code, { exports, require: name => deps[name] || {}, console: { log() {}, warn() {} } });
+  return exports.default ?? exports;
 }
 function fixture() {
   const db = knex({ client: 'pg' });
@@ -112,7 +112,8 @@ test('read status works for unpaginated selection and rejects invalid query valu
   try {
     await service.getContacts('owner', { unpaginated: true, read_status: 'unread' }, 'sender', 'company');
     assert.ok(queries.every(query => /LIMIT 1\s+\) = \?/.test(query.sql)));
-    assert.ok(!queries[1].sql.includes('limit ?') && !queries[1].sql.includes('offset'));
+    assert.equal(queries.length, 1, 'unpaginated selection does not need a separate count');
+    assert.ok(!queries[0].sql.includes('limit ?') && !queries[0].sql.includes('offset'));
     queries.length = 0;
     for (const read_status of ['', 'READ', 'unknown', ['read', 'unread'], { value: 'read' }, null]) {
       await assert.rejects(service.getContacts('owner', { read_status }, 'sender', 'company'), /read_status must be all, read or unread/);
@@ -120,6 +121,71 @@ test('read status works for unpaginated selection and rejects invalid query valu
     assert.equal(queries.length, 0);
   } finally { await db.destroy(); }
 });
+
+test('conversation indexes avoid scanning message history for every contact without changing filter results',
+  { skip: !DatabaseSync }, async () => {
+    const { db, model } = fixture();
+    const memory = new DatabaseSync(':memory:');
+    let normalizations = 0;
+    memory.function('btrim', { deterministic: true }, value => value == null ? null : value.trim());
+    memory.function('regexp_replace', { deterministic: true }, (value, pattern, replacement, flags) => {
+      normalizations++;
+      return value == null ? null : value.replace(new RegExp(pattern, flags), replacement);
+    });
+    memory.exec(`CREATE TABLE contacts (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      phone_number TEXT, country_code TEXT, deleted_at TEXT, created_at TEXT);
+      CREATE TABLE messages (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      direction TEXT, from_phone TEXT, to_phone TEXT, status TEXT, read_at TEXT, inbox_read_at TEXT, created_at TEXT);`);
+    try {
+      const contact = memory.prepare('INSERT INTO contacts VALUES (?, ?, ?, ?, ?, ?, NULL, ?)');
+      const message = memory.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)');
+      memory.exec('BEGIN');
+      for (let c = 0; c < 40; c++) {
+        const recipient = `9190000000${String(c).padStart(2, '0')}`;
+        contact.run(String(c).padStart(2, '0'), 'owner', 'company', 'sender', `+${recipient}`, '91', String(c));
+        for (let m = 0; m < 100; m++) {
+          const direction = m % 2 ? 'outbound' : 'inbound';
+          message.run(`${c}-${String(m).padStart(3, '0')}`, 'owner', 'company', 'sender', direction,
+            direction === 'inbound' ? recipient : 'business', direction === 'outbound' ? recipient : 'business',
+            c % 2 ? 'read' : 'delivered', String(m).padStart(3, '0'));
+        }
+      }
+      memory.exec('COMMIT');
+      const queries = ['all', 'read', 'unread'].map(read_status => {
+        const query = model.findWithFilters('owner', { read_status }, 'sender')
+          .where('contacts.company_id', 'company');
+        if (read_status === 'all') model.orderByReadStatus(query);
+        return query.orderBy('contacts.created_at', 'desc').orderBy('contacts.id').limit(10).toSQL();
+      });
+      const run = query => memory.prepare(query.sql)
+        .all(...query.bindings.map(value => typeof value === 'boolean' ? Number(value) : value)).map(row => row.id);
+      normalizations = 0;
+      const before = queries.map(run);
+      const beforeWork = normalizations;
+      const migration = load('src/database/migrations/20261008000002_index_contact_inbox_queries.ts', {});
+      assert.equal(migration.config.transaction, false);
+      const indexSql = [];
+      await migration.up({ raw: async sql => {
+        indexSql.push(sql);
+        // SQLite exercises the same expression index and queries locally. PostgreSQL-specific
+        // concurrent creation and covering columns do not change the indexed expression.
+        memory.exec(sql.replace(/ CONCURRENTLY/g, '').replace(/ NULLS LAST/g, '')
+          .replace(/\s+INCLUDE \([^)]*\)/g, ''));
+      } });
+      assert.match(indexSql[0], /INCLUDE \(direction, status, read_at, inbox_read_at\)/);
+      normalizations = 0;
+      assert.deepEqual(queries.map(run), before);
+      assert.ok(normalizations < beforeWork / 10,
+        `expected indexed lookups: ${normalizations} normalizations instead of ${beforeWork}`);
+      for (const query of queries) {
+        const plan = memory.prepare(`EXPLAIN QUERY PLAN ${query.sql}`)
+          .all(...query.bindings.map(value => typeof value === 'boolean' ? Number(value) : value));
+        assert.ok(plan.some(row => /SEARCH m USING INDEX messages_inbox_conversation_idx/.test(row.detail)));
+        assert.ok(!plan.some(row => /SCAN m\b/.test(row.detail)));
+      }
+      await migration.down({ raw: async sql => memory.exec(sql.replace(/ CONCURRENTLY/g, '')) });
+    } finally { memory.close(); await db.destroy(); }
+  });
 
 test('all excludes missing conversations from totals and sorts unread first before pagination', async () => {
   const { db, service, queries } = fixture();
@@ -171,7 +237,8 @@ test('latest message controls membership and marking it read moves the contact b
   memory.exec(`CREATE TABLE contacts (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
     phone_number TEXT, country_code TEXT, deleted_at TEXT);
     CREATE TABLE messages (id TEXT, wamid TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
-    direction TEXT, from_phone TEXT, to_phone TEXT, status TEXT, read_at TEXT, created_at TEXT, updated_at TEXT);`);
+    direction TEXT, from_phone TEXT, to_phone TEXT, status TEXT, read_at TEXT, created_at TEXT, updated_at TEXT,
+    inbox_read_at TEXT);`);
   const contact = memory.prepare('INSERT INTO contacts VALUES (?, ?, ?, ?, ?, ?, NULL)');
   for (const [id, phone, code] of [
     ['latest-read', '+919372597458', '91'], ['latest-unread', '9372597459', '91'],
@@ -179,7 +246,7 @@ test('latest message controls membership and marking it read moves the contact b
     ['no-history', '+919372597462', '91'], ['timestamp-read', '+919372597463', '91'],
     ['null-status', '+919372597464', '91'], ['other-country', '9372597459', '1'],
   ]) contact.run(id, 'owner', 'company', 'sender', phone, code);
-  const message = memory.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)');
+  const message = memory.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)');
   const addMessage = (id, recipient, status, at, direction = 'inbound', readAt = null, scope = {}) =>
     message.run(id, id, scope.user || 'owner', scope.company || 'company', scope.sender || 'sender',
       direction, direction === 'inbound' ? recipient : 'business', direction === 'outbound' ? recipient : 'business',
@@ -219,22 +286,69 @@ test('latest message controls membership and marking it read moves the contact b
     const receipts = [];
     const messageService = load('src/app/services/message.service.ts', {
       '@surefy/console/models/message.model': messageModel,
-      '@surefy/console/models/phoneNumber.model': { findByPhoneNumberId: async () => ({ phone_number_id: 'meta-sender' }) },
+      '@surefy/console/models/phoneNumber.model': { findByPhoneNumberId: async () => ({
+        id: 'sender', user_id: 'owner', company_id: 'company', phone_number_id: 'meta-sender',
+      }) },
       '@surefy/console/services/meta.service': { markAsRead: async (...args) => receipts.push(args) },
+      '@surefy/exceptions/HTTP400Error': HttpError,
+      '@surefy/exceptions/HTTP404Error': HttpError,
     });
+    const mark = message_id => messageService.markAsRead({ user_id: 'owner', company_id: 'company',
+      phone_number_id: 'sender', message_id });
     // Reading an older message must not override the latest received message.
-    await messageService.markAsRead({ phone_number_id: 'sender', message_id: '03' });
+    await mark('03');
     assert.ok((await ids('unread')).includes('latest-unread'));
-    await messageService.markAsRead({ phone_number_id: 'sender', message_id: '04' });
+    await mark('04');
     assert.deepEqual(receipts.at(-1), ['meta-sender', '04']);
-    const saved = memory.prepare("SELECT status, read_at FROM messages WHERE id = '04'").get();
-    assert.equal(saved.status, 'read');
-    assert.ok(saved.read_at);
+    const saved = memory.prepare("SELECT status, read_at, inbox_read_at FROM messages WHERE id = '04'").get();
+    assert.equal(saved.status, 'received');
+    assert.equal(saved.read_at, null);
+    assert.ok(saved.inbox_read_at);
     assert.ok((await ids('read')).includes('latest-unread'));
     assert.ok(!(await ids('unread')).includes('latest-unread'));
     assert.deepEqual((await combined().limit(2)).map(row => row.id), ['null-status', 'outbound-unread']);
     // A new customer message makes the conversation unread again.
     addMessage('10', '919372597459', 'received', '2026-10-05');
     assert.ok((await ids('unread')).includes('latest-unread'));
+    // Viewing an outbound message moves the chat without changing customer receipts.
+    const receiptCount = receipts.length;
+    const result = await mark('07');
+    assert.equal(result.updated_count, 2);
+    assert.equal(result.read_receipt_sent, false);
+    assert.equal(receipts.length, receiptCount);
+    assert.ok((await ids('read')).includes('outbound-unread'));
+    assert.equal(memory.prepare("SELECT status FROM messages WHERE id = '07'").get().status, 'delivered');
+    // Idempotent calls and later delivery updates must not undo the saved view.
+    assert.equal((await mark('07')).updated_count, 0);
+    memory.exec("UPDATE messages SET status = 'delivered' WHERE id = '07'");
+    assert.ok((await ids('read')).includes('outbound-unread'));
+    // Messages arriving after the selected snapshot remain unread, including microsecond differences.
+    const snapshot = await messageModel.findForInboxRead({ user_id: 'owner', company_id: 'company',
+      phone_number_id: 'sender' }, { identifier: '10' });
+    addMessage('11', '919372597459', 'received', '2026-10-05T01:00:00.123001Z');
+    await messageModel.markInboxReadThrough(snapshot);
+    assert.equal(memory.prepare("SELECT inbox_read_at FROM messages WHERE id = '11'").get().inbox_read_at, null);
+    const preciseSnapshot = await messageModel.findForInboxRead({ user_id: 'owner', company_id: 'company',
+      phone_number_id: 'sender' }, { identifier: '11' });
+    addMessage('12', '919372597459', 'received', '2026-10-05T01:00:00.123002Z');
+    await messageModel.markInboxReadThrough(preciseSnapshot);
+    assert.ok((await ids('unread')).includes('latest-unread'));
+    assert.equal(memory.prepare("SELECT inbox_read_at FROM messages WHERE id = '12'").get().inbox_read_at, null);
+    for (const row of memory.prepare("SELECT inbox_read_at FROM messages WHERE id LIKE 'foreign-%'").all()) {
+      assert.equal(row.inbox_read_at, null);
+    }
+    // The database UUID exposed by last_message works as well as the WhatsApp ID.
+    const databaseId = 'dcdb7ace-3431-415b-a9b1-5f986225bda0';
+    addMessage(databaseId, '919372597461', 'failed', '2026-10-06', 'outbound');
+    memory.prepare('UPDATE messages SET wamid = ? WHERE id = ?').run('wamid.failed', databaseId);
+    assert.ok((await ids('unread')).includes('outbound-unread'));
+    await mark(databaseId);
+    assert.ok((await ids('read')).includes('outbound-unread'));
+    assert.equal(memory.prepare('SELECT status FROM messages WHERE id = ?').get(databaseId).status, 'failed');
+    assert.equal(receipts.length, receiptCount);
+    await assert.rejects(mark('unknown-wamid'), /Message not found/);
+    await assert.rejects(mark('foreign-0'), /Message not found/);
+    await assert.rejects(mark('foreign-1'), /Message not found/);
+    await assert.rejects(mark('foreign-2'), /Message not found/);
   } finally { memory.close(); await db.destroy(); }
 });
