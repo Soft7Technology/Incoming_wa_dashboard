@@ -8,6 +8,12 @@ Excel/CSV imports do not require a country column. The phone library recognizes 
 
 Numeric contacts whose country cannot be resolved are still saved: `9372597458` becomes `phone_number: "+9372597458"`, `country_code: null`, `is_valid: false`. Adding a leading plus preserves a consistent storage format; it does not establish that the number is internationally valid. These contacts need country information before sending. Malformed characters, unsafe numeric Excel cells, and numbers outside 4?15 digits remain invalid and are not imported.
 
+## Editing phone and country
+
+On `PUT /v1/admin/contacts/:id`, a non-empty `country_code` is authoritative. It accepts a calling code (`91`, `+91`) or ISO country (`IN`). Selecting it rebuilds `phone_number` with that prefix and saves the normalized code in `country_code`. For an unresolved contact, updating `+9896370801` with `country_code: "91"` saves `+919896370801` and `91`. Changing the country alone replaces a known saved prefix, rather than adding a second calling code.
+
+Numeric but invalid contacts can still be edited and assigned. A changed phone is revalidated; an invalid result uses `invalid_reason: "invalid_format"`. Profile or assignment updates that resend the same phone and country preserve existing validation and WhatsApp failure flags. Duplicate resulting identities are rejected within the account and sending number. Phone format validation does not confirm WhatsApp registration.
+
 ## Preview API
 
 POST `/v1/admin/contacts/import/preview` using multipart form-data with one `file`. Optional fields: `phone_column`, `name_column`, `email_column`, `country_code`.

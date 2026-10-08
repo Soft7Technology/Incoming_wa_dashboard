@@ -1,5 +1,5 @@
 import MessageModel from '../models/message.model';
-import { parseStoredContactPhone } from '../utils/importPhone';
+import { parseStoredContactPhone, parseContactPhoneUpdate } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
@@ -286,10 +286,13 @@ class ContactService {
     }
     if (data.phone_number !== undefined || data.country_code !== undefined) {
       try {
-        const identity = parseStoredContactPhone(data.phone_number ?? contact.phone_number,
-          data.country_code ?? contact.country_code ?? '');
-        Object.assign(updatePayload, { phone_number: identity.phone_number, country_code: identity.country_code,
-          is_valid: identity.is_valid, invalid_reason: identity.is_valid ? null : 'Invalid phone number' });
+        const identity = parseContactPhoneUpdate(data.phone_number ?? contact.phone_number, data.country_code, contact);
+        // Full edit forms resend the stored number during assignment changes.
+        // Preserve validation/WhatsApp failure flags when the identity is unchanged.
+        if (identity.phone_number !== contact.phone_number || identity.country_code !== contact.country_code) {
+          Object.assign(updatePayload, { phone_number: identity.phone_number, country_code: identity.country_code,
+            is_valid: identity.is_valid, invalid_reason: identity.is_valid ? null : 'invalid_format' });
+        }
       } catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     }
     if (data.phone_number !== undefined || data.country_code !== undefined || data.phone_number_id !== undefined) {
