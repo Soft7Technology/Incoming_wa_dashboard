@@ -319,6 +319,21 @@ class ContactModel extends BaseModel {
       query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
     }
 
+    if (filters.assigned_to !== undefined) {
+      const values: unknown[] = Array.isArray(filters.assigned_to) ? filters.assigned_to : [filters.assigned_to];
+      if (!values.length || values.some(value => typeof value !== 'string')) {
+        throw new HTTP400Error({ message: 'assigned_to must contain one or more assignee UUIDs' });
+      }
+      const assignees = [...new Set(values.flatMap(value => (value as string).split(','))
+        .map(value => value.trim().toLowerCase()))];
+      if (assignees.some(value => !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value))) {
+        throw new HTTP400Error({ message: 'assigned_to must contain one or more assignee UUIDs' });
+      }
+      // Match any selected assignee in the uuid[] column. Keep this ANDed with
+      // the caller's assignment restriction so filtering cannot expand access.
+      query.whereRaw(`contacts.assigned_to && ARRAY[${assignees.map(() => '?').join(', ')}]::uuid[]`, assignees);
+    }
+
     // Ignore deleted contacts
     query.whereNull("deleted_at");
 
