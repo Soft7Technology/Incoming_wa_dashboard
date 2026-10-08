@@ -85,9 +85,11 @@ test('contact list attaches full message or null while retaining tags and pagina
   assert.deepEqual(JSON.parse(JSON.stringify(result.contacts[0].last_message)), { ...message, timestamp: null });
   assert.equal(result.contacts[0].read_count, 12);
   assert.equal(result.contacts[0].unread_count, 3);
+  assert.equal(result.contacts[0].read_status, 'read');
   assert.equal(result.contacts[1].read_count, 0);
   assert.equal(result.contacts[1].unread_count, 0);
   assert.equal(result.contacts[1].last_message, null);
+  assert.equal(result.contacts[1].read_status, null);
   assert.deepEqual(result.contacts[0].tags, ['vip']);
   assert.equal(result.pagination.total, 21);
   assert.equal(result.pagination.page, 2);

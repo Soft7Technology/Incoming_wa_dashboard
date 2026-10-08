@@ -77,6 +77,9 @@ class ContactService {
     if (!userId || !companyId) {
       throw new HTTP400Error({ message: 'Company context is required to fetch contacts by phone number ID' });
     }
+    if (filters.read_status !== undefined && !['all', 'read', 'unread'].includes(filters.read_status)) {
+      throw new HTTP400Error({ message: 'read_status must be all, read or unread' });
+    }
     if (phoneNumberId !== undefined) {
       const sender = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
       if (!sender || sender.user_id !== userId || sender.company_id !== companyId || sender.deleted_at) {
@@ -200,9 +203,13 @@ class ContactService {
     // -------------------------
     // FETCH CONTACTS
     // -------------------------
+    if (filters.read_status === 'all') ContactModel.orderByReadStatus(query);
     const sortedQuery = ['last_message', 'last_message_at'].includes(sortBy)
       ? ContactModel.orderByLastMessage(query, sortOrder)
       : query.orderBy(sortBy, sortOrder);
+    if (filters.read_status === 'all' && !['last_message', 'last_message_at'].includes(sortBy)) {
+      sortedQuery.orderBy('contacts.id', 'asc');
+    }
     const contacts = await (filters.unpaginated
       ? sortedQuery
       : sortedQuery.limit(limit).offset(offset));
@@ -260,6 +267,9 @@ class ContactService {
       // Inbox counts cover incoming messages only; outgoing read receipts are separate.
       contact.read_count = Number(summary?.read_count ?? 0);
       contact.unread_count = Number(summary?.unread_count ?? 0);
+      contact.read_status = lastMessage
+        ? (lastMessage.status === 'read' || lastMessage.read_at != null ? 'read' : 'unread')
+        : null;
       const timestamp = lastMessage?.updated_at ?? null;
       contact.last_message = lastMessage ? { ...lastMessage, timestamp } : null;
       // Expose the same activity timestamp inside and outside the message object.

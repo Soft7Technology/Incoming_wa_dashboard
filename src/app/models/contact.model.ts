@@ -275,6 +275,36 @@ class ContactModel extends BaseModel {
       .orderBy('contacts.id', 'asc');
   }
 
+  /** Shared by filtering and ordering so both use the same latest message. */
+  private latestMessageReadStateSql() {
+    return `(
+      SELECT (COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL)
+      FROM messages m
+      WHERE m.user_id = contacts.user_id
+        AND m.company_id = contacts.company_id
+        AND m.phone_number_id = contacts.phone_number_id
+        AND CASE WHEN m.direction = 'inbound'
+          THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+          ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END =
+          CASE
+            WHEN btrim(contacts.phone_number) LIKE '00%'
+            THEN substring(regexp_replace(contacts.phone_number, '[^0-9]', '', 'g'), 3)
+            WHEN btrim(contacts.phone_number) LIKE '+%'
+            THEN regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
+            WHEN COALESCE(btrim(contacts.country_code), '') <> ''
+            THEN regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
+            ELSE NULL
+          END
+      ORDER BY m.created_at DESC NULLS LAST, m.id DESC
+      LIMIT 1
+    )`;
+  }
+
+  orderByReadStatus(query: Knex.QueryBuilder) {
+    // false (unread) sorts before true (read), across the entire result set.
+    return query.orderByRaw(`${this.latestMessageReadStateSql()} ASC NULLS LAST`);
+  }
+
   findWithFilters(
     userId: string,
     filters: any = {},
@@ -302,6 +332,13 @@ class ContactModel extends BaseModel {
 
     // Ignore deleted contacts
     query.whereNull("deleted_at");
+
+    if (filters.read_status === 'all') {
+      // The combined inbox includes only contacts with a latest message.
+      query.whereRaw(`${this.latestMessageReadStateSql()} IS NOT NULL`);
+    } else if (filters.read_status === 'read' || filters.read_status === 'unread') {
+      query.whereRaw(`${this.latestMessageReadStateSql()} = ?`, [filters.read_status === 'read']);
+    }
 
     // Keep the union of country/tag matches inside the ownership and deletion scope.
     // An IN subquery returns each contact once, even if it has multiple matching tags.
