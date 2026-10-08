@@ -146,3 +146,42 @@ export function parseStoredContactPhone(value: unknown, optionalCode = '') {
     return { phone_number: `+${digits}`, country_code: null, is_valid: false };
   }
 }
+
+/** An explicitly selected country on an edit replaces the saved calling code. */
+export function parseContactPhoneUpdate(value: unknown, countryCode: unknown,
+  previous: { phone_number: string; country_code?: string | null }) {
+  if (countryCode === undefined || countryCode === null || countryCode === '') {
+    return parseStoredContactPhone(value, previous.country_code || '');
+  }
+  if (typeof countryCode !== 'string') throw new Error('Country code must be a calling code or an ISO country code');
+  const hint = countryCode.trim().toUpperCase();
+  const code = isSupportedCountry(hint) ? getCountryCallingCode(hint as CountryCode) : hint.replace(/^(?:\+|00)/, '');
+  if (!/^[1-9]\d{0,2}$/.test(code) || parsePhoneNumberFromString(`+${code}1234567890`)?.countryCallingCode !== code) {
+    throw new Error('Country code must be a valid calling code or an ISO country code');
+  }
+
+  // Reuse storage validation for characters, scientific notation and digit bounds.
+  const input = parseStoredContactPhone(value);
+  let national = input.phone_number.slice(1);
+  const oldCode = String(previous.country_code || '').replace(/^\+/, '');
+  const oldDigits = previous.phone_number.replace(/[^0-9]/g, '').replace(/^00/, '');
+  const previousIsInternational = /^\s*(?:\+|00)/.test(previous.phone_number);
+  if (national === oldDigits && previousIsInternational && oldCode && national.startsWith(oldCode)) {
+    national = national.slice(oldCode.length);
+  } else if (input.country_code === code ||
+      (/^\s*(?:\+|00)/.test(String(value)) && national.startsWith(code))) {
+    national = national.slice(code.length);
+  } else if (input.is_valid && /^\s*(?:\+|00)/.test(String(value))) {
+    national = national.slice(input.country_code!.length);
+  }
+
+  // An unresolved number's leading '+' does not establish a country prefix.
+  // Keep its digits and add the selected code, even if it remains unsendable.
+  const local = parsePhoneNumberFromString(national, { defaultCallingCode: code });
+  if (local?.isValid() && local.countryCallingCode === code) national = local.nationalNumber;
+  const phoneNumber = `+${code}${national}`;
+  if (!/^[+][0-9]{4,15}$/.test(phoneNumber)) throw new Error('Phone number must contain 4 to 15 digits');
+  const parsed = parsePhoneNumberFromString(phoneNumber);
+  return { phone_number: phoneNumber, country_code: code,
+    is_valid: Boolean(parsed?.isValid() && parsed.countryCallingCode === code) };
+}

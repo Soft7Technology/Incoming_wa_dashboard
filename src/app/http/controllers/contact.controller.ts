@@ -216,7 +216,6 @@ class ContactController {
     const { id } = req.params;
     const { name, email, attributes, custom_fields, notes, tag_ids, assigned_to, status,
       phone_number, phone_number_id, country_code, is_opted_out } = req.body;
-    console.log('Req body', req.body)
 
     const contact = await ContactService.updateContact(req.ownerId ?? req.userId!,id, {
       name,
