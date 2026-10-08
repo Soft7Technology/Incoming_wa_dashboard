@@ -29,6 +29,8 @@ class ContactService {
     try { identity = parseStoredContactPhone(data.phone_number, data.country_code || ''); }
     catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     const phone = identity.phone_number;
+    const customFields = data.custom_fields === undefined ? undefined
+      : parseContactCustomFields(data.custom_fields, 'custom_fields');
 
     // Check if contact already exists
     const existing = await ContactModel.findOwnedByPhone(userId, phone, data.phone_number_id, companyId, identity.country_code);
@@ -47,6 +49,7 @@ class ContactService {
         email: data.email,
         status: data.status,
         attributes: data.attributes || {},
+        ...(customFields === undefined ? {} : { custom_fields: customFields }),
         notes: data.notes,
         country_code: identity.country_code,
         is_valid: identity.is_valid
