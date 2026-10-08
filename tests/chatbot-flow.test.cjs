@@ -5,9 +5,10 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 function setup(conflicts, published=false) {
   const writes=[]; const bot={id:'bot',user_id:'user',published,name:'Bot'};
+  let generatedIds=0;
   function trx(table) { const q={where(){return q},leftJoin(){return q},whereIn(){return q},whereNot(){return q},whereRaw(){return q},forUpdate(){return q},first:async()=>bot,select:async()=>conflicts,update:async data=>writes.push({table,data}),delete:async()=>writes.push({table,deleted:true}),insert:async data=>writes.push({table,data})}; return q; }
   trx.raw=async()=>{};
-  const deps={'../utils/chatbotMessage':{validateChatbotMessage(){}},'@surefy/database':{transaction:async fn=>fn(trx)},'../models/chatbot.model':{findById:async()=>bot},'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'uuid',phone_number_id:'meta',user_id:'user'})},'uuid':{v4:()=> 'generated'},'@surefy/exceptions/HTTP400Error':class extends Error{constructor(data){super(data.message);this.details=data.details}}};
+  const deps={'../utils/chatbotMessage':{validateChatbotMessage(){}},'@surefy/database':{transaction:async fn=>fn(trx)},'../models/chatbot.model':{findById:async()=>bot},'../models/phoneNumber.model':{findByPhoneNumberId:async()=>({id:'uuid',phone_number_id:'meta',user_id:'user'})},'uuid':{v4:()=> 'generated-'+(++generatedIds)},'@surefy/exceptions/HTTP400Error':class extends Error{constructor(data){super(data.message);this.details=data.details}}};
   const exports={};
   const js=ts.transpileModule(fs.readFileSync('src/app/services/chatbot.service.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
   vm.runInNewContext(js,{exports,require:id=>deps[id]||{},console:{log(){}},Date});
@@ -23,6 +24,33 @@ test('deduplicates keywords and phone aliases before inserting',async()=>{
   const {api,writes}=setup([]); await api.createFlow('user',payload);
   const inserted=writes.filter(w=>w.table==='chatbot_triggers' && w.data);
   assert.equal(inserted.length,1); assert.equal(inserted[0].data.phone_number_id,'meta'); assert.equal(inserted[0].data.trigger_word,'hi');
+});
+
+test('saving preserves top-level reply handles in persisted edge data',async()=>{
+ const {api,writes}=setup([]);
+ const data=structuredClone(payload);
+ data.edges[0].sourceHandle='opaque-choice';
+ await api.createFlow('user',data);
+ const saved=writes.find(write=>write.table==='chat_bot_edge' && write.data).data;
+ assert.equal(JSON.parse(saved[0].data).sourceHandle,'opaque-choice');
+});
+
+test('saving the Freelancer attachment preserves every button target after node IDs are remapped',async()=>{
+ const {api,writes}=setup([]);
+ const graph=structuredClone(require('./fixtures/doveknot-freelancer-routing.json'));
+ await api.createFlow('user',{...graph,chatBotId:'bot',phoneNumberIds:['meta']});
+ const savedNodes=writes.find(write=>write.table==='chat_bot_node' && write.data).data;
+ const savedEdges=writes.find(write=>write.table==='chat_bot_edge' && write.data).data;
+ assert.equal(new Set(savedNodes.map(node=>node.id)).size,graph.nodes.length);
+ for(const node of graph.nodes){
+  const saved=savedNodes.find(row=>JSON.parse(row.data).title===node.data.title);
+  for(const edge of graph.edges.filter(edge=>edge.source===node.id)){
+   const connection=savedEdges.find(row=>row.source===saved.id && JSON.parse(row.data).sourceHandle===edge.sourceHandle);
+   assert.ok(connection,'missing button connection '+edge.sourceHandle);
+   const target=savedNodes.find(row=>row.id===connection.target);
+   assert.equal(JSON.parse(target.data).title,graph.nodes.find(row=>row.id===edge.target).data.title);
+  }
+ }
 });
 
 
