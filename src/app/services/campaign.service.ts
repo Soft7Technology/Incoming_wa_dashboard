@@ -2,6 +2,7 @@ import contactOptOut from './contactOptOut.service';
 import { resolveOptionalCampaignPhone, campaignRecipientNumber, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
+import { parseContactCustomFields } from '../utils/contactCustomFields';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
@@ -193,7 +194,8 @@ class CampaignService {
           country_code: contact.country_code,
           recipient_number: campaignRecipientNumber(contact.phone_number, contact.country_code),
           email: contact.email ?? null,
-          attributes: contact.attributes ?? {},
+          attributes: parseContactCustomFields(contact.attributes ?? {}, `Contact ${contact.id} attributes`),
+          custom_fields: parseContactCustomFields(contact.custom_fields ?? {}, `Contact ${contact.id} custom_fields`),
           is_valid: contact.is_valid,
         })),
       };
@@ -238,6 +240,13 @@ class CampaignService {
       }
     }
 
+    // Resolve from each full contact record before persisting or queueing the campaign.
+    const recipientMessages = contactList.map(contact => ({
+      contact_id: contact.id,
+      status: 'pending',
+      template_variables: this.resolveTemplateVariables(contact, data.parameter_mapping || {}),
+    }));
+
     // Create campaign
     const campaign = await planUsageService.run(userId, 'Campaign', async trx => {
       const createdCampaign = await CampaignModel.create({
@@ -257,14 +266,9 @@ class CampaignService {
       }, trx);
 
       // Create campaign_messages entries for each contact
-      const campaignMessages = contactList.map((contact) => ({
+      const campaignMessages = recipientMessages.map(message => ({
+        ...message,
         campaign_id: createdCampaign.id,
-        contact_id: contact.id,
-        status: 'pending',
-        template_variables: this.resolveTemplateVariables(
-          contact,
-          data.parameter_mapping || {}
-        ),
       }));
 
       await CampaignMessageModel.bulkCreate(campaignMessages, trx);
@@ -298,6 +302,15 @@ class CampaignService {
     }
     const variables: Record<string, string | null> = {};
     const own = (object: any, key: string) => object && Object.prototype.hasOwnProperty.call(object, key);
+    // Some older rows contain a JSON string instead of an object. Decode each
+    // referenced container once per recipient.
+    const fieldObjects = new Map<string, Record<string, unknown>>();
+    const contactFields = (key: string): Record<string, unknown> => {
+      if (!fieldObjects.has(key)) {
+        fieldObjects.set(key, parseContactCustomFields(contact[key] ?? {}, `Contact ${contact.id ?? '(preview)'} ${key}`)!);
+      }
+      return fieldObjects.get(key)!;
+    };
     const readPath = (source: any, path: string): { found: boolean; value?: unknown } => {
       let remaining = path;
       while (source != null) {
@@ -307,27 +320,40 @@ class CampaignService {
         if (separator < 1) break;
         const key = remaining.slice(0, separator);
         if (!own(source, key)) break;
-        source = source[key];
+        source = source === contact && ['custom_fields', 'attributes'].includes(key)
+          ? contactFields(key) : source[key];
         remaining = remaining.slice(separator + 1);
       }
       return { found: false };
     };
     const fieldValue = (field: string): { found: boolean; value?: unknown } => {
       const aliases: Record<string, string> = { fullName: 'name', vb_phoneno: 'phone_number' };
-      for (const prefix of ['custom_fields.', 'attributes.', 'contact.']) {
-        if (field.startsWith(prefix)) {
-          const key = field.slice(prefix.length);
-          const source = prefix === 'contact.' ? contact : contact[prefix.slice(0, -1)];
-          return { found: true, value: readPath(source, key).value };
+      const path = field.startsWith('contact.') ? field.slice('contact.'.length) : field;
+      for (const key of ['custom_fields', 'attributes']) {
+        const prefix = `${key}.`;
+        if (path.startsWith(prefix)) {
+          const fieldPath = path.slice(prefix.length);
+          const preferred = readPath(contactFields(key), fieldPath);
+          if (preferred.value != null) return preferred;
+          // Imports may store the same field in attributes while edits store it
+          // in custom_fields. Always resolve against this recipient's two columns.
+          const alternate = readPath(contactFields(key === 'custom_fields' ? 'attributes' : 'custom_fields'), fieldPath);
+          return { found: true, value: alternate.value ?? preferred.value };
         }
       }
+      if (field.startsWith('contact.')) return { found: true, value: readPath(contact, path).value };
       const key = own(aliases, field) ? aliases[field] : field;
       const column = readPath(contact, key);
       if (column.found) return column;
-      for (const source of [contact.custom_fields, contact.attributes]) {
-        const resolved = readPath(source, field);
-        if (resolved.found) return resolved;
+      let fieldMatch: { found: boolean; value?: unknown } = { found: false };
+      for (const key of ['custom_fields', 'attributes']) {
+        const resolved = readPath(contactFields(key), field);
+        if (resolved.found) {
+          if (resolved.value != null) return resolved;
+          fieldMatch = resolved;
+        }
       }
+      if (fieldMatch.found) return fieldMatch;
       return { found: own(aliases, field) || ['name', 'phone_number', 'email'].includes(field) };
     };
     const text = (value: unknown): string | null => value == null ? null :

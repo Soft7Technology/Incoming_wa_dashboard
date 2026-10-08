@@ -3,6 +3,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
 class HttpError extends Error { constructor({message,details}) { super(message); this.details=details; } }
+const customFields = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/utils/contactCustomFields.ts','utf8'),{
+ compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
+}).outputText,{exports:customFields,require:()=>HttpError});
 function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, tag=null}={}) {
   const writes=[], predicates=[];
   const phone={id:'sender-db',phone_number_id:'payload-sender',user_id:wrongSender?'other':'u',company_id:'c'};
@@ -11,6 +15,7 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
     './contactOptOut.service':{excluded:async()=>new Set(excluded)},
     '../utils/campaignPhone':require('../src/app/utils/campaignPhone'),
     '../utils/campaignRecipients':require('../src/app/utils/campaignRecipients'),
+    '../utils/contactCustomFields':customFields,
     './planUsage.service':{run:async(_user,_feature,fn)=>{writes.push('usage');return fn({});}},
     '../models/campaign.model':{create:async data=>{writes.push({campaign:data});return {id:'campaign',...data};}},
     '../models/campaignMessage.model':{bulkCreate:async data=>{writes.push({messages:data});}},
@@ -29,10 +34,11 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
 
-test('contact-prefixed custom fields resolve independently per recipient into worker parameters', async()=>{
- const contacts=['Hello','Welcome'].map((check,index)=>({
+test('contact-prefixed custom fields and legacy attributes resolve independently into worker parameters', async()=>{
+ const checks=['Hello','Welcome'];
+ const contacts=checks.map((check,index)=>({
   id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',
-  custom_fields:{check},
+  custom_fields:index === 0 ? {check} : {},attributes:index === 1 ? {check} : {},
  }));
  const f=fixture({contacts});
  await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
@@ -58,8 +64,8 @@ test('contact-prefixed custom fields resolve independently per recipient into wo
   ]},message.template_variables,[{type:'image',link:'https://example.com/image.jpg'}]);
   assert.deepEqual(JSON.parse(JSON.stringify(result.components)),[
    {type:'header',parameters:[{type:'image',image:{link:'https://example.com/image.jpg'}}]},
-   {type:'body',parameters:[{type:'text',text:contacts[index].custom_fields.check},
-    {type:'text',text:contacts[index].custom_fields.check}]},
+   {type:'body',parameters:[{type:'text',text:checks[index]},
+    {type:'text',text:checks[index]}]},
   ]);
  }
 });
@@ -82,6 +88,86 @@ test('nested contact fields retain exact dotted keys, fallback rules and own-pro
   '1':'Soft7','2':'42','3':'42','4':'false','5':'Pune','6':'0','7':'Guest',
   '8':'Hello','9':'manual','10':'safe','11':'Pune','12':'false',
  });
+});
+
+test('JSON-encoded contact fields resolve per recipient using attributes when the custom field is absent',async()=>{
+ const contacts=[{check:'Hello',amount:0,active:false,'order.total':42},
+  JSON.stringify({check:'Welcome',amount:12,active:true,'order.total':99}),{}].map((custom_fields,index)=>({
+  id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',custom_fields,
+  attributes:JSON.stringify({check:'legacy',address:{city:`City ${index}`}}),
+ }));
+ const f=fixture({contacts});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':{field:'contact.custom_fields.check',fallbackValue:'Guest'},
+  '2':{field:'custom_fields.amount'},'3':{field:'contact.custom_fields.active'},
+  '4':{field:'custom_fields.order.total'},'5':{field:'contact.attributes.address.city'},
+  '6':{field:'attributes.address.city'},'7':'check',
+ }});
+ const variables=f.writes.find(w=>w.messages).messages.map(message=>message.template_variables);
+ assert.deepEqual(JSON.parse(JSON.stringify(variables)),[
+  {'1':'Hello','2':'0','3':'false','4':'42','5':'City 0','6':'City 0','7':'Hello'},
+  {'1':'Welcome','2':'12','3':'true','4':'99','5':'City 1','6':'City 1','7':'Welcome'},
+  {'1':'legacy','2':null,'3':null,'4':null,'5':'City 2','6':'City 2','7':'legacy'},
+ ]);
+ assert.equal(typeof contacts[1].custom_fields,'string','resolution must not mutate stored contacts');
+});
+
+test('recipient preview exposes each contact custom field object for dynamic mapping',async()=>{
+ const contacts=[{check:'Hello'},JSON.stringify({check:'Welcome'})].map((custom_fields,index)=>({
+  id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',custom_fields,
+  attributes:JSON.stringify({city:`City ${index}`}),
+ }));
+ const f=fixture({contacts});
+ const result=await f.service.previewRecipients('u','c',payload);
+ assert.deepEqual(JSON.parse(JSON.stringify(result.contacts.map(contact=>contact.custom_fields))),[
+  {check:'Hello'},{check:'Welcome'},
+ ]);
+ assert.deepEqual(JSON.parse(JSON.stringify(result.contacts.map(contact=>contact.attributes))),[
+  {city:'City 0'},{city:'City 1'},
+ ]);
+ assert.equal(f.writes.length,0);
+});
+
+test('custom fields and attributes use recipient-specific fallback with predictable precedence',async()=>{
+ const contacts=[
+  {custom_fields:{check:'Custom',zero:0,flag:false,empty:'',nullable:null,nested:{value:'custom nested'},'order.total':42},
+   attributes:{check:'Attribute',zero:99,flag:true,empty:'replacement',nullable:'From attributes',nested:{value:'attribute nested'},'order.total':99}},
+  {custom_fields:{},attributes:{check:'Second contact',nested:{value:'second nested'},'order.total':12}},
+  {custom_fields:null,attributes:null},
+ ].map((fields,index)=>({id:`contact-${index}`,phone_number:`+91937259745${index}`,phone_number_id:'sender-db',...fields}));
+ const f=fixture({contacts});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':{field:'contact.custom_fields.check',fallbackValue:'Guest'},
+  '2':{field:'attributes.check'},'3':{field:'contact.attributes.check'},
+  '4':{field:'custom_fields.zero'},'5':{field:'custom_fields.flag'},'6':{field:'custom_fields.empty'},
+  '7':{field:'custom_fields.nullable'},'8':{field:'contact.custom_fields.nested.value'},
+  '9':{field:'custom_fields.order.total'},'10':{field:'attributes.missing',fallbackValue:'Default'},
+  '11':'nullable',
+ }});
+ assert.deepEqual(JSON.parse(JSON.stringify(f.writes.find(w=>w.messages).messages.map(m=>m.template_variables))),[
+  {'1':'Custom','2':'Attribute','3':'Attribute','4':'0','5':'false','6':'','7':'From attributes',
+   '8':'custom nested','9':'42','10':'Default','11':'From attributes'},
+  {'1':'Second contact','2':'Second contact','3':'Second contact','4':null,'5':null,'6':null,'7':null,
+   '8':'second nested','9':'12','10':'Default','11':'nullable'},
+  {'1':'Guest','2':null,'3':null,'4':null,'5':null,'6':null,'7':null,'8':null,'9':null,'10':'Default','11':'nullable'},
+ ]);
+ const reverse=f.service.resolveTemplateVariables({custom_fields:{check:'Custom'},attributes:{}},{
+  '1':{field:'attributes.check'},'2':{field:'contact.attributes.check'},
+ });
+ assert.deepEqual(JSON.parse(JSON.stringify(reverse)),{'1':'Custom','2':'Custom'});
+});
+
+test('malformed referenced custom fields report the contact before campaign writes',async()=>{
+ for(const custom_fields of ['{broken','[]']) {
+  const f=fixture({contacts:[{id:'bad-contact',phone_number:'+919372597458',phone_number_id:'sender-db',custom_fields}]});
+  await assert.rejects(f.service.createCampaign('u','c',{...payload,send_immediately:true,
+   parameter_mapping:{'1':{field:'contact.custom_fields.check'}}}),/Contact bad-contact custom_fields must/);
+  assert.equal(f.writes.length,0);
+ }
+ const f=fixture({contacts:[{id:'contact',name:'Alice',phone_number:'+919372597458',
+  phone_number_id:'sender-db',attributes:'{unused'}]});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{'1':{field:'contact.name'}}});
+ assert.equal(f.writes.find(w=>w.messages).messages[0].template_variables['1'],'Alice');
 });
 
 test('campaign mappings resolve dynamic columns, custom fields, literals and missing-value fallbacks', async()=>{

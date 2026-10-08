@@ -31,7 +31,7 @@ class ContactController {
    * Create new contact
    */
   createContact = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number, phone_number_id, name, email, attributes, notes, tag_ids, status, country_code } = req.body;
+    const { phone_number, phone_number_id, name, email, attributes, custom_fields, notes, tag_ids, status, country_code } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
@@ -46,6 +46,7 @@ class ContactController {
       name,
       email,
       attributes,
+      custom_fields,
       notes,
       tag_ids,
       status,
