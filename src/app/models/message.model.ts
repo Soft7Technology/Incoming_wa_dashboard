@@ -66,24 +66,25 @@ class MessageModel extends BaseModel {
         WHERE m.user_id = c.user_id
           AND m.company_id = c.company_id
           AND m.phone_number_id = c.phone_number_id
-          AND (
-            (m.direction = 'inbound' AND regexp_replace(m.from_phone, '[^0-9]', '', 'g') = c.recipient)
-            OR (m.direction = 'outbound' AND regexp_replace(m.to_phone, '[^0-9]', '', 'g') = c.recipient)
-          )
+          AND CASE WHEN m.direction = 'inbound'
+            THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+            ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END = c.recipient
         ORDER BY m.created_at DESC NULLS LAST, m.id DESC
         LIMIT 1
       ) latest ON TRUE
       LEFT JOIN LATERAL (
         SELECT
-          COUNT(*) FILTER (WHERE m.status = 'read' OR m.read_at IS NOT NULL) AS read_count,
-          COUNT(*) FILTER (WHERE m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL) AS unread_count
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NOT NULL OR m.status = 'read' OR m.read_at IS NOT NULL) AS read_count,
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NULL AND m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL) AS unread_count
         FROM messages m
         WHERE m.user_id = c.user_id
           AND m.company_id = c.company_id
           AND m.phone_number_id = c.phone_number_id
           AND m.direction = 'inbound'
           AND m.status IS DISTINCT FROM 'deleted'
-          AND regexp_replace(m.from_phone, '[^0-9]', '', 'g') = c.recipient
+          AND CASE WHEN m.direction = 'inbound'
+            THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+            ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END = c.recipient
       ) counts ON TRUE
     `, [JSON.stringify(identities)]);
     return result.rows;
@@ -321,6 +322,44 @@ class MessageModel extends BaseModel {
 
 
 
+  async findForInboxRead(scope: { user_id: string; company_id: string; phone_number_id: string },
+    target: { identifier?: string; recipient?: string }) {
+    const query = this.query().where(scope);
+    if (target.identifier) {
+      query.where(builder => {
+        builder.where('wamid', target.identifier);
+        if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.identifier!)) {
+          builder.orWhere('id', target.identifier);
+        }
+      });
+    } else if (target.recipient) {
+      query.whereRaw(`CASE WHEN direction = 'inbound'
+        THEN regexp_replace(from_phone, '[^0-9]', '', 'g')
+        ELSE regexp_replace(to_phone, '[^0-9]', '', 'g') END = ?`, [target.recipient]);
+    } else {
+      throw new HTTP400Error({ message: 'Message identifier or recipient is required' });
+    }
+    return query.orderBy('created_at', 'desc', 'last').orderBy('id', 'desc').first();
+  }
+
+  async markInboxReadThrough(message: any) {
+    const recipient = String(message.direction === 'inbound' ? message.from_phone : message.to_phone).replace(/\D/g, '');
+    if (!recipient || !message.user_id || !message.company_id || !message.phone_number_id || !message.id) {
+      throw new HTTP400Error({ message: 'A scoped conversation message is required' });
+    }
+    return this.query().where({
+      user_id: message.user_id, company_id: message.company_id, phone_number_id: message.phone_number_id,
+    }).whereRaw(`CASE WHEN direction = 'inbound'
+      THEN regexp_replace(from_phone, '[^0-9]', '', 'g')
+      ELSE regexp_replace(to_phone, '[^0-9]', '', 'g') END = ?`, [recipient])
+      // Read the cutoff from the database to preserve PostgreSQL microseconds.
+      // A new message arriving after this snapshot must remain unread.
+      .whereRaw(`(COALESCE(created_at, '0001-01-01'), id) <=
+        (SELECT COALESCE(created_at, '0001-01-01'), id FROM messages WHERE id = ?)`, [message.id])
+      .whereNull('inbox_read_at')
+      .update({ inbox_read_at: new Date() }).returning('id');
+  }
+
   async findByWamid(wamid: string) {
     return this.query().where({ wamid }).first();
   }
@@ -419,6 +458,9 @@ class MessageModel extends BaseModel {
         db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
 
         'messages.status',
+        'messages.wamid',
+        'messages.read_at',
+        'messages.inbox_read_at',
         'messages.created_at',
         'messages.content',
 
