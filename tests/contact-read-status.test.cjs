@@ -322,7 +322,7 @@ test('all excludes missing conversations from totals and sorts unread first befo
   } finally { await db.destroy(); }
 });
 
-test('contact URL handlers forward read_status and retain team account scope', async () => {
+test('contact URL handlers forward read_status, status and assignees while retaining team account scope', async () => {
   const calls = [];
   const controller = load('src/app/http/controllers/contact.controller.ts', {
     '@surefy/utils/Controller': { tryCatchAsync: fn => fn, successResponse: (_req, _res, _message, data) => data },
@@ -331,7 +331,7 @@ test('contact URL handlers forward read_status and retain team account scope', a
   for (const read_status of ['all', 'read', 'unread']) {
     const req = { ownerId: 'owner', userId: 'member', companyId: 'company',
       params: { phoneNumberId: 'sender' }, query: { page: '1', limit: '50', read_status, phone_number_id: 'sender',
-        status: '6ddf72ae-bae1-49f6-9013-1f0a6ee10871' } };
+        status: '6ddf72ae-bae1-49f6-9013-1f0a6ee10871', assigned_to: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } };
     await controller.getContactByPhoneNumberId(req, {});
     await controller.getContacts(req, {});
     await controller.getAllContacts(req, {});
@@ -344,10 +344,107 @@ test('contact URL handlers forward read_status and retain team account scope', a
     assert.equal(filters.onlyAssignedToUserId, 'member');
     assert.equal(filters.read_status, ['all', 'read', 'unread'][Math.floor(index / 3)]);
     assert.equal(filters.status, '6ddf72ae-bae1-49f6-9013-1f0a6ee10871');
+    assert.equal(filters.assigned_to, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     assert.equal(filters.page, '1');
     assert.equal(filters.limit, '50');
   }
 });
+
+test('assignee filters validate UUIDs and compose with status, inbox, search and team scope before pagination', async () => {
+  const { db, model, service, queries } = fixture();
+  const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  try {
+    for (const assigned_to of [a, ` ${a.toUpperCase()}, ${b},${a} `, [a, b, a]]) {
+      const ids = assigned_to === a ? [a] : [a, b];
+      for (const sender of [undefined, 'sender']) {
+        for (const read_status of ['all', 'read', 'unread']) {
+          queries.length = 0;
+          const result = await service.getContacts('owner', { assigned_to, read_status,
+            status: '6ddf72ae-bae1-49f6-9013-1f0a6ee10871', search: 'Customer',
+            onlyAssignedToUserId: a, page: 2, limit: 10 }, sender, 'company');
+          assert.equal(queries.length, 2);
+          for (const query of queries) {
+            assert.ok(query.sql.includes(`contacts.assigned_to && ARRAY[${ids.map(() => '?').join(', ')}]::uuid[]`));
+            assert.ok(query.sql.includes('assigned_to @> ARRAY[?]::uuid[]'));
+            assert.match(query.sql, /"contacts"\."status" = \?/);
+            assert.match(query.sql, /"contacts"\."company_id" = \?/);
+            assert.match(query.sql, /"name" ilike/);
+            assert.ok(!/\bor\b/i.test(query.sql.split('contacts.assigned_to')[0]));
+            for (const id of ids) assert.ok(query.bindings.includes(id));
+            assert.equal(query.bindings.filter(value => value === a).length, 2, 'one team scope and one selected assignee');
+          }
+          assert.match(queries[0].sql, /^select count\(\*\)/);
+          assert.ok(!queries[0].sql.includes('offset'));
+          assert.deepEqual(queries[1].bindings.slice(-2), [10, 10]);
+          assert.equal(result.pagination.total, 51);
+        }
+      }
+    }
+    assert.ok(!model.findWithFilters('owner').toSQL().sql.includes('contacts.assigned_to'));
+    queries.length = 0;
+    for (const assigned_to of ['', 'all', 'member', `${a},`, null, {}, [], [a, null], [[a]], 123]) {
+      await assert.rejects(service.getContacts('owner', { assigned_to }, undefined, 'company'), /assignee UUIDs/);
+    }
+    assert.equal(queries.length, 0, 'invalid filters fail before executing contact queries');
+  } finally { await db.destroy(); }
+});
+
+test('assignee membership filters full datasets before counting and paging without expanding team access',
+  { skip: !DatabaseSync }, async () => {
+    const { db, service } = fixture();
+    const memory = new DatabaseSync(':memory:');
+    const a = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const b = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const status = '6ddf72ae-bae1-49f6-9013-1f0a6ee10871';
+    memory.exec(`CREATE TABLE contacts (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      status TEXT, assigned_to TEXT, created_at TEXT, deleted_at TEXT);`);
+    // SQLite stores fixture arrays as JSON; adapt only PostgreSQL array operators.
+    memory.function('assignee_overlap', (stored, selected) =>
+      Number(JSON.parse(stored || '[]').some(id => JSON.parse(selected).includes(id))));
+    db.client.runner = builder => ({ run: async () => {
+      const query = builder.toSQL();
+      const sql = query.sql.replace(/(contacts\.)?assigned_to (?:&&|@>) ARRAY\[([^\]]+)\]::uuid\[\]/g,
+        (_, prefix = '', placeholders) => `assignee_overlap(${prefix}assigned_to, json_array(${placeholders}))`);
+      const statement = memory.prepare(sql);
+      return query.method === 'first' ? statement.get(...query.bindings) : statement.all(...query.bindings);
+    } });
+    try {
+      const insert = memory.prepare('INSERT INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      for (let i = 0; i < 12; i++) {
+        const assigned = i === 7 || i === 10 ? [a] : i === 8 || i === 11 ? [b] : i === 9 ? [a, b] : [];
+        insert.run(String(i).padStart(2, '0'), 'owner', 'company', 'sender', status,
+          i === 0 ? null : JSON.stringify(assigned), '2026-10-08', null);
+      }
+      insert.run('20', 'owner', 'company', 'other-phone', status, JSON.stringify([a]), '2026-10-08', null);
+      insert.run('wrong-stage', 'owner', 'company', 'sender', b, JSON.stringify([a]), '2026-10-08', null);
+      insert.run('wrong-owner', 'other', 'company', 'sender', status, JSON.stringify([a]), '2026-10-08', null);
+      insert.run('wrong-company', 'owner', 'other', 'sender', status, JSON.stringify([a]), '2026-10-08', null);
+      insert.run('deleted', 'owner', 'company', 'sender', status, JSON.stringify([a]), '2026-10-08', '2026-10-08');
+      for (const sender of [undefined, 'sender']) {
+        const combined = [];
+        const total = sender ? 5 : 6;
+        for (let page = 1; page <= 3; page++) {
+          const result = await service.getContacts('owner', { assigned_to: `${a},${b}`, status, page, limit: 2 }, sender, 'company');
+          assert.equal(result.pagination.total, total);
+          assert.equal(result.pagination.total_pages, 3);
+          assert.equal(result.contacts.length, page < 3 ? 2 : total - 4);
+          combined.push(...result.contacts.map(row => row.id));
+        }
+        assert.deepEqual(combined, sender ? ['07', '08', '09', '10', '11'] : ['07', '08', '09', '10', '11', '20']);
+      }
+      const member = await service.getContacts('owner', { assigned_to: b, onlyAssignedToUserId: a, status,
+        page: 1, limit: 2 }, 'sender', 'company');
+      assert.equal(member.pagination.total, 1);
+      assert.deepEqual(member.contacts.map(row => row.id), ['09']);
+      const selectAll = await service.getContacts('owner', { assigned_to: a, status, unpaginated: true }, 'sender', 'company');
+      assert.equal(selectAll.total, 3);
+      assert.deepEqual(selectAll.contacts.map(row => row.id), ['07', '09', '10']);
+      const missing = await service.getContacts('owner', { assigned_to: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' }, 'sender', 'company');
+      assert.equal(missing.pagination.total, 0);
+      assert.equal(missing.contacts.length, 0);
+    } finally { memory.close(); await db.destroy(); }
+  });
 
 test('latest message controls membership and marking it read moves the contact between tabs', { skip: !DatabaseSync }, async () => {
   const { db, model, BaseModel } = fixture();
