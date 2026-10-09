@@ -11,8 +11,38 @@ import metaService from '@surefy/console/services/meta.service';
 import activityLogsModel from '../models/activityLogs.model';
 import contactListModel from '../models/contactList.model';
 import ImportJobModel from "../models/importJob.model"
+import { validate as uuidValidate } from 'uuid';
 
 class WabaService {
+  /** Refresh an already connected WABA using its Meta ID or local UUID. */
+  async syncWaba(userId: string, companyId: string, wabaId: string) {
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    if (typeof wabaId !== 'string' || wabaId.length > 255 ||
+        (!/^\d+$/.test(wabaId) && !uuidValidate(wabaId))) {
+      throw new HTTP400Error({ message: 'wabaId must be a Meta WABA ID or an internal WABA UUID' });
+    }
+    const waba = await WabaModel.findOwnedForSync(wabaId, userId, companyId);
+    if (!waba || waba.deleted_at || waba.user_id !== userId || waba.company_id !== companyId) {
+      throw new HTTP404Error({ message: 'WABA not found in your account' });
+    }
+    // Complete both remote reads before starting the database transaction.
+    const [details, response] = await Promise.all([
+      MetaService.getWabaDetails(waba.waba_id), MetaService.getPhoneNumbers(waba.waba_id),
+    ]);
+    if (!details || details.id !== waba.waba_id || !Array.isArray(response?.data)) {
+      throw new HTTP400Error({ message: 'Invalid WABA sync response from Meta' });
+    }
+    const phones = new Map<string, any>();
+    for (const phone of response.data) {
+      if (!phone || typeof phone.id !== 'string' || !/^\d+$/.test(phone.id) ||
+          typeof phone.display_phone_number !== 'string' || !phone.display_phone_number.trim()) {
+        throw new HTTP400Error({ message: 'Invalid phone number response from Meta' });
+      }
+      phones.set(phone.id, phone);
+    }
+    return WabaModel.syncAccountAndPhones(waba, details, [...phones.values()]);
+  }
+
   /**
    * Onboard WABA accounts
    */
@@ -418,30 +448,9 @@ class WabaService {
   /**
    * Sync phone numbers from Meta
    */
-  async syncPhoneNumbers(companyId: string, wabaId: string) {
-    const waba = await this.getWabaById(wabaId);
-    const phoneNumbers = await MetaService.getPhoneNumbers(waba.waba_id);
-
-    const synced = [];
-    for (const phone of phoneNumbers.data || []) {
-      const existing = await PhoneNumberModel.findByPhoneNumberId(phone.id);
-
-      if (!existing) {
-        const created = await PhoneNumberModel.create({
-          user_id: waba.user_id,
-          company_id: waba.company_id,
-          waba_id: wabaId,
-          phone_number_id: phone.id,
-          display_phone_number: phone.display_phone_number,
-          verified_name: phone.verified_name,
-          quality_rating: phone.quality_rating,
-          meta_data: phone,
-        });
-        synced.push(created);
-      }
-    }
-
-    return synced;
+  async syncPhoneNumbers(companyId: string, wabaId: string, userId: string) {
+    const result = await this.syncWaba(userId, companyId, wabaId);
+    return result.phone_numbers;
   }
 
   /**

@@ -161,9 +161,24 @@ class MetaService {
    */
   async getPhoneNumbers(wabaId: string): Promise<any> {
     try {
-      const response = await this.client.get(`/${wabaId}/phone_numbers`);
-      console.log('Response data', response.data);
-      return response.data;
+      const data: any[] = [];
+      const cursors = new Set<string>();
+      let after: string | undefined;
+      do {
+        const response = await this.client.get(`/${wabaId}/phone_numbers`, {
+          params: { fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status', limit: 100, after },
+        });
+        if (!Array.isArray(response.data?.data)) throw new Error('Invalid phone number response from Meta');
+        data.push(...response.data.data);
+        if (!response.data.paging?.next) break;
+        const next = response.data.paging?.cursors?.after;
+        if (typeof next !== 'string' || !next || cursors.has(next)) {
+          throw new Error('Meta returned an invalid or repeated phone number pagination cursor');
+        }
+        cursors.add(next);
+        after = next;
+      } while (after);
+      return { data };
     } catch (error: any) {
       console.error('Meta API Error - Get Phone Numbers:', error.response?.data || error.message);
       throw new HTTP500Error({

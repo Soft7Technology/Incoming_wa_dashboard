@@ -37,7 +37,7 @@ class MetaFixture {
   candidates = [{ id: '20001', name: 'Review Test Page', access_token: 'TEST_PAGE_TOKEN', tasks: ['MESSAGING', 'MANAGE'] }];
   async authorize() { return { token: 'TEST_USER_TOKEN', userId: '30001', granted: this.grants, dataExpires: null }; }
   async pages() { return this.candidates; }
-  async inspectPage() { return { name: 'Review Test Page', expires: null }; }
+  async inspectPage() { return { expires: null }; }
   async call(path, token, method = 'GET', params, body) {
     this.calls.push({ path, token, method, params, body });
     if (this.failure) throw this.failure;

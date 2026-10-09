@@ -8,6 +8,12 @@ import wabaService from '@surefy/console/services/waba.service';
 import { tryCatch } from 'bullmq';
 
 class WabaController {
+  /** POST /v1/admin/waba/:wabaId/sync (Meta WABA ID or local UUID). */
+  syncWaba = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const result = await WabaService.syncWaba(req.ownerId ?? req.userId!, req.companyId!, req.params.wabaId);
+    return successResponse(req, res, 'WABA account and phone numbers synced successfully', result);
+  });
+
   /**
    * POST /v1/waba
    * Create WABA account
@@ -114,7 +120,7 @@ class WabaController {
    */
   syncPhoneNumbers = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { wabaId } = req.params;
-    const synced = await WabaService.syncPhoneNumbers(req.companyId!, wabaId);
+    const synced = await WabaService.syncPhoneNumbers(req.companyId!, wabaId, req.ownerId ?? req.userId!);
     return successResponse(req, res, `${synced.length} phone numbers synced successfully`, synced);
   });
 
