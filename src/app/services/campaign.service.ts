@@ -1,7 +1,8 @@
-import { resolveCampaignPhone, validateCampaignPhoneInputs } from '../utils/campaignPhone';
-import { buildRecipient } from '../utils/importPhone';
+import contactOptOut from './contactOptOut.service';
+import { resolveOptionalCampaignPhone, campaignRecipientNumber, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
+import { parseContactCustomFields } from '../utils/contactCustomFields';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
@@ -24,6 +25,12 @@ import db from '@surefy/database';
 import phoneNumberModel from '../models/phoneNumber.model';
 
 
+type ParameterMapping = Record<string, string | {
+  field?: string;
+  value?: string;
+  fallbackValue?: string | null;
+}>;
+
 interface CreateCampaignData {
   name: string;
   description?: string;
@@ -38,40 +45,47 @@ interface CreateCampaignData {
     exclude_invalid?: boolean;
     attributes?: Record<string, any>;
   };
-  parameter_mapping?: Record<string, string>; // template_param -> contact_attribute
+  parameter_mapping?: ParameterMapping;
   media_uploads?: Array<{ type: string; media_id: string; url?: string }>;
   scheduled_at?: Date | 'now';
   send_immediately?: boolean;   // frontend sends this flag
 }
 
 class CampaignService {
+  async previewRecipients(userId: string, companyId: string,
+    data: Pick<CreateCampaignData, 'phone_number_id' | 'contact_filters' | 'country_code'>) {
+    return this.createCampaign(userId, companyId, { ...data, name: '', template_id: '' }, true);
+  }
+
   /**
    * Create a new campaign
    */
-  async createCampaign(userId: string, companyId: string, data: CreateCampaignData) {
+  async createCampaign(userId: string, companyId: string, data: CreateCampaignData, preview = false): Promise<any> {
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    if (!preview) this.resolveTemplateVariables({}, data.parameter_mapping ?? {});
     try { validateCampaignPhoneInputs(data.contact_filters, data.country_code); }
     catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     // Verify template exists
-    const template = await TemplateModel.findById(data.template_id);
+    const template = preview ? undefined : await TemplateModel.findById(data.template_id);
     const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
     if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
-      throw new HTTP404Error({ message: 'Phone number not found in your account' });
+      throw new HTTP404Error({ message: 'Campaign cannot be created: the selected sending phone number is not connected to your user account.' });
     }
     console.log('Template',template)
-    if (!template) {
+    if (!preview && !template) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
     console.log('Creating campaign with data:', data);
 
-    if (template.status !== 'APPROVED') {
+    if (!preview && template!.status !== 'APPROVED') {
       throw new HTTP400Error({ message: 'Template must be approved before use in campaigns' });
     }
 
     // ── Resolve tag names → tag IDs ──────────────────────────────────────
     // Frontend sends contact_filters.tags as an array of tag NAMES.
     // The contact filter query expects tag_ids (UUIDs). Resolve here.
-    const filters = { ...(data.contact_filters || {}), contactNumber: data.contact_filters?.contactNumber?.map(String) };
+    const filters = { exclude_invalid: false, ...(data.contact_filters || {}), contactNumber: data.contact_filters?.contactNumber?.map(String) };
 
     if (filters.tags && filters.tags.length > 0 && (!filters.tag_ids || filters.tag_ids.length === 0)) {
       const resolvedTagIds: string[] = [];
@@ -85,6 +99,11 @@ class CampaignService {
       }
       if (resolvedTagIds.length > 0) {
         filters.tag_ids = resolvedTagIds;
+      } else {
+        throw new HTTP400Error({
+          message: 'Campaign cannot be created: none of the selected contact tags exist in your account. Select existing tags and try again.',
+          details: { code: 'CAMPAIGN_CONTACT_TAGS_NOT_FOUND' },
+        });
       }
       console.log(`[Campaign] Resolved tag names ${JSON.stringify(filters.tags)} → IDs ${JSON.stringify(resolvedTagIds)}`);
     }
@@ -92,23 +111,24 @@ class CampaignService {
     // ── Auto-create external contact numbers ─────────────────────────────
     // If the frontend passed specific phone numbers, ensure they exist in the DB
     let canonicalRecipientNumbers: string[] | undefined;
+    let previewNewContacts: any[] = [];
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // Infer only from the supplied international number; never default to the sender's country.
       const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
       const matchedNumbers = new Set<string>();
-      const normalizedPhones = new Map<string, string>();
+      const normalizedPhones = new Map<string, string | null>();
       for (const value of filters.contactNumber) {
         try {
-          const resolvedPhone = resolveCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
-            { countryCode: data.country_code === undefined ? undefined : String(data.country_code), allowBareInternational: true });
-          const parsed = { ...resolvedPhone, phone_number: buildRecipient(resolvedPhone.phone_number, resolvedPhone.country_code) };
+          const resolvedPhone = resolveOptionalCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
+            data.country_code === undefined ? undefined : String(data.country_code));
+          const parsed = { ...resolvedPhone, phone_number: campaignRecipientNumber(resolvedPhone.phone_number, resolvedPhone.country_code) };
           if (parsed.contact) {
             matchedNumbers.add(parsed.phone_number);
           }
           normalizedPhones.set(parsed.phone_number, parsed.country_code);
         } catch (error) {
           throw new HTTP400Error({
-            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}. Supply country_code for a national number or use an international number such as +6581234567`,
+            message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}`,
           });
         }
       }
@@ -117,10 +137,11 @@ class CampaignService {
 
       // 2. Find existing numbers in the DB
       const existingContacts = await ContactModel.findWithFilters(userId, {})
+        .where('contacts.company_id', companyId)
         .where('phone_number_id', phoneNumberId.id)
-        .whereRaw('country_code || phone_number = ANY(?)', [canonicalRecipientNumbers]);
+        .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [canonicalRecipientNumbers]);
 
-      const existingNumbers = new Set(existingContacts.map((c: any) => buildRecipient(c.phone_number, c.country_code)));
+      const existingNumbers = new Set(existingContacts.map((c: any) => campaignRecipientNumber(c.phone_number, c.country_code)));
 
       // 3. Filter missing numbers
       const missingNumbers = canonicalRecipientNumbers.filter(
@@ -140,20 +161,65 @@ class CampaignService {
           is_valid: true,
           attributes: {},
         }));
-        await ContactModel.bulkCreate(newContacts);
+        if (preview) {
+          // New contacts have no list/tag relations or custom attributes yet.
+          if (!filters.list_ids?.length && !filters.tag_ids?.length &&
+              !Object.keys(filters.attributes || {}).length) {
+            previewNewContacts = newContacts.map(contact => ({ ...contact, id: null }));
+          }
+        } else {
+          await ContactModel.bulkCreate(newContacts);
+        }
       }
     }
 
     // Get contacts based on filters
-    const contacts = await ContactService.getContactsByFilters(userId, companyId, filters);
+    const matchingContacts = await ContactService.getContactsByFilters(userId, companyId, filters);
+    const contacts = [...matchingContacts, ...previewNewContacts].filter(contact => contact.phone_number_id === phoneNumberId.id);
+    const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
     const contactList = uniqueCampaignRecipients((await contacts).filter(contact =>
-      !requestedNumbers || requestedNumbers.has(buildRecipient(contact.phone_number, contact.country_code))));
+      !excludedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)) &&
+      (!requestedNumbers || requestedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)))));
     if (canonicalRecipientNumbers) filters.contactNumber = canonicalRecipientNumbers;
     console.log('Found contacts for campaign:', contactList.length);
 
+    if (preview) {
+      return {
+        total_recipients: contactList.length,
+        contacts: contactList.map(contact => ({
+          id: contact.id,
+          name: contact.name,
+          phone_number: contact.phone_number,
+          country_code: contact.country_code,
+          recipient_number: campaignRecipientNumber(contact.phone_number, contact.country_code),
+          email: contact.email ?? null,
+          attributes: parseContactCustomFields(contact.attributes ?? {}, `Contact ${contact.id} attributes`),
+          custom_fields: parseContactCustomFields(contact.custom_fields ?? {}, `Contact ${contact.id} custom_fields`),
+          is_valid: contact.is_valid,
+        })),
+      };
+    }
+
     if (contactList.length === 0) {
-      throw new HTTP400Error({ message: 'No contacts found matching the specified filters' });
+      const matchingRequested = contacts.filter(contact => !requestedNumbers ||
+        requestedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)));
+      const optedOut = matchingRequested.length > 0 && matchingRequested.every(contact =>
+        excludedNumbers.has(campaignRecipientNumber(contact.phone_number, contact.country_code)));
+      throw new HTTP400Error({
+        message: optedOut
+          ? 'Campaign cannot be created: all matching contacts have opted out for the selected sending phone number.'
+          : filters.contactNumber?.length
+            ? 'Campaign cannot be created: none of the selected contact numbers match your contact filters. Check the numbers, tags, lists and attributes.'
+            : 'Campaign cannot be created: no contacts match the selected filters for the selected sending phone number. Select contacts connected to that phone number and try again.',
+        details: {
+          code: optedOut ? 'CAMPAIGN_CONTACTS_OPTED_OUT' : 'CAMPAIGN_NO_MATCHING_CONTACTS',
+          phone_number_id: data.phone_number_id,
+          sender_contact_phone_number_id: phoneNumberId.id,
+          ...(optedOut ? { opted_out_numbers: [...new Set(matchingRequested.map(contact =>
+            campaignRecipientNumber(contact.phone_number, contact.country_code)))].slice(0, 20) } : {}),
+        },
+      });
     }
 
     // ── Determine scheduled time ─────────────────────────────────────────
@@ -174,6 +240,13 @@ class CampaignService {
       }
     }
 
+    // Resolve from each full contact record before persisting or queueing the campaign.
+    const recipientMessages = contactList.map(contact => ({
+      contact_id: contact.id,
+      status: 'pending',
+      template_variables: this.resolveTemplateVariables(contact, data.parameter_mapping || {}),
+    }));
+
     // Create campaign
     const campaign = await planUsageService.run(userId, 'Campaign', async trx => {
       const createdCampaign = await CampaignModel.create({
@@ -185,7 +258,7 @@ class CampaignService {
         description: data.description,
         status,
         total_recipients: contactList.length,
-        template_params: template.components,
+        template_params: template!.components,
         parameter_mapping: data.parameter_mapping || {},
         media_uploads: data.media_uploads || [],
         contact_filters: filters,
@@ -193,14 +266,9 @@ class CampaignService {
       }, trx);
 
       // Create campaign_messages entries for each contact
-      const campaignMessages = contactList.map((contact) => ({
+      const campaignMessages = recipientMessages.map(message => ({
+        ...message,
         campaign_id: createdCampaign.id,
-        contact_id: contact.id,
-        status: 'pending',
-        template_variables: this.resolveTemplateVariables(
-          contact,
-          data.parameter_mapping || {}
-        ),
       }));
 
       await CampaignMessageModel.bulkCreate(campaignMessages, trx);
@@ -226,23 +294,89 @@ class CampaignService {
   }
 
   /**
-   * Resolve template variables from contact attributes
+   * Resolve template variables from each recipient's columns and nested fields.
    */
-  private resolveTemplateVariables(contact: any, mapping: Record<string, string>): Record<string, any> {
-    const variables: Record<string, any> = {};
-
-    for (const [templateParam, contactAttribute] of Object.entries(mapping)) {
-      if (contactAttribute === 'fullName') {
-        variables[templateParam] = contact.name || '';
-      } else if (contactAttribute === 'phone_number') {
-        variables[templateParam] = contact.phone_number || '';
-      } else if (contactAttribute === 'email') {
-        variables[templateParam] = contact.email || '';
-      } else if (contact.attributes && contact.attributes[contactAttribute]) {
-        variables[templateParam] = contact.attributes[contactAttribute];
-      } else {
-        variables[templateParam] = contactAttribute;
+  private resolveTemplateVariables(contact: any, mapping: ParameterMapping): Record<string, string | null> {
+    if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) {
+      throw new HTTP400Error({ message: 'parameter_mapping must be an object' });
+    }
+    const variables: Record<string, string | null> = {};
+    const own = (object: any, key: string) => object && Object.prototype.hasOwnProperty.call(object, key);
+    // Some older rows contain a JSON string instead of an object. Decode each
+    // referenced container once per recipient.
+    const fieldObjects = new Map<string, Record<string, unknown>>();
+    const contactFields = (key: string): Record<string, unknown> => {
+      if (!fieldObjects.has(key)) {
+        fieldObjects.set(key, parseContactCustomFields(contact[key] ?? {}, `Contact ${contact.id ?? '(preview)'} ${key}`)!);
       }
+      return fieldObjects.get(key)!;
+    };
+    const readPath = (source: any, path: string): { found: boolean; value?: unknown } => {
+      let remaining = path;
+      while (source != null) {
+        // Prefer exact keys so custom field names containing dots still work.
+        if (own(source, remaining)) return { found: true, value: source[remaining] };
+        const separator = remaining.indexOf('.');
+        if (separator < 1) break;
+        const key = remaining.slice(0, separator);
+        if (!own(source, key)) break;
+        source = source === contact && ['custom_fields', 'attributes'].includes(key)
+          ? contactFields(key) : source[key];
+        remaining = remaining.slice(separator + 1);
+      }
+      return { found: false };
+    };
+    const fieldValue = (field: string): { found: boolean; value?: unknown } => {
+      const aliases: Record<string, string> = { fullName: 'name', vb_phoneno: 'phone_number' };
+      const path = field.startsWith('contact.') ? field.slice('contact.'.length) : field;
+      for (const key of ['custom_fields', 'attributes']) {
+        const prefix = `${key}.`;
+        if (path.startsWith(prefix)) {
+          const fieldPath = path.slice(prefix.length);
+          const preferred = readPath(contactFields(key), fieldPath);
+          if (preferred.value != null) return preferred;
+          // Imports may store the same field in attributes while edits store it
+          // in custom_fields. Always resolve against this recipient's two columns.
+          const alternate = readPath(contactFields(key === 'custom_fields' ? 'attributes' : 'custom_fields'), fieldPath);
+          return { found: true, value: alternate.value ?? preferred.value };
+        }
+      }
+      if (field.startsWith('contact.')) return { found: true, value: readPath(contact, path).value };
+      const key = own(aliases, field) ? aliases[field] : field;
+      const column = readPath(contact, key);
+      if (column.found) return column;
+      let fieldMatch: { found: boolean; value?: unknown } = { found: false };
+      for (const key of ['custom_fields', 'attributes']) {
+        const resolved = readPath(contactFields(key), field);
+        if (resolved.found) {
+          if (resolved.value != null) return resolved;
+          fieldMatch = resolved;
+        }
+      }
+      if (fieldMatch.found) return fieldMatch;
+      return { found: own(aliases, field) || ['name', 'phone_number', 'email'].includes(field) };
+    };
+    const text = (value: unknown): string | null => value == null ? null :
+      typeof value === 'object' ? JSON.stringify(value) : String(value);
+
+    for (const [templateParam, entry] of Object.entries(mapping)) {
+      let value: unknown;
+      if (typeof entry === 'string') {
+        const resolved = fieldValue(entry);
+        value = resolved.found ? resolved.value : entry;
+      } else {
+        if (!entry || Array.isArray(entry) || typeof entry !== 'object' ||
+            Object.keys(entry).some(key => !['field', 'value', 'fallbackValue'].includes(key)) ||
+            Object.entries(entry).some(([key, value]) => typeof value !== 'string' && !(key === 'fallbackValue' && value === null)) ||
+            (entry.field !== undefined && entry.value !== undefined) ||
+            (entry.field === undefined && entry.value === undefined && entry.fallbackValue === undefined) ||
+            entry.field === '') {
+          throw new HTTP400Error({ message: `Invalid parameter_mapping entry for ${templateParam}: use a string or { field, fallbackValue? } or { value }` });
+        }
+        value = entry.field !== undefined ? fieldValue(entry.field).value : entry.value;
+        if (value == null) value = entry.fallbackValue ?? null;
+      }
+      Object.defineProperty(variables, templateParam, { value: text(value), enumerable: true, configurable: true });
     }
 
     return variables;
@@ -264,6 +398,8 @@ class CampaignService {
     campaign.delivered_count = Number(stats.delivered_count || 0);
     campaign.read_count = Number(stats.read_count || 0);
     campaign.failed_count = Number(stats.failed_count || 0);
+    campaign.pending_count = Number(stats.pending_count || 0);
+    campaign.skipped_count = Number(stats.skipped_count || 0);
 
     if (campaign.status === 'running') {
       const job = await campaignExecutionQueue.getJob(campaignId);
@@ -294,56 +430,16 @@ class CampaignService {
    * Start campaign execution (queued in background)
    */
   async reBroadcastCampaign(campaignId: string) {
-    const campaign = await CampaignModel.findById(campaignId);
-    console.info('[Campaign] Rebroadcast requested', { campaignId, status: campaign?.status });
-    if (!campaign) {
-      throw new HTTP404Error({ message: 'Campaign not found' });
-    }
-
-    if (!['scheduled', 'draft', 'paused', 'failed', 'completed'].includes(campaign.status)) {
-      throw new HTTP400Error({ message: `Campaign in status '${campaign.status}' cannot be started` });
-    }
-
-    const existingJob = await campaignExecutionQueue.getJob(campaignId);
-    if (existingJob) {
-      const state = await existingJob.getState();
-      if (state === 'completed' || state === 'failed' || (campaign.status === 'paused' && state !== 'active')) {
-        await existingJob.remove();
-      } else {
-        return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
-      }
-    }
-    await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date(), completed_at: null });
-
-    // Queue campaign execution in background worker
-    await campaignExecutionQueue.add(
-      `campaign-retry-${campaignId}`,
-      {
-        campaignId: campaignId,
-        userId: campaign.user_id,
-        status:'failed',
-        error_message:'This message was not delivered to maintain healthy ecosystem engagement.',
-        companyId: campaign.company_id,
-      },
-      {
-        jobId: campaignId, // Use campaign ID as job ID for easy tracking
-      }
-    );
-
-    return {
-      message: 'Campaign queued for execution successfully',
-      campaign_id: campaignId,
-      status: 'queued'
-    };
+    throw new HTTP400Error({ message: 'Campaign retries are disabled. Failed or unconfirmed recipients will not be resent.' });
   }
 
-
-    /**
-   * Start campaign execution (queued in background)
-   */
   async startCampaign(campaignId: string) {
     const campaign = await CampaignModel.findById(campaignId);
     console.info('[Campaign] Start requested', { campaignId, status: campaign?.status });
+    if (campaign?.status === 'failed' && !await CampaignMessageModel.getPendingCount(campaignId)) {
+      await CampaignModel.completeIfNoPendingMessages(campaignId);
+      return { message: 'Campaign processing is complete. Failed messages will not be retried.', campaign_id: campaignId, status: 'completed' };
+    }
     if (!campaign) {
       throw new HTTP404Error({ message: 'Campaign not found' });
     }
@@ -369,6 +465,11 @@ class CampaignService {
             await CampaignModel.updateStatus(campaignId, 'scheduled', { scheduled_at: new Date() });
             await existingJob.promote();
             return { message: 'Campaign queued to start now', campaign_id: campaignId, status: 'waiting' };
+          }
+          if (campaign.status === 'failed') {
+            await CampaignModel.updateStatus(campaignId, state === 'active' ? 'running' : 'scheduled', {
+              scheduled_at: new Date(), completed_at: null,
+            });
           }
           console.info('[Campaign] Existing job', { campaignId, state });
           return { message: 'Campaign is already queued for execution', campaign_id: campaignId, status: state };
@@ -450,203 +551,6 @@ class CampaignService {
   //   };
   // }
 
-
-  /**
-   * Execute campaign - send messages to all pending contacts
-   * Includes dynamic batch sizing based on server CPU and RAM usage
-   */
-  private async executeCampaign(campaignId: string) {
-    const campaign = await CampaignModel.findById(campaignId);
-    if (!campaign) return;
-
-    // Dynamic batch sizing configuration
-    let batchSize = 200; // Initial batch size
-    const minBatchSize = 2; // Minimum batch size
-    const maxBatchSize = 500; // Maximum batch size
-    const delayBetweenBatches = 2; // Base delay: 2 seconds between batches
-
-    // Resource thresholds
-    const cpuThresholdHigh = 80; // % - Reduce batch size if CPU > 80%
-    const cpuThresholdLow = 50; // % - Increase batch size if CPU < 50%
-    const memThresholdHigh = 85; // % - Reduce batch size if memory > 85%
-    const memThresholdLow = 60; // % - Increase batch size if memory < 60%
-
-    let hasMore = true;
-
-    while (hasMore) {
-      // Check if campaign is still running
-      const currentCampaign = await CampaignModel.findById(campaignId);
-      if (currentCampaign.status !== 'running') {
-        console.log(`Campaign ${campaignId} stopped, status: ${currentCampaign.status}`);
-        break;
-      }
-
-      // Monitor server resources and adjust batch size
-      const resources = this.getServerResources();
-      const cpuUsage = resources.cpuUsage;
-      const memUsage = resources.memUsage;
-
-      console.log(`[Campaign ${campaignId}] CPU: ${cpuUsage.toFixed(1)}%, Memory: ${memUsage.toFixed(1)}%, Batch Size: ${batchSize}`);
-
-      // Adjust batch size based on resource usage
-      if (cpuUsage > cpuThresholdHigh || memUsage > memThresholdHigh) {
-        // High resource usage - reduce batch size
-        batchSize = Math.max(minBatchSize, Math.floor(batchSize * 0.7));
-        console.log(`[Campaign ${campaignId}] High resource usage detected. Reducing batch size to ${batchSize}`);
-      } else if (cpuUsage < cpuThresholdLow && memUsage < memThresholdLow) {
-        // Low resource usage - increase batch size
-        batchSize = Math.min(maxBatchSize, Math.floor(batchSize * 1.3));
-        console.log(`[Campaign ${campaignId}] Low resource usage. Increasing batch size to ${batchSize}`);
-      }
-
-      // Emergency brake: If resources are critically high, pause for longer
-      if (cpuUsage > 90 || memUsage > 95) {
-        console.warn(`[Campaign ${campaignId}] CRITICAL resource usage! CPU: ${cpuUsage.toFixed(1)}%, Memory: ${memUsage.toFixed(1)}%. Pausing for 10 seconds...`);
-        await new Promise((resolve) => setTimeout(resolve, 10000));
-        batchSize = minBatchSize; // Reset to minimum batch size
-        continue; // Skip this iteration and re-check resources
-      }
-
-      // Get pending messages
-      const pendingMessages = await CampaignMessageModel.getPendingMessages(campaignId, batchSize);
-
-      if (pendingMessages.length === 0) {
-        hasMore = false;
-        await CampaignModel.updateStatus(campaignId, 'completed');
-        break;
-      }
-
-      // Send messages in parallel (batch)
-      await Promise.all(
-        pendingMessages.map((campaignMessage) =>
-          this.sendCampaignMessage(campaign, campaignMessage)
-        )
-      );
-
-      // Dynamic delay based on resource usage
-      let delay = delayBetweenBatches;
-      if (cpuUsage > cpuThresholdHigh || memUsage > memThresholdHigh) {
-        // Increase delay if resources are high
-        delay = delayBetweenBatches * 2;
-      }
-
-      // Delay between batches to avoid rate limiting and resource overload
-      if (pendingMessages.length === batchSize) {
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-  }
-
-  /**
-   * Get current server CPU and RAM usage
-   */
-  private getServerResources(): { cpuUsage: number; memUsage: number } {
-    const os = require('os');
-
-    // Calculate CPU usage
-    const cpus = os.cpus();
-    let totalIdle = 0;
-    let totalTick = 0;
-
-    cpus.forEach((cpu: any) => {
-      for (const type in cpu.times) {
-        totalTick += cpu.times[type];
-      }
-      totalIdle += cpu.times.idle;
-    });
-
-    const cpuUsage = 100 - (100 * totalIdle) / totalTick;
-
-    // Calculate memory usage
-    const totalMem = os.totalmem();
-    const freeMem = os.freemem();
-    const usedMem = totalMem - freeMem;
-    const memUsage = (usedMem / totalMem) * 100;
-
-    return {
-      cpuUsage: Math.max(0, Math.min(100, cpuUsage)), // Clamp between 0-100
-      memUsage: Math.max(0, Math.min(100, memUsage)), // Clamp between 0-100
-    };
-  }
-
-  /**
-   * Send individual campaign message
-   */
-  private async sendCampaignMessage(campaign: any, campaignMessage: any) {
-    try {
-      // Get contact
-      const contact = await ContactModel.findById(campaignMessage.contact_id);
-      if (!contact) {
-        await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
-          error_message: 'Contact not found',
-        });
-        return;
-      }
-
-      // Skip invalid numbers
-      if (!contact.is_valid) {
-        await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
-          error_message: `Invalid number: ${contact.invalid_reason}`,
-        });
-        await CampaignModel.incrementCount(campaign.id, 'invalid_numbers_count');
-        return;
-      }
-
-      // Get template
-      const template = await TemplateModel.findById(campaign.template_id);
-      if (!template) {
-        throw new Error('Template not found');
-      }
-
-      // Build template payload
-      const templatePayload = this.buildTemplatePayload(
-        template,
-        campaignMessage.template_variables,
-        campaign.media_uploads
-      );
-      const messageUUID = uuidv4();
-
-      // // Send message via MessageService
-      const message = await MessageService.sendMessage({
-        messageUUID,
-        user_id: campaign.user_id,
-        company_id: campaign.company_id,
-        campaign_id: campaign.id,
-        profile_name: contact.name,
-        phone_number_id: campaign.phone_number_id,
-        to: buildRecipient(contact.phone_number, contact.country_code),
-        type: 'template',
-        template: templatePayload,
-      });
-
-      // Update campaign message status
-      await CampaignMessageModel.updateStatus(campaignMessage.id, 'sent', {
-        message_id: message.id,
-      });
-
-      // Update campaign counts
-      await CampaignModel.incrementCount(campaign.id, 'sent_count');
-      await CampaignModel.updateCounts(campaign.id, {
-        total_cost: Number(campaign.total_cost || 0) + Number(message.cost || 0),
-      });
-
-      // // Update contact stats
-      await ContactModel.incrementMessageCount(contact.id);
-    } catch (error: any) {
-      console.error(`Failed to send campaign message ${campaignMessage.id}:`, error);
-
-      await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-        ...getMessageError(error),
-      });
-
-      await CampaignModel.incrementCount(campaign.id, 'failed_count');
-
-      // Update contact failed count
-      if (campaignMessage.contact_id) {
-        await ContactModel.incrementFailedCount(campaignMessage.contact_id);
-      }
-    }
-  }
 
   /**
    * Build template payload with variables
@@ -756,7 +660,7 @@ class CampaignService {
           if (bodyVariables.length > 0) {
             const parameters = bodyVariables.map((varName) => ({
               type: 'text',
-              text: variables[varName] || '',
+              text: variables[varName] === undefined ? '' : variables[varName],
             }));
 
             components.push({
@@ -879,7 +783,7 @@ class CampaignService {
       to: testPhoneNumber,
       type: 'template',
       template: templatePayload,
-    });
+    }, { source: 'campaign-test' });
 
     return {
       message: 'Test message sent successfully',

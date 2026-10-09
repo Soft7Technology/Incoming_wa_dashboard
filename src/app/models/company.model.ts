@@ -1,12 +1,38 @@
 import { BaseModel } from '@surefy/models/base.model';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 
 class CompanyModel extends BaseModel {
   constructor() {
     super('companies');
   }
 
+  /** Background sends must recheck account state even when no JWT request is involved. */
+  async canSend(companyId: string, userId: string) {
+    return this.db('companies as c').join('users as u', 'u.company_id', 'c.id')
+      .where({ 'c.id': companyId, 'u.id': userId, 'c.status': 'active', 'u.status': 'active' })
+      .whereNull('c.deleted_at').whereNull('u.deleted_at').first('c.id');
+  }
+
   async findById(id: string) {
     return this.query().where({ id }).first();
+  }
+
+  async changeStatus(id: string, status: 'active' | 'inactive' | 'suspended') {
+    return this.db.transaction(async (trx) => {
+      const company = await trx('companies').where({ id }).whereNull('deleted_at').forUpdate().first('id');
+      if (!company) throw new HTTP404Error({ message: 'Company not found' });
+      if (status !== 'active') {
+        const administrator = await trx('users').where({ company_id: id, role: 'superadmin' })
+          .whereNull('deleted_at').first('id');
+        if (administrator) throw new HTTP400Error({ message: 'Cannot disable a company containing a superadmin' });
+      }
+      const [updated] = await trx('companies').where({ id })
+        .update({ status, updated_at: trx.fn.now() }).returning('*');
+      await trx('users').where({ company_id: id }).whereNull('deleted_at')
+        .update({ status, updated_at: trx.fn.now() });
+      return updated;
+    });
   }
 
   async findAll(conditions: any = {}) {

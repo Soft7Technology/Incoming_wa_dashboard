@@ -1,18 +1,19 @@
 import MessageModel from '../models/message.model';
-import { parseImportedPhone } from '../utils/importPhone';
+import { parseStoredContactPhone, parseContactPhoneUpdate } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
+import PhoneNumberModel from '../models/phoneNumber.model';
 import ContactTagModel from '../models/contactTag.model';
 import ContactTagRelationModel from '../models/contactTagRelation.model';
 import ContactListModel from '../models/contactList.model';
 import ContactListRelationModel from '../models/contactListRelation.model';
 import ImportJobModel from '../models/importJob.model';
-import XLSXParserService from './xlsxParser.service';
+import XLSXParserService, { ImportPreviewOptions } from './xlsxParser.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
-import { contactImportQueue } from '../../queues/contactImport.queue';
+import { processContactImport } from './contactImport.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { filter } from 'lodash';
@@ -25,9 +26,11 @@ class ContactService {
    */
   async createContact(userId: string, companyId: string, data: any) {
     let identity;
-    try { identity = parseImportedPhone(data.phone_number, data.country_code || '', Boolean(data.country_code)); }
+    try { identity = parseStoredContactPhone(data.phone_number, data.country_code || ''); }
     catch (error: any) { throw new HTTP400Error({ message: error.message }); }
     const phone = identity.phone_number;
+    const customFields = data.custom_fields === undefined ? undefined
+      : parseContactCustomFields(data.custom_fields, 'custom_fields');
 
     // Check if contact already exists
     const existing = await ContactModel.findOwnedByPhone(userId, phone, data.phone_number_id, companyId, identity.country_code);
@@ -40,13 +43,16 @@ class ContactService {
         user_id: userId,
         company_id: companyId,
         phone_number: phone,
+        source: 'manually',
         phone_number_id:data.phone_number_id,
         name: data.name,
         email: data.email,
         status: data.status,
         attributes: data.attributes || {},
+        ...(customFields === undefined ? {} : { custom_fields: customFields }),
         notes: data.notes,
-        country_code: identity.country_code
+        country_code: identity.country_code,
+        is_valid: identity.is_valid
       }, trx);
 
       // Tags live in contact_tag_relations; they are not columns on contacts.
@@ -74,6 +80,28 @@ class ContactService {
     if (!userId || !companyId) {
       throw new HTTP400Error({ message: 'Company context is required to fetch contacts by phone number ID' });
     }
+    if (filters.read_status !== undefined && !['all', 'read', 'unread'].includes(filters.read_status)) {
+      throw new HTTP400Error({ message: 'read_status must be all, read or unread' });
+    }
+    if (phoneNumberId !== undefined) {
+      const sender = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
+      if (!sender || sender.user_id !== userId || sender.company_id !== companyId || sender.deleted_at) {
+        throw new HTTP404Error({ message: 'Phone number not found in your account' });
+      }
+      phoneNumberId = sender.id;
+    }
+    const parseBoolean = (value: unknown, name: string): boolean | undefined => {
+      if (value === undefined) return undefined;
+      if (value === true || value === 'true') return true;
+      if (value === false || value === 'false') return false;
+      throw new HTTP400Error({ message: `${name} must be true or false` });
+    };
+    const optedOut = parseBoolean(filters.is_opted_out, 'is_opted_out');
+    const optedIn = parseBoolean(filters.opt_in_status, 'opt_in_status');
+    if (optedOut !== undefined && optedIn !== undefined && optedOut === optedIn) {
+      throw new HTTP400Error({ message: 'opt_in_status and is_opted_out conflict' });
+    }
+    const preference = optedOut ?? (optedIn === undefined ? undefined : !optedIn);
     if (filters.country_code !== undefined) {
       try {
         filters = { ...filters, country_code: normalizeCountryCodes(filters.country_code) };
@@ -82,19 +110,15 @@ class ContactService {
       }
     }
 
-    console.log("=================================");
-    console.log("GET CONTACTS START");
-    console.log("User ID:", userId);
-    console.log("Phone Number ID:", phoneNumberId);
-    console.log("Filters:", JSON.stringify(filters, null, 2));
-    console.log("=================================");
-
     const page = Number(filters.page) || 1;
     const limit = Number(filters.limit) || 20;
     const offset = (page - 1) * limit;
 
     const sortBy = filters.sortBy || "created_at";
-    const sortOrder = filters.sortOrder || "desc";
+    const sortOrder = String(filters.sortOrder || 'desc').toLowerCase();
+    if (sortOrder !== 'asc' && sortOrder !== 'desc') {
+      throw new HTTP400Error({ message: 'sortOrder must be asc or desc' });
+    }
 
     let query = ContactModel.findWithFilters(
       userId,
@@ -105,11 +129,7 @@ class ContactService {
     if (companyId) {
       query.where('contacts.company_id', companyId);
     }
-
-    console.log(
-      "Initial Query:",
-      query.clone().toSQL().toNative()
-    );
+    if (preference !== undefined) query.where('contacts.is_opted_out', preference);
 
     // Country and tag filters are applied together by ContactModel.findWithFilters.
 
@@ -117,23 +137,13 @@ class ContactService {
     // LIST FILTER
     // -------------------------
     if (filters.list_ids?.length) {
-      console.log("List IDs:", filters.list_ids);
-
       const listContactIds =
         await ContactListRelationModel.getContactIdsByLists(
           filters.list_ids
         );
 
-      console.log(
-        "Contact IDs from Lists:",
-        listContactIds
-      );
-
       if (!listContactIds.length) {
-        console.log(
-          "No contacts found for supplied lists"
-        );
-
+        if (filters.unpaginated) return { contacts: [], total: 0 };
         return {
           contacts: [],
           pagination: {
@@ -147,93 +157,59 @@ class ContactService {
 
       query.whereIn("id", listContactIds);
 
-      console.log(
-        "Query After List Filter:",
-        query.clone().toSQL().toNative()
-      );
     }
-
-    console.log(
-      "Final Query Before Count:",
-      query.clone().toSQL().toNative()
-    );
 
     // -------------------------
     // COUNT
     // -------------------------
-    const totalResult = await query
-      .clone()
-      .count("* as count")
-      .first();
-
-    console.log("Total Result:", totalResult);
-
-    const total = Number(totalResult?.count || 0);
+    // All filters must be complete here. Count the entire matching dataset and
+    // paginate a separate copy so page size and ordering cannot affect totals.
+    const countQuery = filters.unpaginated ? undefined : query.clone().count("* as count").first();
+    const pageQuery = query.clone();
 
     // -------------------------
     // FETCH CONTACTS
     // -------------------------
-    const contacts = await query
-      .orderBy(sortBy, sortOrder)
-      .limit(limit)
-      .offset(offset);
-
-    console.log(
-      "Contacts Found:",
-      contacts.length
-    );
-
-    console.log(
-      "Contacts:",
-      JSON.stringify(contacts, null, 2)
-    );
+    if (filters.read_status === 'all') ContactModel.orderByReadStatus(pageQuery);
+    const sortedQuery = ['last_message', 'last_message_at'].includes(sortBy)
+      ? ContactModel.orderByLastMessage(pageQuery, sortOrder)
+      : pageQuery.orderBy(sortBy, sortOrder);
+    if (!['last_message', 'last_message_at'].includes(sortBy)) {
+      sortedQuery.orderBy('contacts.id', 'asc');
+    }
+    const [totalResult, contacts] = await Promise.all([
+      countQuery,
+      filters.unpaginated ? sortedQuery : sortedQuery.limit(limit).offset(offset),
+    ]);
+    const total = filters.unpaginated ? contacts.length : Number(totalResult?.count || 0);
 
     // -------------------------
     // FETCH TAGS
     // -------------------------
-    if (contacts.length > 0) {
-      const contactIds = contacts.map(
-        (contact: any) => contact.id
-      );
-
-      console.log(
-        "Contact IDs for Tag Lookup:",
-        contactIds
-      );
-
-      const tagsData =
-        await ContactTagRelationModel.getContactsWithTags(
-          contactIds
-        );
-
-      console.log(
-        "Tags Data:",
-        JSON.stringify(tagsData, null, 2)
-      );
-
-      const tagsMap = new Map();
-
-      tagsData.forEach((item: any) => {
-        tagsMap.set(item.contact_id, item.tags);
-      });
-
-      contacts.forEach((contact: any) => {
-        contact.tags =
-          tagsMap.get(contact.id) || [];
-      });
-    }
-
-    const latestMessages = await MessageModel.findLatestForContacts(contacts);
-    const latestByContact = new Map(latestMessages.map(row => [row.contact_id, row.last_message]));
+    const contactIds = contacts.map((contact: any) => contact.id);
+    const [tagsData, latestMessages] = await Promise.all([
+      contacts.length ? ContactTagRelationModel.getContactsWithTags(contactIds) : [],
+      MessageModel.findLatestForContacts(contacts),
+    ]);
+    const tagsMap = new Map(tagsData.map((item: any) => [item.contact_id, item.tags]));
+    const latestByContact = new Map(latestMessages.map(row => [row.contact_id, row]));
     contacts.forEach((contact: any) => {
-      contact.last_message = latestByContact.get(contact.id) ?? null;
+      contact.tags = tagsMap.get(contact.id) || [];
+      const summary = latestByContact.get(contact.id);
+      const lastMessage = summary?.last_message ?? null;
+      // Inbox counts cover incoming messages only; outgoing read receipts are separate.
+      contact.read_count = Number(summary?.read_count ?? 0);
+      contact.unread_count = Number(summary?.unread_count ?? 0);
+      contact.read_status = lastMessage
+        ? (lastMessage.inbox_read_at != null || lastMessage.status === 'read' || lastMessage.read_at != null ? 'read' : 'unread')
+        : null;
+      const timestamp = lastMessage?.updated_at ?? null;
+      contact.last_message = lastMessage ? { ...lastMessage, timestamp } : null;
+      // Expose the same activity timestamp inside and outside the message object.
+      contact.last_message_at = timestamp;
     });
 
-    console.log(
-      "Final Contacts Response:",
-      JSON.stringify(contacts, null, 2)
-    );
-
+    if (filters.unpaginated) return { contacts, total: contacts.length };
     return {
       contacts,
       pagination: {
@@ -264,6 +240,10 @@ class ContactService {
       contact.tags = [];
     }
 
+    const [summary] = await MessageModel.findLatestForContacts([contact]);
+    contact.read_count = Number(summary?.read_count ?? 0);
+    contact.unread_count = Number(summary?.unread_count ?? 0);
+
     return contact;
   }
 
@@ -272,7 +252,7 @@ class ContactService {
    */
   async updateContact(userId:string,contactId: string, data: any) {
     const contact = await ContactModel.findById(contactId);
-    if (!contact) {
+    if (!contact || contact.deleted_at || contact.user_id !== userId) {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
 
@@ -297,7 +277,40 @@ class ContactService {
       updatePayload.status = data.status;
     }
 
-    const updated = await ContactModel.update(contactId, updatePayload);
+    if (data.is_opted_out !== undefined) {
+      if (typeof data.is_opted_out !== 'boolean') throw new HTTP400Error({ message: 'is_opted_out must be true or false' });
+      updatePayload.is_opted_out = data.is_opted_out;
+    }
+    if (data.phone_number_id !== undefined) {
+      const sender = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+      if (!sender || sender.user_id !== userId || sender.company_id !== contact.company_id || sender.deleted_at)
+        throw new HTTP400Error({ message: 'Selected phone number ID does not belong to your account' });
+      updatePayload.phone_number_id = sender.id;
+    }
+    if (data.phone_number !== undefined || data.country_code !== undefined) {
+      try {
+        const identity = parseContactPhoneUpdate(data.phone_number ?? contact.phone_number, data.country_code, contact);
+        // Full edit forms resend the stored number during assignment changes.
+        // Preserve validation/WhatsApp failure flags when the identity is unchanged.
+        if (identity.phone_number !== contact.phone_number || identity.country_code !== contact.country_code) {
+          Object.assign(updatePayload, { phone_number: identity.phone_number, country_code: identity.country_code,
+            is_valid: identity.is_valid, invalid_reason: identity.is_valid ? null : 'invalid_format' });
+        }
+      } catch (error: any) { throw new HTTP400Error({ message: error.message }); }
+    }
+    if (data.phone_number !== undefined || data.country_code !== undefined || data.phone_number_id !== undefined) {
+      const existing = await ContactModel.findOwnedByPhone(userId, updatePayload.phone_number ?? contact.phone_number,
+        updatePayload.phone_number_id ?? contact.phone_number_id, contact.company_id,
+        updatePayload.country_code ?? contact.country_code);
+      if (existing && existing.id !== contactId)
+        throw new HTTP400Error({ message: 'Cannot update contact: this number already exists for the selected sending phone number' });
+    }
+    let updated;
+    try { updated = await ContactModel.update(contactId, updatePayload); }
+    catch (error: any) {
+      if (error.code === '23505') throw new HTTP400Error({ message: 'Cannot update contact: this number already exists for the selected sending phone number' });
+      throw error;
+    }
 
     // Update tags if provided
     if (data.tag_ids !== undefined) {
@@ -334,9 +347,9 @@ class ContactService {
   }
 
   /**
-   * Queue contact import job (async processing)
+   * Import contacts in the API process and persist progress
    */
-  async queueContactImport(
+  async importContactsDirect(
     userId: string,
     companyId: string,
     phone_number_id:string,
@@ -350,7 +363,7 @@ class ContactService {
       tagIds?: string[];
     } = {}
   ) {
-    // Quick validation of file before queuing
+    // Validate the file before creating an import record
     const validation = await XLSXParserService.validateFile(filePath);
     if (!validation.valid) {
       console.log("Invalid File", validation)
@@ -384,7 +397,7 @@ class ContactService {
       file_headers: preview.headers,
       total_rows: preview.total_rows,
       import_options: {
-        list_name: listName,
+        execution_mode: 'api', list_name: listName,
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
@@ -392,27 +405,17 @@ class ContactService {
       },
     });
 
-    console.log(`Queued contact import job ${JSON.stringify(importJob)} for company ${userId}`);
-
-    // Add job to BullMQ queue
-    await contactImportQueue.add(
-      `contact-import-${importJob.id}`,
-      {
-        jobId: importJob.id,
-        companyId,
-        phone_number_id,
-        country_code,
-        userId,
-        filePath,
-        listName,
-        options,
-      },
-      {
-        jobId: importJob.id, // Use database job ID as BullMQ job ID for tracking
-      }
-    );
-
-    return importJob;
+    const result = await processContactImport({
+      jobId: importJob.id, companyId, phone_number_id, country_code,
+      userId, filePath, listName, options,
+    });
+    return {
+      ...importJob,
+      status: 'completed',
+      total_rows: result.total,
+      progress_percentage: 100,
+      result,
+    };
   }
 
   /**
@@ -425,7 +428,9 @@ class ContactService {
     }
 
     // Get BullMQ job details if available
-    const bullJob = await contactImportQueue.getJob(jobId);
+    const bullJob = job.import_options?.execution_mode === 'api'
+      ? null
+      : await (await import('../../queues/contactImport.queue')).contactImportQueue.getJob(jobId);
 
     return {
       id: job.id,
@@ -559,8 +564,12 @@ class ContactService {
   /**
    * Get file preview before import
    */
-  async getXLSXPreview(filePath: string) {
-    return XLSXParserService.getFilePreview(filePath);
+  async getXLSXPreview(filePath: string, options: ImportPreviewOptions = {}) {
+    try {
+      return await XLSXParserService.getValidatedPreview(filePath, options);
+    } catch (error) {
+      throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Unable to preview import file' });
+    }
   }
 
   /**
@@ -638,7 +647,7 @@ class ContactService {
     }
 
     if (filters.contactNumber && filters.contactNumber.length > 0) {
-      query = query.whereRaw("country_code || phone_number = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
+      query = query.whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
     }
 
     // Filter by lists (OR condition)
@@ -760,20 +769,17 @@ class ContactService {
     // Sample data to include in the template
     const sampleData = [
       {
-        phone_number: '9372597458',
-        country_code: '91',
+        phone_number: '+919372597458',
         name: 'John Doe',
         email: 'john@example.com',
       },
       {
-        phone_number: '81234567',
-        country_code: '65',
+        phone_number: '+6581234567',
         name: 'Jane Smith',
         email: 'jane@example.com',
       },
       {
-        phone_number: '2025550123',
-        country_code: '1',
+        phone_number: '+12025550123',
         name: 'Bob Johnson',
         email: 'bob@example.com',
       },
@@ -785,7 +791,6 @@ class ContactService {
     // Set column widths
     worksheet['!cols'] = [
       { wch: 20 }, // phone_number
-      { wch: 15 }, // country_code
       { wch: 25 }, // name
       { wch: 30 }, // email
     ];

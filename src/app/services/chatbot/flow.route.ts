@@ -16,6 +16,7 @@ type FlowRouterParams={
     message:string;
     phoneNumberId:string;
     triggerMatched?: boolean;
+    session?: any;
 }
 
 export const flowRouter = async ({ 
@@ -25,7 +26,8 @@ export const flowRouter = async ({
     incomingId,
     message,
     phoneNumberId,
-    triggerMatched = false
+    triggerMatched = false,
+    session: selectedSession
 }: FlowRouterParams)=> {
     // Get Session
     console.log("Flow Body",phone,incomingText,incomingId)
@@ -33,7 +35,7 @@ export const flowRouter = async ({
         await chatSessionModel.deactivateActiveSession({ phoneNumber: phone, chatbotId: bot.id, phoneNumberId });
         return triggerFlow({ bot, phone, incomingText, phoneNumberId });
     }
-    const session = await chatSessionModel.findActiveSession({ phoneNumber: phone, chatbotId: bot.id, phoneNumberId })
+    const session = selectedSession ?? await chatSessionModel.findActiveSession({ phoneNumber: phone, chatbotId: bot.id, phoneNumberId })
     console.log('Session',session)
 
     if(session){

@@ -80,10 +80,13 @@ class UserApiKeyService {
     }
   }
 
-  async authenticate(key: string) {
-    if (!/^s7_[a-f0-9]{64}$/.test(key)) return null;
-    return UserApiKeyModel.findActiveByHash(hashApiKey(key));
-  }
+async authenticate(key: string) {
+  // Fails if the key's format is incorrect.
+  if (!/^s7_[a-f0-9]{64}$/.test(key)) return null;
+
+  // Fails if no eligible database record matches its SHA-256 hash.
+  return UserApiKeyModel.findActiveByHash(hashApiKey(key));
+}
 }
 
 export default new UserApiKeyService();

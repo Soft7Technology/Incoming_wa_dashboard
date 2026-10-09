@@ -107,13 +107,18 @@ class CampaignModel extends BaseModel {
 
   async completeIfNoPendingMessages(id: string): Promise<boolean> {
     const updated = await this.query()
-      .where({ id, status: 'running' })
+      .where({ id }).whereIn('status', ['running', 'failed']).whereNull('deleted_at')
       .whereNotExists(this.db('campaign_messages')
         .select(this.db.raw('1'))
         .where('campaign_messages.campaign_id', id)
         .where('campaign_messages.status', 'pending'))
       .update({ status: 'completed', failure_reason: null, completed_at: new Date(), updated_at: new Date() });
     return updated > 0;
+  }
+
+  /** Include stopped campaigns so an exhausted recipient list can be finalized. */
+  async getCampaignsForReconciliation() {
+    return this.query().whereIn('status', ['running', 'failed']).whereNull('deleted_at');
   }
 
   async getRunningCampaigns() {

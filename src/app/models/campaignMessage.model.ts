@@ -74,11 +74,10 @@ class CampaignMessageModel extends BaseModel {
     return Number(row?.count || 0);
   }
 
-  async deferRetry(id: string, delayMs: number, countAttempt = false): Promise<number> {
-    const updateData: any = { retry_after: new Date(Date.now() + delayMs) };
-    if (countAttempt) updateData.retry_attempts = this.db.raw('COALESCE(retry_attempts, 0) + 1');
-    const [row] = await this.query().where({ id }).update(updateData).returning('retry_attempts');
-    return Number(row?.retry_attempts || 0);
+  /** Pacing delays only recipients that have not been sent; failures stay terminal. */
+  async deferPendingRecipient(id: string, delayMs: number): Promise<void> {
+    await this.query().where({ id, status: 'pending' }).whereNull('message_id')
+      .update({ retry_after: new Date(Date.now() + delayMs) });
   }
 
   async getNextRetryAt(campaignId: string, failedBefore?: Date): Promise<Date | null> {
@@ -120,11 +119,21 @@ class CampaignMessageModel extends BaseModel {
     return query.orderBy('campaign_messages.created_at').orderBy('campaign_messages.id');
   }
 
+  /** Failed-unconfirmed is deliberately terminal: uncertain sends require review, not resending. */
+  async claimSingleAttempt(id: string): Promise<boolean> {
+    const rows = await this.query().where({ id, status: 'pending' }).whereNull('message_id')
+      .update({ status: 'failed', failed_at: new Date(), retry_after: null,
+        error_code: 'SEND_OUTCOME_UNCONFIRMED',
+        error_message: 'Send attempt reserved; delivery outcome not confirmed. Automatic retries disabled.' })
+      .returning('id');
+    return rows.length === 1;
+  }
+
   async recordSent(id: string, campaignId: string, contactId: string, messageId: string, cost: number) {
     return this.db.transaction(async trx => {
       await trx('campaign_messages').where({ id }).update({
         status: 'sent', message_id: messageId, sent_at: new Date(),
-        error_message: null, error_code: null, failed_at: null, retry_after: null, retry_attempts: 0,
+        error_message: null, error_code: null, failed_at: null, retry_after: null,
       });
       await trx('campaigns').where({ id: campaignId }).update({
         sent_count: trx.raw('COALESCE(sent_count, 0) + 1'),
@@ -219,6 +228,7 @@ class CampaignMessageModel extends BaseModel {
       .select(
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'sent')     AS sent_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'pending')  AS pending_count`),
+        this.db.raw(`COUNT(*) FILTER (WHERE cm.status = 'skipped') AS skipped_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'delivered') AS delivered_count`),
         this.db.raw(`COUNT(*) FILTER (WHERE m.status = 'read')    AS read_count`),
         this.db.raw(`

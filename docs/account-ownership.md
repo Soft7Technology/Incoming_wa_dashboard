@@ -57,3 +57,7 @@ an authenticated user endpoint without verifying ownership.
 Rollback of the contact uniqueness migration can fail once different owners
 have saved the same phone number in one company: the old company-wide identity
 cannot represent those records. Review and consolidate before rolling back.
+
+## Phone storage
+
+After `20260930000003_allow_unresolved_contact_phones`, contacts store the full number with a leading `+` in phone_number. country_code is derived when recognized, otherwise null. Identity includes company, owner, business phone and the full number. See `contact-phone-storage.md` for import validation and rollout instructions.

@@ -1,20 +1,41 @@
-# Contact phone storage and rollout
+# Contact phone storage and import
 
-Contacts store `phone_number` as national digits and `country_code` as calling-code digits. For example, Singapore `+6581234567` becomes `81234567` / `65`. Significant national zeros (such as Italian landlines) are preserved. Identity includes company, owner, business phone ID, country code, and national number.
+Contacts store the full number with a leading `+` in `phone_number`. For example, `919372597458` becomes `+919372597458`, with `country_code: "91"`. Incoming-message contacts use the same normalization. Sending uses the existing recipient helper, which avoids adding the calling code twice.
 
-Imports accept a separate calling code or ISO country code, or an explicit `+` / `00` international prefix. Unprefixed numbers without country context are rejected into the existing import error list with the original number retained. Conflicting row country codes are rejected. No country is assumed.
+## Optional country information
 
-Outbound requests can use an explicit international `to`, national `to` plus `country_code`, or a national number that resolves uniquely to a contact under the sending business number. Campaigns construct the recipient from the saved fields. Meta receives international digits. Webhook sender IDs already contain the international calling code and are parsed as such.
+Excel/CSV imports do not require a country column. The phone library recognizes valid full international numbers with or without `+`. A row country_code or import country_code can resolve a local number; calling codes and ISO country identifiers are supported. There is no default Indian country code.
 
-## Required rollout order
+Numeric contacts whose country cannot be resolved are still saved: `9372597458` becomes `phone_number: "+9372597458"`, `country_code: null`, `is_valid: false`. Adding a leading plus preserves a consistent storage format; it does not establish that the number is internationally valid. These contacts need country information before sending. Malformed characters, unsafe numeric Excel cells, and numbers outside 4?15 digits remain invalid and are not imported.
 
-1. Back up contacts and run `node scripts/audit-contact-phones.cjs`. Optionally pass a local JSON output path for the full issue report; the console prints only counts and a small sample. This script uses a read-only database transaction and does not import the application's database initializer.
-2. Resolve reported ambiguous/invalid numbers with the contact owner and review duplicate identities. Do not fill missing countries with `91`, reinterpret invalid international numbers as Indian local numbers, or automatically merge/delete contacts.
-3. Stop API/worker contact writers and apply migration `20260926000001_normalize_contact_phone_identity` with the normal deployment migration process. It locks the table, repeats preflight, normalizes records in batches, removes the country default, and adds digit checks plus country-aware uniqueness. If any record needs clarification, it fails transactionally before data/index changes.
-4. Deploy the matching API and workers together. Old workers write a different representation, so mixed versions are unsupported. Restore the backup for a data rollback; automatic down-migration is intentionally refused.
+## Editing phone and country
 
-The final read-only audit on 2026-09-26 found 70,626 records and no live phone-identity uniqueness index: 611 numbers without country context, 10,796 invalid international numbers, and 31 duplicate normalized identities. The live dataset changed between audit runs; re-run the audit for current counts. No live data migration was performed during implementation.
+On `PUT /v1/admin/contacts/:id`, a non-empty `country_code` is authoritative. It accepts a calling code (`91`, `+91`) or ISO country (`IN`). Selecting it rebuilds `phone_number` with that prefix and saves the normalized code in `country_code`. For an unresolved contact, updating `+9896370801` with `country_code: "91"` saves `+919896370801` and `91`. Changing the country alone replaces a known saved prefix, rather than adding a second calling code.
 
-## Validation
+Numeric but invalid contacts can still be edited and assigned. A changed phone is revalidated; an invalid result uses `invalid_reason: "invalid_format"`. Profile or assignment updates that resend the same phone and country preserve existing validation and WhatsApp failure flags. Duplicate resulting identities are rejected within the account and sending number. Phone format validation does not confirm WhatsApp registration.
 
-Focused tests cover India, Singapore, UK, Italy, shared national digits under India/US, exact scoped lookups, import clarification errors, Meta payloads, and migration preflight failure. Run `npx tsc --noEmit` and the contact/import/campaign phone tests before rollout.
+## Preview API
+
+POST `/v1/admin/contacts/import/preview` using multipart form-data with one `file`. Optional fields: `phone_column`, `name_column`, `email_column`, `country_code`.
+
+The response retains headers, raw preview and total_rows, and includes:
+
+- `valid_count`: numbers recognized by the phone library.
+- `needs_country_count`: numeric contacts saved without a resolved country.
+- `importable_count`: valid_count + needs_country_count, before duplicate handling.
+- `invalid_count`: malformed rows excluded from import.
+- `normalized_preview`: up to five importable contacts in their storage format.
+- `needs_country`: importable contacts requiring country information.
+- `errors`: malformed rows and their reasons.
+
+Actual import uses the same parser. Unresolved contacts are included in import, not in failed counts. Validation does not confirm WhatsApp registration or database uniqueness.
+
+## Deployment
+
+Apply pending migrations through `20260930000003_allow_unresolved_contact_phones.ts` with API and workers stopped, then deploy matching code together. The new migration makes country_code nullable, normalizes existing contacts, and preserves company/owner/business-number uniqueness. Duplicate normalized identities cause the migration to fail before rewriting rows. Earlier pending migrations still run their existing preflight checks and may require data cleanup first.
+
+No database migration was executed during this change. Back up existing data before migration. Automated rollback of the new migration is intentionally blocked because unresolved contacts cannot be converted safely into mandatory split-country storage.
+
+## Campaign recipient override
+
+Campaigns accept numeric recipients without a separate country_code. Unresolved numbers are preserved and attempted without guessing a country. Campaign creation includes these contacts by default; explicitly setting contact_filters.exclude_invalid to true excludes contacts marked is_valid=false. Malformed input remains rejected. Opt-outs and recorded invalid-number failures still prevent sending. This permissive sending behavior is limited to the internal campaign send path; ordinary message API validation is unchanged. Meta may reject an unresolved number, in which case the campaign records the failure.

@@ -1,3 +1,4 @@
+import { campaignRecipientNumber } from '../utils/campaignPhone';
 import { parseWhatsAppPhone } from '../utils/importPhone';
 import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 import HTTP500Error from '@surefy/exceptions/HTTP500Error';
@@ -27,8 +28,10 @@ class MetaService {
   /**
    * Send a message via WhatsApp Business API
    */
-  async sendMessage(phoneNumberId: string, payload: any): Promise<any> {
-    if (payload.to !== undefined) {
+  async sendMessage(phoneNumberId: string, payload: any, allowUnverifiedRecipient = false): Promise<any> {
+    if (allowUnverifiedRecipient && payload.to !== undefined) {
+      payload = { ...payload, to: campaignRecipientNumber(payload.to) };
+    } else if (payload.to !== undefined) {
       try {
         const identity = parseWhatsAppPhone(payload.to);
         payload = { ...payload, to: identity.country_code + identity.phone_number };
@@ -36,7 +39,6 @@ class MetaService {
     }
     if (!payload.to) throw new HTTP400Error({ message: 'Recipient is required' });
     try {
-      console.log('Paylod', payload);
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {
@@ -76,13 +78,16 @@ class MetaService {
    */
   async getTemplates(wabaId: string): Promise<any> {
     try {
-      const response = await this.client.get(`/${wabaId}/message_templates`, {
-        params: {
-          limit: 100,
-        },
-      });
-      console.log('Respnse',response.data)
-      return response.data;
+      const data: any[] = [];
+      let after: string | undefined;
+      do {
+        const response = await this.client.get(`/${wabaId}/message_templates`, { params: { limit: 100, after } });
+        data.push(...(response.data.data || []));
+        const next = response.data.paging?.next ? response.data.paging?.cursors?.after : undefined;
+        if (next && next === after) throw new Error('Meta returned a repeated pagination cursor');
+        after = next;
+      } while (after);
+      return { data };
     } catch (error: any) {
       console.error('Meta API Error - Get Templates:', error.response?.data || error.message);
       throw new HTTP500Error({
@@ -101,21 +106,44 @@ class MetaService {
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Create Template:', error.response?.data || error.message);
-      throw new HTTP500Error({
+      const ErrorType = error.response?.status === 400 ? HTTP400Error : HTTP500Error;
+      throw new ErrorType({
         message: 'Failed to create template via Meta API',
         details: error.response?.data || error.message,
       });
     }
   }
 
+  async getTemplate(templateId: string): Promise<any> {
+    try {
+      const response = await this.client.get(`/${templateId}`, {
+        params: { fields: 'id,name,language,category,status,components' },
+      });
+      return response.data;
+    } catch (error: any) {
+      throw new HTTP500Error({ message: 'Failed to fetch template from Meta', details: error.response?.data?.error || error.message });
+    }
+  }
+
+  async updateTemplate(templateId: string, payload: any): Promise<any> {
+    try {
+      const response = await this.client.post(`/${templateId}`, payload);
+      return response.data;
+    } catch (error: any) {
+      const ErrorType = error.response?.status === 400 ? HTTP400Error : HTTP500Error;
+      throw new ErrorType({ message: 'Meta rejected the template update', details: error.response?.data?.error || error.message });
+    }
+  }
+
   /**
    * Delete a message template
    */
-  async deleteTemplate(wabaId: string, templateName: string): Promise<any> {
+  async deleteTemplate(wabaId: string, templateName: string, templateId?: string): Promise<any> {
     try {
       const response = await this.client.delete(`/${wabaId}/message_templates`, {
         params: {
           name: templateName,
+          hsm_id: templateId,
         },
       });
       return response.data;
@@ -190,6 +218,7 @@ class MetaService {
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
       });
+      console.log('Response',response.data)
       return response.data;
     } catch (error: any) {
       console.error('Meta API Error - Upload Media:', error.response?.data || error.message);

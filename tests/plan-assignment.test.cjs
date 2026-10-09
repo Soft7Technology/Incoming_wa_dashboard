@@ -20,7 +20,7 @@ function fixture({ existing, failTable, balance = 500, recipientBalance = 20, co
     companies: [{ id: 'c', company_name: 'Company', credit_balance: balance }],
     subscription_plans: [{ id: 'p', company_id: 'c', active: true, billing_cycle: 'Monthly', price: 500, plan_name: 'Pro', features: {} },
       { id: 'f', company_id: 'c', active: true, billing_cycle: 'Free', trial_days: 7, price: 0, plan_name: 'Trial', features: {} }],
-    user_plans: existing ? [existing] : [], credit_transactions: [], activity_logs: [],
+    user_plans: existing ? [existing] : [], credit_transactions: [], activity_logs: [], superadmin_audit_logs: [],
   };
   const locks = [];
   let sequence = 0;
@@ -134,4 +134,30 @@ test('legacy text wallet balances and null recipient balance support assignment 
     assert.equal(f.state().users[1].credit_balance, Number(recipientBalance ?? 0) + 100);
     assert.equal(f.state().credit_transactions[0].balance_before, 500.75);
   }
+});
+
+test('superadmin assignment enforces company scope, active catalogue and preserves user status', async () => {
+  const sa = { userId: 'sa', userRole: 'superadmin', companyId: 'platform' };
+  const management = { companyId: 'c', reason: 'Approved assignment' };
+  const f = fixture();
+  f.state().users[0].status = 'suspended';
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, sa, false, { ...management, companyId: 'other' }), /not found/);
+  f.state().subscription_plans[0].active = false;
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, sa, false, management), /not active/);
+  f.state().subscription_plans[0].active = true;
+  f.state().subscription_plans[0].company_id = null;
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, sa, false, management), /user company/);
+  f.state().subscription_plans[0].company_id = 'c';
+  const result = await f.service.updateUser('u', { assigned_plan: 'p' }, sa, false, management);
+  assert.equal(result.user.status, 'suspended');
+  assert.equal(result.plan.company_id, 'c');
+  assert.equal(f.state().superadmin_audit_logs[0].actor_id, 'sa');
+});
+
+test('superadmin assignment audit failure rolls back plan, pointer and fees', async () => {
+  const f = fixture({ failTable: 'superadmin_audit_logs' });
+  const before = structuredClone(f.state());
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' },
+    { userId: 'sa', userRole: 'superadmin' }, false, { companyId: 'c', reason: 'Assign' }), /database failure/);
+  assert.deepEqual(f.state(), before);
 });

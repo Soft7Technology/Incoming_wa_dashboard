@@ -8,6 +8,7 @@ const TemplateRoute = Router();
 TemplateRoute.post('/sync', TemplateController.syncTemplates);
 TemplateRoute.post('/create', TemplateController.createTemplate);
 TemplateRoute.get('/', TemplateController.getTemplates);
+TemplateRoute.put('/:id', TemplateController.updateTemplate);
 TemplateRoute.get('/:id', TemplateController.getTemplateById);
 TemplateRoute.delete('/:id', TemplateController.deleteTemplate);
 

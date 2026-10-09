@@ -5,6 +5,9 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import CompanyPaymentModel from '../models/companyPayment.model';
+import { encryptPaymentCredentials, decryptPaymentCredentials } from '../utils/paymentCredentials';
+import { createGatewayOrder, verifyGatewayOrder, GatewayConnection, PaymentMode } from './paymentGateway.provider';
+
 
 export interface PaymentContext {
   userId?: string;
@@ -12,14 +15,12 @@ export interface PaymentContext {
   userRole?: string;
   idempotencyKey?: string;
 }
-import { encryptPaymentCredentials, decryptPaymentCredentials } from '../utils/paymentCredentials';
-import { createGatewayOrder, verifyGatewayOrder, GatewayConnection, PaymentMode } from './paymentGateway.provider';
 
 export function paymentScope(req: PaymentContext, admin = false) {
   if (!req.companyId || !req.userId) throw new HTTP401Error({ message: 'Authenticated company context is required' });
-  if (admin && !['admin', 'superadmin', 'company'].includes(req.userRole || '')) {
+  if (admin && !['admin', 'superadmin','user','company'].includes(req.userRole || '')) {
     throw new HTTP401Error({
-      message: 'Only company administrators can manage payment gateways and create payment orders',
+      message: 'Only company user can manage payment gateways and create payment orders',
     });
   }
   return { company_id: req.companyId, user_id: req.userId };

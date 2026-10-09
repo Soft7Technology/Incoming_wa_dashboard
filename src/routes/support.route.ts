@@ -1,3 +1,5 @@
+import superAdmin from '../app/http/controllers/superAdmin.controller';
+import operations from '../app/http/controllers/superAdminOperations.controller';
 import { Router } from 'express';
 import UserRoute from './user.route';
 import supportController from '../app/http/controllers/support.controller';
@@ -16,9 +18,9 @@ supportRoute.delete('/:ticketId', supportController.deleteSupportTicket);
 /**
  * SuperAdmin Forward Tickets
  */
-supportRoute.get('/tickets/forward', supportController.getAllforwardTickets);
-supportRoute.post('/:ticketId/forward', supportController.forwardTicketToSuperAdmin);
-supportRoute.get('/:ticketId/forward', supportController.forwardTicketConversations);
-supportRoute.post('/:ticketId/forward/reply', supportController.forwardTicketReply);
+supportRoute.get('/tickets/forward', superAdmin.authorize, operations.forwarded);
+supportRoute.post('/:ticketId/forward', operations.escalate);
+supportRoute.get('/:ticketId/forward', superAdmin.authorize, operations.conversation);
+supportRoute.post('/:ticketId/forward/reply', superAdmin.authorize, operations.changeTicket('reply'));
 
 export default supportRoute;

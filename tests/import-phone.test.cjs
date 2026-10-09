@@ -44,7 +44,7 @@ test('Excel import uses raw numeric cells and expands text scientific notation',
     const result = await parser.parseContactsFromFile(file, '91', 'phone', 'name');
     assert.equal(result.valid, 2);
     assert.equal(result.invalid, 1);
-    assert.deepEqual(result.contacts.map(row => row.phone_number), ['9372597458', '9372597458']);
+    assert.deepEqual(result.contacts.map(row => row.phone_number), ['+919372597458', '+919372597458']);
     assert.equal(result.errors[0].row, 4);
   } finally { fs.unlinkSync(file); fs.rmdirSync(dir); }
 });
@@ -81,9 +81,10 @@ test('mixed-country workbook detects each row and never applies 91 to every cont
     ]);
     const book = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(book, sheet, 'Contacts'); XLSX.writeFile(book, file);
     const result = await parser.parseContactsFromFile(file, '91');
-    assert.deepEqual(result.contacts.map(c => c.country_code), ['65', '91', '44', '32', '33', '65']);
-    assert.equal(result.invalid, 1);
-    assert.equal(result.contacts[0].phone_number, '92956294');
+    assert.deepEqual(result.contacts.map(c => c.country_code), ['65', '91', '44', '32', '33', '65', null]);
+    assert.equal(result.invalid, 0);
+    assert.equal(result.needs_country, 1);
+    assert.equal(result.contacts[0].phone_number, '+6592956294');
   } finally { fs.unlinkSync(file); fs.rmdirSync(dir); }
 });
 
@@ -99,7 +100,7 @@ test('Indian local numbers do not become Myanmar, Maldives, Lebanon or Bhutan nu
 });
 
 
-test('import preserves original number in clarification errors without assuming India', async () => {
+test('import saves unresolved numbers without assuming India', async () => {
   const XLSX = require('xlsx'), fs = require('node:fs'), os = require('node:os'), path = require('node:path');
   const parser = require('../src/app/services/xlsxParser.service').default;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phone-clarification-'));
@@ -111,11 +112,96 @@ test('import preserves original number in clarification errors without assuming 
     ]), 'Contacts');
     XLSX.writeFile(book, file);
     const result = await parser.parseContactsFromFile(file, '');
-    assert.equal(result.valid, 1);
-    assert.equal(result.invalid, 2);
-    assert.equal(result.errors[0].phone_number, '9372597458');
-    assert.match(result.errors[0].error, /Country code is required/);
-    assert.match(result.errors[1].error, /conflicts/);
-    assert.deepEqual(result.contacts.map(c => [c.country_code, c.phone_number]), [['65', '81234567']]);
+    assert.equal(result.valid, 2);
+    assert.equal(result.invalid, 0);
+    assert.equal(result.needs_country, 1);
+    assert.deepEqual(result.errors, []);
+    assert.equal(result.contacts[0].is_valid, false);
+    assert.deepEqual(result.contacts.map(c => [c.country_code, c.phone_number]), [[null, '+9372597458'], ['65', '+6581234567'], ['65', '+6581234567']]);
   } finally { fs.unlinkSync(file); fs.rmdirSync(dir); }
+});
+const { parseSpreadsheetPhone, toContactPhone } = require('../src/app/utils/importPhone');
+test('imports preserve international identities across conflicting optional country hints', () => {
+  for (const [input, expected, code] of [
+    ['19169435965', '+19169435965', '1'], ['447879543645', '+447879543645', '44'],
+    ['491783433573', '+491783433573', '49'], ['+6581234567', '+6581234567', '65']
+  ]) {
+    for (const hint of ['', '91', 'INVALID']) {
+      assert.deepEqual(parseSpreadsheetPhone(input, hint), {phone_number: expected.slice(1 + code.length), country_code: code});
+    }
+  }
+  assert.deepEqual(parseSpreadsheetPhone('81234567', '65'), {phone_number:'81234567', country_code:'65'});
+  assert.throws(() => parseSpreadsheetPhone('9372597458'), /Needs country/);
+  assert.throws(() => parseSpreadsheetPhone('1234567890123456'), /length/);
+  assert.equal(toContactPhone(parse('39066982','39')).phone_number, '+39066982');
+});
+test('CSV with mixed international numbers needs no country column', async () => {
+  const fs=require('node:fs'), os=require('node:os'), path=require('node:path');
+  const parser=require('../src/app/services/xlsxParser.service').default;
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'international-csv-'));
+  const file=path.join(dir,'contacts.csv');
+  try {
+    fs.writeFileSync(file, 'Name,Phone number\nUS,19169435965\nUK,447879543645\nGermany,491783433573\n');
+    const result=await parser.parseContactsFromFile(file, '', 'Phone number', 'Name');
+    assert.equal(result.valid,3); assert.equal(result.invalid,0);
+    assert.deepEqual(result.contacts.map(c=>c.phone_number), ['+19169435965','+447879543645','+491783433573']);
+  } finally {fs.unlinkSync(file);fs.rmdirSync(dir);}
+});
+test('validated preview counts all rows and preserves existing sample fields', async () => {
+  const fs=require('node:fs'), os=require('node:os'), path=require('node:path');
+  const parser=require('../src/app/services/xlsxParser.service').default;
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'validated-preview-'));
+  const file=path.join(dir,'contacts.csv');
+  try {
+    fs.writeFileSync(file,'Name,Phone number\nUS,19169435965\nUK,447879543645\nSG,+6581234567\nUS2,19169435965\nUK2,447879543645\nBad,abc\n');
+    const result=await parser.getValidatedPreview(file,{name_column:'Name'});
+    assert.equal(result.total_rows,6);
+    assert.equal(result.preview.length,5);
+    assert.equal(result.valid_count,5);
+    assert.equal(result.invalid_count,1);
+    assert.equal(result.errors[0].row,7);
+    assert.equal(result.errors[0].phone_number,'abc');
+    assert.equal(result.normalized_preview[0].phone_number,'+19169435965');
+    assert.equal(result.selected_phone_column,'Phone number');
+    await assert.rejects(parser.getValidatedPreview(file,{phone_column:'missing'}),/was not found/);
+    await assert.rejects(parser.getValidatedPreview(file,{phone_column:[]}),/must be a string/);
+    fs.writeFileSync(file,'Name,Number\nSG,81234567\nBad,abc\n');
+    const hinted=await parser.getValidatedPreview(file,{phone_column:'Number',country_code:'65'});
+    assert.equal(hinted.valid_count,1); assert.equal(hinted.invalid_count,1);
+    const imported=await parser.parseContactsFromFile(file,'65','Number');
+    assert.equal(hinted.valid_count,imported.valid);
+    assert.deepEqual(hinted.errors,imported.errors);
+  } finally {fs.unlinkSync(file);fs.rmdirSync(dir);}
+});
+test('Needs country differs from invalid and selected countries resolve local numbers', async () => {
+  assert.throws(() => parseSpreadsheetPhone('9372597458'), error => error.code === 'NEEDS_COUNTRY');
+  assert.deepEqual(parseSpreadsheetPhone('9372597458', 'IN'), {phone_number:'9372597458',country_code:'91'});
+  assert.deepEqual(parseSpreadsheetPhone('7879543645', 'GB'), {phone_number:'7879543645',country_code:'44'});
+  for (const value of ['+447879543645','447879543645']) {
+    assert.deepEqual(parseSpreadsheetPhone(value), {phone_number:'7879543645',country_code:'44'});
+  }
+  assert.throws(() => parseSpreadsheetPhone('+1234'), error => error.code !== 'NEEDS_COUNTRY');
+  assert.throws(() => parseSpreadsheetPhone('abc'), error => error.code !== 'NEEDS_COUNTRY');
+  const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+  const parser=require('../src/app/services/xlsxParser.service').default;
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'country-preview-')), file=path.join(dir,'contacts.csv');
+  try {
+    fs.writeFileSync(file,'phone\n+447879543645\n447879543645\n9372597458\nabc\n');
+    const result=await parser.getValidatedPreview(file);
+    assert.equal(result.total_rows,4);assert.equal(result.valid_count,2);
+    assert.equal(result.invalid_count,1);assert.equal(result.needs_country_count,1);
+    assert.equal(result.importable_count,3);
+    assert.equal(result.needs_country[0].country_code,null);
+    assert.equal(result.errors[0].status,'invalid');
+  } finally {fs.unlinkSync(file);fs.rmdirSync(dir);}
+});
+
+const { parseStoredContactPhone } = require('../src/app/utils/importPhone');
+test('storage preserves full numbers and retains unresolved numeric contacts', () => {
+  for (const input of ['919372597458', '+919372597458']) {
+    assert.deepEqual(parseStoredContactPhone(input), {phone_number:'+919372597458',country_code:'91',is_valid:true});
+  }
+  assert.deepEqual(parseStoredContactPhone('9372597458'), {phone_number:'+9372597458',country_code:null,is_valid:false});
+  assert.deepEqual(parseStoredContactPhone('9372597458', '91'), {phone_number:'+919372597458',country_code:'91',is_valid:true});
+  for (const input of ['abc', '12+34567', '1234567890123456', 1234567890123456]) assert.throws(() => parseStoredContactPhone(input));
 });

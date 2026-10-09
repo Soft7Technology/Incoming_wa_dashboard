@@ -1,9 +1,9 @@
-import { buildRecipient } from '../../app/utils/importPhone';
+import { campaignRecipientNumber } from '../../app/utils/campaignPhone';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Worker, Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
 import { campaignCapacity, createCapacitySampler } from '../campaignCapacity';
-import { waitForCampaignPermit, getCampaignSenderCooldown, getCampaignPairCooldown, setCampaignSenderCooldown, setCampaignPairCooldown } from '../campaignPacing';
+import { waitForCampaignPermit, getCampaignSenderCooldown, getCampaignPairCooldown } from '../campaignPacing';
 import { acquireCampaignUserSlot, refreshCampaignUserSlot, releaseCampaignUserSlot } from '../campaignUserSlots';
 import { isConnectionAcquireError } from '../campaignDatabaseError';
 import PhoneNumberModel from '../../app/models/phoneNumber.model';
@@ -18,10 +18,6 @@ import { v4 as uuidv4 } from "uuid";
 
 
 class CampaignInfrastructureError extends Error {}
-class CampaignProviderLimitError extends Error {
-  constructor(public readonly code: string, message: string, public readonly recipient: string) { super(message); }
-}
-const providerLimitCodes = new Set(['130429', '131056', '80007', '80008', '4', '17', '32', '613']);
 const capacitySampler = createCapacitySampler();
 const healthTimer = setInterval(() => {
   capacitySampler.sample();
@@ -29,6 +25,7 @@ const healthTimer = setInterval(() => {
     .then(queue => console.info('[Campaign Worker] Health', {
       ...capacitySampler.metrics(), queue,
       concurrency: campaignCapacity.concurrency,
+    maxStalledCount: 0,
       messageConcurrency: campaignCapacity.messageConcurrency,
       maxRunningPerUser: campaignCapacity.maxRunningPerUser,
       messagesPerSecond: campaignCapacity.messagesPerSecond,
@@ -38,6 +35,8 @@ const healthTimer = setInterval(() => {
 healthTimer.unref();
 
 export async function processCampaignExecution(job: Job<CampaignExecutionJobData>, token?: string) {
+  // Overrides attempts on jobs queued before the no-retry policy was deployed.
+  job.discard();
   const { campaignId, companyId } = job.data;
   const redis = await campaignExecutionQueue.client;
   const lockKey = `campaign-execution-lock:${campaignId}`;
@@ -62,7 +61,11 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const campaign = await CampaignModel.findById(campaignId);
     if (!campaign || campaign.deleted_at) return { status: 'removed' };
     if (campaign.company_id !== companyId) throw new Error('Campaign does not belong to company');
-    if (['paused', 'completed'].includes(campaign.status)) {
+    if (campaign.status === 'failed' && await CampaignModel.completeIfNoPendingMessages(campaignId)) {
+      await releaseCampaignUserSlot(campaign.user_id, campaignId);
+      return { status: 'completed' };
+    }
+    if (['paused', 'completed', 'failed'].includes(campaign.status)) {
       await releaseCampaignUserSlot(campaign.user_id, campaignId);
       return { status: campaign.status };
     }
@@ -84,6 +87,9 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (!template) throw new Error('Template not found');
     const phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
     if (!phone) throw new Error('Business phone number not found');
+    if (phone.user_id !== campaign.user_id || phone.company_id !== campaign.company_id) {
+      throw new Error('Campaign cannot run: the selected sending phone number is not connected to the campaign user account.');
+    }
     campaign.phone_number_id = phone.phone_number_id;
     while (true) {
     const batchStartedAt = Date.now();
@@ -95,19 +101,16 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const batchSize = capacitySampler.sample();
     console.info('[Campaign Worker] Batch starting', { campaignId, jobId: job.id, attempt: job.attemptsMade + 1, ...capacitySampler.metrics() });
     phase = 'selecting recipients';
-    const pending = job.data.status === 'failed'
-      ? await CampaignMessageModel.getFailedMessages(campaignId, batchSize, new Date(job.timestamp))
-      : await CampaignMessageModel.getPendingMessages(campaignId, batchSize, job.data.status, job.data.error_message);
+    if (job.data.status && job.data.status !== 'pending') throw new Error('Campaign recipient retries are disabled');
+    const pending = await CampaignMessageModel.getPendingMessages(campaignId, batchSize);
     if (!pending.length) {
-      const retryAt = await CampaignMessageModel.getNextRetryAt(campaignId, job.data.status === 'failed' ? new Date(job.timestamp) : undefined);
+      const retryAt = await CampaignMessageModel.getNextRetryAt(campaignId);
       if (retryAt) {
         const delayMs = Math.max(250, new Date(retryAt).getTime() - Date.now());
         console.info('[Campaign Worker] Waiting for deferred recipients', { campaignId, delayMs });
         return await defer(delayMs);
       }
-      const stillPending = job.data.status === 'failed'
-        ? (await CampaignMessageModel.getFailedMessages(campaignId, 1, new Date(job.timestamp))).length > 0
-        : await CampaignMessageModel.getPendingCount(campaignId) > 0;
+      const stillPending = await CampaignMessageModel.getPendingCount(campaignId) > 0;
       if (stillPending) return await defer(250);
       phase = 'completing campaign';
       const counts = await CampaignMessageModel.getCampaignStats(campaignId);
@@ -140,17 +143,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
       results.push(...settled);
       const infrastructureFailure = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignInfrastructureError);
       if (infrastructureFailure?.status === 'rejected') throw infrastructureFailure.reason;
-      const providerLimit = settled.find(result => result.status === 'rejected' && result.reason instanceof CampaignProviderLimitError);
-      if (providerLimit?.status === 'rejected') {
-        const delayMs = providerLimit.reason.code === '131056' ? 6000 : 30000;
-        if (providerLimit.reason.code === '131056') {
-          await setCampaignPairCooldown(campaign.phone_number_id, providerLimit.reason.recipient, delayMs);
-        } else {
-          await setCampaignSenderCooldown(campaign.phone_number_id, delayMs);
-        }
-        console.warn('[Campaign Worker] Provider limit; recipients remain pending', { campaignId, phoneNumberId: campaign.phone_number_id, code: providerLimit.reason.code, delayMs });
-        return await defer(delayMs);
-      }
+
     }
     const errors = { ...(job.data.errorCounts || {}) };
     for (const result of results) {
@@ -163,7 +156,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const errorCounts = Object.fromEntries(Object.entries(errors).sort((a,b) => b[1]-a[1]).slice(0,100));
     phase = 'updating progress';
     // Counting every pending row after every small batch becomes quadratic for large campaigns.
-    const checkProgress = job.data.status !== 'failed' && Date.now() - (job.data.progressCheckedAt || 0) >= 20000;
+    const checkProgress = Date.now() - (job.data.progressCheckedAt || 0) >= 20000;
     const pendingCount = checkProgress ? await CampaignMessageModel.getPendingCount(campaignId) : undefined;
     const progress = pendingCount === undefined ? undefined : Math.min(100, Math.round((campaign.total_recipients - pendingCount) / Math.max(1, campaign.total_recipients) * 100));
     if (progress !== undefined) await job.updateProgress(progress);
@@ -180,15 +173,15 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     }
   } catch (error) {
     if (error instanceof DelayedError) throw error;
+    // Database availability must not turn a recipient failure into a stopped campaign.
+    // Resume pending rows only; the durable pre-send claim excludes attempted rows.
     if (isConnectionAcquireError(error)) {
-      console.warn('[Campaign Worker] Database pool exhausted; retrying batch without failing campaign', {
-        campaignId, jobId: job.id, userId: slotUserId, phase, delayMs: 30000,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      return await defer(30000);
+      console.warn('[Campaign Worker] Waiting for database connection; no message resend', { campaignId, phase });
+      releaseSlot = true;
+      return await defer(5000);
     }
     console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, phase, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
-    if (job.attemptsMade + 1 >= (job.opts.attempts || 1)) {
+    {
       const current = await CampaignModel.findById(campaignId);
       if (current?.company_id === companyId && current.status === 'running') {
         if (await CampaignModel.completeIfNoPendingMessages(campaignId)) {
@@ -196,7 +189,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
           console.info('[Campaign Worker] Completed after execution error because no recipients remain pending', { campaignId, jobId: job.id, phase });
           return { status: 'completed' };
         }
-        console.error('[Campaign Worker] Campaign failed after exhausted retries', { campaignId, jobId: job.id, reason: getMessageError(error) });
+        console.error('[Campaign Worker] Campaign stopped by an execution error; pending recipients remain', { campaignId, jobId: job.id, reason: getMessageError(error) });
         const failure = getMessageError(error);
         await CampaignModel.markRunningJobFailed(campaignId, `${phase}: ${failure.error_code}: ${failure.error_message}`);
         releaseSlot = true;
@@ -215,6 +208,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
 async function sendCampaignMessage(campaign: any, campaignMessage: any, contact: any, template: any, phone: any, ownsLock: () => boolean) {
   let infrastructureOperation = true;
   let recipientPhone = '';
+  let attemptReserved = false;
   try {
     if (!contact) {
       await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
@@ -223,18 +217,9 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
       return;
     }
 
-    // Skip invalid numbers
-    if (!contact.is_valid) {
-      await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', {
-        error_message: `Invalid number: ${contact.invalid_reason}`,
-      });
-      await CampaignModel.incrementCount(campaign.id, 'invalid_numbers_count');
-      return;
-    }
-
     infrastructureOperation = false;
     // Resolve legacy local numbers using this contact's country, never the sender's country.
-    recipientPhone = buildRecipient(contact.phone_number, contact.country_code);
+    recipientPhone = campaignRecipientNumber(contact.phone_number, contact.country_code);
     // Build template payload
     const templatePayload = buildTemplatePayload(
       template,
@@ -247,13 +232,19 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     infrastructureOperation = true;
     if (!await waitForCampaignPermit(campaign.phone_number_id, recipientPhone)) {
       const pairCooldown = await getCampaignPairCooldown(campaign.phone_number_id, recipientPhone);
-      await CampaignMessageModel.deferRetry(campaignMessage.id, Math.max(1000, pairCooldown));
+      await CampaignMessageModel.deferPendingRecipient(campaignMessage.id, Math.max(1000, pairCooldown));
       return;
     }
     if (!ownsLock()) return;
 
     infrastructureOperation = false;
     // Send message via MessageService
+    // Persist a terminal reservation BEFORE calling Meta. If the process dies or
+    // acknowledgement persistence fails, this recipient cannot be selected again.
+    infrastructureOperation = true;
+    if (!await CampaignMessageModel.claimSingleAttempt(campaignMessage.id)) return;
+    attemptReserved = true;
+    infrastructureOperation = false;
     const message = await MessageService.sendMessage({
       messageUUID,
       user_id: campaign.user_id,
@@ -264,57 +255,38 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
       to: recipientPhone,
       type: 'template',
       template: templatePayload,
-    }, { phoneNumber: phone, templateRecord: template });
+    }, { phoneNumber: phone, templateRecord: template, allowUnverifiedRecipient: true,
+      source: 'campaign-worker', campaignMessageId: campaignMessage.id });
 
     infrastructureOperation = true;
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
+    if (attemptReserved) {
+      // The recipient is already durably failed/unconfirmed. Failure to save an
+      // outcome must neither resend it nor stop unrelated recipients.
+      const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_MESSAGE_EXISTS'].includes(error.code);
+      console.error('[Campaign Worker] Recipient attempt ended without confirmation', {
+        campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: getMessageError(error),
+      });
+      try {
+        await CampaignMessageModel.updateStatus(campaignMessage.id, skipped ? 'skipped' : 'failed', {
+          ...getMessageError(error), retry_after: null,
+        });
+      } catch (saveError) {
+        console.error('[Campaign Worker] Retaining failed/unconfirmed reservation', {
+          campaignId: campaign.id, campaignMessageId: campaignMessage.id, error: saveError,
+        });
+      }
+      if (!skipped) await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
+      return;
+    }
+    if (error.code === 'CONTACT_OPTED_OUT') {
+      await CampaignMessageModel.updateStatus(campaignMessage.id, 'skipped', { error_code: error.code, error_message: error.message, retry_after: null });
+      return;
+    }
     if (isConnectionAcquireError(error)) {
       console.warn('[Campaign Worker] Recipient database connection unavailable', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: error.message });
       throw new CampaignInfrastructureError(error.message);
-    }
-    if (!infrastructureOperation) {
-      const failure = getMessageError(error);
-      if (failure.error_code === '131056') {
-        console.warn('[Campaign Worker] Pair limit; retrying only this recipient later', { campaignId: campaign.id, campaignMessageId: campaignMessage.id });
-        await setCampaignPairCooldown(campaign.phone_number_id, recipientPhone, 6000);
-        try {
-          const attempts = await CampaignMessageModel.deferRetry(campaignMessage.id, 6000, true);
-          if (attempts >= 10) {
-            await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-              ...failure,
-              error_message: `Pair rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
-            });
-            await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
-            console.error('[Campaign Worker] Recipient exhausted pair-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, attempts });
-          }
-        } catch (retryError) {
-          throw new CampaignInfrastructureError(retryError instanceof Error ? retryError.message : String(retryError));
-        }
-        return;
-      }
-      if (providerLimitCodes.has(failure.error_code)) {
-        const delayMs = 30000;
-        let attempts: number;
-        try {
-          attempts = await CampaignMessageModel.deferRetry(campaignMessage.id, delayMs, true);
-          if (attempts >= 10) {
-            await CampaignMessageModel.updateStatus(campaignMessage.id, 'failed', {
-              ...failure,
-              error_message: `Provider rate limit persisted after ${attempts} attempts: ${failure.error_message}`,
-            });
-          }
-        } catch (retryError) {
-          throw new CampaignInfrastructureError(retryError instanceof Error ? retryError.message : String(retryError));
-        }
-        if (attempts >= 10) {
-          await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
-          console.error('[Campaign Worker] Recipient exhausted provider-limit retries', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, attempts });
-          return;
-        }
-        console.warn('[Campaign Worker] Provider temporarily rejected send; recipient deferred', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, code: failure.error_code, attempts, delayMs, reason: failure.error_message });
-        throw new CampaignProviderLimitError(failure.error_code, failure.error_message, recipientPhone);
-      }
     }
     if (infrastructureOperation) {
       console.error('[Campaign Worker] Recipient infrastructure error', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, error });
@@ -397,7 +369,7 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
         if (bodyVariables.length > 0) {
           const parameters = bodyVariables.map((varName: string) => ({
             type: 'text',
-            text: variables[varName] || '',
+            text: variables[varName] === undefined ? '' : variables[varName],
           }));
 
           components.push({
@@ -445,6 +417,7 @@ export const campaignExecutionWorker = new Worker<CampaignExecutionJobData>(
   {
     connection: redisConfig,
     concurrency: campaignCapacity.concurrency,
+    maxStalledCount: 0,
   }
 );
 
@@ -453,7 +426,7 @@ campaignExecutionWorker.on('completed', (job) => {
 });
 
 campaignExecutionWorker.on('closed', () => { clearInterval(healthTimer); capacitySampler.close(); });
-campaignExecutionWorker.on('stalled', jobId => console.warn('[Campaign Worker] Job stalled; BullMQ will recover it', { jobId }));
+campaignExecutionWorker.on('stalled', jobId => console.warn('[Campaign Worker] Job stalled; automatic resend disabled', { jobId }));
 
 campaignExecutionWorker.on('failed', (job, err) => {
   console.error('[Campaign Worker] Job attempt failed', { jobId: job?.id, campaignId: job?.data.campaignId, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, reason: getMessageError(err), stack: err.stack });

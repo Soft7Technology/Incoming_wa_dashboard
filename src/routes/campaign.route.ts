@@ -9,6 +9,7 @@ const CampaignRoute = Router();
 // All campaign endpoints require authentication (applied at route group level)
 
 // Campaign CRUD
+CampaignRoute.post('/preview-recipients', validateCampaignPhones, CampaignController.previewRecipients);
 CampaignRoute.post('/', validateCampaignPhones, checkPlanLimit('Campaign'), CampaignController.createCampaign);
 // CampaignRoute.post('/', CampaignController.createCampaign);
 CampaignRoute.get('/', CampaignController.getCampaigns);

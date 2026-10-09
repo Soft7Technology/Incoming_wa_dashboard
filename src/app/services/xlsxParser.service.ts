@@ -1,5 +1,5 @@
 import { resolveImportColumn } from '../utils/importColumn';
-import { parseImportedPhone } from '../utils/importPhone';
+import { parseStoredContactPhone } from '../utils/importPhone';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
 // import { COUNTRY_PHONE_LENGTHS } from '../utils';
@@ -8,7 +8,8 @@ interface ParsedContact {
   phone_number: string;
   name?: string;
   email?: string;
-  country_code?: string;
+  country_code?: string | null;
+  is_valid?: boolean;
   attributes: Record<string, any>;
 }
 
@@ -17,7 +18,15 @@ interface ParseResult {
   contacts: ParsedContact[];
   valid: number;
   invalid: number;
-  errors: Array<{ row: number; error: string; phone_number?: unknown }>;
+  needs_country: number;
+  errors: Array<{ row: number; error: string; status: 'invalid' | 'needs_country'; phone_number?: unknown }>;
+}
+
+export interface ImportPreviewOptions {
+  phone_column?: string;
+  name_column?: string;
+  email_column?: string;
+  country_code?: string;
 }
 
 class XLSXParserService {
@@ -31,7 +40,7 @@ class XLSXParserService {
    */
   async parseContactsFromFile(
     filePath: string,
-    country_code: string,
+    country_code: string = '',
     phoneColumn?: string,
     nameColumn?: string,
     emailColumn?: string,
@@ -66,9 +75,10 @@ class XLSXParserService {
       }
 
       const contacts: ParsedContact[] = [];
-      const errors: Array<{ row: number; error: string; phone_number?: unknown }> = [];
+      const errors: Array<{ row: number; error: string; status: 'invalid' | 'needs_country'; phone_number?: unknown }> = [];
       let validCount = 0;
       let invalidCount = 0;
+      let needsCountryCount = 0;
 
       const codeColumn = headers.find(header =>
         ['countrycode', 'callingcode', 'dialcode', 'country'].includes(header.trim().toLowerCase().replace(/[\s_-]/g, '')),
@@ -78,7 +88,7 @@ class XLSXParserService {
       rawData.forEach((row, index) => {
         try {
           const rowCode = codeColumn ? String(row[codeColumn] ?? '').trim() : '';
-          const parsedPhone = parseImportedPhone(row[phoneColumn!], rowCode || country_code || '', Boolean(rowCode), true);
+          const parsedPhone = parseStoredContactPhone(row[phoneColumn!], rowCode || country_code || '');
 
           // Build contact object
           const contact: ParsedContact = {
@@ -107,10 +117,13 @@ class XLSXParserService {
           });
 
           contacts.push(contact);
-          validCount++;
+          if (parsedPhone.country_code) validCount++;
+          else needsCountryCount++;
         } catch (error: any) {
-          invalidCount++;
-          errors.push({ row: index + 2, error: error.message, phone_number: row[phoneColumn!] });
+          const status = error.code === 'NEEDS_COUNTRY' ? 'needs_country' : 'invalid';
+          if (status === 'needs_country') needsCountryCount++;
+          else invalidCount++;
+          errors.push({ row: index + 2, status, error: error.message, phone_number: row[phoneColumn!] });
         }
       });
 
@@ -119,6 +132,7 @@ class XLSXParserService {
         contacts,
         valid: validCount,
         invalid: invalidCount,
+        needs_country: needsCountryCount,
         errors,
       };
     } catch (error: any) {
@@ -155,6 +169,30 @@ class XLSXParserService {
     }
 
     return null;
+  }
+
+  /** Validate the entire file with the worker's parser while retaining the raw sample. */
+  async getValidatedPreview(filePath: string, options: ImportPreviewOptions = {}) {
+    for (const key of ['phone_column', 'name_column', 'email_column', 'country_code'] as const) {
+      if (options[key] !== undefined && typeof options[key] !== 'string') {
+        throw new Error(`${key} must be a string`);
+      }
+    }
+    const preview = await this.getFilePreview(filePath);
+    const parsed = await this.parseContactsFromFile(
+      filePath, options.country_code || '', options.phone_column, options.name_column, options.email_column,
+    );
+    return {
+      ...preview,
+      selected_phone_column: resolveImportColumn(preview.headers, options.phone_column) || preview.detected_phone_column,
+      valid_count: parsed.valid,
+      importable_count: parsed.contacts.length,
+      needs_country: parsed.contacts.filter(contact => !contact.country_code),
+      invalid_count: parsed.invalid,
+      needs_country_count: parsed.needs_country,
+      normalized_preview: parsed.contacts.slice(0, 5),
+      errors: parsed.errors,
+    };
   }
 
   async getFilePreview(filePath: string, rows: number = 5): Promise<any> {

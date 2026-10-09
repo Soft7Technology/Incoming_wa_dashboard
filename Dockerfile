@@ -18,6 +18,7 @@ RUN pnpm install
 
 # Copy source code
 COPY src ./src
+COPY scripts/copy-facebook-assets.cjs ./scripts/copy-facebook-assets.cjs
 
 # Build TypeScript
 RUN pnpm run build

@@ -32,9 +32,14 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   // Contact filters accept multiple country codes in repeated query parameters.
   app.use(hpp({ whitelist: ['country_code'] }));
   app.use(compression());
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '10mb', verify: (req, _res, buffer) => {
+    // Signature validation must use the exact bytes received, before JSON parsing.
+    if (req.url?.split('?')[0] === '/v1/facebook/webhook') {
+      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
+    }
+  } }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(morgan('dev'));
+  app.use(morgan('dev', { skip: req => req.originalUrl.startsWith('/v1/facebook/') }));
   // app.use(express.json());
 
   // Serve uploaded files

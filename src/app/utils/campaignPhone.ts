@@ -1,4 +1,4 @@
-import { parseImportedPhone, parseWhatsAppPhone } from './importPhone';
+import { parseImportedPhone, parseWhatsAppPhone, parseStoredContactPhone } from './importPhone';
 
 interface SavedPhone { id: string; phone_number: string; country_code?: string | null }
 
@@ -45,4 +45,18 @@ export function validateCampaignPhoneInputs(filters: any, countryCode?: unknown)
       throw new Error(`contact_filters.contactNumber[${index}] must be a phone number string or exact positive integer`);
     }
   });
+}
+
+/** Campaigns may attempt unresolved numeric recipients; never invent a calling code. */
+export function campaignRecipientNumber(value: string, countryCode?: string | null): string {
+  return parseStoredContactPhone(value, countryCode || '').phone_number.replace(/^\+/, '');
+}
+
+export function resolveOptionalCampaignPhone(value: string, contacts: SavedPhone[], countryCode?: string) {
+  try {
+    return resolveCampaignPhone(value, contacts, { countryCode, allowBareInternational: true });
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Multiple contacts')) throw error;
+    return { ...parseStoredContactPhone(value, countryCode || ''), contact: undefined };
+  }
 }

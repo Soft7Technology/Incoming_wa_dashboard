@@ -10,6 +10,18 @@ import campaignModel from '../../models/campaign.model';
 import activityLogsModel from '../../models/activityLogs.model';
 
 class CampaignController {
+  previewRecipients = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    if (!req.body.phone_number_id) {
+      throw new HTTP400Error({ message: 'phone_number_id is required' });
+    }
+    const result = await CampaignService.previewRecipients(req.ownerId ?? req.userId!, req.companyId!, {
+      phone_number_id: req.body.phone_number_id,
+      contact_filters: req.body.contact_filters,
+      country_code: req.body.country_code,
+    });
+    return successResponse(req, res, 'Campaign recipients preview retrieved successfully', result);
+  });
+
   /**
    * POST /v1/campaigns
    * Create new campaign
@@ -137,8 +149,7 @@ class CampaignController {
    */
    reBroadcastCampaign = tryCatchAsync(async (req: Request, res: Response) => {
     const { id } = req.params;
-    const result = await CampaignService.reBroadcastCampaign(id);
-    return successResponse(req, res, result.message);
+    await CampaignService.reBroadcastCampaign(id);
   });
   
 

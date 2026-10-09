@@ -45,3 +45,15 @@ test('campaign phone payload validation rejects malformed arrays and unsafe numb
   }
   assert.doesNotThrow(() => validate({ contactNumber: [919372597458, '+6581234567', '81234567'] }, '+65'));
 });
+
+const {resolveOptionalCampaignPhone, campaignRecipientNumber}=require('../src/app/utils/campaignPhone');
+test('campaigns retain unresolved numbers without guessing a country',()=>{
+ for(const input of ['9372597458','+9372597458']) {
+  const result=resolveOptionalCampaignPhone(input,[]);
+  assert.equal(result.country_code,null);
+  assert.equal(campaignRecipientNumber(result.phone_number,result.country_code),'9372597458');
+ }
+ assert.equal(campaignRecipientNumber('+919372597458','91'),'919372597458');
+ assert.equal(campaignRecipientNumber('9372597458','91'),'919372597458');
+ for(const input of ['abc','12+345','1234567890123456']) assert.throws(()=>resolveOptionalCampaignPhone(input,[]));
+});

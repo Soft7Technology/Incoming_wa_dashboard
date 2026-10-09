@@ -89,3 +89,99 @@ export function buildRecipient(phone: unknown, countryCode?: unknown): string {
   }
   return code + raw;
 }
+
+/** Canonical contact storage. country_code is derived metadata, not part of the phone string twice. */
+export function toContactPhone(identity: { phone_number: string; country_code: string }) {
+  return { phone_number: `+${identity.country_code}${identity.phone_number}`, country_code: identity.country_code };
+}
+
+export class NeedsCountryError extends Error {
+  readonly code = 'NEEDS_COUNTRY';
+  constructor() { super('Needs country: select an import country or provide a country_code column'); }
+}
+
+/** Validate full international numbers with library metadata; never assume a default country. */
+export function parseSpreadsheetPhone(value: unknown, optionalCode = '') {
+  if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0 || value >= 1e15)) {
+    throw new Error('Excel phone number must be a positive exact integer with at most 15 digits');
+  }
+  const raw = expandScientificPhone(String(value ?? '').replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').trim());
+  if (!raw || !/^[+\d\s().-]+$/.test(raw)) throw new Error('Invalid phone number characters');
+  const cleaned = raw.replace(/[\s().-]/g, '');
+  if (!/^(?:[+]|00)?[0-9]+$/.test(cleaned)) throw new Error('Invalid phone number format');
+  if (cleaned.startsWith('+') || cleaned.startsWith('00')) return parseImportedPhone(cleaned);
+  if (cleaned.length > 15 || cleaned.length < 4) throw new Error('Invalid phone number length');
+
+  // With reliable country context, resolve local numbers within that country first.
+  // An explicit international number from another country remains acceptable.
+  if (optionalCode) {
+    try { return parseImportedPhone(cleaned, optionalCode); }
+    catch (error) {
+      const international = parsePhoneNumberFromString(`+${cleaned}`);
+      if (international?.isValid()) return { phone_number: international.nationalNumber, country_code: international.countryCallingCode };
+      throw error;
+    }
+  }
+  const international = parsePhoneNumberFromString(`+${cleaned}`);
+  if (international?.isValid()) return { phone_number: international.nationalNumber, country_code: international.countryCallingCode };
+  throw new NeedsCountryError();
+}
+
+/** Importable is different from sendable: preserve numeric contacts without guessing a country. */
+export function parseStoredContactPhone(value: unknown, optionalCode = '') {
+  if (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0 || value >= 1e15)) {
+    throw new Error('Excel phone number must be an exact positive integer with at most 15 digits');
+  }
+  const raw = expandScientificPhone(String(value ?? '').replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '').trim());
+  if (!raw || !/^[+\d\s().-]+$/.test(raw)) throw new Error('Invalid phone number characters');
+  const cleaned = raw.replace(/[\s().-]/g, '');
+  if (!/^[+]?[0-9]+$/.test(cleaned)) throw new Error('Invalid phone number format');
+  const digits = cleaned.startsWith('+') ? cleaned.slice(1) : cleaned.startsWith('00') ? cleaned.slice(2) : cleaned;
+  if (digits.length < 4 || digits.length > 15) throw new Error('Phone number must contain 4 to 15 digits');
+  try {
+    const identity = parseSpreadsheetPhone(raw, optionalCode);
+    return { ...toContactPhone(identity), is_valid: true };
+  } catch {
+    // Missing country context does not prevent saving. No calling code is invented.
+    return { phone_number: `+${digits}`, country_code: null, is_valid: false };
+  }
+}
+
+/** An explicitly selected country on an edit replaces the saved calling code. */
+export function parseContactPhoneUpdate(value: unknown, countryCode: unknown,
+  previous: { phone_number: string; country_code?: string | null }) {
+  if (countryCode === undefined || countryCode === null || countryCode === '') {
+    return parseStoredContactPhone(value, previous.country_code || '');
+  }
+  if (typeof countryCode !== 'string') throw new Error('Country code must be a calling code or an ISO country code');
+  const hint = countryCode.trim().toUpperCase();
+  const code = isSupportedCountry(hint) ? getCountryCallingCode(hint as CountryCode) : hint.replace(/^(?:\+|00)/, '');
+  if (!/^[1-9]\d{0,2}$/.test(code) || parsePhoneNumberFromString(`+${code}1234567890`)?.countryCallingCode !== code) {
+    throw new Error('Country code must be a valid calling code or an ISO country code');
+  }
+
+  // Reuse storage validation for characters, scientific notation and digit bounds.
+  const input = parseStoredContactPhone(value);
+  let national = input.phone_number.slice(1);
+  const oldCode = String(previous.country_code || '').replace(/^\+/, '');
+  const oldDigits = previous.phone_number.replace(/[^0-9]/g, '').replace(/^00/, '');
+  const previousIsInternational = /^\s*(?:\+|00)/.test(previous.phone_number);
+  if (national === oldDigits && previousIsInternational && oldCode && national.startsWith(oldCode)) {
+    national = national.slice(oldCode.length);
+  } else if (input.country_code === code ||
+      (/^\s*(?:\+|00)/.test(String(value)) && national.startsWith(code))) {
+    national = national.slice(code.length);
+  } else if (input.is_valid && /^\s*(?:\+|00)/.test(String(value))) {
+    national = national.slice(input.country_code!.length);
+  }
+
+  // An unresolved number's leading '+' does not establish a country prefix.
+  // Keep its digits and add the selected code, even if it remains unsendable.
+  const local = parsePhoneNumberFromString(national, { defaultCallingCode: code });
+  if (local?.isValid() && local.countryCallingCode === code) national = local.nationalNumber;
+  const phoneNumber = `+${code}${national}`;
+  if (!/^[+][0-9]{4,15}$/.test(phoneNumber)) throw new Error('Phone number must contain 4 to 15 digits');
+  const parsed = parsePhoneNumberFromString(phoneNumber);
+  return { phone_number: phoneNumber, country_code: code,
+    is_valid: Boolean(parsed?.isValid() && parsed.countryCallingCode === code) };
+}

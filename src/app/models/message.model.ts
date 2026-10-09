@@ -1,3 +1,4 @@
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { buildRecipient, parseWhatsAppPhone } from '../utils/importPhone';
 import { BaseModel } from '@surefy/models/base.model';
 
@@ -6,8 +7,37 @@ class MessageModel extends BaseModel {
     super('messages');
   }
 
+  /** Commit the outbound row before Meta; even an uncertain outcome blocks a resend. */
+  async createOutbound(data: {
+    company_id?: string; campaign_id?: string | null; phone_number_id: string;
+    to_phone: string; [key: string]: unknown;
+  }) {
+    if (!data.campaign_id) return this.create(data);
+    const recipient = data.to_phone.replace(/[^0-9]/g, '');
+    return this.db.transaction(async trx => {
+      // Serialize competing callers across API and worker processes, using existing history.
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+        `${data.company_id}:${data.phone_number_id}`, recipient,
+      ]);
+      if (data.campaign_id) {
+        const existing = await trx('messages').where({
+          company_id: data.company_id, campaign_id: data.campaign_id,
+          phone_number_id: data.phone_number_id, direction: 'outbound',
+        }).whereRaw("regexp_replace(to_phone, '[^0-9]', '', 'g') = ?", [recipient]).first('id');
+        if (existing) {
+          throw Object.assign(new HTTP400Error({ message: 'This campaign already sent or attempted this recipient. Resending is disabled.' }), {
+            code: 'CAMPAIGN_MESSAGE_EXISTS',
+          });
+        }
+      }
+      return this.create(data, trx);
+    }, { isolationLevel: 'read committed' });
+  }
+
   /** One lookup for the current contact page; never match national-number suffixes. */
-  async findLatestForContacts(contacts: any[]): Promise<{ contact_id: string; last_message: any }[]> {
+  async findLatestForContacts(contacts: any[]): Promise<{
+    contact_id: string; last_message: any; read_count: string | number; unread_count: string | number;
+  }[]> {
     const identities = contacts.flatMap(contact => {
       if (!contact.user_id || !contact.company_id || !contact.phone_number_id) return [];
       try {
@@ -26,7 +56,7 @@ class MessageModel extends BaseModel {
     if (!identities.length) return [];
 
     const result = await this.db.raw(`
-      SELECT c.contact_id, latest.last_message
+      SELECT c.contact_id, latest.last_message, counts.read_count, counts.unread_count
       FROM jsonb_to_recordset(?::jsonb) AS c(
         contact_id text, user_id uuid, company_id uuid, phone_number_id uuid, recipient text
       )
@@ -36,13 +66,26 @@ class MessageModel extends BaseModel {
         WHERE m.user_id = c.user_id
           AND m.company_id = c.company_id
           AND m.phone_number_id = c.phone_number_id
-          AND (
-            (m.direction = 'inbound' AND regexp_replace(m.from_phone, '[^0-9]', '', 'g') = c.recipient)
-            OR (m.direction = 'outbound' AND regexp_replace(m.to_phone, '[^0-9]', '', 'g') = c.recipient)
-          )
+          AND CASE WHEN m.direction = 'inbound'
+            THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+            ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END = c.recipient
         ORDER BY m.created_at DESC NULLS LAST, m.id DESC
         LIMIT 1
       ) latest ON TRUE
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NOT NULL OR m.status = 'read' OR m.read_at IS NOT NULL) AS read_count,
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NULL AND m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL) AS unread_count
+        FROM messages m
+        WHERE m.user_id = c.user_id
+          AND m.company_id = c.company_id
+          AND m.phone_number_id = c.phone_number_id
+          AND m.direction = 'inbound'
+          AND m.status IS DISTINCT FROM 'deleted'
+          AND CASE WHEN m.direction = 'inbound'
+            THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+            ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END = c.recipient
+      ) counts ON TRUE
     `, [JSON.stringify(identities)]);
     return result.rows;
   }
@@ -279,6 +322,44 @@ class MessageModel extends BaseModel {
 
 
 
+  async findForInboxRead(scope: { user_id: string; company_id: string; phone_number_id: string },
+    target: { identifier?: string; recipient?: string }) {
+    const query = this.query().where(scope);
+    if (target.identifier) {
+      query.where(builder => {
+        builder.where('wamid', target.identifier);
+        if (/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(target.identifier!)) {
+          builder.orWhere('id', target.identifier);
+        }
+      });
+    } else if (target.recipient) {
+      query.whereRaw(`CASE WHEN direction = 'inbound'
+        THEN regexp_replace(from_phone, '[^0-9]', '', 'g')
+        ELSE regexp_replace(to_phone, '[^0-9]', '', 'g') END = ?`, [target.recipient]);
+    } else {
+      throw new HTTP400Error({ message: 'Message identifier or recipient is required' });
+    }
+    return query.orderBy('created_at', 'desc', 'last').orderBy('id', 'desc').first();
+  }
+
+  async markInboxReadThrough(message: any) {
+    const recipient = String(message.direction === 'inbound' ? message.from_phone : message.to_phone).replace(/\D/g, '');
+    if (!recipient || !message.user_id || !message.company_id || !message.phone_number_id || !message.id) {
+      throw new HTTP400Error({ message: 'A scoped conversation message is required' });
+    }
+    return this.query().where({
+      user_id: message.user_id, company_id: message.company_id, phone_number_id: message.phone_number_id,
+    }).whereRaw(`CASE WHEN direction = 'inbound'
+      THEN regexp_replace(from_phone, '[^0-9]', '', 'g')
+      ELSE regexp_replace(to_phone, '[^0-9]', '', 'g') END = ?`, [recipient])
+      // Read the cutoff from the database to preserve PostgreSQL microseconds.
+      // A new message arriving after this snapshot must remain unread.
+      .whereRaw(`(COALESCE(created_at, '0001-01-01'), id) <=
+        (SELECT COALESCE(created_at, '0001-01-01'), id FROM messages WHERE id = ?)`, [message.id])
+      .whereNull('inbox_read_at')
+      .update({ inbox_read_at: new Date() }).returning('id');
+  }
+
   async findByWamid(wamid: string) {
     return this.query().where({ wamid }).first();
   }
@@ -353,14 +434,20 @@ class MessageModel extends BaseModel {
     }
     const validUuidIds = Array.from(new Set(targetPhoneIds.filter((id) => isUuid(id))));
 
-    const result = await this.query()
+    const result: any[] = await this.query()
       .from('messages')
-      .leftJoin('templates as t', (builder) => {
-        builder
-          .on(db.raw('CAST(t.user_id AS VARCHAR) = CAST(messages.user_id AS VARCHAR)'))
-          .andOn(db.raw(`t.name = messages.content->'template'->>'name'`))
-          .andOn(db.raw(`t.language = messages.content->'template'->'language'->>'code'`));
-      })
+      // A template name can exist in several WABAs. Never multiply message rows.
+      .joinRaw(`LEFT JOIN LATERAL (
+        SELECT template.components FROM templates AS template
+        WHERE template.company_id = messages.company_id
+          AND (template.id = messages.template_id OR (
+            messages.template_id IS NULL AND template.user_id = messages.user_id
+            AND template.name = messages.content->'template'->>'name'
+            AND template.language = messages.content->'template'->'language'->>'code'
+            AND template.waba_id = (SELECT waba_id FROM phone_numbers WHERE id = messages.phone_number_id)
+          ))
+        ORDER BY template.id LIMIT 1
+      ) AS t ON true`)
       .select([
         'messages.id',
         'messages.phone_number_id',
@@ -371,6 +458,9 @@ class MessageModel extends BaseModel {
         db.raw(`REPLACE(messages.to_phone, '+', '') AS to_phone`),
 
         'messages.status',
+        'messages.wamid',
+        'messages.read_at',
+        'messages.inbox_read_at',
         'messages.created_at',
         'messages.content',
 
@@ -494,7 +584,7 @@ class MessageModel extends BaseModel {
           .orWhereIn(
             db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`country_code || phone_number`))
+              .select(db.raw(`regexp_replace(phone_number, '[^0-9]', '', 'g')`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );
@@ -521,7 +611,7 @@ class MessageModel extends BaseModel {
           .orWhereIn(
             db.raw(contactPhoneSQL),
             db('contacts')
-              .select(db.raw(`country_code || phone_number`))
+              .select(db.raw(`regexp_replace(phone_number, '[^0-9]', '', 'g')`))
               .whereRaw('assigned_to @> ARRAY[?]::uuid[]', [userId])
               .whereNull('deleted_at')
           );

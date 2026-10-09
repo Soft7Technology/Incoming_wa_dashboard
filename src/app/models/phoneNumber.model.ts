@@ -20,7 +20,6 @@ class PhoneNumberModel extends BaseModel {
   }
 
   async findByPhoneNumberId(phoneNumberId: any) {
-    console.log('Finding phone number with ID:', phoneNumberId); // Debug log
     if (!phoneNumberId) return null;
     const isUuid = typeof phoneNumberId === 'string' && uuidValidate(phoneNumberId);
     return this.query()

@@ -19,6 +19,7 @@ export interface Message {
   sent_at?: Date;
   delivered_at?: Date;
   read_at?: Date;
+  inbox_read_at?: Date;
   failed_at?: Date;
   created_at: Date;
   updated_at: Date;
@@ -177,8 +178,11 @@ export interface SendMessageDto {
 
 export interface MarkAsReadDto {
   company_id: string;
+  user_id: string;
+  actor_id?: string;
   phone_number_id: string;
-  message_id: string;
+  message_id?: string;
+  contact_id?: string;
 }
 
 export interface MessageStatusUpdate {

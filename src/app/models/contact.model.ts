@@ -1,13 +1,14 @@
-import { parseImportedPhone as parsePhone, parseWhatsAppPhone } from '../utils/importPhone';
+import { parseStoredContactPhone } from '../utils/importPhone';
 import { countryCodeFilterValues } from '../utils/countryCode';
 import { BaseModel } from '@surefy/models/base.model';
 import db from '../../database';
 import phoneNumberModel from './phoneNumber.model';
 import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { CampaignContactSelection } from '../interfaces/campaignContacts.interface';
 
 function parseImportedPhone(value: unknown, code = '') {
-  try { return parsePhone(value, code, Boolean(code)); }
+  try { return parseStoredContactPhone(value, code); }
   catch (error: any) { throw new HTTP400Error({ message: error.message }); }
 }
 
@@ -28,6 +29,25 @@ function orAssignedTo(query: any, userId: string) {
 class ContactModel extends BaseModel {
   constructor() {
     super('contacts');
+  }
+
+  findCampaignSelection(userId: string, companyId: string, phoneNumberId: string, selection: CampaignContactSelection) {
+    if (!userId || !companyId || !phoneNumberId) {
+      throw new HTTP400Error({ message: 'User, company and sending phone context are required' });
+    }
+    const query = this.findWithFilters(userId, selection.filters, phoneNumberId)
+      .where('contacts.company_id', companyId)
+      .where('contacts.is_opted_out', false);
+
+    if (selection.filters.list_ids?.length) {
+      query.whereIn('contacts.id', builder => {
+        builder.select('contact_id').from('contact_list_relations')
+          .whereIn('list_id', selection.filters.list_ids!);
+      });
+    }
+    return query.select('contacts.*')
+      .orderBy(`contacts.${selection.sortBy}`, selection.sortOrder)
+      .orderBy('contacts.id', 'asc');
   }
 
   async findCampaignPhoneCandidates(userId: string, companyId: string, numbers: string[]) {
@@ -59,7 +79,7 @@ class ContactModel extends BaseModel {
       }
       data = { ...data, phone_number_id: phone.id };
     }
-    const normalized = { ...data, ...parseImportedPhone(data.phone_number, data.country_code || '') };
+    const normalized = { ...data, source: data.source ?? 'manually', ...parseImportedPhone(data.phone_number, data.country_code || '') };
     const insert = async (transaction: Knex.Transaction) => {
       // Serialize creates for the same owner, business number and normalized phone.
       const key = JSON.stringify([data.company_id, data.user_id, data.phone_number_id ?? null, normalized.country_code, normalized.phone_number]);
@@ -67,7 +87,7 @@ class ContactModel extends BaseModel {
       const existing = await transaction('contacts')
         .where({ user_id: data.user_id, company_id: data.company_id, phone_number_id: data.phone_number_id ?? null })
         .whereNull('deleted_at')
-        .where({ phone_number: normalized.phone_number, country_code: normalized.country_code })
+        .where({ phone_number: normalized.phone_number })
         .first();
       if (existing) {
         throw new HTTP400Error({ message: 'Cannot create contact: this phone number already exists under the same user and phone number ID' });
@@ -81,13 +101,13 @@ class ContactModel extends BaseModel {
     if (data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
     const existing = await this.findById(id);
     return super.update(id, { ...data, ...parseImportedPhone(
-      data.phone_number ?? existing.phone_number, data.country_code ?? existing.country_code ?? '',
+      data.phone_number ?? (data.country_code && !existing.country_code ? existing.phone_number.replace(/^\+/, '') : existing.phone_number), data.country_code ?? existing.country_code ?? '',
     ) });
   }
 
   async findOrCreateIncoming(data: any) {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
-    data = { ...data, ...(data.country_code ? parseImportedPhone(data.phone_number, data.country_code) : parseWhatsAppPhone(data.phone_number)) };
+    data = { ...data, ...(data.country_code ? parseImportedPhone(data.phone_number, data.country_code) : parseImportedPhone(data.phone_number)) };
     const profileName = typeof data.name === 'string' ? data.name.trim() : '';
     const isPhoneName = (name: string) => /^[+\d\s().-]+$/.test(name) && /\d/.test(name);
     const refreshName = async (contact: any) => {
@@ -105,7 +125,7 @@ class ContactModel extends BaseModel {
     const existing = await this.findOwnedByPhone(data.user_id, data.phone_number, data.phone_number_id, data.company_id, data.country_code);
     if (existing) return refreshName(existing);
     try {
-      return await this.create({ ...data, name: profileName || data.phone_number });
+      return await this.create({ ...data, name: profileName || data.phone_number, source: 'whatsApp' });
     } catch (error) {
       // Another incoming request may have inserted this contact while we waited.
       if (error instanceof HTTP400Error) {
@@ -116,26 +136,26 @@ class ContactModel extends BaseModel {
     }
   }
 
-  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string, countryCode?: string) {
-    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseWhatsAppPhone(phoneNumber);
+  async findOwnedByPhone(userId: string, phoneNumber: string, phoneNumberId?: string | null, companyId?: string, countryCode?: string | null) {
+    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseImportedPhone(phoneNumber);
     const query = this.query()
       .where('user_id', userId)
       .where('phone_number_id', phoneNumberId ?? null)
       .whereNull('deleted_at')
-      .where(identity)
+      .where({ phone_number: identity.phone_number })
       .first();
     if (companyId) query.where('company_id', companyId);
     return query;
   }
 
-  async findByPhone(userId: string, phoneNumber: string, countryCode?: string) {
-    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseWhatsAppPhone(phoneNumber);
+  async findByPhone(userId: string, phoneNumber: string, countryCode?: string | null) {
+    const identity = countryCode ? parseImportedPhone(phoneNumber, countryCode) : parseImportedPhone(phoneNumber);
     return this.query()
       .where(function (this: any) {
         this.where('user_id', userId);
         orAssignedTo(this, userId);
       })
-      .where(identity)
+      .where({ phone_number: identity.phone_number })
       .whereNull('deleted_at')
       .first();
   }
@@ -208,7 +228,7 @@ class ContactModel extends BaseModel {
 
   async bulkCreate(contacts: any[]) {
     return this.query().insert(contacts.map(contact => ({
-      ...contact, ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
+      ...contact, source: contact.source ?? 'manually', ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
     }))).returning('*');
   }
 
@@ -226,18 +246,66 @@ class ContactModel extends BaseModel {
     return Promise.all(promises);
   }
 
+  /** Sort before pagination so the latest conversation can appear on the first page. */
+  orderByLastMessage(query: Knex.QueryBuilder, direction: 'asc' | 'desc') {
+    return query.select('contacts.*').joinRaw(`LEFT JOIN LATERAL (
+      SELECT m.updated_at AS last_message_at
+      FROM messages m
+      WHERE m.company_id = contacts.company_id
+        AND m.user_id = contacts.user_id
+        AND m.phone_number_id = contacts.phone_number_id
+        AND CASE WHEN m.direction = 'inbound'
+          THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+          ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END =
+          CASE
+            WHEN contacts.phone_number LIKE '00%'
+            THEN substring(regexp_replace(contacts.phone_number, '[^0-9]', '', 'g') FROM 3)
+            WHEN contacts.phone_number LIKE '+%' OR COALESCE(contacts.country_code, '') = ''
+            THEN regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
+            ELSE regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
+          END
+      ORDER BY m.created_at DESC NULLS LAST, m.id DESC LIMIT 1
+    ) AS contact_activity ON true`)
+      .select('contact_activity.last_message_at')
+      .orderBy('contact_activity.last_message_at', direction, 'last')
+      .orderBy('contacts.id', 'asc');
+  }
+
+  /** Shared by filtering and ordering so both use the same latest message. */
+  private latestMessageReadStateSql() {
+    return `(
+      SELECT (m.inbox_read_at IS NOT NULL OR COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL)
+      FROM messages m
+      WHERE m.user_id = contacts.user_id
+        AND m.company_id = contacts.company_id
+        AND m.phone_number_id = contacts.phone_number_id
+        AND CASE WHEN m.direction = 'inbound'
+          THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
+          ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END =
+          CASE
+            WHEN btrim(contacts.phone_number) LIKE '00%'
+            THEN substring(regexp_replace(contacts.phone_number, '[^0-9]', '', 'g'), 3)
+            WHEN btrim(contacts.phone_number) LIKE '+%'
+            THEN regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
+            WHEN COALESCE(btrim(contacts.country_code), '') <> ''
+            THEN regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
+            ELSE NULL
+          END
+      ORDER BY m.created_at DESC NULLS LAST, m.id DESC
+      LIMIT 1
+    )`;
+  }
+
+  orderByReadStatus(query: Knex.QueryBuilder) {
+    // false (unread) sorts before true (read), across the entire result set.
+    return query.orderByRaw(`${this.latestMessageReadStateSql()} ASC NULLS LAST`);
+  }
+
   findWithFilters(
     userId: string,
     filters: any = {},
     phoneNumberId?: string
   ) {
-    console.log("=================================");
-    console.log("findWithFilters");
-    console.log("User ID:", userId);
-    console.log("Phone Number ID:", phoneNumberId);
-    console.log("Filters:", JSON.stringify(filters, null, 2));
-    console.log("=================================");
-
     let query = this.query();
 
     // Filter by phone number
@@ -251,8 +319,38 @@ class ContactModel extends BaseModel {
       query.whereRaw('assigned_to @> ARRAY[?]::uuid[]', [filters.onlyAssignedToUserId]);
     }
 
+    if (filters.assigned_to !== undefined) {
+      const values: unknown[] = Array.isArray(filters.assigned_to) ? filters.assigned_to : [filters.assigned_to];
+      if (!values.length || values.some(value => typeof value !== 'string')) {
+        throw new HTTP400Error({ message: 'assigned_to must contain one or more assignee UUIDs' });
+      }
+      const assignees = [...new Set(values.flatMap(value => (value as string).split(','))
+        .map(value => value.trim().toLowerCase()))];
+      if (assignees.some(value => !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/.test(value))) {
+        throw new HTTP400Error({ message: 'assigned_to must contain one or more assignee UUIDs' });
+      }
+      // Match any selected assignee in the uuid[] column. Keep this ANDed with
+      // the caller's assignment restriction so filtering cannot expand access.
+      query.whereRaw(`contacts.assigned_to && ARRAY[${assignees.map(() => '?').join(', ')}]::uuid[]`, assignees);
+    }
+
     // Ignore deleted contacts
     query.whereNull("deleted_at");
+
+    if (filters.status !== undefined) {
+      if (typeof filters.status !== 'string' ||
+          !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(filters.status.trim())) {
+        throw new HTTP400Error({ message: 'status must be a contact stage UUID' });
+      }
+      query.where('contacts.status', filters.status.trim());
+    }
+
+    if (filters.read_status === 'all') {
+      // The combined inbox includes only contacts with a latest message.
+      query.whereRaw(`${this.latestMessageReadStateSql()} IS NOT NULL`);
+    } else if (filters.read_status === 'read' || filters.read_status === 'unread') {
+      query.whereRaw(`${this.latestMessageReadStateSql()} = ?`, [filters.read_status === 'read']);
+    }
 
     // Keep the union of country/tag matches inside the ownership and deletion scope.
     // An IN subquery returns each contact once, even if it has multiple matching tags.
@@ -299,11 +397,6 @@ class ContactModel extends BaseModel {
       );
     }
 
-    console.log(
-      "Generated Query:",
-      query.clone().toSQL().toNative()
-    );
-
     return query;
   }
 
@@ -341,7 +434,7 @@ class ContactModel extends BaseModel {
   async findByUserPhoneNumber(userId: string, phoneNumber: string) {
     return this.query()
       .where({ user_id: userId })
-      .where(parseWhatsAppPhone(phoneNumber))
+      .where({ phone_number: parseImportedPhone(phoneNumber).phone_number })
       .whereNull('deleted_at')
       .first();
   }

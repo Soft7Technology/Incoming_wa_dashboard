@@ -1,5 +1,6 @@
 import { recordActivity } from '../app/middleware/activity.middleware';
 import UserApiKeyRoute from './userApiKey.route';
+import FacebookMessengerRoute from './facebookMessenger.route';
 import { Router } from 'express';
 import PaymentRoute from './payment.route';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
@@ -8,6 +9,7 @@ import TemplateRoute from './template.route';
 import MessageRoute from './message.route';
 import CreditRoute from './credit.route';
 import ContactRoute from './contact.route';
+import ReminderRoute from './reminder.route';
 import CampaignRoute from './campaign.route';
 import WebhookRoute from './webhook.route';
 import UserRoute from './user.route';
@@ -28,6 +30,7 @@ const AdminRoute = Router();
 // Apply JWT authentication to all admin routes
 AdminRoute.use(jwtAuthMiddleware);
 AdminRoute.use(recordActivity);
+AdminRoute.use('/facebook-messenger', FacebookMessengerRoute);
 
 AdminRoute.use('/api-keys', UserApiKeyRoute);
 AdminRoute.use('/payments', PaymentRoute);
@@ -42,6 +45,7 @@ AdminRoute.use('/templates', TemplateRoute);
 AdminRoute.use('/messages', MessageRoute);
 AdminRoute.use('/credits', CreditRoute);
 AdminRoute.use('/contacts', ContactRoute);
+AdminRoute.use('/reminders', ReminderRoute);
 AdminRoute.use('/campaigns', CampaignRoute);
 AdminRoute.use('/webhooks', WebhookRoute);
 AdminRoute.use('/chatbot', chatBotRoute);

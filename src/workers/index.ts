@@ -3,6 +3,9 @@ import { campaignExecutionWorker } from '../queues/processors/campaignExecution.
 import { bulkMessageSendWorker } from '../queues/processors/bulkMessageSend.processor';
 import { chatbotDelayWorker } from '../queues/processors/chatbotDelay.processor';
 import db from '../../library/surefy/src/database';
+import ReminderScheduler from '../app/services/reminderScheduler.service';
+
+ReminderScheduler.start();
 
 const workers = [contactImportWorker, campaignExecutionWorker, bulkMessageSendWorker, chatbotDelayWorker];
 console.info('[Workers] Started', { pid: process.pid, workerMode: process.env.WORKER_MODE,
@@ -13,7 +16,7 @@ async function shutdown(signal: string) {
   stopping = true;
   console.info('[Workers] Draining active jobs', { signal, pid: process.pid });
   try {
-    await Promise.all(workers.map(worker => worker.close()));
+    await Promise.all([ReminderScheduler.stop(), ...workers.map(worker => worker.close())]);
     await db.destroy();
     console.info('[Workers] Shutdown complete');
     process.exit(0);

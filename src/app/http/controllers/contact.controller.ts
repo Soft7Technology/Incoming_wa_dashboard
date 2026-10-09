@@ -31,7 +31,7 @@ class ContactController {
    * Create new contact
    */
   createContact = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
-    const { phone_number, phone_number_id, name, email, attributes, notes, tag_ids, status, country_code } = req.body;
+    const { phone_number, phone_number_id, name, email, attributes, custom_fields, notes, tag_ids, status, country_code } = req.body;
 
     if (!phone_number) {
       throw new HTTP400Error({ message: 'Phone number is required' });
@@ -46,6 +46,7 @@ class ContactController {
       name,
       email,
       attributes,
+      custom_fields,
       notes,
       tag_ids,
       status,
@@ -84,17 +85,37 @@ class ContactController {
    * GET /v1/contacts
    * Get all contacts with filters
    */
+  getAllContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    return this.retrieveContacts(req, res, true);
+  });
+
   getContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    return this.retrieveContacts(req, res);
+  });
+
+  private async retrieveContacts(req: JWTAuthRequest, res: Response, unpaginated = false) {
+    const phoneNumberId = req.query.phone_number_id;
+    if (unpaginated && !phoneNumberId) {
+      throw new HTTP400Error({ message: 'phone_number_id is required' });
+    }
+    if (phoneNumberId !== undefined && (typeof phoneNumberId !== 'string' || !phoneNumberId.trim())) {
+      throw new HTTP400Error({ message: 'phone_number_id must be a non-empty string' });
+    }
     const effectiveUserId = req.ownerId ?? req.userId!;
-    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
 
     // Team members must only see contacts assigned to them.
     // Permission flags control what actions they can perform, not what data they see.
     const isTeamMember = req.userId !== req.ownerId;
 
     const filters = {
+      unpaginated,
+      opt_in_status: req.query.opt_in_status,
+      is_opted_out: req.query.is_opted_out ?? (unpaginated ? false : undefined),
       is_valid: req.query.is_valid,
       country_code: req.query.country_code,
+      status: req.query.status,
+      assigned_to: req.query.assigned_to,
+      read_status: req.query.read_status,
       search: req.query.search,
       tag_ids: req.query.tag_ids ? String(req.query.tag_ids).split(',') : undefined,
       list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
@@ -106,11 +127,9 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    console.log('Filters', filters)
-
-    const contacts = await ContactService.getContacts(effectiveUserId, filters, undefined, req.companyId);
+    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId as string | undefined, req.companyId);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
-  });
+  }
 
 
   /**
@@ -119,7 +138,6 @@ class ContactController {
    */
   getContactByPhoneNumberId = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
-    console.log("getContacts effectiveUserId:", effectiveUserId, "ownerId:", req.ownerId, "userId:", req.userId);
 
     // Team members must only see contacts assigned to them.
     // Permission flags control what actions they can perform, not what data they see.
@@ -127,8 +145,13 @@ class ContactController {
     const { phoneNumberId } = req.params
 
     const filters = {
+      opt_in_status: req.query.opt_in_status,
+      is_opted_out: req.query.is_opted_out,
       is_valid: req.query.is_valid,
       country_code: req.query.country_code,
+      status: req.query.status,
+      assigned_to: req.query.assigned_to,
+      read_status: req.query.read_status,
       search: req.query.search,
       tag_ids: req.query.tag_ids ? String(req.query.tag_ids).split(',') : undefined,
       list_ids: req.query.list_ids ? String(req.query.list_ids).split(',') : undefined,
@@ -192,8 +215,8 @@ class ContactController {
    */
   updateContact = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
-    const { name, email, attributes, custom_fields, notes, tag_ids, assigned_to, status } = req.body;
-    console.log('Req body', req.body)
+    const { name, email, attributes, custom_fields, notes, tag_ids, assigned_to, status,
+      phone_number, phone_number_id, country_code, is_opted_out } = req.body;
 
     const contact = await ContactService.updateContact(req.ownerId ?? req.userId!,id, {
       name,
@@ -203,7 +226,11 @@ class ContactController {
       tag_ids,
       assigned_to,
       status,
-      custom_fields
+      custom_fields,
+      phone_number,
+      phone_number_id,
+      country_code,
+      is_opted_out
     });
 
     return successResponse(req, res, 'Contact updated successfully', contact);
@@ -262,13 +289,18 @@ class ContactController {
       throw new HTTP400Error({ message: 'XLSX file is required' });
     }
 
-    const preview = await ContactService.getXLSXPreview(file.path);
-    console.log(`Generated preview: ${JSON.stringify(preview)}`);
-
-    // Clean up temporary file
-    fs.unlinkSync(file.path);
-
-    return successResponse(req, res, 'File preview generated successfully', preview);
+    try {
+      const { phone_column, name_column, email_column, country_code } = req.body || {};
+      const preview = await ContactService.getXLSXPreview(file.path, {
+        phone_column, name_column, email_column, country_code,
+      });
+      return successResponse(req, res, 'File preview generated successfully', preview);
+    } finally {
+      // Preview uploads are temporary, including when validation fails.
+      await fs.promises.unlink(file.path).catch(error => {
+        if (error.code !== 'ENOENT') console.error('Unable to remove import preview file:', error.message);
+      });
+    }
   });
 
 
@@ -316,7 +348,7 @@ class ContactController {
     fs.copyFileSync(file.path, filePath);
     fs.unlinkSync(file.path);
 
-    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!, phone_number_id, country_code || '', filePath, list_name, {
+    const importJob = await ContactService.importContactsDirect(effectiveUserId, req.companyId!, phone_number_id, country_code || '', filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
@@ -326,14 +358,15 @@ class ContactController {
     return successResponse(
       req,
       res,
-      'Contact import job queued successfully. Use the job_id to check progress.',
+      'Contact import completed. Check imported and failed counts for row results.',
       {
         job_id: importJob.id,
         status: importJob.status,
         total_rows: importJob.total_rows,
         progress_percentage: importJob.progress_percentage,
+        ...importJob.result,
       },
-      HttpStatusCode.ACCEPTED
+      HttpStatusCode.OK
     );
   });
 

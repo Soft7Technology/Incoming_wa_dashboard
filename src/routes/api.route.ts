@@ -1,8 +1,10 @@
+import SuperAdminRoute from './superAdmin.route';
 import { Router } from 'express';
 import AuthRoute from './auth.route';
 import AdminRoute from './admin.route';
 import ApiConsumerRoute from './apiConsumer.route';
 import WebhookPublicRoute from './webhookPublic.route';
+import FacebookPublicRoute from './facebookPublic.route';
 
 const ApiRoute = Router();
 
@@ -22,6 +24,7 @@ const ApiRoute = Router();
 
 // Public routes - no authentication
 ApiRoute.use('/auth', AuthRoute); // Login, register
+ApiRoute.use('/facebook', FacebookPublicRoute);
 
 // Public webhook routes - no authentication (Meta webhooks validated with their own signature)
 ApiRoute.use('/webhooks', WebhookPublicRoute);
@@ -29,6 +32,8 @@ ApiRoute.use('/webhooks', WebhookPublicRoute);
 
 // Admin routes - JWT authentication required (for dashboard users)
 ApiRoute.use('/admin', AdminRoute);
+
+ApiRoute.use('/super-admin', SuperAdminRoute);
 
 // API Consumer routes - API key authentication required (for programmatic access)
 ApiRoute.use('/api', ApiConsumerRoute);

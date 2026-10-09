@@ -1,0 +1,302 @@
+{
+  "info": {
+    "name": "Lead Reminders",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "contactId",
+      "value": ""
+    },
+    {
+      "key": "phoneNumberId",
+      "value": ""
+    },
+    {
+      "key": "templateId",
+      "value": ""
+    },
+    {
+      "key": "reminderId",
+      "value": ""
+    },
+    {
+      "key": "headerImageUrl",
+      "value": ""
+    },
+    {
+      "key": "secondContactId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Approved templates",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/templates?phone_number_id={{phoneNumberId}}"
+      }
+    },
+    {
+      "name": "Preview reminder",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/preview",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Lead follow-up\",\n  \"contact_id\": \"{{contactId}}\",\n  \"phone_number_id\": \"{{phoneNumberId}}\",\n  \"template_id\": \"{{templateId}}\",\n  \"frequency\": \"once\",\n  \"local_datetime\": \"2026-12-15T09:30:00\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"variables\": {\n    \"body.name\": \"Parth\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Create one-time follow-up",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Lead follow-up\",\n  \"contact_id\": \"{{contactId}}\",\n  \"phone_number_id\": \"{{phoneNumberId}}\",\n  \"template_id\": \"{{templateId}}\",\n  \"frequency\": \"once\",\n  \"local_datetime\": \"2026-12-15T09:30:00\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"variables\": {\n    \"body.name\": \"Parth\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Create yearly birthday",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Birthday greeting\",\n  \"contact_id\": \"{{contactId}}\",\n  \"phone_number_id\": \"{{phoneNumberId}}\",\n  \"template_id\": \"{{templateId}}\",\n  \"frequency\": \"yearly\",\n  \"local_datetime\": \"2026-12-15T09:30:00\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"variables\": {\n    \"body.name\": \"Parth\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "List upcoming reminders",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders?status=upcoming&limit=25&offset=0"
+      }
+    },
+    {
+      "name": "Get reminder",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/{{reminderId}}"
+      }
+    },
+    {
+      "name": "Edit reminder",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/{{reminderId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Updated follow-up\",\n  \"local_datetime\": \"2026-12-16T10:00:00\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"variables\": {\n    \"body.name\": \"Parth\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Pause reminder",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/{{reminderId}}/pause",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Resume reminder",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/{{reminderId}}/resume",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Cancel reminder",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/{{reminderId}}/cancel",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Send history",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders/{{reminderId}}/history?limit=25&offset=0"
+      }
+    },
+    {
+      "name": "Create yearly birthday with campaign mapping and image",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Birthday greeting\",\n  \"contact_id\": \"{{contactId}}\",\n  \"phone_number_id\": \"{{phoneNumberId}}\",\n  \"template_id\": \"{{templateId}}\",\n  \"frequency\": \"yearly\",\n  \"local_datetime\": \"2026-12-15T09:30:00\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"parameter_mapping\": {\n    \"1\": \"fullName\",\n    \"2\": \"2\",\n    \"3\": \"3\"\n  },\n  \"media_uploads\": [\n    {\n      \"type\": \"image\",\n      \"url\": \"{{headerImageUrl}}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Create reminders for multiple contacts",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/reminders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Lead follow-up\",\n  \"phone_number_id\": \"{{phoneNumberId}}\",\n  \"template_id\": \"{{templateId}}\",\n  \"frequency\": \"once\",\n  \"local_datetime\": \"2026-12-15T09:30:00\",\n  \"timezone\": \"Asia/Kolkata\",\n  \"variables\": {\n    \"body.name\": \"Parth\"\n  },\n  \"contact_ids\": [\n    \"{{contactId}}\",\n    \"{{secondContactId}}\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    }
+  ]
+}
