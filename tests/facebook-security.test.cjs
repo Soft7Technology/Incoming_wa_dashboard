@@ -66,6 +66,61 @@ test('Page discovery accepts Meta profile-plus messaging tasks and still require
   ] });
   assert.deepEqual(Array.from(await graph.pages('TEST_USER_TOKEN'), page => page.id), ['modern', 'legacy']);
 });
+test('Page discovery distinguishes empty Meta results, missing messaging access and missing Page tokens', async () => {
+  const { FacebookGraph } = load('src/app/services/facebookGraph.service.ts', { axios: {}, '../utils/facebook': utils });
+  const graph = new FacebookGraph();
+  for (const [data, code] of [
+    [[], 'NO_PAGES_RETURNED'],
+    [[{ id: 'page', access_token: 'PRIVATE_PAGE_TOKEN', tasks: ['ANALYZE'] }], 'PAGE_MESSAGING_ACCESS_REQUIRED'],
+    [[{ id: 'page', tasks: ['PROFILE_PLUS_MESSAGING'] }], 'PAGE_TOKEN_MISSING'],
+    [[{ id: 'no-access', access_token: 'PRIVATE_PAGE_TOKEN', tasks: ['ANALYZE'] },
+      { id: 'no-token', tasks: ['MESSAGING'] }], 'PAGE_TOKEN_MISSING'],
+  ]) {
+    graph.call = async () => ({ data });
+    await assert.rejects(graph.pages('PRIVATE_USER_TOKEN'), error =>
+      error.status === 403 && error.code === code &&
+      !error.message.includes('PRIVATE_PAGE_TOKEN') && !error.message.includes('PRIVATE_USER_TOKEN'));
+  }
+});
+test('Page discovery waits for all result pages before diagnosing unavailable access', async () => {
+  const { FacebookGraph } = load('src/app/services/facebookGraph.service.ts', { axios: {}, '../utils/facebook': utils });
+  const graph = new FacebookGraph();
+  let calls = 0;
+  graph.call = async () => ++calls === 1
+    ? { data: [], paging: { next: 'https://graph.facebook.com/next', cursors: { after: 'next' } } }
+    : { data: [{ id: 'usable', access_token: 'PRIVATE_PAGE_TOKEN', tasks: ['PROFILE_PLUS_MESSAGING'] }] };
+  assert.deepEqual(Array.from(await graph.pages('PRIVATE_USER_TOKEN'), page => page.id), ['usable']);
+  assert.equal(calls, 2);
+});
+test('Page token inspection checks the authorized Page without reading permission-dependent metadata', async () => {
+  const { FacebookGraph } = load('src/app/services/facebookGraph.service.ts', { axios: {}, '../utils/facebook': utils });
+  const graph = new FacebookGraph(), calls = [];
+  graph.call = async (path, token, method, params) => {
+    calls.push({ path, token, params });
+    assert.equal(path, 'debug_token');
+    return { data: { is_valid: true, app_id: process.env.FACEBOOK_APP_ID, type: 'PAGE', profile_id: '20001', expires_at: 0 } };
+  };
+  const inspected = await graph.inspectPage('20001', 'PRIVATE_PAGE_TOKEN');
+  assert.equal(inspected.expires, null);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].params.input_token, 'PRIVATE_PAGE_TOKEN');
+  assert.equal(calls[0].token, process.env.FACEBOOK_APP_ID + '|' + process.env.FACEBOOK_APP_SECRET);
+});
+test('Page token inspection rejects invalid, foreign-app, user, mismatched and unbound tokens', async () => {
+  const { FacebookGraph } = load('src/app/services/facebookGraph.service.ts', { axios: {}, '../utils/facebook': utils });
+  const graph = new FacebookGraph();
+  const valid = { is_valid: true, app_id: process.env.FACEBOOK_APP_ID, type: 'PAGE', profile_id: '20001', expires_at: 1700000000 };
+  graph.call = async () => ({ data: valid });
+  assert.equal((await graph.inspectPage('20001', 'PRIVATE_PAGE_TOKEN')).expires.getTime(), 1700000000000);
+  for (const override of [
+    { is_valid: false }, { app_id: 'other-app' }, { type: 'USER' },
+    { profile_id: 'other-page' }, { profile_id: undefined },
+  ]) {
+    graph.call = async () => ({ data: { ...valid, ...override } });
+    await assert.rejects(graph.inspectPage('20001', 'PRIVATE_PAGE_TOKEN'), error =>
+      [403, 409].includes(error.status) && !error.message.includes('PRIVATE_PAGE_TOKEN'));
+  }
+});
 test('browser assets contain no simulated authorization or hardcoded success requests', () => {
   const js = fs.readFileSync('src/web/facebook/app.js', 'utf8');
   new Function(js);

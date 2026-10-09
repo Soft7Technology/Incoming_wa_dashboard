@@ -85,12 +85,31 @@ export class FacebookGraph {
         ...(after ? { after } : {}),
       });
       pages.push(...(response.data || []));
-      if (!response.paging?.next)
-        return pages.filter(
-          (p) =>
-            p.access_token &&
-            (p.tasks || []).some((t: string) => ['MESSAGE', 'MESSAGING', 'PROFILE_PLUS_MESSAGING'].includes(t)),
+      if (!response.paging?.next) {
+        if (!pages.length)
+          throw new FacebookError(
+            403,
+            'Facebook approved the app permissions but returned no Pages for this account. Check that the selected Page is assigned to the Facebook account you used to log in and is selected in this app\'s Business Integration, then connect again.',
+            'NO_PAGES_RETURNED',
+          );
+        const messagingPages = pages.filter((p) =>
+          (p.tasks || []).some((t: string) => ['MESSAGE', 'MESSAGING', 'PROFILE_PLUS_MESSAGING'].includes(t)),
         );
+        if (!messagingPages.length)
+          throw new FacebookError(
+            403,
+            `Facebook returned ${pages.length} Page(s), but none grants your Facebook account messaging access. Ask the Page owner to enable Messages and Community Activity for your account in Page access, then connect again.`,
+            'PAGE_MESSAGING_ACCESS_REQUIRED',
+          );
+        const eligible = messagingPages.filter((p) => p.access_token);
+        if (!eligible.length)
+          throw new FacebookError(
+            403,
+            'Facebook returned Pages with messaging access but did not provide a usable Page access token. Check the selected Page and its permissions in this app\'s Business Integration, then connect again.',
+            'PAGE_TOKEN_MISSING',
+          );
+        return eligible;
+      }
       after = response.paging.cursors?.after;
       if (!after) break;
     }
@@ -99,12 +118,14 @@ export class FacebookGraph {
 
   async inspectPage(pageId: string, token: string) {
     const c = config();
-    const details = await this.call('me', token, 'GET', { fields: 'id,name' });
-    if (String(details.id) !== pageId) throw new FacebookError(403, 'Meta returned a token for a different Page.');
+    // Page metadata reads require pages_read_engagement. The token debugger can
+    // verify the authorized Page without adding a permission to Messenger login.
     const debug = await this.call('debug_token', `${c.appId}|${c.secret}`, 'GET', { input_token: token });
     if (!debug.data?.is_valid || String(debug.data.app_id) !== c.appId || debug.data.type !== 'PAGE')
       throw new FacebookError(409, 'Invalid Page authorization. Reconnect.', 'TOKEN_EXPIRED');
-    return { name: details.name, expires: debug.data.expires_at ? new Date(debug.data.expires_at * 1000) : null };
+    if (String(debug.data.profile_id) !== pageId)
+      throw new FacebookError(403, 'Meta returned a token for a different Page.');
+    return { expires: debug.data.expires_at ? new Date(debug.data.expires_at * 1000) : null };
   }
 }
 

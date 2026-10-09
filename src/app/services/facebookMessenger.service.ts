@@ -241,7 +241,8 @@ export class FacebookMessengerService {
         company_id: scope.companyId,
         owner_id: scope.ownerId,
         page_id: pageId,
-        name: details.name,
+        // Use the name Meta returned in this browser-bound authorization.
+        name: page.name,
         facebook_user_id: session.facebook_user_id,
         token_ciphertext: encrypt(page.access_token),
         token_expires_at: details.expires,

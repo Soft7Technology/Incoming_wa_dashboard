@@ -13,6 +13,8 @@ WabaRoute.post('/onboard', WabaController.onboardingWaba);
 // WABA Account Management
 WabaRoute.post('/', WabaController.createWaba);
 WabaRoute.get('/', WabaController.getWabas);
+// Service checks ownership after resolving either the Meta ID or local UUID.
+WabaRoute.post('/:wabaId/sync', WabaController.syncWaba);
 
 // Phone Number Management
 WabaRoute.post('/:wabaId/phone-numbers', ownedResource('waba_accounts', 'wabaId'), WabaController.addPhoneNumber);
