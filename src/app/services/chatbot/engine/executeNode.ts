@@ -651,9 +651,8 @@ export const executeNode = async ({
         }
     }
 
-    // Text nodes, such as the welcome message, do not wait for user input.
-    // Follow their outgoing edge immediately and persist the next node.
-    if (key !== "@whatsapp/send-text-message") return response;
+    // Text and media sends continue automatically; interactive/question nodes wait.
+    if (key !== "@whatsapp/send-text-message" && key !== "@whatsapp/send-media-message") return response;
 
     const edge = bot.edges.find(
         (e: any) => e.source === currentNode.id

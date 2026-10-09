@@ -1,4 +1,4 @@
-import { buildInteractiveHeader, validateChatbotMessage } from './utils/chatbotMessage';
+import { buildChatbotMediaMessage, buildInteractiveHeader, validateChatbotMessage } from './utils/chatbotMessage';
 import chatSessionModel from '../app/models/chatSession.model';
 import nodemailer from "nodemailer";
 import metaService from './services/meta.service';
@@ -628,15 +628,7 @@ export async function buildResponse(node: any, session?: any, bot?: any) {
   }
 
   if (key === "@whatsapp/send-media-message") {
-    const imageLink =
-      data?.attributes?.message?.image?.link || data?.attributes?.message?.video?.link || "";
-
-    return {
-      type: data?.attributes?.message.type,
-      image: {
-        link: imageLink,
-      },
-    };
+    return buildChatbotMediaMessage(data?.attributes?.message);
   }
 
   if (key === "@whatsapp/ask-location") {

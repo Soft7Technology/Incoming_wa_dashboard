@@ -1,3 +1,25 @@
+// Media nodes and the sender must use the same type-specific payload.
+export function buildChatbotMediaMessage(message: any): any {
+  const type = message?.type;
+  if (!['image', 'video', 'audio', 'document', 'sticker'].includes(type)) {
+    throw new Error('Media message must be image, video, audio, document, or sticker.');
+  }
+  const media = message[type];
+  const id = typeof media?.id === 'string' ? media.id.trim() : '';
+  const link = typeof media?.link === 'string' ? media.link.trim() : '';
+  if ((!id && !link) || (id && link)) {
+    throw new Error(`Media ${type} message requires either a media id or link.`);
+  }
+  const payload: any = id ? { id } : { link };
+  if (['image', 'video', 'document'].includes(type) && typeof media.caption === 'string') {
+    payload.caption = media.caption;
+  }
+  if (type === 'document' && typeof media.filename === 'string' && media.filename.trim()) {
+    payload.filename = media.filename;
+  }
+  return { type, [type]: payload };
+}
+
 export function buildInteractiveHeader(header: any): any | undefined {
   if (!header?.type || header.type === 'none') return undefined;
   if (header.type === 'text') {
@@ -20,6 +42,9 @@ export function buildInteractiveHeader(header: any): any | undefined {
 
 export function validateChatbotMessage(data: any): void {
   const message = data?.attributes?.message;
+  if (data?.key === '@whatsapp/send-media-message') {
+    buildChatbotMediaMessage(message);
+  }
   if (data?.key === '@whatsapp/send-button-message') {
     const buttons = data?.attributes ? message?.interactive?.action?.buttons : data?.buttons;
     if (!Array.isArray(buttons) || !buttons.length) {

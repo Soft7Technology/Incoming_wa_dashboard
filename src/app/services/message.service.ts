@@ -4,6 +4,7 @@ import { recordReminderDelivery } from './reminderDelivery.service';
 import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
 import { resolveCampaignPhone } from '../utils/campaignPhone';
 import { normalizeChatbotResponse, sendChatbotResponseBatch } from '../utils/chatbotResponse';
+import { buildChatbotMediaMessage } from '../utils/chatbotMessage';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import MessageModel from '@surefy/console/models/message.model';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
@@ -786,11 +787,8 @@ class MessageService {
         };
       }
 
-      if (response.type === 'image') {
-        ((metaPayload.type = 'image'),
-          (metaPayload.image = {
-            link: response.image.link,
-          }));
+      if (['image', 'video', 'audio', 'document', 'sticker'].includes(response.type)) {
+        Object.assign(metaPayload, buildChatbotMediaMessage(response));
       }
 
       console.log('Meta Payload Message Service', JSON.stringify(metaPayload));
