@@ -440,7 +440,36 @@ async function init() {
   await refresh();
   history.replaceState(null, '', location.pathname);
 }
-if (token) init().catch((e) => notice(e.message));
+async function reviewLogin(key) {
+  // Fragments are not sent in the page request or Referer. Clear the access key
+  // before loading the workspace or navigating through Facebook authorization.
+  history.replaceState(null, '', location.pathname + location.search);
+  logOut();
+  $('login-button').disabled = true;
+  notice('Signing into the review account…', 'success');
+  try {
+    const response = await fetch('/v1/facebook/review-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      signal: AbortSignal.timeout(25000),
+      body: JSON.stringify({ key }),
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success || !result.data?.token)
+      throw new Error(result.message || 'Review login failed.');
+    token = result.data.token;
+    sessionStorage.setItem('facebook_saas_jwt', token);
+    sessionStorage.setItem('facebook_saas_name', result.data.data?.name || 'Review account');
+    notice('');
+    await init();
+  } finally {
+    $('login-button').disabled = false;
+  }
+}
+const reviewKey = new URLSearchParams(location.hash.slice(1)).get('review');
+if (reviewKey) reviewLogin(reviewKey).catch((e) => notice(e.message));
+else if (token) init().catch((e) => notice(e.message));
 // Database-backed polling works across API replicas and catches up after sleep or
 // connection loss. The UI never depends on the WhatsApp socket bridge's room rules.
 setInterval(() => {

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import FacebookLoginTestRoute from './facebookLoginTest.route';
+import FacebookReviewLoginRoute from './facebookReviewLogin.route';
 import controller, { facebookError } from '../app/http/controllers/facebookMessenger.controller';
 
 const route = Router();
@@ -16,6 +17,7 @@ route.use((_req, res, next) => {
 route.get('/page', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/index.html')));
 route.get('/app.js', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/app.js')));
 route.get('/style.css', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/style.css')));
+route.use('/review-login', FacebookReviewLoginRoute);
 route.get('/oauth/callback', controller.callback);
 route.get('/webhook', controller.verify);
 route.post('/webhook', controller.receive);
