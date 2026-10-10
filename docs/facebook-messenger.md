@@ -138,13 +138,15 @@ Create a **dedicated SaaS review company/account** using your existing administr
 
 Use a unique random SaaS password stored in your organization's password manager. Enter the application URL, SaaS username/password and company login domain **only in Meta App Review's private testing/access credential fields** (or the secure tester-access mechanism offered by that form). Keep them valid during review and rotate/revoke them afterward. Do not put passwords in this document, source control, a public Page, the recording or an emailed/shared plaintext script. Facebook credentials, App Secrets and Page tokens must not be supplied as SaaS reviewer credentials.
 
-No reviewer account was provisioned during this session because the target review company, deployment and credential vault were not supplied. This is an outstanding configuration task, not a seeded login or a hidden bypass.
+For password-free entry, configure the optional private review link on the target API server. Set `FACEBOOK_REVIEW_ENABLED=true`, `FACEBOOK_REVIEW_EMAIL`, `FACEBOOK_REVIEW_PASSWORD`, `FACEBOOK_REVIEW_DOMAIN` (an existing company login domain), `FACEBOOK_REVIEW_KEY_HASH` (SHA-256 of a random 32-byte base64url access key), and `FACEBOOK_REVIEW_EXPIRES_AT` (an ISO timestamp). The credentials remain in the server environment. Missing configuration disables this endpoint; expired or incorrect keys cannot log in.
+
+Supply `/v1/facebook/page#review=ACCESS_KEY` only in Meta's private reviewer-access instructions. Opening that link signs into the configured account through normal password validation, company-domain checks and login auditing. The browser removes the fragment before navigating to Facebook. Anyone holding the link can access that account, so use a dedicated account with test data. Set `FACEBOOK_REVIEW_ENABLED=false` and restart the API to disable new review logins; existing sessions follow the application's normal session policy.
 
 ## Reviewer testing instructions
 
 Supply the configured URL, company domain, test Page name/ID and private SaaS credential fields along with these steps:
 
-1. Open the application URL. Log in with the supplied SaaS account and company login domain.
+1. Open the application URL. Log in with the supplied SaaS account and company login domain. If a private review link was supplied, it signs into the configured review account automatically.
 2. Choose **Settings → Integrations**, then **Facebook Messenger**. The three permission explanations appear beside **Connect Facebook Page**.
 3. Choose **Connect Facebook Page**. The browser opens `www.facebook.com` for actual authorization. Use the eligible Meta review/test actor, grant the three required permissions, and select the designated test Page asset. If permissions were already granted, Facebook may show a reconnect/reauthorization screen rather than first-time consent.
 4. On return, select the designated Page in the application and choose **Connect selected Page**. Confirm its Page name, Page ID and **connected** status. No connected state is shown unless the subscription API and subsequent verification succeeded.

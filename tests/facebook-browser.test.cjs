@@ -26,6 +26,9 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
     if (req.headers.authorization !== 'Bearer BROWSER_TEST_JWT') return res.status(401).json({ success: false, message: 'Not logged in' });
     Object.assign(req, a); next();
   }, load('src/routes/facebookMessenger.route.ts', deps).default);
+  deps['./facebookReviewLogin.route'] = load('src/routes/facebookReviewLogin.route.ts', {
+    '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
+  });
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;
