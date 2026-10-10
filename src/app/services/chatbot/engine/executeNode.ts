@@ -63,6 +63,13 @@ export const executeNode = async ({
                 { delay, jobId: token });
             console.info('[Chatbot Delay] Queued', { sessionId: session.id, nodeId: currentNode.id, delayMs: delay, jobId: token });
         } catch (error) {
+            console.error('[Chatbot Delay] Failed to queue', {
+                sessionId: session.id,
+                nodeId: currentNode.id,
+                delayMs: delay,
+                reason: (error instanceof Error ? error.message : 'Unknown queue error')
+                    .replace(/\b(?:rediss?|https?):\/\/\S+/gi, '[URL]'),
+            });
             await endSession(session.id);
             throw error;
         }

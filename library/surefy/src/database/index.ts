@@ -9,6 +9,10 @@ pg.types.setTypeParser(pg.types.builtins.TIMESTAMP, (val: string) => {
 
 const environment = process.env.NODE_ENV || 'development';
 const config = knexConfig[environment];
+if (!config) throw new Error(`Unsupported database environment: ${environment}`);
+if (!config.connection || (typeof config.connection === 'string' && !config.connection.trim())) {
+  throw new Error(`DATABASE_URL is missing for ${environment}. Configure it in the project-root .env or process environment before starting the API and worker.`);
+}
 const poolMax = Number(process.env.DB_POOL_MAX ?? 15);
 if (!Number.isInteger(poolMax) || poolMax < 1) throw new Error('DB_POOL_MAX must be a positive integer');
 

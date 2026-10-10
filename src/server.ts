@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import createBaseApp from '@surefy/server';
 import ApiRoute from '@surefy/console/routes/api.route';
 import CampaignSchedulerService from '@surefy/console/services/campaignScheduler.service';
