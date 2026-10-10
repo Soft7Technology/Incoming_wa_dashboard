@@ -86,7 +86,7 @@ test('invalid or ambiguous media is rejected instead of sending an empty attachm
   } }), audio('https://example.com/audio.mp3'));
 });
 
-function engineHarness() {
+function engineHarness(queueError) {
   const writes = [], jobs = [];
   const engine = load('src/app/services/chatbot/engine/executeNode.ts', {
     '@surefy/console/utils': { buildResponse: responseBuilder() },
@@ -94,7 +94,10 @@ function engineHarness() {
     '../../../utils/chatbotDelay': delayHelpers,
     crypto: { randomUUID: () => 'delay-token' },
     '../../../../queues/chatbotDelay.queue': { chatbotDelayQueue: {
-      add: async (...args) => jobs.push(args),
+      add: async (...args) => {
+        if (queueError) throw queueError;
+        jobs.push(args);
+      },
     } },
   });
   return { ...engine, writes, jobs };
@@ -116,6 +119,19 @@ test('first audio automatically schedules exactly five minutes, then stops at th
   assert.equal(h.jobs[0][1].nodeId, 'delay');
   assert.equal(h.writes.at(-1).data.variables.chatbot_delay_token, 'delay-token');
   assert.equal(h.writes.at(-1).data.variables.name, 'Customer');
+});
+
+test('one-minute delay queues 60000ms, and a Redis failure ends the waiting session visibly', async () => {
+  const delay = { id: 'delay', data: { key: '@whatsapp/delay', attributes: { delay: 60000 } } };
+  const args = { bot: {}, session: { id: 'session' }, currentNode: delay };
+  const h = engineHarness();
+  assert.equal((await h.executeNode(args)).ignoreMessage, true);
+  assert.equal(h.jobs[0][2].delay, 60000);
+  const failed = engineHarness(new Error('Redis connection unavailable'));
+  await assert.rejects(failed.executeNode(args), /Redis connection unavailable/);
+  assert.equal(failed.writes.at(-1).data.active, false);
+  assert.equal(failed.writes.at(-1).data.current_node_id, null);
+  assert.equal(failed.jobs.length, 0);
 });
 
 test('after a delay the recording link and second audio are sent in order without another inbound message', async () => {

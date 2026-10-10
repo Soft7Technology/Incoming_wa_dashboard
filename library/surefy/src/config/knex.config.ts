@@ -4,7 +4,10 @@ import dotenv from 'dotenv'
 
 export const basePath = path.resolve(__dirname, '../../../../')
 
-dotenv.config({ path: path.join(basePath, '.env') })
+// Compiled migrations live under dist, but deployment configuration stays
+// beside package.json in the project root.
+const envRoot = path.basename(basePath) === 'dist' ? path.dirname(basePath) : basePath
+dotenv.config({ path: path.join(envRoot, '.env') })
 
 const config: { [key: string]: Knex.Config } = {
   development: {

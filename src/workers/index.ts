@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { contactImportWorker } from '../queues/processors/contactImport.processor';
 import { campaignExecutionWorker } from '../queues/processors/campaignExecution.processor';
 import { bulkMessageSendWorker } from '../queues/processors/bulkMessageSend.processor';
