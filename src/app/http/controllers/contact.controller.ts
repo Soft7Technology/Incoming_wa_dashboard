@@ -348,7 +348,7 @@ class ContactController {
     fs.copyFileSync(file.path, filePath);
     fs.unlinkSync(file.path);
 
-    const importJob = await ContactService.importContactsDirect(effectiveUserId, req.companyId!, phone_number_id, country_code || '', filePath, list_name, {
+    const importJob = await ContactService.queueContactImport(effectiveUserId, req.companyId!, phone_number_id, country_code || '', filePath, list_name, {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
@@ -358,15 +358,14 @@ class ContactController {
     return successResponse(
       req,
       res,
-      'Contact import completed. Check imported and failed counts for row results.',
+      'Contact import queued. Check the job status for progress and results.',
       {
         job_id: importJob.id,
         status: importJob.status,
         total_rows: importJob.total_rows,
         progress_percentage: importJob.progress_percentage,
-        ...importJob.result,
       },
-      HttpStatusCode.OK
+      HttpStatusCode.ACCEPTED
     );
   });
 
