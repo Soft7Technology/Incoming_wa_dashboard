@@ -13,7 +13,6 @@ import ImportJobModel from '../models/importJob.model';
 import XLSXParserService, { ImportPreviewOptions } from './xlsxParser.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
-import { processContactImport } from './contactImport.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { filter } from 'lodash';
@@ -347,9 +346,9 @@ class ContactService {
   }
 
   /**
-   * Import contacts in the API process and persist progress
+   * Validate an upload and enqueue contact creation in the contact-import worker.
    */
-  async importContactsDirect(
+  async queueContactImport(
     userId: string,
     companyId: string,
     phone_number_id:string,
@@ -397,7 +396,7 @@ class ContactService {
       file_headers: preview.headers,
       total_rows: preview.total_rows,
       import_options: {
-        execution_mode: 'api', list_name: listName,
+        execution_mode: 'worker', list_name: listName,
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,
@@ -405,17 +404,17 @@ class ContactService {
       },
     });
 
-    const result = await processContactImport({
-      jobId: importJob.id, companyId, phone_number_id, country_code,
-      userId, filePath, listName, options,
-    });
-    return {
-      ...importJob,
-      status: 'completed',
-      total_rows: result.total,
-      progress_percentage: 100,
-      result,
-    };
+    try {
+      const { contactImportQueue } = await import('../../queues/contactImport.queue');
+      await contactImportQueue.add('contact-import', {
+        jobId: importJob.id, companyId, phone_number_id, country_code,
+        userId, filePath, listName, options,
+      }, { jobId: importJob.id });
+    } catch (error) {
+      await ImportJobModel.markAsFailed(importJob.id, error instanceof Error ? error : new Error(String(error)));
+      throw error;
+    }
+    return importJob;
   }
 
   /**

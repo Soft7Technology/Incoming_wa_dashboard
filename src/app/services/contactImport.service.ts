@@ -17,11 +17,22 @@ export async function processContactImport(data: ContactImportJobData, updatePro
   const { jobId,userId,companyId,country_code, filePath,phone_number_id, listName, options } = data;
   console.log(`[Job ${jobId}] Processing contact import from file: ${filePath}`);
 
+  const importJob = await ImportJobModel.findById(jobId);
+  if (!importJob || importJob.user_id !== userId || importJob.company_id !== companyId ||
+      importJob.phone_number_id !== phone_number_id || importJob.file_path !== filePath) {
+    throw new Error('Contact import job not found in the requested account');
+  }
+  // A completed job may be delivered again after a worker loses its BullMQ lock.
+  if (importJob.status === 'completed') return importJob.result;
+  if (importJob.status === 'cancelled' || importJob.deleted_at) {
+    throw new Error('Contact import job is cancelled or deleted');
+  }
+
   try {
     console.log(`[Job ${jobId}] Starting contact import processing`);
-
-    // Update job status to processing
-    await ImportJobModel.updateStatus(jobId, 'processing');
+    await ImportJobModel.updateStatus(jobId, 'processing', {
+      failed_at: null, error_message: null, error_stack: null,
+    });
 
     // Validate and parse file
     const validation = await XLSXParserService.validateFile(filePath);
@@ -42,8 +53,8 @@ export async function processContactImport(data: ContactImportJobData, updatePro
 
     console.log(`[Job ${jobId}] Parsed ${parseResult.contacts.length} contacts from file`);
 
-    // Create contact list
-    const list = await ContactListModel.create({
+    // List creation and its job association commit together so retries cannot create orphan lists.
+    const list = await ImportJobModel.getOrCreateContactList(jobId, {
       user_id:userId,
       company_id:companyId,
       phone_number_id:phone_number_id,
@@ -64,7 +75,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
       file_headers: parseResult.headers,
     });
 
-    console.log(`[Job ${jobId}] Created list: ${list.id}`);
+    console.log(`[Job ${jobId}] Using list: ${list.id}`);
 
     // Process contacts in batches
     const totalContacts = parseResult.contacts.length;
@@ -117,10 +128,6 @@ export async function processContactImport(data: ContactImportJobData, updatePro
           if (options.tagIds && options.tagIds.length > 0) {
             await ContactTagRelationModel.bulkAddTags(userId,contact.id, options.tagIds);
 
-            // Update tag counts
-            for (const tagId of options.tagIds) {
-              await ContactTagModel.incrementContactCount(tagId);
-            }
           }
 
           successfulCount++;
@@ -152,12 +159,30 @@ export async function processContactImport(data: ContactImportJobData, updatePro
       console.log(`[Job ${jobId}] Progress: ${progressPercentage}% (${processedRows}/${totalContacts})`);
     }
 
+    // Replayed rows can already have these tags. Count saved relations once per tag,
+    // rather than recounting an expanding tag for every contact in a large import.
+    for (const tagId of new Set(options.tagIds || [])) {
+      await ContactTagModel.updateContactCount(tagId);
+    }
+
     // Update list with final counts
-await ContactListModel.update(list.id, {
-  imported_contacts: successfulCount,
-  import_failed_contacts: failedCount,
-  invalid_phone_numbers: parseResult.invalid,
-});
+    await ContactListModel.update(list.id, {
+      imported_contacts: successfulCount,
+      import_failed_contacts: failedCount,
+      invalid_phone_numbers: parseResult.invalid,
+    });
+
+    // Includes all-invalid files, which do not enter the contact batch loop.
+    if (batches === 0) {
+      await ImportJobModel.updateProgress(jobId, {
+        processed_rows: parseResult.invalid,
+        successful_rows: successfulCount,
+        failed_rows: failedCount,
+        skipped_rows: skippedCount,
+        errors: allErrors.slice(-100),
+      });
+      await updateProgress?.(100);
+    }
 
     // Mark job as completed
     const result = {

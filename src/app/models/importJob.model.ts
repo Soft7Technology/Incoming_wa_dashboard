@@ -1,4 +1,5 @@
 import { BaseModel } from '@surefy/models/base.model';
+import ContactListModel from './contactList.model';
 
 export interface ImportJobData {
   company_id: string;
@@ -27,6 +28,22 @@ export interface ImportJobData {
 class ImportJobModel extends BaseModel {
   constructor() {
     super('import_jobs');
+  }
+
+  async getOrCreateContactList(jobId: string, data: any) {
+    return this.db.transaction(async trx => {
+      const scope = { user_id: data.user_id, company_id: data.company_id, phone_number_id: data.phone_number_id };
+      const job = await trx('import_jobs').where({ id: jobId, ...scope }).whereNull('deleted_at').forUpdate().first();
+      if (!job) throw new Error('Contact import job not found in the requested account');
+      if (job.list_id) {
+        const list = await trx('contact_lists').where({ id: job.list_id, ...scope }).whereNull('deleted_at').first();
+        if (!list) throw new Error('Contact import list not found in the requested account');
+        return list;
+      }
+      const list = await ContactListModel.create(data, trx);
+      await trx('import_jobs').where({ id: jobId, ...scope }).update({ list_id: list.id });
+      return list;
+    });
   }
 
   async update(jobId: string, data: Partial<ImportJobData>) {

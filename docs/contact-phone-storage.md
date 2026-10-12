@@ -30,6 +30,16 @@ The response retains headers, raw preview and total_rows, and includes:
 
 Actual import uses the same parser. Unresolved contacts are included in import, not in failed counts. Validation does not confirm WhatsApp registration or database uniqueness.
 
+## Background import
+
+`POST /v1/admin/contacts/import` validates the uploaded file and column mappings, records an import job, and enqueues it in the existing `contact-import` BullMQ queue. It returns HTTP `202` with `job_id`, `status: "queued"`, `total_rows`, and `progress_percentage`. Contact creation, updates, plan checks, list membership, tags, and row results run in the contact import worker.
+
+Poll `GET /v1/admin/contacts/import/:jobId/status` for `status`, progress, successful/failed rows, errors, and the final `result`. Final counts are available when the job is completed. Historical imports with `execution_mode: "api"` remain readable. An enqueue failure marks the import record failed and returns an error.
+
+Run `npm run start:worker` alongside the API in production, or `npm run worker` during development. API and worker must use the same Redis configuration and have access to the same uploaded files at the saved paths. The current Docker entrypoint runs both processes in one container. Separate containers need a shared upload volume at the same path. This change requires no database migration.
+
+Worker retries reuse the import's recorded list, and completed jobs return their saved results if delivered again. List creation and its job association commit in one transaction; tag counts are recalculated once per tag from saved relations before completion.
+
 ## Deployment
 
 Apply pending migrations through `20260930000003_allow_unresolved_contact_phones.ts` with API and workers stopped, then deploy matching code together. The new migration makes country_code nullable, normalizes existing contacts, and preserves company/owner/business-number uniqueness. Duplicate normalized identities cause the migration to fail before rewriting rows. Earlier pending migrations still run their existing preflight checks and may require data cleanup first.
