@@ -1,4 +1,5 @@
 import planUsageService from './planUsage.service';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 
 
 import type { ContactImportJobData } from '../../queues/contactImport.queue';
@@ -132,6 +133,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
 
           successfulCount++;
         } catch (error: any) {
+          if (getDatabaseFailure(error)) throw error;
           console.error(`[Job ${jobId}] Error processing contact ${contactData.phone_number}:`, error);
           failedCount++;
           allErrors.push({
@@ -203,10 +205,11 @@ export async function processContactImport(data: ContactImportJobData, updatePro
 
     return result;
   } catch (error: any) {
-    console.error(`[Job ${jobId}] Fatal error:`, error);
+    reportBackgroundError('Worker contact-import', error, { jobId });
 
     // Mark job as failed
-    await ImportJobModel.markAsFailed(jobId, error);
+    try { await ImportJobModel.markAsFailed(jobId, error); }
+    catch (saveError) { reportBackgroundError('Worker contact-import', saveError, { jobId, phase: 'saving failure' }); }
 
     throw error; // Re-throw to let BullMQ handle retry logic
   }

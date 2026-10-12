@@ -7,10 +7,15 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
+const background = require('./helpers/background-database.cjs');
 function load(file, dependencies) {
   const exports = {};
   const js = ts.transpileModule(fs.readFileSync(file, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
-  vm.runInNewContext(js + (file.endsWith('campaignExecution.processor.ts') ? '\nexports.sendCampaignMessageForTest = sendCampaignMessage;' : ''), { exports, require: id => dependencies[id] || (id.endsWith('/importPhone') ? importedPhone : {}), console: { info(){}, log(){}, error(){}, warn(){} }, process, Date, setInterval: () => ({ unref(){} }), clearInterval(){} });
+  vm.runInNewContext(js + (file.endsWith('campaignExecution.processor.ts') ? '\nexports.sendCampaignMessageForTest = sendCampaignMessage;' : ''), { exports, require: id => {
+    if (id.endsWith('/databaseErrors')) return background.databaseErrors;
+    if (id.endsWith('/databaseAwareWorker')) return background.processorFactory(dependencies);
+    return dependencies[id] || (id.endsWith('/importPhone') ? importedPhone : {});
+  }, console: { info(){}, log(){}, error(){}, warn(){} }, process, Date, setInterval: () => ({ unref(){} }), clearInterval(){} });
   return exports;
 }
 function service(status, state) {

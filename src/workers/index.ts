@@ -1,16 +1,31 @@
 import 'dotenv/config';
+
+// Also support launching the compiled entry point directly with Node.
+// The database must let workers drain their jobs before closing its pool.
+process.env.WORKER_MODE = 'true';
+
 import { contactImportWorker } from '../queues/processors/contactImport.processor';
 import { campaignExecutionWorker } from '../queues/processors/campaignExecution.processor';
 import { bulkMessageSendWorker } from '../queues/processors/bulkMessageSend.processor';
 import { chatbotDelayWorker } from '../queues/processors/chatbotDelay.processor';
 import db from '../../library/surefy/src/database';
 import ReminderScheduler from '../app/services/reminderScheduler.service';
+import { redisConnection } from '../../library/surefy/src/config/redis.config';
 
 ReminderScheduler.start();
 
-const workers = [contactImportWorker, campaignExecutionWorker, bulkMessageSendWorker, chatbotDelayWorker];
-console.info('[Workers] Started', { pid: process.pid, workerMode: process.env.WORKER_MODE,
-  workers: workers.map(worker => ({ name: worker.name, concurrency: worker.opts.concurrency })) });
+const workers = [
+  contactImportWorker,
+  campaignExecutionWorker,
+  bulkMessageSendWorker,
+  chatbotDelayWorker,
+];
+console.info('[Workers] Started', {
+  pid: process.pid,
+  workerMode: process.env.WORKER_MODE,
+  databaseCheck: 'Workers consume jobs after their required schema is available',
+  workers: workers.map(worker => ({ name: worker.name, concurrency: worker.opts.concurrency })),
+});
 let stopping = false;
 async function shutdown(signal: string) {
   if (stopping) return;
@@ -18,7 +33,7 @@ async function shutdown(signal: string) {
   console.info('[Workers] Draining active jobs', { signal, pid: process.pid });
   try {
     await Promise.all([ReminderScheduler.stop(), ...workers.map(worker => worker.close())]);
-    await db.destroy();
+    await Promise.all([db.destroy(), redisConnection.quit()]);
     console.info('[Workers] Shutdown complete');
     process.exit(0);
   } catch (error) {

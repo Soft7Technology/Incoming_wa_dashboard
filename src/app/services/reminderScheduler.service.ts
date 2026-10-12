@@ -5,23 +5,32 @@ import ReminderService from './reminder.service';
 import MessageService from './message.service';
 import ContactOptOutService from './contactOptOut.service';
 import { nextSend } from '../utils/reminder';
+import db from '@surefy/database';
+import { BackgroundDatabaseGate, backgroundSchemas, checkDatabaseSchema } from '../utils/backgroundDatabase';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 
 class ReminderScheduler {
   private task?: cron.ScheduledTask;
   private running?: Promise<void>;
   private stopping = false;
+  private readonly databaseGate = new BackgroundDatabaseGate('Reminders');
 
   start() {
     if (this.task) return;
     this.stopping = false;
     this.task = cron.schedule('*/10 * * * * *', () => {
       if (!this.running)
-        this.running = this.tick()
-          .catch((error) => console.error('[Reminders]', error))
+        this.running = this.runScheduledTick()
           .finally(() => {
             this.running = undefined;
           });
     });
+  }
+
+  private async runScheduledTick(): Promise<void> {
+    if (!await this.databaseGate.check(() => checkDatabaseSchema(db, backgroundSchemas.reminders)) || this.stopping) return;
+    try { await this.tick(); }
+    catch (error) { this.databaseGate.fail(error); }
   }
 
   async stop() {
@@ -47,7 +56,10 @@ class ReminderScheduler {
     let wamid: string | null = null;
     // Keep long network calls from being treated as a crashed sender by another process.
     const heartbeat = setInterval(() => {
-      void ReminderModel.refreshClaim(row.id).catch((error) => console.error('[Reminders] heartbeat failed', error));
+      void ReminderModel.refreshClaim(row.id).catch((error) => {
+        if (getDatabaseFailure(error)) this.databaseGate.fail(error);
+        else reportBackgroundError('Reminders', error, { phase: 'refreshing claim' });
+      });
     }, 60000);
     try {
       const scope = { companyId: row.company_id, ownerId: row.user_id, actorId: row.user_id };
@@ -78,6 +90,8 @@ class ReminderScheduler {
       );
       wamid = result.wamid;
     } catch (error: any) {
+      // Keep an uncertain occurrence claimed; do not write more rows during an outage.
+      if (getDatabaseFailure(error)) throw error;
       failure = error.response?.data?.error?.message || error.message || 'Reminder send failed';
     } finally {
       clearInterval(heartbeat);

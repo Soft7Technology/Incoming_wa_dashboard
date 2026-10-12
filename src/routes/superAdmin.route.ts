@@ -11,6 +11,7 @@ SuperAdminRoute.get('/available-plans', userPlans.availableForCompany);
 SuperAdminRoute.get('/overview', controller.overview);
 SuperAdminRoute.get('/companies', controller.companies);
 SuperAdminRoute.post('/companies', controller.createCompany);
+// SuperAdminRoute.get()
 SuperAdminRoute.get('/companies/:companyId/overview', controller.companyOverview);
 SuperAdminRoute.get('/companies/:companyId/activity', controller.collection('activities'));
 SuperAdminRoute.get('/companies/:companyId/subscription-plans', operations.companyList('plans'));

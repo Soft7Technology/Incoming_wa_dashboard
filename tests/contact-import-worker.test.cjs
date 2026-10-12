@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
+const background = require('./helpers/background-database.cjs');
 function load(file, deps) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -10,6 +11,8 @@ function load(file, deps) {
   }).outputText;
   vm.runInNewContext(code, { exports, require: id => {
     if (id === './contactImport.service') throw Error('API must not execute the importer');
+    if (id.endsWith('/databaseErrors')) return background.databaseErrors;
+    if (id.endsWith('/databaseAwareWorker')) return background.processorFactory(deps);
     return deps[id] || {};
   }, process: { cwd: () => '/workspace' }, console: { log() {}, error() {} } });
   return exports;
@@ -119,7 +122,7 @@ test('contact worker consumes the queued payload and forwards progress to BullMQ
   assert.deepEqual(progress, [50, 100]);
 });
 
-function importer(fatal = false, allInvalid = false, failProgressOnce = false) {
+function importer(fatal = false, allInvalid = false, failProgressOnce = false, rowDatabaseError = false) {
   const calls = [], result = {};
   const contacts = new Map();
   const job = { id: 'job', user_id: 'owner', company_id: 'company', phone_number_id: 'phone', file_path: '/upload.xlsx', status: 'queued' };
@@ -160,6 +163,7 @@ function importer(fatal = false, allInvalid = false, failProgressOnce = false) {
       create: async (row, trx) => {
         assert.equal(trx, 'transaction');
         assert.equal(row.source, 'import');
+        if (rowDatabaseError) throw Object.assign(Error('column missing'), { code: '42703' });
         if (row.phone_number === '222') throw Error('row rejected');
         const contact = { ...row, id: 'contact' };
         contacts.set(row.phone_number, contact);
@@ -195,6 +199,14 @@ test('fatal import failures persist failed status and reject for worker retry', 
   const h = importer(true);
   await assert.rejects(h.run(), /database unavailable/);
   assert.equal(h.result.failure, 'database unavailable');
+  assert.equal(h.result.completed, undefined);
+});
+
+test('database failure in a contact row aborts the import before processing further rows', async () => {
+  const h = importer(false, false, false, true);
+  await assert.rejects(h.run(), error => error.code === '42703');
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.result.failure, 'column missing');
   assert.equal(h.result.completed, undefined);
 });
 

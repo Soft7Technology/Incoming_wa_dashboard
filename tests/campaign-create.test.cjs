@@ -2,6 +2,7 @@ require('ts-node/register');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
+const background = require('./helpers/background-database.cjs');
 class HttpError extends Error { constructor({message,details}) { super(message); this.details=details; } }
 const customFields = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/utils/contactCustomFields.ts','utf8'),{
@@ -54,7 +55,7 @@ test('contact-prefixed custom fields and legacy attributes resolve independently
   compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
  }).outputText;
  vm.runInNewContext(js+'\nexports.buildTemplatePayloadForTest = buildTemplatePayload;',{
-  exports,require:name=>deps[name]||{},console:{log(){}},setInterval:()=>({unref(){}}),
+  exports,require:name=>name.endsWith('/databaseAwareWorker')?background.processorFactory(deps):deps[name]||{},console:{log(){}},setInterval:()=>({unref(){}}),
  });
  for (const [index,message] of messages.entries()) {
   assert.equal(message.contact_id,contacts[index].id);

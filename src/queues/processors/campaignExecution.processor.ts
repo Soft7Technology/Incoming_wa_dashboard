@@ -1,11 +1,13 @@
 import { campaignRecipientNumber } from '../../app/utils/campaignPhone';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
-import { Worker, Job, DelayedError } from 'bullmq';
+import { Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
 import { campaignCapacity, createCapacitySampler } from '../campaignCapacity';
 import { waitForCampaignPermit, getCampaignSenderCooldown, getCampaignPairCooldown } from '../campaignPacing';
 import { acquireCampaignUserSlot, refreshCampaignUserSlot, releaseCampaignUserSlot } from '../campaignUserSlots';
 import { isConnectionAcquireError } from '../campaignDatabaseError';
+import { createDatabaseAwareWorker } from '../databaseAwareWorker';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import PhoneNumberModel from '../../app/models/phoneNumber.model';
 import redisConfig from '@surefy/config/redis.config';
 import { CampaignExecutionJobData } from '../campaignExecution.queue';
@@ -17,7 +19,9 @@ import MessageService from '@surefy/console/services/message.service';
 import { v4 as uuidv4 } from "uuid";
 
 
-class CampaignInfrastructureError extends Error {}
+class CampaignInfrastructureError extends Error {
+  constructor(message: string, public readonly cause?: unknown) { super(message); }
+}
 const capacitySampler = createCapacitySampler();
 const healthTimer = setInterval(() => {
   capacitySampler.sample();
@@ -30,7 +34,7 @@ const healthTimer = setInterval(() => {
       maxRunningPerUser: campaignCapacity.maxRunningPerUser,
       messagesPerSecond: campaignCapacity.messagesPerSecond,
     }))
-    .catch(error => console.error('[Campaign Worker] Health queue inspection failed', getMessageError(error)));
+    .catch(error => reportBackgroundError('Worker campaign-execution', error, { phase: 'health inspection' }));
 }, 15000);
 healthTimer.unref();
 
@@ -176,9 +180,14 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     // Database availability must not turn a recipient failure into a stopped campaign.
     // Resume pending rows only; the durable pre-send claim excludes attempted rows.
     if (isConnectionAcquireError(error)) {
-      console.warn('[Campaign Worker] Waiting for database connection; no message resend', { campaignId, phase });
+      reportBackgroundError('Worker campaign-execution', error, { campaignId, phase });
       releaseSlot = true;
-      return await defer(5000);
+      return await defer(30000);
+    }
+    if (getDatabaseFailure(error)) {
+      // Avoid a second failing SELECT and status write against an unavailable schema.
+      reportBackgroundError('Worker campaign-execution', error, { campaignId, phase });
+      throw error;
     }
     console.error('[Campaign Worker] Execution error', { campaignId, jobId: job.id, phase, attempt: job.attemptsMade + 1, maxAttempts: job.opts.attempts, error: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
     {
@@ -199,9 +208,9 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
   } finally {
     clearInterval(heartbeat);
     if (releaseSlot && slotUserId) await releaseCampaignUserSlot(slotUserId, campaignId)
-      .catch(error => console.error('[Campaign Worker] User slot release failed; expires automatically', { campaignId, error }));
+      .catch(error => reportBackgroundError('Worker campaign-execution', error, { campaignId, phase: 'releasing user slot' }));
     await redis.eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end", 1, lockKey, lockOwner)
-      .catch(error => console.error('[Campaign Worker] Lock release failed; expires automatically', { campaignId, message: error.message }));
+      .catch(error => reportBackgroundError('Worker campaign-execution', error, { campaignId, phase: 'releasing execution lock' }));
   }
 }
 
@@ -262,6 +271,13 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
     await CampaignMessageModel.recordSent(campaignMessage.id, campaign.id, contact.id, message.id, Number(message.cost || 0));
   } catch (error: any) {
     if (attemptReserved) {
+      if (getDatabaseFailure(error)) {
+        // Retain the durable attempt; stop new sends without replaying an uncertain one.
+        reportBackgroundError('Worker campaign-execution', error, {
+          campaignId: campaign.id, campaignMessageId: campaignMessage.id, phase: 'saving send outcome',
+        });
+        throw new CampaignInfrastructureError('Database unavailable after a recipient attempt', error);
+      }
       // The recipient is already durably failed/unconfirmed. Failure to save an
       // outcome must neither resend it nor stop unrelated recipients.
       const skipped = ['CONTACT_OPTED_OUT', 'CAMPAIGN_MESSAGE_EXISTS'].includes(error.code);
@@ -273,9 +289,10 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
           ...getMessageError(error), retry_after: null,
         });
       } catch (saveError) {
-        console.error('[Campaign Worker] Retaining failed/unconfirmed reservation', {
-          campaignId: campaign.id, campaignMessageId: campaignMessage.id, error: saveError,
+        reportBackgroundError('Worker campaign-execution', saveError, {
+          campaignId: campaign.id, campaignMessageId: campaignMessage.id, phase: 'retaining failed/unconfirmed reservation',
         });
+        if (getDatabaseFailure(saveError)) throw new CampaignInfrastructureError('Database unavailable saving a recipient failure', saveError);
       }
       if (!skipped) await recordRecipientFailureCounts(campaign.id, campaignMessage.contact_id);
       return;
@@ -285,12 +302,12 @@ async function sendCampaignMessage(campaign: any, campaignMessage: any, contact:
       return;
     }
     if (isConnectionAcquireError(error)) {
-      console.warn('[Campaign Worker] Recipient database connection unavailable', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, reason: error.message });
-      throw new CampaignInfrastructureError(error.message);
+      reportBackgroundError('Worker campaign-execution', error, { campaignId: campaign.id, campaignMessageId: campaignMessage.id });
+      throw new CampaignInfrastructureError(error.message, error);
     }
     if (infrastructureOperation) {
-      console.error('[Campaign Worker] Recipient infrastructure error', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, error });
-      throw new CampaignInfrastructureError(error instanceof Error ? error.message : String(error));
+      reportBackgroundError('Worker campaign-execution', error, { campaignId: campaign.id, campaignMessageId: campaignMessage.id });
+      throw new CampaignInfrastructureError(error instanceof Error ? error.message : String(error), error);
     }
     console.error('[Campaign Worker] Recipient send failed', { campaignId: campaign.id, campaignMessageId: campaignMessage.id, contactId: campaignMessage.contact_id, reason: getMessageError(error), stack: error instanceof Error ? error.stack : undefined });
 
@@ -309,7 +326,8 @@ async function recordRecipientFailureCounts(campaignId: string, contactId?: stri
   const results = await Promise.allSettled(updates);
   for (const result of results) {
     if (result.status === 'rejected') {
-      console.error('[Campaign Worker] Failed to update recipient failure counter', { campaignId, contactId, error: result.reason });
+      reportBackgroundError('Worker campaign-execution', result.reason, { campaignId, contactId, phase: 'updating failure counter' });
+      if (getDatabaseFailure(result.reason)) throw new CampaignInfrastructureError('Database failure counter unavailable', result.reason);
     }
   }
 }
@@ -408,7 +426,7 @@ console.log('📡 Redis config:', {
   db: redisConfig.db,
 });
 
-export const campaignExecutionWorker = new Worker<CampaignExecutionJobData>(
+export const campaignExecutionWorker = createDatabaseAwareWorker<CampaignExecutionJobData>(
   'campaign-execution',
   async (job, token) => {
     console.log(`🔄 Processing campaign job ${job.id}...`);
@@ -429,13 +447,14 @@ campaignExecutionWorker.on('closed', () => { clearInterval(healthTimer); capacit
 campaignExecutionWorker.on('stalled', jobId => console.warn('[Campaign Worker] Job stalled; automatic resend disabled', { jobId }));
 
 campaignExecutionWorker.on('failed', (job, err) => {
-  console.error('[Campaign Worker] Job attempt failed', { jobId: job?.id, campaignId: job?.data.campaignId, attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts, reason: getMessageError(err), stack: err.stack });
-  console.error(`❌ Campaign job ${job?.id} failed:`, err.message);
-  console.error('Stack:', err.stack);
+  reportBackgroundError('Worker campaign-execution', err, {
+    jobId: job?.id, campaignId: job?.data.campaignId,
+    attempt: job?.attemptsMade, maxAttempts: job?.opts.attempts,
+  });
 });
 
 campaignExecutionWorker.on('error', (error) => {
-  console.error('❌ Campaign Execution Worker Error:', error);
+  reportBackgroundError('Worker campaign-execution', error);
 });
 
 campaignExecutionWorker.on('ready', () => {

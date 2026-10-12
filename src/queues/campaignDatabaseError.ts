@@ -1,7 +1,11 @@
 export function isConnectionAcquireError(error: unknown): boolean {
-  const candidate = error as { message?: string; code?: string; cause?: unknown } | null;
-  const message = String(candidate?.message || error || '');
-  return candidate?.code === '53300' ||
-    /unable to acquire a connection|timeout acquiring a connection|too many clients already|remaining connection slots are reserved/i.test(message) ||
-    (candidate?.cause != null && candidate.cause !== error && isConnectionAcquireError(candidate.cause));
+  const seen = new Set<unknown>();
+  let candidate: any = error;
+  for (let depth = 0; candidate && depth < 8 && !seen.has(candidate); depth++) {
+    seen.add(candidate);
+    if (candidate.code === '53300' ||
+      /unable to acquire a connection|timeout acquiring a connection|too many clients already|remaining connection slots are reserved/i.test(String(candidate.message || ''))) return true;
+    candidate = candidate.cause;
+  }
+  return false;
 }

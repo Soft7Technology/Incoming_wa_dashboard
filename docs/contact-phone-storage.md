@@ -38,6 +38,31 @@ Poll `GET /v1/admin/contacts/import/:jobId/status` for `status`, progress, succe
 
 Run `npm run start:worker` alongside the API in production, or `npm run worker` during development. API and worker must use the same Redis configuration and have access to the same uploaded files at the saved paths. The current Docker entrypoint runs both processes in one container. Separate containers need a shared upload volume at the same path. This change requires no database migration.
 
+All backend workers start from one entry point: `src/workers/index.ts`, compiled to `dist/src/workers/index.js`. The single `npm run start:worker` command starts `contact-import`, `campaign-execution`, `bulk-message-send`, and `chatbot-delay`, plus the reminder scheduler. The API enqueues imports and this shared worker process consumes them. SIGTERM/SIGINT drains every consumer and the scheduler before closing database/shared Redis connections. Launching the compiled entry point directly with Node also sets worker mode before database initialization.
+
+### Kubernetes combined workers
+
+To deploy from this backend checkout without using `kubectl edit`, build/publish the backend production image and run:
+
+```bash
+KUBECONFIG=/etc/kubernetes/admin.conf sh scripts/deploy-workers.sh YOUR_PUBLISHED_BACKEND_IMAGE
+```
+
+Replace the image argument with the actual image reference. The script updates the existing `wa-dashboard` container in the `default/contact-worker` deployment to run all backend workers with `npm run start:worker` and image pull policy `IfNotPresent`, waits for rollout, and prints logs. The existing deployment name is retained. `WORKER_DEPLOYMENT`, `WORKER_NAMESPACE`, `WORKER_CONTAINER`, and `WORKER_IMAGE_PULL_POLICY` override these defaults. Existing environment variables, volumes, resources, and probes are retained. The worker must use the API's database/Redis settings and uploaded-file paths. Keep the same settings in your release manifests or Helm values. Existing separate Kubernetes deployments continue running until explicitly changed; this script only updates the selected deployment.
+
+For a single-node containerd cluster, build the production image with Docker, export it with `docker save -o /tmp/workers-image.tar incoming-api:workers-20261012`, then import it into Kubernetes' containerd namespace using `ctr -n k8s.io images import /tmp/workers-image.tar`. Deploy with the same image tag. Use a fresh tag for each build so `IfNotPresent` does not select an older cached image. On a multi-node cluster, import on every eligible node or publish the image to a registry instead.
+
+A deployment named `contact-worker` that runs `worker:webhook` is running a webhook consumer. Build and deploy matching backend/API code with the shared worker entry point. If the old deployment is the only webhook consumer, keep it running in a separate deployment when repurposing it.
+
+For a manually maintained worker deployment, set the selected container's startup command to:
+
+```yaml
+command: ["npm"]
+args: ["run", "start:worker"]
+```
+
+Expect `[Workers] Started` listing all four queues and the contact worker ready log. Review inherited startup/readiness/liveness probes: this worker does not expose an HTTP server. Set the pod termination grace period to allow active jobs to drain before Kubernetes forces termination.
+
 Worker retries reuse the import's recorded list, and completed jobs return their saved results if delivered again. List creation and its job association commit in one transaction; tag counts are recalculated once per tag from saved relations before completion.
 
 ## Deployment
@@ -49,3 +74,6 @@ No database migration was executed during this change. Back up existing data bef
 ## Campaign recipient override
 
 Campaigns accept numeric recipients without a separate country_code. Unresolved numbers are preserved and attempted without guessing a country. Campaign creation includes these contacts by default; explicitly setting contact_filters.exclude_invalid to true excludes contacts marked is_valid=false. Malformed input remains rejected. Opt-outs and recorded invalid-number failures still prevent sending. This permissive sending behavior is limited to the internal campaign send path; ordinary message API validation is unchanged. Meta may reject an unresolved number, in which case the campaign records the failure.
+## Database availability
+
+See [background database failure handling](background-database-errors.md) for schema checks, backoff, recovery and Kubernetes database diagnosis.

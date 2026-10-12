@@ -1,4 +1,5 @@
 import Redis from 'ioredis';
+import { reportBackgroundError } from '../utils/databaseErrors';
 
 const redisConfig = {
   host: process.env.REDIS_HOST || '127.0.0.1',
@@ -17,7 +18,7 @@ redisConnection.on('connect', () => {
 });
 
 redisConnection.on('error', (error) => {
-  console.error('❌ Redis connection error:', error);
+  reportBackgroundError('Redis connection', error);
 });
 
 export default redisConfig;
