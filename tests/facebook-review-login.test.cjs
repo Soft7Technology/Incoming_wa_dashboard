@@ -20,6 +20,7 @@ test('review access requires an enabled, unexpired private key and uses normal l
   });
   const calls = [];
   const reviewRoute = load('src/routes/facebookReviewLogin.route.ts', {
+    '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
     '../app/http/controllers/auth.controller': { __esModule: true, default: { login: (req, res) => {
       calls.push(req.body);
       res.json({ success: true, data: { token: 'unit-test-jwt', data: { name: 'Reviewer' } } });
@@ -75,7 +76,7 @@ test('review access requires an enabled, unexpired private key and uses normal l
 
 test('private browser link clears its fragment, signs in without a password and preserves ordinary login without a link', async () => {
   const source = fs.readFileSync('src/web/facebook/app.js', 'utf8');
-  async function browser(fragment, allowed) {
+  async function browser(fragment, allowed, publicEnabled = true) {
     const nodes = new Map(), requests = [], history = [], values = new Map();
     const node = () => ({ value: '', hidden: false, disabled: false, textContent: '', classList: { toggle() {} }, replaceChildren() {}, append() {} });
     const document = {
@@ -89,7 +90,9 @@ test('private browser link clears its fragment, signs in without a password and 
       sessionStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
       fetch: async (url, options) => {
         requests.push({ url, options });
-        const data = url.endsWith('/review-login')
+        if (url.endsWith('/public') && !publicEnabled)
+          return { ok: false, status: 404, json: async () => ({ success: false }) };
+        const data = url.includes('/review-login')
           ? allowed ? { token: 'review-jwt', data: { name: 'Reviewer' } } : null
           : url.endsWith('/setup') ? { ready: true, privacy_ready: true, can_manage: false }
           : url.endsWith('/pages') ? [] : { conversations: [] };
@@ -113,6 +116,11 @@ test('private browser link clears its fragment, signs in without a password and 
   assert.equal(rejected.nodes.get('login-panel').hidden, false);
   assert.equal(rejected.nodes.get('notice').textContent, 'Invalid review link');
   const ordinary = await browser('', true);
-  assert.equal(ordinary.requests.length, 0);
+  assert.equal(ordinary.requests[0].url, '/v1/facebook/review-login/public');
+  assert.deepEqual(JSON.parse(ordinary.requests[0].options.body), {});
+  assert.equal(ordinary.nodes.get('workspace').hidden, false);
+  const disabled = await browser('', true, false);
+  assert.equal(disabled.values.has('facebook_saas_jwt'), false);
+  assert.equal(disabled.nodes.get('notice').hidden, true);
   assert.equal(typeof ordinary.nodes.get('login-form').onsubmit, 'function');
 });

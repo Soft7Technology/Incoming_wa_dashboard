@@ -32,6 +32,11 @@ import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
 import { downloadMedia } from '../utils';
 
+const supportedIncomingMessageTypes = new Set([
+  'text', 'image', 'video', 'document', 'audio', 'template',
+  'interactive', 'location', 'contacts', 'sticker', 'reaction',
+]);
+
 class MessageService {
   /**
    * Calculate message cost (simplified pricing)
@@ -571,17 +576,24 @@ class MessageService {
    * Handle message status update from webhook
    */
   async handleStatusUpdate(statusUpdate: MessageStatusUpdate) {
-    await recordReminderDelivery(statusUpdate);
-    const message = await MessageModel.findByWamid(statusUpdate.wamid);
-    if (!message) {
-      console.warn(`Message not found for WAMID: ${statusUpdate.wamid}`);
-      return;
+    const timestamp = Number(statusUpdate.timestamp);
+    if (!statusUpdate.wamid || !['sent', 'delivered', 'read', 'failed'].includes(statusUpdate.status) ||
+        !Number.isFinite(timestamp) || timestamp <= 0 || !Number.isFinite(new Date(timestamp * 1000).getTime())) {
+      console.warn('Ignoring invalid Meta message status', { wamid: statusUpdate.wamid, status: statusUpdate.status });
+      return null;
     }
 
-    await MessageModel.updateStatus(statusUpdate.wamid, statusUpdate.status, {
-      error_message: statusUpdate.error?.message,
-      error_code: statusUpdate.error?.code,
-    });
+    // One indexed UPDATE returns the row; reminder tracking runs independently of that write.
+    const [messages] = await Promise.all([
+      MessageModel.updateStatus(statusUpdate.wamid, statusUpdate.status, {
+        event_at: new Date(timestamp * 1000),
+        error_message: statusUpdate.error?.message,
+        error_code: statusUpdate.error?.code,
+      }),
+      recordReminderDelivery(statusUpdate),
+    ]);
+    const message = messages[0];
+    if (!message) return null;
 
     // Trigger webhook
     await WebhookService.triggerWebhook(message.company_id, `message.${statusUpdate.status}`, {
@@ -591,6 +603,7 @@ class MessageService {
       timestamp: new Date(statusUpdate.timestamp * 1000).toISOString(),
       error: statusUpdate.error,
     });
+    return message;
   }
 
   /**
@@ -609,6 +622,12 @@ class MessageService {
         console.warn(`Phone number not found: ${data.phone_number_id}`);
         return null;
       }
+
+      if (typeof data.message_id !== 'string' || !data.message_id.trim()) {
+        throw new HTTP400Error({ message: 'Incoming WhatsApp message ID is required' });
+      }
+      // Meta retries webhooks. Skip known messages before downloading media again.
+      if (await MessageModel.findByWamid(data.message_id)) return null;
 
       const sender = parseWhatsAppPhone(data.from);
       data = { ...data, from: sender.country_code + sender.phone_number };
@@ -685,7 +704,8 @@ class MessageService {
         wamid: data.message_id,
 
         direction: 'inbound',
-        type: type === 'button' ? 'interactive' : type,
+        // Preserve unknown payloads, including Meta's errors, as unsupported messages.
+        type: type === 'button' ? 'interactive' : supportedIncomingMessageTypes.has(type) ? type : 'unsupported',
 
         from_phone: data.from,
         to_phone: phoneNumber.display_phone_number,
@@ -706,7 +726,9 @@ class MessageService {
         name: data.profile_name,
       });
 
-      const message = await MessageModel.create(messagePayload);
+      const message = await MessageModel.createIncoming(messagePayload);
+      // The unique WAMID constraint also deduplicates deliveries racing across processes.
+      if (!message) return null;
       const preferenceHandled = await contactOptOut.incoming(phoneNumber, contact, data.raw_message || data.content);
 
       console.log('Incoming message stored', message.id);

@@ -142,6 +142,8 @@ For password-free entry, configure the optional private review link on the targe
 
 Supply `/v1/facebook/page#review=ACCESS_KEY` only in Meta's private reviewer-access instructions. Opening that link signs into the configured account through normal password validation, company-domain checks and login auditing. The browser removes the fragment before navigating to Facebook. Anyone holding the link can access that account, so use a dedicated account with test data. Set `FACEBOOK_REVIEW_ENABLED=false` and restart the API to disable new review logins; existing sessions follow the application's normal session policy.
 
+For automatic entry on the ordinary `/v1/facebook/page` URL, also set `FACEBOOK_REVIEW_PUBLIC_ENABLED=true` and `FACEBOOK_REVIEW_PAGE_ID` to the dedicated test Page ID. Visitors without a saved login receive a short session limited to that Page's Messenger integration and conversations. The public session may authorize/reconnect only that Page and send support replies within the normal reply window. It cannot disconnect/delete the Page, access other account APIs, or act as a password-reset token. The configured password stays on the server. This exposes the test Page's inbox and reply feature to anyone visiting the URL; keep the Page dedicated to review. Disable public access with `FACEBOOK_REVIEW_PUBLIC_ENABLED=false`; existing public sessions are denied immediately by the API after its environment reloads. Public sessions also expire after at most one hour and are blocked after `FACEBOOK_REVIEW_EXPIRES_AT`.
+
 ## Reviewer testing instructions
 
 Supply the configured URL, company domain, test Page name/ID and private SaaS credential fields along with these steps:

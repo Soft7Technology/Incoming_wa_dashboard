@@ -34,6 +34,7 @@ const scope = (req: JWTAuthRequest): FacebookScope => ({
   companyId: req.companyId!,
   ownerId: (req.ownerId || req.userId)!,
   userId: req.userId!,
+  reviewPageId: req.facebookReviewPageId,
 });
 const browser = (req: Request) => {
   const value = req.headers.cookie
@@ -74,6 +75,7 @@ class FacebookMessengerController {
       ready,
       issue,
       can_manage: canManage,
+      public_review: Boolean(req.facebookReviewPageId),
       permissions,
       subscriptions,
       privacy_ready: Boolean(process.env.FACEBOOK_PRIVACY_CONTROLLER && process.env.FACEBOOK_PRIVACY_EMAIL),

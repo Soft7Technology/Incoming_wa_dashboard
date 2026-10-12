@@ -8,6 +8,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { v4 as uuidv4, validate as uuidValidate } from "uuid";
 import { handleIncomingMessageChatBot } from  "@surefy/console/app/services/chatbot/chatbot.service"
 import activityLogsModel from '../../models/activityLogs.model';
+import { processMetaStatusBatch } from '../../utils/metaWebhookStatus';
 
 class MessageController {
   /**
@@ -159,41 +160,33 @@ class MessageController {
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
 
-    // console.log("Entry",JSON.stringify(entry))
+    const values = (entry || []).flatMap((item: any) => item.changes || [])
+      .filter((change: any) => change.field === 'messages' && change.value)
+      .map((change: any) => change.value);
 
-    for (const item of entry || []) {
-      for (const change of item.changes || []) {
-        if (change.field === 'messages') {
-          const value = change.value;
+    // Apply receipts across the entire batch before any slow media or chatbot work.
+    await processMetaStatusBatch(values, status => MessageService.handleStatusUpdate({
+      wamid: status.id,
+      status: status.status,
+      timestamp: status.timestamp,
+      error: status.errors?.[0],
+    }));
 
-          // Handle status updates
-          for (const status of value.statuses || []) {
-            await MessageService.handleStatusUpdate({
-              wamid: status.id,
-              status: status.status,
-              timestamp: status.timestamp,
-              error: status.errors?.[0],
-            });
-          }
+    for (const value of values) {
+      for (const message of value.messages || []) {
+        const profileName = value.contacts?.find((contact: any) => contact.wa_id === message.from)?.profile?.name;
+        const saved = await MessageService.saveIncomingMessage({
+          phone_number_id: value.metadata.phone_number_id,
+          profile_name: profileName || "",
+          message_id: message.id,
+          from: message.from,
+          type: message.type,
+          content: message,
+          context: message?.context?.id,
+        });
 
-          // Handle incoming messages
-          for (const message of value.messages || []) {
-            const profileName = value.contacts?.find((contact: any) => contact.wa_id === message.from)?.profile?.name;
-            console.log("Value",message)
-            const saved = await MessageService.saveIncomingMessage({
-              phone_number_id: value.metadata.phone_number_id,
-              profile_name: profileName || "",
-              message_id: message.id,
-              from: message.from,
-              type: message.type,
-              content: message,
-              context: message?.context?.id,
-            });
-
-            if (saved && !saved.preference_handled) {
-              await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName);
-            }
-          }
+        if (saved && saved.type !== 'unsupported' && !saved.preference_handled) {
+          await handleIncomingMessageChatBot(value.metadata.phone_number_id,message,profileName);
         }
       }
     }

@@ -27,6 +27,7 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
     Object.assign(req, a); next();
   }, load('src/routes/facebookMessenger.route.ts', deps).default);
   deps['./facebookReviewLogin.route'] = load('src/routes/facebookReviewLogin.route.ts', {
+    '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
     '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
   });
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
