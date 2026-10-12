@@ -112,11 +112,18 @@ function messageHarness(contacts = [], blocked = false) {
     './contactOptOut.service': { incoming: async () => false, isBlocked: async () => blocked },
     '../utils/campaignPhone': require('../src/app/utils/campaignPhone'),
     '@surefy/console/models/phoneNumber.model': { findByPhoneNumberId: async () => business },
+    '@surefy/console/models/company.model': { canSend: async () => true },
+    '@surefy/console/app/utils/messageError': require('../src/app/utils/messageError'),
     '../models/contact.model': {
       findCampaignPhoneCandidates: async (owner, company) => { assert.equal(owner, 'owner'); assert.equal(company, 'company'); return contacts; },
       findOrCreateIncoming: async data => { incoming.push(data); return data; },
     },
-    '@surefy/console/models/message.model': { create: async data => { saved.push(data); return { ...data, id: 'message' }; }, update: async () => {} },
+    '@surefy/console/models/message.model': {
+      findByWamid: async () => undefined,
+      createIncoming: async data => { saved.push(data); return { ...data, id: 'message' }; },
+      createOutbound: async data => { saved.push(data); return { ...data, id: 'message' }; },
+      update: async () => {},
+    },
     '@surefy/console/services/meta.service': { sendMessage: async (id, data) => { sent.push(data); return { messages: [{ id: 'wamid' }] }; } },
     '@surefy/exceptions/HTTP400Error': HttpError,
     '@surefy/exceptions/HTTP404Error': HttpError,
@@ -149,7 +156,7 @@ test('outbound ambiguous or unscoped national recipients fail before message cre
 });
 test('incoming service persists split sender identity within the receiving company and phone scope', async () => {
   const env = messageHarness();
-  await env.service.saveIncomingMessage({ phone_number_id: 'meta', from: '6581234567', type: 'text', content: { text: { body: 'Hello' } } });
+  await env.service.saveIncomingMessage({ phone_number_id: 'meta', message_id: 'wamid.incoming', from: '6581234567', type: 'text', content: { text: { body: 'Hello' } } });
   const contact = env.incoming[0];
   assert.equal(contact.country_code, '65');
   assert.equal(contact.phone_number, '81234567');

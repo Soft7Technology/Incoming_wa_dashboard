@@ -214,6 +214,7 @@ function jwtHarness(user, company) {
     first: async () => (table === 'users' ? user : company),
   });
   return load('library/surefy/src/middleware/jwtAuth.middleware.ts', {
+    '../utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts', { crypto: require('node:crypto') }),
     '../exceptions/HTTP401Error': HttpError,
     jsonwebtoken: { verify: () => ({ userId: id, role: 'superadmin', companyId: id }) },
     '../database': db,

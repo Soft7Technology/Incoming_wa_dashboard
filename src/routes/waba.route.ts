@@ -7,7 +7,6 @@ const WabaRoute = Router();
 WabaRoute.use(accountScope);
 
 // All WABA endpoints require authentication (applied at route group level)
-
 WabaRoute.post('/onboard', WabaController.onboardingWaba);
 
 // WABA Account Management

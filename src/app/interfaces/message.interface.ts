@@ -4,10 +4,10 @@ export interface Message {
   phone_number_id: string;
   wamid?: string;
   direction: 'inbound' | 'outbound';
-  type: 'text' | 'image' | 'video' | 'document' | 'audio' | 'template' | 'interactive' | 'location' | 'contacts' | 'sticker';
+  type: 'text' | 'image' | 'video' | 'document' | 'audio' | 'template' | 'interactive' | 'location' | 'contacts' | 'sticker' | 'reaction' | 'unsupported';
   from_phone: string;
   to_phone: string;
-  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'deleted';
+  status: 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'deleted' | 'received';
   error_message?: string;
   error_code?: string;
   content?: any;

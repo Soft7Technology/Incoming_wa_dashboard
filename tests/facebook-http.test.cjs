@@ -15,6 +15,7 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
     '../app/http/controllers/facebookMessenger.controller': controllerModule,
     './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts'),
     './facebookReviewLogin.route': load('src/routes/facebookReviewLogin.route.ts', {
+      '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
       '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
     }),
   }).default;
@@ -23,6 +24,7 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
   }).default;
   class Unauthorized extends Error { constructor(data) { super(data.message); this.status = 401; } }
   const auth = load('library/surefy/src/middleware/jwtAuth.middleware.ts', {
+    '../utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
     '../database': database, '../exceptions/HTTP401Error': Unauthorized,
   }).jwtAuthMiddleware;
   const admin = express.Router(); admin.use(auth); admin.use(protectedRoute);

@@ -19,6 +19,7 @@ export interface FacebookScope {
   companyId: string;
   ownerId: string;
   userId: string;
+  reviewPageId?: string;
 }
 const publicPageFields = [
   'id',
@@ -31,8 +32,11 @@ const publicPageFields = [
   'token_expires_at',
   'data_access_expires_at',
 ];
-const scoped = (database: Knex, scope: FacebookScope) =>
-  database('facebook_pages').where({ company_id: scope.companyId, owner_id: scope.ownerId });
+const scoped = (database: Knex, scope: FacebookScope) => {
+  const query = database('facebook_pages').where({ company_id: scope.companyId, owner_id: scope.ownerId });
+  if (scope.reviewPageId) query.where({ page_id: scope.reviewPageId });
+  return query;
+};
 const safeError = (error: unknown) =>
   error instanceof FacebookError
     ? error
@@ -182,7 +186,9 @@ export class FacebookMessengerService {
     return {
       status: session.status,
       error: session.error,
-      pages: payload.pages.map((p: any) => ({ page_id: p.id, name: p.name })),
+      pages: payload.pages
+        .filter((p: any) => !scope.reviewPageId || String(p.id) === scope.reviewPageId)
+        .map((p: any) => ({ page_id: p.id, name: p.name })),
     };
   }
 
@@ -190,6 +196,8 @@ export class FacebookMessengerService {
     await this.access(scope, 'manage');
     if (typeof pageId !== 'string' || !/^\d{1,80}$/.test(pageId))
       throw new FacebookError(400, 'Select a Facebook Page.');
+    if (scope.reviewPageId && pageId !== scope.reviewPageId)
+      throw new FacebookError(403, 'The public review session can only connect the configured test Page.');
     const session = await this.session(scope, browser);
     if (session?.status !== 'ready' || !session.candidates_ciphertext)
       throw new FacebookError(409, 'Facebook Page selection expired. Connect again.');
@@ -276,6 +284,7 @@ export class FacebookMessengerService {
   }
 
   async disconnect(scope: FacebookScope, id: string, erase = false) {
+    if (scope.reviewPageId) throw new FacebookError(403, 'Public review sessions cannot disconnect or delete Pages.');
     await this.access(scope, 'manage');
     this.validateId(id);
     return this.database.transaction(async (trx) => {
@@ -312,11 +321,12 @@ export class FacebookMessengerService {
 
   async conversation(scope: FacebookScope, id: string, database = this.database) {
     this.validateId(id);
-    const c = await database('facebook_conversations as c')
+    const query = database('facebook_conversations as c')
       .join('facebook_pages as p', 'p.id', 'c.page_connection_id')
       .where({ 'c.id': id, 'p.company_id': scope.companyId, 'p.owner_id': scope.ownerId })
-      .select('c.*', 'p.name as page_name', 'p.page_id', 'p.status as connection_status')
-      .first();
+      .select('c.*', 'p.name as page_name', 'p.page_id', 'p.status as connection_status');
+    if (scope.reviewPageId) query.where({ 'p.page_id': scope.reviewPageId });
+    const c = await query.first();
     if (!c) throw new FacebookError(404, 'Conversation not found in your account.');
     return { ...c, ...replyWindow(c.last_customer_message_at) };
   }
@@ -330,6 +340,7 @@ export class FacebookMessengerService {
       .orderBy('c.last_message_at', 'desc')
       .orderBy('c.id', 'desc')
       .limit(100);
+    if (scope.reviewPageId) query.where({ 'p.page_id': scope.reviewPageId });
     if (before) {
       const [at, id] = before.split('|');
       this.validateId(id || '');

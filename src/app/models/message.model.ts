@@ -7,6 +7,20 @@ class MessageModel extends BaseModel {
     super('messages');
   }
 
+  /** Only the winning webhook delivery may notify clients or run a chatbot. */
+  async createIncoming(data: any) {
+    const processedData = { ...data };
+    for (const key of Object.keys(processedData)) {
+      const value = processedData[key];
+      if (value !== null && typeof value === 'object' && !(value instanceof Date)) {
+        processedData[key] = JSON.stringify(value);
+      }
+    }
+    const [message] = await this.query().insert(processedData)
+      .onConflict('wamid').ignore().returning('*');
+    return message;
+  }
+
   /** Commit the outbound row before Meta; even an uncertain outcome blocks a resend. */
   async createOutbound(data: {
     company_id?: string; campaign_id?: string | null; phone_number_id: string;
@@ -365,23 +379,45 @@ class MessageModel extends BaseModel {
   }
 
   async updateStatus(wamid: string, status: string, additionalData: any = {}) {
+    const previousStatuses: Record<string, string[]> = {
+      sent: ['queued', 'failed'],
+      delivered: ['queued', 'sent', 'failed'],
+      read: ['queued', 'sent', 'delivered', 'failed'],
+      failed: ['queued', 'sent'],
+    };
+    if (!previousStatuses[status]) return [];
+    const eventAt = additionalData.event_at || new Date();
     const updateData: any = { status, updated_at: new Date() };
 
     if (status === 'sent') {
-      updateData.sent_at = new Date();
+      updateData.sent_at = eventAt;
     } else if (status === 'delivered') {
-      updateData.delivered_at = new Date();
+      updateData.delivered_at = eventAt;
     } else if (status === 'read') {
-      updateData.read_at = new Date();
+      updateData.read_at = eventAt;
     } else if (status === 'failed') {
-      updateData.failed_at = new Date();
-      if (additionalData.error_message) {
-        updateData.error_message = additionalData.error_message;
-        updateData.error_code = additionalData.error_code;
-      }
+      updateData.failed_at = eventAt;
+      updateData.error_message = additionalData.error_message || null;
+      updateData.error_code = additionalData.error_code == null ? null : String(additionalData.error_code);
+    }
+    if (status !== 'failed') {
+      updateData.error_message = null;
+      updateData.error_code = null;
+      updateData.failed_at = null;
     }
 
-    return this.query().where({ wamid }).update(updateData).returning('*');
+    const query = this.query().where({ wamid, direction: 'outbound' })
+      .whereIn('status', previousStatuses[status]);
+    // Duplicate and out-of-order callbacks must not overwrite a newer state.
+    if (status === 'sent') {
+      query.where(builder => builder.whereNull('failed_at').orWhere('failed_at', '<=', eventAt)
+        .orWhere('error_code', 'SEND_OUTCOME_UNCONFIRMED'));
+    } else if (status === 'failed') {
+      // Meta timestamps have second precision; sent_at can include server milliseconds.
+      const endOfEventSecond = new Date(eventAt.getTime() + 1000);
+      query.where(builder => builder.whereNull('sent_at').orWhere('sent_at', '<', endOfEventSecond));
+    }
+    return query.update(updateData).returning('*');
   }
 
   async getMessageStats(companyId: string, fromDate?: Date, toDate?: Date) {

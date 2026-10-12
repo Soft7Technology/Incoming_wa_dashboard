@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import HTTP401Error from '../exceptions/HTTP401Error';
 import jwt from 'jsonwebtoken';
 import db from '../database';
+import { facebookReviewPurpose, facebookReviewSecret } from '../utils/facebookReviewSession';
 
 export interface JWTAuthRequest extends Request {
   userId?: string;
@@ -13,6 +14,7 @@ export interface JWTAuthRequest extends Request {
   /** For team members: the inviter's userId whose data they should see.
    *  For account owners: same as userId. */
   ownerId?: string;
+  facebookReviewPageId?: string;
 }
 
 interface JWTPayload {
@@ -23,6 +25,8 @@ interface JWTPayload {
   companyId?: string;
   ownerId?: string;
   assigned_plan?:string
+  purpose?: string;
+  reviewPageId?: string;
 }
 
 /**
@@ -46,11 +50,36 @@ export const jwtAuthMiddleware = async (req: JWTAuthRequest, res: Response, next
     // Verify token
     const JWT_SECRET = process.env.JWT_SECRET || '1428736492837465';
     let decoded: JWTPayload;
+    let publicReview = false;
 
     try {
       decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
     } catch (error) {
-      throw new HTTP401Error({ message: 'Invalid or expired token' });
+      try {
+        decoded = jwt.verify(token, facebookReviewSecret(JWT_SECRET)) as JWTPayload;
+        if (decoded.purpose !== facebookReviewPurpose) throw error;
+        publicReview = true;
+      } catch {
+        throw new HTTP401Error({ message: 'Invalid or expired token' });
+      }
+    }
+    if (publicReview) {
+      const expires = Date.parse(process.env.FACEBOOK_REVIEW_EXPIRES_AT || '');
+      const endpoint = req.originalUrl.split('?')[0];
+      const permitted = /^\/v1\/admin\/facebook-messenger(?:\/|$)/.test(endpoint);
+      const destructive = req.method === 'DELETE' || /\/disconnect\/?$/.test(endpoint);
+      if (
+        process.env.FACEBOOK_REVIEW_ENABLED !== 'true' ||
+        process.env.FACEBOOK_REVIEW_PUBLIC_ENABLED !== 'true' ||
+        !Number.isFinite(expires) || expires <= Date.now() ||
+        !/^\d{1,80}$/.test(decoded.reviewPageId || '') ||
+        decoded.reviewPageId !== process.env.FACEBOOK_REVIEW_PAGE_ID ||
+        !permitted || destructive
+      ) {
+        res.status(403).json({ success: false, message: 'This review session can only use the configured Messenger test Page.' });
+        return;
+      }
+      req.facebookReviewPageId = decoded.reviewPageId;
     }
 
     // ── Live status check ─────────────────────────────────────────
