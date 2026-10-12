@@ -52,6 +52,7 @@ test('unsupported template components fail before saving', () => {
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
+const background = require('./helpers/background-database.cjs');
 function serviceHarness() {
   const ids = Object.fromEntries(
     ['contact', 'phone', 'template', 'reminder'].map((key, i) => [key, `00000000-0000-4000-8000-00000000000${i}`]),
@@ -343,6 +344,8 @@ function schedulerHarness({ frequency = 'once', blocked = false, sendError = fal
       require: (id) =>
         ({
           'node-cron': {},
+          '../utils/backgroundDatabase': background.backgroundDatabase,
+          '@surefy/utils/databaseErrors': background.databaseErrors,
           uuid: require('uuid'),
           '../models/reminder.model': loadReminderModel(db),
           './reminder.service': {
@@ -357,7 +360,7 @@ function schedulerHarness({ frequency = 'once', blocked = false, sendError = fal
           './message.service': {
             sendMessage: async () => {
               sends++;
-              if (sendError) throw new Error('Meta rejected send');
+              if (sendError) throw typeof sendError === 'object' ? sendError : new Error('Meta rejected send');
               return { wamid: 'wamid.123' };
             },
           },
@@ -382,6 +385,15 @@ test('scheduler sends due one-time occurrence once and records its Meta ID', asy
   assert.equal(h.rows.reminders[0].status, 'sent');
   assert.equal(h.rows.reminder_attempts[0].wamid, 'wamid.123');
   assert.equal(h.rows.reminder_attempts[0].scheduled_at.toISOString(), '2020-01-01T00:00:00.000Z');
+});
+
+test('reminder database outage preserves its claim without another completion write or send', async () => {
+  const error = Object.assign(Error('database unavailable'), { code: '42P01' });
+  const h = schedulerHarness({ sendError: error });
+  await assert.rejects(h.scheduler.tick(), e => e === error);
+  assert.equal(h.rows.reminders[0].status, 'sending');
+  assert.equal(h.rows.reminder_attempts[0].status, 'sending');
+  await h.scheduler.tick(); assert.equal(h.sends, 1);
 });
 test('yearly send failure is retained and advances to a future occurrence', async () => {
   const h = schedulerHarness({ frequency: 'yearly', sendError: true });

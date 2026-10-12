@@ -67,3 +67,12 @@ test('unsupported environment fails with a configuration error', () => {
   assert.throws(() => h.run(), /Unsupported database environment: unknown/);
   assert.equal(h.initialized(), 0);
 });
+
+test('legacy database entry point forwards the configured pool without querying or changing schema', () => {
+  const exports = {}, pool = { marker: 'shared' };
+  vm.runInNewContext(source('src/database.ts'), { exports, require(id) {
+    assert.equal(id, '../library/surefy/src/database');
+    return { default: pool, __esModule: true };
+  } });
+  assert.equal(exports.default, pool);
+});

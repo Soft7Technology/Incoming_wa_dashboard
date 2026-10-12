@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 
 export interface CampaignExecutionJobData {
@@ -26,5 +27,5 @@ export const campaignExecutionQueue = new Queue<CampaignExecutionJobData>('campa
 });
 
 campaignExecutionQueue.on('error', (error) => {
-  console.error('Campaign Execution Queue Error:', error);
+  reportBackgroundError('Queue campaign-execution', error);
 });

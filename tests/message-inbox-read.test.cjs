@@ -11,7 +11,7 @@ function load(file, deps) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: name => deps[name] || {}, console: { log() {}, warn() {} } });
+  vm.runInNewContext(code, { exports, require: name => name.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[name] || {}, console: { log() {}, warn() {} } });
   return exports.default;
 }
 function fixture() {

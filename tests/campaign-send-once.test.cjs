@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const ts = require('typescript');
 
 function sender({ fail = false, persistenceFailure = false } = {}) {
-  let calls = 0;
+  let calls = 0, writes = 0;
   const messages = new Set();
   const deps = {
     '../utils/campaignPhone': { campaignRecipientNumber: n => n.replace(/^\+/, '') },
@@ -17,7 +17,7 @@ function sender({ fail = false, persistenceFailure = false } = {}) {
         messages.add(key);
         return row;
       },
-      update: async () => { if (persistenceFailure) throw Error('write failed'); },
+      update: async () => { writes++; if (persistenceFailure) throw Object.assign(Error('write failed'), persistenceFailure === 'database' ? { code: '42P01' } : {}); },
     },
     '@surefy/console/models/company.model': { canSend: async () => true },
     '@surefy/console/services/meta.service': {
@@ -33,13 +33,13 @@ function sender({ fail = false, persistenceFailure = false } = {}) {
   const js = ts.transpileModule(fs.readFileSync('src/app/services/message.service.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(js, { exports, require: n => deps[n] || {}, console: { info() {} }, process: { pid: 1, env: {} } });
+  vm.runInNewContext(js, { exports, require: n => n.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[n] || {}, console: { info() {} }, process: { pid: 1, env: {} } });
   const send = (to = '+6581234567', campaign = 'campaign') => exports.default.sendMessage({
     company_id: 'company', user_id: 'user', campaign_id: campaign, phone_number_id: 'phone',
     messageUUID: 'message', to, type: 'text', text: { body: 'hello' },
   }, { phoneNumber: { id: 'phone', company_id: 'company', user_id: 'user', phone_number_id: 'meta-phone' },
     allowUnverifiedRecipient: true });
-  return { send, calls: () => calls };
+  return { send, calls: () => calls, writes: () => writes };
 }
 
 test('one service invocation makes exactly one Meta call', async () => {
@@ -65,4 +65,10 @@ test('two concurrent callers reach Meta once using outbound history', async () =
  const results=await Promise.allSettled([h.send(),h.send('6581234567')]);
  assert.equal(h.calls(),1);
  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+});
+
+test('database failure saving an accepted send avoids a second failing status write', async () => {
+  const h = sender({ persistenceFailure: 'database' });
+  await assert.rejects(h.send(), { code: '42P01' });
+  assert.equal(h.calls(), 1); assert.equal(h.writes(), 1);
 });

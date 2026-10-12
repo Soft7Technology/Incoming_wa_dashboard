@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
+const background = require('./helpers/background-database.cjs');
 
 function setup(session, bot = { id: 'bot' }) {
   const writes = [];
@@ -30,7 +31,11 @@ function setup(session, bot = { id: 'bot' }) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
   vm.runInNewContext(js, {
-    exports, require: id => dependencies[id] || {}, process,
+    exports, require: id => {
+      if (id.endsWith('/databaseErrors')) return background.databaseErrors;
+      if (id.endsWith('/databaseAwareWorker')) return background.processorFactory(dependencies);
+      return dependencies[id] || {};
+    }, process,
     console: { info: (...args) => logs.push(args), warn: (...args) => logs.push(args), error() {} },
   });
   return { resume: exports.resumeChatbotDelay, writes, logs };

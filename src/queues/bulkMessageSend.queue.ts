@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 import { BulkSendMessageDto } from '@surefy/console/interfaces/message.interface';
 
@@ -26,5 +27,5 @@ export const bulkMessageSendQueue = new Queue<BulkMessageSendJobData>('bulk-mess
 });
 
 bulkMessageSendQueue.on('error', (error) => {
-  console.error('Bulk Message Send Queue Error:', error);
+  reportBackgroundError('Queue bulk-message-send', error);
 });

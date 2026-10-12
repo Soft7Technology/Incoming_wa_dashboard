@@ -1,4 +1,5 @@
-import { Worker } from 'bullmq';
+import { createDatabaseAwareWorker } from '../databaseAwareWorker';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 import type { ContactImportJobData } from '../contactImport.queue';
 import { processContactImport } from '../../app/services/contactImport.service';
@@ -9,7 +10,7 @@ console.log('📦 Initializing Contact Import Worker...');
 //   port: redisConfig.port
 // });
 
-export const contactImportWorker = new Worker<ContactImportJobData>(
+export const contactImportWorker = createDatabaseAwareWorker<ContactImportJobData>(
   'contact-import',
   async (job) => {
     console.log(`🔄 Processing job ${job.id}...`);
@@ -30,12 +31,11 @@ contactImportWorker.on('completed', (job) => {
 });
 
 contactImportWorker.on('failed', (job, err) => {
-  console.error(`❌ Import job ${job?.id} failed:`, err.message);
-  console.error('Stack:', err.stack);
+  reportBackgroundError('Worker contact-import', err, { jobId: job?.id });
 });
 
 contactImportWorker.on('error', (error) => {
-  console.error('❌ Contact Import Worker Error:', error);
+  reportBackgroundError('Worker contact-import', error);
 });
 
 contactImportWorker.on('ready', () => {

@@ -1,4 +1,6 @@
-import { Worker, Job } from 'bullmq';
+import { Job } from 'bullmq';
+import { createDatabaseAwareWorker } from '../databaseAwareWorker';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 import permissionModel from '@surefy/console/app/models/permission.model';
 import * as os from 'os';
@@ -14,13 +16,13 @@ async function processTableUpdate(job: Job<any>){
             message:  `${permission} table updated successfully`
         }
   } catch (error: any) {
-    console.error(`[permission] Fatal error:`, error);
+    reportBackgroundError('Worker BulkTable-execution', error, { jobId: job.id });
     throw error;
   }
 
 }
 
-export const bulkTableUdateExecutionWorker = new Worker<any>(
+export const bulkTableUdateExecutionWorker = createDatabaseAwareWorker<any>(
   'BulkTable-execution',
   async (job) => {
     const{permission,assigned_to} = job.data
@@ -43,12 +45,11 @@ bulkTableUdateExecutionWorker.on('completed', (job) => {
 });
 
 bulkTableUdateExecutionWorker.on('failed', (job, err) => {
-  console.error(`❌ BulkTable job ${job?.id} failed:`, err.message);
-  console.error('Stack:', err.stack);
+  reportBackgroundError('Worker BulkTable-execution', err, { jobId: job?.id });
 });
 
 bulkTableUdateExecutionWorker.on('error', (error) => {
-  console.error('❌ BulkTable Execution Worker Error:', error);
+  reportBackgroundError('Worker BulkTable-execution', error);
 });
 
 bulkTableUdateExecutionWorker.on('ready', () => {

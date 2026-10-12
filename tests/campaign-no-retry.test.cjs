@@ -1,5 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const background=require('./helpers/background-database.cjs');
 function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,total=0,invalidReason=null,connectionFailure=false,wrongSender=false,templateVariables={},templateComponents=[],onSend=()=>{}}={}) {
  let selectionCalls=0;let sends=0;const claimed=new Set();const statuses=[];
  let campaignStatus='running';const recipients=Array.from({length:total},(_,i)=>({id:String(i),contact_id:String(i)}));
@@ -20,7 +21,7 @@ function worker({sendError,saveError,claim=true,failFirst=0,statusError=false,to
  '@surefy/console/services/message.service':{sendMessage:async data=>{onSend(data);sends++;if(sendError)throw sendError;if(sends<=failFirst)throw Error('recipient rejected');return {id:'message'};}},
  '@surefy/config/redis.config':{},uuid:{v4:()=> 'message-id'}};
  const exports={};const js=ts.transpileModule(fs.readFileSync('src/queues/processors/campaignExecution.processor.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true}}).outputText;
- vm.runInNewContext(js+';exports.sendOne=sendCampaignMessage;', {exports,require:n=>deps[n]||{},console:{log(){},info(){},error(){},warn(){}},setInterval:()=>({unref(){}}),clearInterval(){},process});
+ vm.runInNewContext(js+';exports.sendOne=sendCampaignMessage;', {exports,require:n=>n.endsWith('/databaseErrors')?background.databaseErrors:n.endsWith('/databaseAwareWorker')?background.processorFactory(deps):deps[n]||{},console:{log(){},info(){},error(){},warn(){}},setInterval:()=>({unref(){}}),clearInterval(){},process});
  const run=(id='cm')=>exports.sendOne({id:'c',user_id:'u',company_id:'co',phone_number_id:'p'},{id,contact_id:'contact',template_variables:templateVariables}, {id:'contact',phone_number:'+6581234567',is_valid:!invalidReason,invalid_reason:invalidReason},{name:'test',language:'en',components:templateComponents},{},()=>true);
  return {run,sends:()=>sends,statuses,process:()=>exports.processCampaignExecution({id:'c',data:{campaignId:'c',companyId:'co'},opts:{attempts:1},attemptsMade:0,moveToDelayed:async()=>{},discard(){},updateProgress:async()=>{},updateData:async()=>{},log:async()=>{}}),campaignStatus:()=>campaignStatus};
 }

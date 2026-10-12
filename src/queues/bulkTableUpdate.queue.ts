@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 
 export interface bulkUpdateTableJobData {
@@ -25,5 +26,5 @@ export const bulkUpdateTableExecutionQueue = new Queue<bulkUpdateTableJobData>('
 });
 
 bulkUpdateTableExecutionQueue.on('error', (error) => {
-  console.error('Bulk Update Table Execution Queue Error:', error);
+  reportBackgroundError('Queue BulkTable-execution', error);
 });

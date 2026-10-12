@@ -12,7 +12,7 @@ function load(file, deps = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
   vm.runInNewContext(code, {
-    exports, require: id => deps[id] || {},
+    exports, require: id => id.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[id] || {},
     console: { log() {}, warn() {}, error() {} }, Date,
   });
   return exports;

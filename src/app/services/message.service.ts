@@ -1,4 +1,5 @@
 import { campaignRecipientNumber } from '../utils/campaignPhone';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import contactOptOut from './contactOptOut.service';
 import { recordReminderDelivery } from './reminderDelivery.service';
 import { buildRecipient, parseWhatsAppPhone, parseImportedPhone } from '../utils/importPhone';
@@ -293,6 +294,7 @@ class MessageService {
       return { ...message, wamid: metaResponse.messages[0].id };
     } catch (error: any) {
       // Update message as failed
+      if (getDatabaseFailure(error)) throw error;
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
@@ -502,6 +504,7 @@ class MessageService {
       return { ...message, wamid: metaResponse.messages[0].id };
     } catch (error: any) {
       // Update message as failed
+      if (getDatabaseFailure(error)) throw error;
       await MessageModel.update(message.id, {
         status: 'failed',
         failed_at: new Date(),
@@ -758,7 +761,7 @@ class MessageService {
 
       return { ...message, preference_handled: preferenceHandled };
     } catch (error) {
-      console.error('Failed to save incoming message', error);
+      reportBackgroundError('Incoming messages', error);
       throw error;
     }
   }

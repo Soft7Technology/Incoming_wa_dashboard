@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 
 export interface ChatbotDelayJob {
@@ -16,4 +17,4 @@ export const chatbotDelayQueue = new Queue<ChatbotDelayJob>('chatbot-delay', {
     removeOnFail: { count: 1000 },
   },
 });
-chatbotDelayQueue.on('error', error => console.error('Chatbot delay queue error:', error));
+chatbotDelayQueue.on('error', error => reportBackgroundError('Queue chatbot-delay', error));

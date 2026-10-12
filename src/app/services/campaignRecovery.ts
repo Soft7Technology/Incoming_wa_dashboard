@@ -1,5 +1,6 @@
 import CampaignModel from '../models/campaign.model';
 import { campaignExecutionQueue } from '../../queues/campaignExecution.queue';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 
 // BullMQ can fail a stalled job without entering the processor's catch block.
 export async function reconcileFailedCampaignJobs() {
@@ -28,7 +29,8 @@ export async function reconcileFailedCampaignJobs() {
         attempts: job.attemptsMade, stacktrace: job.stacktrace,
       });
     } catch (error) {
-      console.error('[Campaign Recovery] Status reconciliation failed', { campaignId: campaign.id, error });
+      if (getDatabaseFailure(error)) throw error;
+      reportBackgroundError('Campaign Recovery', error, { campaignId: campaign.id });
     }
   }
 }

@@ -1,4 +1,6 @@
-import { Worker, Job } from 'bullmq';
+import { Job } from 'bullmq';
+import { createDatabaseAwareWorker } from '../databaseAwareWorker';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 import { BulkMessageSendJobData } from '../bulkMessageSend.queue';
 import MessageService from '@surefy/console/services/message.service';
@@ -17,6 +19,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
   const { userId, messages } = job.data;
 
   console.log(`Starting bulk message send for company ${userId}, total messages: ${messages.length}`);
+  let sendsStarted = false;
 
   try {
     // Verify company exists and has sufficient credits
@@ -45,6 +48,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
         batchResults.push(...await Promise.allSettled(
           chunk.map(async (messageData) => {
           try {
+            sendsStarted = true;
             const message = await MessageService.sendMessage({
               user_id: userId,
               company_id: messageData.company_id,
@@ -64,6 +68,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 
             return { success: true, to: messageData.to, message };
           } catch (error: any) {
+            if (getDatabaseFailure(error)) throw error;
             console.error(`Failed to send message to ${messageData.to}:`, error.message);
             return {
               success: false,
@@ -73,6 +78,8 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
           }
           })
         ));
+        const infrastructureFailure = batchResults.find(result => result.status === 'rejected' && getDatabaseFailure(result.reason));
+        if (infrastructureFailure?.status === 'rejected') throw infrastructureFailure.reason;
       }
 
       // Count results
@@ -110,7 +117,9 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 
     return results;
   } catch (error: any) {
-    console.error(`Bulk message send failed for company ${userId}:`, error);
+    // A batch may already contain accepted sends. Never replay it automatically.
+    if (sendsStarted && getDatabaseFailure(error)) job.discard();
+    reportBackgroundError('Worker bulk-message-send', error, { userId });
     throw error;
   }
 }
@@ -118,7 +127,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 // Create and start the worker
 console.log('📦 Initializing Bulk Message Send Worker...');
 
-export const bulkMessageSendWorker = new Worker<BulkMessageSendJobData>(
+export const bulkMessageSendWorker = createDatabaseAwareWorker<BulkMessageSendJobData>(
   'bulk-message-send',
   async (job) => {
     console.log(`🔄 Processing bulk message send job ${job.id}...`);
@@ -139,12 +148,11 @@ bulkMessageSendWorker.on('completed', (job, result) => {
 });
 
 bulkMessageSendWorker.on('failed', (job, err) => {
-  console.error(`❌ Bulk message send job ${job?.id} failed:`, err.message);
-  console.error('Stack:', err.stack);
+  reportBackgroundError('Worker bulk-message-send', err, { jobId: job?.id });
 });
 
 bulkMessageSendWorker.on('error', (error) => {
-  console.error('❌ Bulk Message Send Worker Error:', error);
+  reportBackgroundError('Worker bulk-message-send', error);
 });
 
 bulkMessageSendWorker.on('ready', () => {

@@ -14,7 +14,7 @@ function load(file, dependencies = {}) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
   vm.runInNewContext(source, {
-    exports, require: id => dependencies[id] || {}, process: { env: {} },
+    exports, require: id => id.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : dependencies[id] || {}, process: { env: {} },
     console: { log() {}, info() {}, warn() {}, error() {} }, Date,
   });
   return exports;

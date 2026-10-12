@@ -1,4 +1,5 @@
 import { Queue } from 'bullmq';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 
 export interface ContactImportJobData {
@@ -36,5 +37,5 @@ export const contactImportQueue = new Queue<ContactImportJobData>('contact-impor
 });
 
 contactImportQueue.on('error', (error) => {
-  console.error('Contact Import Queue Error:', error);
+  reportBackgroundError('Queue contact-import', error);
 });

@@ -1,4 +1,5 @@
-import { Worker } from 'bullmq';
+import { createDatabaseAwareWorker } from '../databaseAwareWorker';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
 import { ChatbotDelayJob } from '../chatbotDelay.queue';
 import sessions from '../../app/models/chatSession.model';
@@ -42,11 +43,11 @@ export async function resumeChatbotDelay(data: ChatbotDelayJob) {
   console.info('[Chatbot Delay] Resumed', { sessionId: session.id, nextNodeId: next.id, messageSent: Boolean(response && !response.ignoreMessage) });
 }
 
-export const chatbotDelayWorker = new Worker<ChatbotDelayJob>('chatbot-delay',
+export const chatbotDelayWorker = createDatabaseAwareWorker<ChatbotDelayJob>('chatbot-delay',
   job => resumeChatbotDelay(job.data), { connection: redisConfig, concurrency: 5 });
 chatbotDelayWorker.on('ready', () => console.info('[Chatbot Delay] Worker ready', { pid: process.pid }));
-chatbotDelayWorker.on('error', error => console.error('Chatbot delay worker error:', error));
-chatbotDelayWorker.on('failed', (job, error) => console.error('Chatbot delay failed:', {
+chatbotDelayWorker.on('error', error => reportBackgroundError('Worker chatbot-delay', error));
+chatbotDelayWorker.on('failed', (job, error) => reportBackgroundError('Worker chatbot-delay', error, {
   jobId: job?.id, sessionId: job?.data.sessionId, attempt: job?.attemptsMade,
-  maxAttempts: job?.opts.attempts, reason: error.message, stack: error.stack,
+  maxAttempts: job?.opts.attempts,
 }));
