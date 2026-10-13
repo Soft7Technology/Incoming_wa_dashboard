@@ -1,0 +1,20 @@
+{
+  "devOnly": [
+    "tests/",
+    "postman/",
+    "docs/postman/",
+    "docs/payment-test.html",
+    "docs/subscription-checkout.html",
+    "docs/facebook-login-test.md",
+    "scripts/facebook-login-test.cjs",
+    "src/routes/facebookLoginTest.route.ts",
+    "src/web/facebook/login-test.html",
+    "src/web/facebook/login-test.js",
+    "src/web/facebook/login-test.css",
+    "AI_ASSISTANT_EXPLANATION.md",
+    "PROJECT_SUMMARY.md",
+    "package-lock.json"
+  ],
+  "runtimeDirectories": ["uploads", "tmp", "temp", "logs", ".cache", "node_modules", "dist", "build", "coverage", ".facebook-test-runtime"],
+  "scratchFiles": ["a.ts", "password.js", "split-phone-tests.txt"]
+}
