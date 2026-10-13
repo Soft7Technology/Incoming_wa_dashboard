@@ -28,6 +28,14 @@ test('import job update serializes JSONB arrays before calling BaseModel', async
   assert.equal(received.data.errors, '[{"row":2,"error":"invalid"}]');
   assert.equal(received.data.list_id, 'list-1');
   assert.equal(received.data.total_rows, 2);
+
+  exports.default.findById = async () => ({ processed_rows: 500, total_rows: 2000 });
+  await exports.default.updateProgress('job-1', { processed_rows: 0 });
+  assert.equal(received.data.progress_percentage, 0, 'a retry must be able to reset its old progress');
+  await exports.default.updateProgress('job-1', { processed_rows: 2000 });
+  assert.equal(received.data.progress_percentage, 99, 'row completion still needs final list/tag persistence');
+  await exports.default.markAsCompleted('job-1', { imported: 2000 });
+  assert.equal(received.data.progress_percentage, 100);
 });
 
 function listHarness() {

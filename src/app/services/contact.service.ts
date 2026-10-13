@@ -18,6 +18,9 @@ import * as path from 'path';
 import { filter } from 'lodash';
 import db from '@surefy/database';
 import { parseContactCustomFields } from '../utils/contactCustomFields';
+import { reportBackgroundError } from '@surefy/utils/databaseErrors';
+import { contactImportStatus } from '../utils/contactImportStatus';
+import { contactListImportSummary } from '../utils/contactImportSummary';
 
 class ContactService {
   /**
@@ -405,7 +408,8 @@ class ContactService {
     });
 
     try {
-      const { contactImportQueue } = await import('../../queues/contactImport.queue');
+      const { contactImportQueue, ensureContactImportQueueReady } = await import('../../queues/contactImport.queue');
+      await ensureContactImportQueueReady();
       await contactImportQueue.add('contact-import', {
         jobId: importJob.id, companyId, phone_number_id, country_code,
         userId, filePath, listName, options,
@@ -420,21 +424,29 @@ class ContactService {
   /**
    * Get import job status
    */
-  async getImportJobStatus(jobId: string) {
+  async getImportJobStatus(jobId: string, scope?: { userId: string; companyId: string }) {
     const job = await ImportJobModel.findById(jobId);
-    if (!job) {
+    if (!job || job.deleted_at || (scope && (job.user_id !== scope.userId || job.company_id !== scope.companyId))) {
       throw new HTTP404Error({ message: 'Import job not found' });
     }
 
-    // Get BullMQ job details if available
-    const bullJob = job.import_options?.execution_mode === 'api'
-      ? null
-      : await (await import('../../queues/contactImport.queue')).contactImportQueue.getJob(jobId);
-
+    // Database progress stays readable when Redis is offline or completed jobs have expired.
+    let queue: Awaited<ReturnType<typeof import('../../queues/contactImport.queue').getContactImportQueueStatus>> = null;
+    let queueStatus = 'not_required';
+    if (job.import_options?.execution_mode !== 'api' && !['completed', 'cancelled'].includes(job.status)) {
+      try {
+        queue = await (await import('../../queues/contactImport.queue')).getContactImportQueueStatus(jobId);
+        queueStatus = queue ? 'available' : 'missing';
+      } catch (error) {
+        queueStatus = 'unavailable';
+        reportBackgroundError('Contact import status', error, { jobId });
+      }
+    }
     return {
       id: job.id,
-      status: job.status,
-      progress_percentage: job.progress_percentage,
+      ...contactImportStatus(job, queue),
+      queue_status: queueStatus,
+      ...(queueStatus === 'unavailable' && job.status === 'failed' ? { retry_pending: null, poll_after_ms: 2000 } : {}),
       total_rows: job.total_rows,
       processed_rows: job.processed_rows,
       successful_rows: job.successful_rows,
@@ -448,7 +460,7 @@ class ContactService {
       completed_at: job.completed_at,
       failed_at: job.failed_at,
       error_message: job.error_message,
-      bull_job_state: bullJob ? await bullJob.getState() : null,
+      bull_job_state: queue?.state ?? (job.status === 'completed' && job.import_options?.execution_mode !== 'api' ? 'completed' : null),
     };
   }
 
@@ -724,8 +736,13 @@ class ContactService {
   /**
    * List Management
    */
-  async getLists(userId: string) {
-    return ContactListModel.findByUserId(userId);
+  async getLists(userId: string, companyId: string) {
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    const lists = await ContactListModel.findByUserId(userId, companyId);
+    if (!lists.length) return lists;
+    const jobs = await ImportJobModel.latestForLists(userId, companyId, lists.map(list => list.id));
+    const byList = new Map(jobs.map(job => [job.list_id, job]));
+    return lists.map(list => ({ ...list, ...contactListImportSummary(list, byList.get(list.id)) }));
   }
 
   async getListById(listId: string) {

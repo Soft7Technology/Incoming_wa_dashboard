@@ -11,13 +11,17 @@ export async function checkDatabaseSchema(db: Knex, requirements: SchemaRequirem
 }
 
 export const backgroundSchemas: Record<string, SchemaRequirements> = {
+  'media-upload': {
+    media_gallery: ['id', 'user_id', 'name', 'original_name', 'firebase_url', 'firebase_file_name', 'size', 'mimetype', 'deleted_at'],
+  },
   'campaign-execution': {
     campaigns: ['id', 'status', 'company_id', 'user_id', 'failure_reason'],
     campaign_messages: ['id', 'status', 'retry_after'],
     contacts: ['id', 'phone_number'], templates: ['id'], phone_numbers: ['id'], messages: ['id', 'status', 'wamid'],
   },
   'contact-import': {
-    import_jobs: ['id', 'status', 'list_id', 'phone_number_id'],
+    import_jobs: ['id', 'status', 'list_id', 'phone_number_id', 'import_options', 'total_rows',
+      'processed_rows', 'successful_rows', 'failed_rows', 'skipped_rows', 'progress_percentage', 'started_at', 'completed_at', 'failed_at'],
     contacts: ['id', 'phone_number', 'country_code', 'phone_number_id'], contact_lists: ['id'],
     contact_list_relations: ['contact_id', 'list_id'], contact_tags: ['id'], contact_tag_relations: ['contact_id', 'tag_id'],
   },

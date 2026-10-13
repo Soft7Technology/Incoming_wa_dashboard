@@ -5,6 +5,14 @@ class MediaGalleryModel extends BaseModel {
     super('media_gallery');
   }
 
+  async createForUpload(data: any) {
+    const [item] = await this.query().insert(data).onConflict('id').ignore().returning('*');
+    if (item) return item;
+    const existing = await this.findByIdAndUserId(data.id, data.user_id);
+    if (!existing) throw new Error('Upload record is no longer available');
+    return existing;
+  }
+
   async findByUserId(userId: string) {
     return this.query()
       .where({ user_id: userId })

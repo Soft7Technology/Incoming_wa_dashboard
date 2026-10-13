@@ -88,6 +88,15 @@ class ImportJobModel extends BaseModel {
       .orderBy('created_at', 'asc');
   }
 
+  async latestForLists(userId: string, companyId: string, listIds: string[]) {
+    if (!listIds.length) return [];
+    return this.query().where({ user_id: userId, company_id: companyId })
+      .whereIn('list_id', listIds).whereNull('deleted_at')
+      .distinctOn('list_id')
+      .select('id', 'list_id', 'user_id', 'company_id', 'phone_number_id', 'total_rows', 'import_options', 'result')
+      .orderBy('list_id').orderBy('created_at', 'desc').orderBy('id', 'desc');
+  }
+
   async updateStatus(jobId: string, status: string, data: any = {}) {
     const updateData: any = { status, ...data };
 
@@ -108,15 +117,16 @@ class ImportJobModel extends BaseModel {
     failed_rows?: number;
     skipped_rows?: number;
     errors?: any[];
+    import_options?: any;
   }) {
     const job = await this.findById(jobId);
     if (!job) {
       throw new Error('Job not found');
     }
 
-    const processed = progressData.processed_rows || job.processed_rows || 0;
+    const processed = progressData.processed_rows ?? job.processed_rows ?? 0;
     const total = job.total_rows || 1;
-    const progress_percentage = Math.round((processed / total) * 100);
+    const progress_percentage = Math.min(99, Math.round((processed / total) * 100));
 
     const updateData = {
       ...progressData,

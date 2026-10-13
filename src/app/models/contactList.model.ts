@@ -5,9 +5,9 @@ class ContactListModel extends BaseModel {
     super('contact_lists');
   }
 
-  async findByUserId(userId: string) {
+  async findByUserId(userId: string, companyId: string) {
     return this.query()
-      .where({ user_id: userId })
+      .where({ user_id: userId, company_id: companyId })
       .whereNull('deleted_at')
       .orderBy('created_at', 'desc');
   }

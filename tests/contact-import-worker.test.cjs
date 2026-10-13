@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const ts = require('typescript');
 const background = require('./helpers/background-database.cjs');
-function load(file, deps) {
+function load(file, deps, globals = {}) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
@@ -13,8 +13,10 @@ function load(file, deps) {
     if (id === './contactImport.service') throw Error('API must not execute the importer');
     if (id.endsWith('/databaseErrors')) return background.databaseErrors;
     if (id.endsWith('/databaseAwareWorker')) return background.processorFactory(deps);
+    if (id === '../utils/contactImportStatus') return background.loadSource('src/app/utils/contactImportStatus.ts');
+    if (id === '../utils/contactImportSummary') return background.loadSource('src/app/utils/contactImportSummary.ts');
     return deps[id] || {};
-  }, process: { cwd: () => '/workspace' }, console: { log() {}, error() {} } });
+  }, process: { cwd: () => '/workspace' }, console: { log() {}, error() {} }, ...globals });
   return exports;
 }
 test('API queues a tracked import with account scope and column mappings and returns before worker processing', async () => {
@@ -31,7 +33,7 @@ test('API queues a tracked import with account scope and column mappings and ret
       create: async row => { stored = { ...row, id: 'job' }; return stored; },
       findById: async () => ({ ...stored, status: 'completed', result: { imported: 1, failed: 1 } }),
     },
-    '../../queues/contactImport.queue': { contactImportQueue: {
+    '../../queues/contactImport.queue': { ensureContactImportQueueReady() {}, contactImportQueue: {
       add: async (...args) => queued.push(args),
       getJob: async id => { assert.equal(id, 'job'); return { getState: async () => 'completed' }; },
     } },
@@ -57,7 +59,7 @@ test('enqueue failures persist a failed import job and propagate instead of retu
     '../utils/importColumn': { resolveImportColumn: (_, value) => value },
     './xlsxParser.service': { validateFile: async () => ({ valid: true }), getFilePreview: async () => ({ headers: ['Phone'], total_rows: 2 }) },
     '../models/importJob.model': { create: async () => ({ id: 'job' }), markAsFailed: async (id, error) => { failure = { id, error }; } },
-    '../../queues/contactImport.queue': { contactImportQueue: { add: async () => { throw Error('Redis unavailable'); } } },
+    '../../queues/contactImport.queue': { ensureContactImportQueueReady() {}, contactImportQueue: { add: async () => { throw Error('Redis unavailable'); } } },
   }).default;
   await assert.rejects(service.queueContactImport('owner', 'company', 'phone', '', '/upload.xlsx', 'List'), /Redis unavailable/);
   assert.equal(failure.id, 'job');
@@ -97,6 +99,8 @@ test('contact import endpoint returns 202 with a queued job and the authenticate
   assert.equal(response.status, 202);
   assert.equal(response.data.job_id, 'job');
   assert.equal(response.data.status, 'queued');
+  assert.equal(response.data.status_url, '/v1/admin/contacts/import/job/status');
+  assert.equal(response.data.poll_after_ms, 2000);
   assert.equal(response.data.imported, undefined);
   assert.equal(calls[0][0], 'owner');
   assert.equal(calls[0][1], 'company');
@@ -122,11 +126,13 @@ test('contact worker consumes the queued payload and forwards progress to BullMQ
   assert.deepEqual(progress, [50, 100]);
 });
 
-function importer(fatal = false, allInvalid = false, failProgressOnce = false, rowDatabaseError = false) {
+function importer(fatal = false, allInvalid = false, failProgressOnce = false, rowDatabaseError = false, rowDuration = 0, fixtures = {}) {
   const calls = [], result = {};
-  const contacts = new Map();
+  const contacts = new Map(fixtures.existing || []);
   const job = { id: 'job', user_id: 'owner', company_id: 'company', phone_number_id: 'phone', file_path: '/upload.xlsx', status: 'queued' };
   let savedList;
+  let clock = 10000;
+  const progressHistory = [];
   const deps = {
     path: require('node:path'),
     './planUsage.service': { run: async (owner, feature, create) => {
@@ -135,32 +141,37 @@ function importer(fatal = false, allInvalid = false, failProgressOnce = false, r
     '@surefy/console/models/importJob.model': {
       findById: async () => job,
       getOrCreateContactList: async (_id, data) => {
+        if (fixtures.failList) throw Error('List creation unavailable');
         if (!savedList) { savedList = { ...data, id: 'list' }; result.listCreations = (result.listCreations || 0) + 1; }
         return savedList;
       },
-      updateStatus: async () => { if (fatal) throw Error('database unavailable'); },
-      update: async () => {},
+      updateStatus: async (_, _status, data) => { if (fatal) throw Error('database unavailable'); result.started = data; },
+      update: async (_, data) => {
+        if (data.import_options) job.import_options = JSON.parse(JSON.stringify(data.import_options));
+      },
       updateProgress: async (_, data) => {
         if (failProgressOnce) { failProgressOnce = false; throw Error('Progress write failed'); }
         result.progress = data;
+        progressHistory.push(data);
       },
       markAsCompleted: async (_, data) => { result.completed = data; job.status = 'completed'; job.result = data; },
       markAsFailed: async (_, error) => { result.failure = error.message; },
     },
     '@surefy/console/services/xlsxParser.service': {
       validateFile: async () => ({ valid: true }),
-      parseContactsFromFile: async () => allInvalid ? ({
+      parseContactsFromFile: async () => fixtures.parsed || (allInvalid ? ({
         headers: ['Phone'], valid: 0, invalid: 2, needs_country: 0,
         errors: [{ row: 2, error: 'Invalid phone' }, { row: 3, error: 'Invalid phone' }], contacts: [],
       }) : ({
         headers: ['Phone'], valid: 2, invalid: 0, needs_country: 0, errors: [],
         contacts: [{ phone_number: '111', country_code: '91' }, { phone_number: '222', country_code: '91' }],
-      }),
+      })),
     },
     '@surefy/console/models/contact.model': {
       findOwnedByPhone: async (_user, phone) => contacts.get(phone),
       update: async (id, data) => ({ id, ...data }),
       create: async (row, trx) => {
+        clock += rowDuration;
         assert.equal(trx, 'transaction');
         assert.equal(row.source, 'import');
         if (rowDatabaseError) throw Object.assign(Error('column missing'), { code: '42703' });
@@ -178,9 +189,9 @@ function importer(fatal = false, allInvalid = false, failProgressOnce = false, r
       result.tagCountCalls = (result.tagCountCalls || 0) + 1;
     } },
   };
-  const processImport = load('src/app/services/contactImport.service.ts', deps).processContactImport;
+  const processImport = load('src/app/services/contactImport.service.ts', deps, { Date: { now: () => clock } }).processContactImport;
   return { run: (updateProgress) => processImport({ jobId: 'job', userId: 'owner', companyId: 'company', phone_number_id: 'phone',
-    country_code: '91', filePath: '/upload.xlsx', listName: 'List', options: { tagIds: ['tag'] } }, updateProgress), result, calls, job };
+    country_code: '91', filePath: '/upload.xlsx', listName: 'List', options: { tagIds: ['tag'] } }, updateProgress), result, calls, job, progressHistory };
 }
 test('worker importer retains plan checks, list/tag writes, progress, and partial row failures', async () => {
   const h = importer();
@@ -193,6 +204,9 @@ test('worker importer retains plan checks, list/tag writes, progress, and partia
   assert.equal(h.result.tagCountUpdated, true);
   assert.equal(h.result.progress.processed_rows, 2);
   assert.equal(h.result.completed, result);
+  assert.equal(result.valid_count, 2); assert.equal(result.invalid_count, 0);
+  assert.equal(result.duplicate_count, 0); assert.equal(result.created_count, 1);
+  assert.equal(result.updated_count, 0);
   assert.deepEqual(h.calls, [['owner', 'Contact'], ['owner', 'Contact']]);
 });
 test('fatal import failures persist failed status and reject for worker retry', async () => {
@@ -231,6 +245,8 @@ test('all-invalid imports complete with correct failed counts and worker progres
   const result = await h.run(async value => progress.push(value));
   assert.equal(result.imported, 0);
   assert.equal(result.failed, 2);
+  assert.equal(result.valid_count, 0); assert.equal(result.invalid_count, 2);
+  assert.equal(result.duplicate_count, 0); assert.equal(result.unique_count, 0);
   assert.equal(h.result.progress.processed_rows, 2);
   assert.equal(h.result.progress.failed_rows, 2);
   assert.deepEqual(progress, [100]);
@@ -245,4 +261,85 @@ test('retry after a progress failure reuses the list and existing contacts witho
   assert.equal(result.failed, 1);
   assert.equal(h.calls.length, 3);
   assert.equal(h.result.tagCountCalls, 1);
+});
+
+test('slow rows publish progress inside a batch and retries reset old counters before parsing', async () => {
+  const h = importer(false, false, false, false, 2100);
+  await h.run();
+  assert.equal(h.progressHistory[0].processed_rows, 1);
+  assert.equal(h.progressHistory[0].successful_rows, 1);
+  assert.equal(h.progressHistory[0].import_options.progress.stage, 'importing');
+  assert.equal(h.progressHistory[0].import_options.progress.rows_processed, 1);
+  assert.equal(h.progressHistory.at(-1).import_options.progress.stage, 'saving');
+  assert.equal(h.result.started.processed_rows, 0);
+  assert.equal(h.result.started.progress_percentage, 0);
+  assert.equal(h.result.started.import_options.progress.stage, 'preparing');
+});
+
+function duplicateFixture() {
+  return { headers: ['Phone'], valid: 3, invalid: 0, needs_country: 0, errors: [],
+    contacts: Array.from({ length: 3 }, () => ({ phone_number: '+447879543645', country_code: '44' })) };
+}
+
+test('duplicate file rows remain successful updates and count only repetitions after the first occurrence', async () => {
+  const h = importer(false, false, false, false, 0, { parsed: duplicateFixture() });
+  const result = await h.run();
+  assert.equal(result.valid_count, 3); assert.equal(result.duplicate_count, 2); assert.equal(result.unique_count, 1);
+  assert.equal(result.created_count, 1); assert.equal(result.updated_count, 2);
+  assert.equal(result.imported, 3); assert.equal(result.skipped, 0);
+  assert.equal(h.result.progress.import_options.statistics.duplicate_count, 2);
+  assert.equal(h.result.progress.import_options.statistics.created_count, 1);
+});
+
+test('saved contacts are reported as updates separately from duplicates within the file', async () => {
+  const h = importer(false, false, false, false, 0, { parsed: duplicateFixture(),
+    existing: [['+447879543645', { id: 'existing', phone_number: '+447879543645', country_code: '44' }]] });
+  const result = await h.run();
+  assert.equal(result.created_count, 0); assert.equal(result.updated_count, 3);
+  assert.equal(result.duplicate_count, 2); assert.equal(h.calls.length, 0);
+});
+
+test('parsed statistics remain available when list creation fails before any contact can be imported', async () => {
+  const h = importer(false, false, false, false, 0, { parsed: duplicateFixture(), failList: true });
+  await assert.rejects(h.run(), /List creation unavailable/);
+  assert.equal(h.job.import_options.statistics.valid_count, 3);
+  assert.equal(h.job.import_options.statistics.duplicate_count, 2);
+  assert.equal(h.job.import_options.statistics.created_count, 0);
+  assert.equal(h.calls.length, 0);
+});
+
+test('file statistics stay stable across retries even when the first attempt created saved contacts', async () => {
+  const h = importer(false, false, true, false, 0, { parsed: duplicateFixture() });
+  await assert.rejects(h.run(), /Progress write failed/);
+  const result = await h.run();
+  assert.equal(result.duplicate_count, 2); assert.equal(result.valid_count, 3);
+  assert.equal(result.unique_count, 1); assert.equal(result.created_count, 0); assert.equal(result.updated_count, 3);
+  assert.equal(h.result.started.import_options.statistics, null);
+  assert.equal(await h.run(), result);
+});
+
+test('real CSV normalization groups formatting variants and preserves invalid and unresolved-country counts', async () => {
+  require('ts-node/register');
+  const parser = require('../src/app/services/xlsxParser.service').default;
+  const path = require('node:path'), os = require('node:os');
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'contact-job-statistics-'));
+  const file = path.join(directory, 'contacts.csv');
+  try {
+    fs.writeFileSync(file, 'Phone\n+447879543645\n447879543645\n9372597458\n9372597458\nabc\n');
+    const parsed = await parser.parseContactsFromFile(file);
+    const h = importer(false, false, false, false, 0, { parsed });
+    const result = await h.run();
+    assert.equal(result.total, 5); assert.equal(result.valid_count, 2); assert.equal(result.invalid_count, 1);
+    assert.equal(result.needs_country_count, 2); assert.equal(result.importable_count, 4);
+    assert.equal(result.duplicate_count, 2); assert.equal(result.unique_count, 2);
+    assert.equal(result.created_count, 2); assert.equal(result.updated_count, 2);
+    assert.equal(result.imported, 4); assert.equal(result.failed, 1);
+    assert.equal(h.job.import_options.statistics.duplicate_count, 2);
+    const preview = await parser.getValidatedPreview(file);
+    for (const field of ['total_rows', 'detected_phone_column', 'selected_phone_column', 'valid_count', 'invalid_count', 'needs_country_count', 'importable_count', 'duplicate_count', 'unique_count']) {
+      assert.equal(preview[field], result[field], `${field} must match between preview and import`);
+    }
+    assert.deepEqual(JSON.parse(JSON.stringify(h.job.import_options.statistics.duplicate_preview)), preview.duplicate_preview);
+    assert.deepEqual(JSON.parse(JSON.stringify(h.job.import_options.statistics.needs_country_preview)), preview.needs_country_preview);
+  } finally { fs.unlinkSync(file); fs.rmdirSync(directory); }
 });

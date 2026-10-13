@@ -24,21 +24,87 @@ The response retains headers, raw preview and total_rows, and includes:
 - `needs_country_count`: numeric contacts saved without a resolved country.
 - `importable_count`: valid_count + needs_country_count, before duplicate handling.
 - `invalid_count`: malformed rows excluded from import.
+- `duplicate_count`: repeated normalized phone numbers in the whole file after their first occurrence.
+- `unique_count`: distinct normalized phone numbers among importable rows.
+- `duplicate_preview`: up to five repeated numbers, with `phone_number`, `occurrences` and `duplicate_rows` per number.
+- `needs_country_preview`: up to five rows with no resolved country code, containing `phone_number`, `name` and `country_code: null`.
 - `normalized_preview`: up to five importable contacts in their storage format.
 - `needs_country`: importable contacts requiring country information.
 - `errors`: malformed rows and their reasons.
 
 Actual import uses the same parser. Unresolved contacts are included in import, not in failed counts. Validation does not confirm WhatsApp registration or database uniqueness.
 
+Duplicate counting uses the entire file, including rows beyond the five-row sample. Formatting variants such as `+447879543645` and `447879543645` count as the same number after normalization. Invalid rows are excluded from duplicate counting. Duplicates are already included in `valid_count` or `needs_country_count`, so do not add them to those counts to compute the total. `unique_count + duplicate_count` equals `importable_count`. These are file repetitions; saved-contact update counts become available during the actual import job.
+
+Example response fields for a six-row file with five valid rows, one invalid row and two repetitions:
+
+```json
+{
+  "success": true,
+  "message": "File preview generated successfully",
+  "data": {
+    "total_rows": 6,
+    "valid_count": 5,
+    "invalid_count": 1,
+    "needs_country_count": 0,
+    "importable_count": 5,
+    "duplicate_count": 2,
+    "unique_count": 3,
+    "duplicate_preview": [
+      { "phone_number": "+19169435965", "occurrences": 2, "duplicate_rows": 1 },
+      { "phone_number": "+447879543645", "occurrences": 2, "duplicate_rows": 1 }
+    ]
+  }
+}
+```
+
+The existing `headers`, `preview`, `normalized_preview`, `needs_country`, selected column and error fields are also returned. The preview endpoint responds HTTP 200 with these counts and does not create an import job.
+
+## Saved list statistics
+
+`GET /v1/admin/contacts/lists` keeps its existing HTTP 200 response with an array in `data`. Each list retains its existing fields and includes the original import's `total_rows`, `detected_phone_column`, `selected_phone_column`, `valid_count`, `invalid_count`, `importable_count`, `duplicate_count`, `unique_count`, `duplicate_preview`, `needs_country_count`, `needs_country_preview`, `created_count` and `updated_count`.
+
+Example summary fields for a list:
+
+```json
+{
+  "total_rows": 2212,
+  "detected_phone_column": "Phone Number",
+  "selected_phone_column": "Phone Number",
+  "valid_count": 2201,
+  "invalid_count": 4,
+  "importable_count": 2208,
+  "duplicate_count": 21,
+  "unique_count": 2187,
+  "needs_country_count": 7,
+  "duplicate_preview": [
+    { "phone_number": "+447879543645", "occurrences": 22, "duplicate_rows": 21 }
+  ],
+  "needs_country_preview": [
+    { "phone_number": "+9372597458", "name": "Missing country example", "country_code": null }
+  ]
+}
+```
+
+Phone numbers in the example are illustrative. Both sample arrays contain at most five entries; counts cover the entire file. These are import snapshots, so editing a contact's country later does not rewrite the original file's missing-country statistics. File duplicate counts overlap valid/needs-country counts, and are not the number of extra contact rows saved in the database.
+
+The worker saves the same summary used by preview into the existing import job metadata. The lists endpoint reads the owner's company-scoped lists and obtains their latest non-deleted import jobs in one batched query. It preserves list ordering and performs no file parsing, Redis calls or query per list. Empty lists skip the import-job query. No database migration is required.
+
+`import_job_id` and `import_status_url` identify the associated import so the frontend can check completion through the existing job-status API. `statistics_source` is `import_job` when a matching saved job supplies metadata, or `legacy_list` when only the existing list counters are available.
+
+For older imports, recorded totals, valid/invalid counts and any saved result counters are returned. Detected columns can be derived from stored headers; selected columns use saved mappings when present. Unknown duplicate counts, missing-country counts or samples return null instead of fabricated zeros. A known zero count returns an empty sample array. The duplicate and missing-country samples were not saved by earlier workers and cannot be recovered faithfully from deduplicated contact membership alone; the original uploaded file is needed to reconstruct those historical samples. Deploy the updated API and worker together for complete summaries on new imports.
+
+Validation: `node --test tests/contact-list-summary.test.cjs tests/contact-import-status.test.cjs tests/contact-import-worker.test.cjs tests/import-phone.test.cjs tests/import-job-json.test.cjs tests/account-scope.test.cjs` and `npm run build`. Tests cover normalized CSV data, matching list/preview statistics, batched scoped SQL and local HTTP responses with mocked database and authenticated context.
+
 ## Background import
 
-`POST /v1/admin/contacts/import` validates the uploaded file and column mappings, records an import job, and enqueues it in the existing `contact-import` BullMQ queue. It returns HTTP `202` with `job_id`, `status: "queued"`, `total_rows`, and `progress_percentage`. Contact creation, updates, plan checks, list membership, tags, and row results run in the contact import worker.
+`POST /v1/admin/contacts/import` validates the uploaded file and column mappings, records an import job, and enqueues it in the existing `contact-import` BullMQ queue. It returns HTTP `202` with `job_id`, `status: "queued"`, `total_rows`, `progress_percentage`, `status_url` and `poll_after_ms: 2000`. Contact creation, updates, plan checks, list membership, tags, and row results run in the contact import worker.
 
-Poll `GET /v1/admin/contacts/import/:jobId/status` for `status`, progress, successful/failed rows, errors, and the final `result`. Final counts are available when the job is completed. Historical imports with `execution_mode: "api"` remain readable. An enqueue failure marks the import record failed and returns an error.
+Poll `GET /v1/admin/contacts/import/:jobId/status` for `status`, progress, successful/failed rows, valid/invalid counts, file duplicates, created/updated rows, errors, and the final `result`. File classification is available after parsing; outcome counts update while importing. Historical imports with `execution_mode: "api"` remain readable. An enqueue failure marks the import record failed and returns an error. See [the status API contract](contact-import-status.md) for counter definitions, timing, remaining rows, retry status and Redis outage handling.
 
 Run `npm run start:worker` alongside the API in production, or `npm run worker` during development. API and worker must use the same Redis configuration and have access to the same uploaded files at the saved paths. The current Docker entrypoint runs both processes in one container. Separate containers need a shared upload volume at the same path. This change requires no database migration.
 
-All backend workers start from one entry point: `src/workers/index.ts`, compiled to `dist/src/workers/index.js`. The single `npm run start:worker` command starts `contact-import`, `campaign-execution`, `bulk-message-send`, and `chatbot-delay`, plus the reminder scheduler. The API enqueues imports and this shared worker process consumes them. SIGTERM/SIGINT drains every consumer and the scheduler before closing database/shared Redis connections. Launching the compiled entry point directly with Node also sets worker mode before database initialization.
+All backend workers start from one entry point: `src/workers/index.ts`, compiled to `dist/src/workers/index.js`. The single `npm run start:worker` command starts `contact-import`, `campaign-execution`, `bulk-message-send`, `chatbot-delay` and `media-upload`, plus the reminder scheduler. The API enqueues imports and this shared worker process consumes them. SIGTERM/SIGINT drains every consumer and the scheduler before closing database/shared Redis connections and queue producers. Launching the compiled entry point directly with Node also sets worker mode before database initialization.
 
 ### Kubernetes combined workers
 
@@ -61,7 +127,7 @@ command: ["npm"]
 args: ["run", "start:worker"]
 ```
 
-Expect `[Workers] Started` listing all four queues and the contact worker ready log. Review inherited startup/readiness/liveness probes: this worker does not expose an HTTP server. Set the pod termination grace period to allow active jobs to drain before Kubernetes forces termination.
+Expect `[Workers] Started` listing all five queues, including `contact-import` and `media-upload`, and the contact worker ready log. Review inherited startup/readiness/liveness probes: this worker does not expose an HTTP server. Set the pod termination grace period to allow active jobs to drain before Kubernetes forces termination.
 
 Worker retries reuse the import's recorded list, and completed jobs return their saved results if delivered again. List creation and its job association commit in one transaction; tag counts are recalculated once per tag from saved relations before completion.
 

@@ -43,7 +43,8 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   // app.use(express.json());
 
   // Serve uploaded files
-  app.use('/uploads', express.static(UPLOADS_DIR));
+  // Explicitly exclude dot directories such as the private media worker spool.
+  app.use('/uploads', express.static(UPLOADS_DIR, { dotfiles: 'ignore' }));
 
 
   // Swagger Documentation

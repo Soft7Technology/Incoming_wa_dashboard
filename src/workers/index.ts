@@ -8,6 +8,9 @@ import { contactImportWorker } from '../queues/processors/contactImport.processo
 import { campaignExecutionWorker } from '../queues/processors/campaignExecution.processor';
 import { bulkMessageSendWorker } from '../queues/processors/bulkMessageSend.processor';
 import { chatbotDelayWorker } from '../queues/processors/chatbotDelay.processor';
+import { mediaUploadWorker } from '../queues/processors/mediaUpload.processor';
+import { closeMediaUploadQueue } from '../queues/mediaUpload.queue';
+import { closeContactImportQueue } from '../queues/contactImport.queue';
 import db from '../../library/surefy/src/database';
 import ReminderScheduler from '../app/services/reminderScheduler.service';
 import { redisConnection } from '../../library/surefy/src/config/redis.config';
@@ -19,6 +22,7 @@ const workers = [
   campaignExecutionWorker,
   bulkMessageSendWorker,
   chatbotDelayWorker,
+  mediaUploadWorker,
 ];
 console.info('[Workers] Started', {
   pid: process.pid,
@@ -33,7 +37,7 @@ async function shutdown(signal: string) {
   console.info('[Workers] Draining active jobs', { signal, pid: process.pid });
   try {
     await Promise.all([ReminderScheduler.stop(), ...workers.map(worker => worker.close())]);
-    await Promise.all([db.destroy(), redisConnection.quit()]);
+    await Promise.all([db.destroy(), redisConnection.quit(), closeMediaUploadQueue(), closeContactImportQueue()]);
     console.info('[Workers] Shutdown complete');
     process.exit(0);
   } catch (error) {
