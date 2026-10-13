@@ -1,0 +1,20 @@
+name: Production files
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  production-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/prepare-production.cjs --check
+      - run: npm install --global pnpm@10.7.1
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build

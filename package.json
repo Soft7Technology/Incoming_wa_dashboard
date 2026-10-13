@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "facebook:login": "node scripts/facebook-login-test.cjs",
-    "build": "tsc && tsc-alias && node scripts/copy-facebook-assets.cjs",
+    "build": "rimraf dist && tsc && tsc-alias && node scripts/copy-facebook-assets.cjs",
     "test:facebook": "node --test tests/facebook-*.test.cjs",
     "start": "node dist/src/server.js",
     "start:worker": "cross-env WORKER_MODE=true node dist/src/workers/index.js",
@@ -20,7 +20,10 @@
     "prettier": "prettier --check 'src/**/*.{js,ts,tsx,json}'",
     "prettier:fix": "prettier --write 'src/**/*.{js,ts,tsx,json}'",
     "format": "npm run prettier:fix",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist",
+    "prepare:production": "node scripts/prepare-production.cjs",
+    "check:production": "node scripts/prepare-production.cjs --check",
+    "test:production": "node --test tests/production-files.test.cjs"
   },
   "keywords": [
     "Surefy",
@@ -89,5 +92,10 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.9.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "bcrypt"
+    ]
   }
 }

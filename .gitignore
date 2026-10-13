@@ -1,9 +1,8 @@
 node_modules/
 dist/
 build/
-.env
-.env.local
-.env.*.local
+.env*
+!.env.example
 *.log
 .DS_Store
 coverage/
@@ -13,4 +12,15 @@ coverage/
 docker-compose.yml
 deploy.yml
 
-/uploads
+# Runtime data belongs on persistent storage, never in a source checkout.
+uploads/
+tmp/
+temp/
+logs/
+.cache/
+*.tsbuildinfo
+
+# Local scratch files (kept on disk when untracked).
+/a.ts
+/password.js
+/split-phone-tests.txt
