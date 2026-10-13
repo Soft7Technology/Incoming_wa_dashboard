@@ -34,10 +34,11 @@ configuration. Resolve any remaining application-code conflicts before building 
 Without this option the command refuses uncommitted changes. It runs only on main and never
 pushes, builds an image or deploys. Review its staged changes before committing.
 
-The main-only ignore rules keep copied test tools out of subsequent commits. The CI check
-also rejects tracked tests, Postman collections, runtime uploads, environment secrets and
+The main-only ignore rules keep copied test tools out of subsequent commits. The manual production check
+rejects tracked tests, Postman collections, runtime uploads, environment secrets and
 scratch files, and checks that the login test route is disconnected and migrations use compiled JavaScript.
 Run `npm run check:production` after staging new release files; the check examines the index.
+Automatic GitHub Actions checks are currently disabled.
 
 Build production images from main using `docker build --target production -t YOUR_IMAGE .`.
 Docker excludes local artifacts, uses the frozen pnpm lockfile and ships compiled application
