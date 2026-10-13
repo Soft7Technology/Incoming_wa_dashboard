@@ -4,14 +4,12 @@
   "description": "Console API is a surefy meta services microservice for WhatsApp Business API management",
   "main": "index.js",
   "scripts": {
-    "facebook:login": "node scripts/facebook-login-test.cjs",
     "build": "rimraf dist && tsc && tsc-alias && node scripts/copy-facebook-assets.cjs",
-    "test:facebook": "node --test tests/facebook-*.test.cjs",
     "start": "node dist/src/server.js",
     "start:worker": "cross-env WORKER_MODE=true node dist/src/workers/index.js",
     "dev": "nodemon -r dotenv/config -r tsconfig-paths/register src/server.ts",
     "worker": "cross-env WORKER_MODE=true nodemon -r dotenv/config -r tsconfig-paths/register src/workers/index.ts",
-    "knex": "knex --knexfile library/surefy/src/config/knex.config.ts",
+    "knex": "knex --knexfile dist/library/surefy/src/config/knex.config.js",
     "migrate:latest": "npm run knex -- migrate:latest",
     "migrate:rollback": "npm run knex -- migrate:rollback",
     "migrate:make": "npm run knex -- migrate:make",
@@ -22,8 +20,7 @@
     "format": "npm run prettier:fix",
     "clean": "rimraf dist",
     "prepare:production": "node scripts/prepare-production.cjs",
-    "check:production": "node scripts/prepare-production.cjs --check",
-    "test:production": "node --test tests/production-files.test.cjs"
+    "check:production": "node scripts/prepare-production.cjs --check"
   },
   "keywords": [
     "Surefy",

@@ -1,3 +1,5 @@
+Development examples are kept on the `dev` branch. Test pages and Postman collections are not deployed from main.
+
 # Company payment gateways
 
 Base URL: `/v1/admin/payments`. All requests require `Authorization: Bearer <JWT>`.
@@ -60,7 +62,7 @@ the returned gateway checkout. Use the provider's test payment instruments in sa
 The response's `data.id` is the local UUID used with GET/verify. `data.provider_order_id` belongs to the gateway.
 `data.checkout` contains the public Razorpay checkout options or Cashfree `payment_session_id`.
 
-Use [payment-test.html](payment-test.html) from your frontend's allowed HTTP/HTTPS origin to create an order,
+Use [payment-test.html](https://github.com/Soft7Technology/Incoming_wa_dashboard/blob/dev/docs/payment-test.html) from your frontend's allowed HTTP/HTTPS origin to create an order,
 open checkout, and verify its status. The page accepts an administrator JWT and keeps it only in memory.
 Select Test for sandbox or Live for a real payment, then enter the amount in paise. Inputs stay locked to the current attempt until you select New payment attempt. For Cashfree, register the frontend domain in your gateway dashboard as required.
 Do not open it with a `file://` URL; serve it from an origin allowed by the API's CORS policy.
@@ -197,7 +199,7 @@ In `payment-test.html`, enter the subscription UUID and optional recipient UUID 
 
 ## Simple subscription checkout page
 
-Serve [subscription-checkout.html](subscription-checkout.html) from your frontend HTTP/HTTPS origin allowed by API CORS. Enter the API origin, company administrator JWT, subscription UUID, customer phone and optionally the recipient user UUID. Click **Pay for subscription**. The page creates a live order using the saved subscription price, opens the returned provider checkout, then automatically calls POST `/v1/admin/payments/orders/<data.id>/verify`. It shows activation only when the verified order includes `fulfilled_at`. Use **Check payment status** if confirmation is delayed. Keep the page open through verification; no JWT is saved in browser storage.
+Serve [subscription-checkout.html](https://github.com/Soft7Technology/Incoming_wa_dashboard/blob/dev/docs/subscription-checkout.html) from your frontend HTTP/HTTPS origin allowed by API CORS. Enter the API origin, company administrator JWT, subscription UUID, customer phone and optionally the recipient user UUID. Click **Pay for subscription**. The page creates a live order using the saved subscription price, opens the returned provider checkout, then automatically calls POST `/v1/admin/payments/orders/<data.id>/verify`. It shows activation only when the verified order includes `fulfilled_at`. Use **Check payment status** if confirmation is delayed. Keep the page open through verification; no JWT is saved in browser storage.
 
 ## Company credit eligibility for subscription orders
 
