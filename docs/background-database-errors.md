@@ -49,6 +49,6 @@ Copy the complete updated backend source to the server, rebuild a new production
 KUBECONFIG=/etc/kubernetes/admin.conf sh scripts/deploy-workers.sh YOUR_NEW_BACKEND_IMAGE
 ```
 
-Replace the image placeholder with the image you actually built. The script defaults to the `contact-worker` deployment and its `wa-dashboard` container, and launches all four consumers through `npm run start:worker`. It preserves existing environment, volumes and resource settings; it does not correct a database Secret or run migrations. Deploy the updated API image too to activate HTTP 503 handling and campaign scheduler backoff there.
+Replace the image placeholder with the image you actually built. The script defaults to the `contact-worker` deployment and its `wa-dashboard` container, and launches all consumers through `npm run start:worker`. It preserves existing environment, volumes and resource settings; it does not correct a database Secret or run migrations. Deploy the updated API image too to activate HTTP 503 handling and campaign scheduler backoff there.
 
 Validation uses mocked dependencies; no database migrations or real WhatsApp sends are performed by the tests.

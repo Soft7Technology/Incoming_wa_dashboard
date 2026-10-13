@@ -1,5 +1,6 @@
 import { resolveImportColumn } from '../utils/importColumn';
 import { parseStoredContactPhone } from '../utils/importPhone';
+import { buildContactImportSummary, detectImportPhoneColumn } from '../utils/contactImportSummary';
 import * as XLSX from 'xlsx';
 import * as fs from 'fs';
 // import { COUNTRY_PHONE_LENGTHS } from '../utils';
@@ -15,6 +16,7 @@ interface ParsedContact {
 
 interface ParseResult {
   headers: string[];
+  selected_phone_column: string;
   contacts: ParsedContact[];
   valid: number;
   invalid: number;
@@ -129,6 +131,7 @@ class XLSXParserService {
 
       return {
         headers,
+        selected_phone_column: phoneColumn,
         contacts,
         valid: validCount,
         invalid: invalidCount,
@@ -144,31 +147,7 @@ class XLSXParserService {
    * Detect phone number column from headers
    */
   private detectPhoneColumn(headers: string[]): string | null {
-    const phonePatterns = [
-      'phone',
-      'phone_number',
-      'phonenumber',
-      'mobile',
-      'mobile_number',
-      'contact',
-      'contact_number',
-      'whatsapp',
-      'whatsapp_number',
-      'number',
-      'cell',
-      'telephone',
-    ];
-
-    for (const header of headers) {
-      const lowerHeader = header.toLowerCase().replace(/[\s_-]/g, '');
-      for (const pattern of phonePatterns) {
-        if (lowerHeader.includes(pattern.replace(/[\s_-]/g, ''))) {
-          return header;
-        }
-      }
-    }
-
-    return null;
+    return detectImportPhoneColumn(headers);
   }
 
   /** Validate the entire file with the worker's parser while retaining the raw sample. */
@@ -184,12 +163,8 @@ class XLSXParserService {
     );
     return {
       ...preview,
-      selected_phone_column: resolveImportColumn(preview.headers, options.phone_column) || preview.detected_phone_column,
-      valid_count: parsed.valid,
-      importable_count: parsed.contacts.length,
+      ...buildContactImportSummary(parsed),
       needs_country: parsed.contacts.filter(contact => !contact.country_code),
-      invalid_count: parsed.invalid,
-      needs_country_count: parsed.needs_country,
       normalized_preview: parsed.contacts.slice(0, 5),
       errors: parsed.errors,
     };

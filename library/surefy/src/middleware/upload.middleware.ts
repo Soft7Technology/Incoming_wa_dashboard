@@ -1,8 +1,13 @@
 import multer from 'multer';
 import * as path from 'path';
 import * as fs from 'fs';
-import { Request } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { CustomError } from '@surefy/exceptions/CustomError';
+import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
+import { MAX_MEDIA_UPLOAD_BYTES, mediaUploadLimit, mediaUploadLimitMessage } from '@surefy/utils/mediaUploadLimits';
+
+const receivedMediaTypes = new WeakMap<Request, string>();
 
 // Configure storage for file uploads
 const storage = multer.diskStorage({
@@ -63,6 +68,7 @@ const mediaFileFilter = (req: Request, file: any, cb: any) => {
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
+    receivedMediaTypes.set(req, file.mimetype);
     cb(null, true);
   } else {
     cb(new HTTP400Error({ message: 'Invalid file type. Allowed: images (jpg, png, webp), videos (mp4, 3gp), documents (pdf, doc, docx), audio (mp3, ogg, aac)' }));
@@ -82,7 +88,7 @@ const uploadMedia = multer({
   storage,
   fileFilter: mediaFileFilter,
   limits: {
-    fileSize: 50 * 1024 * 1024, // 50MB limit for media files
+    fileSize: MAX_MEDIA_UPLOAD_BYTES, // Images receive the smaller limit below.
   },
 });
 
@@ -95,4 +101,23 @@ export const UPLOADS_DIR = path.join(ROOT_DIR, 'uploads');
 
 // Export middleware
 export const uploadXLSXMiddleware = uploadXLSX.single('file');
-export const uploadMediaMiddleware = uploadMedia.single('file');
+const receiveMedia = uploadMedia.single('file');
+export const uploadMediaMiddleware = (req: Request, res: Response, next: NextFunction) => {
+  receiveMedia(req, res, error => {
+    const mimetype = receivedMediaTypes.get(req) || req.file?.mimetype || '';
+    receivedMediaTypes.delete(req);
+    if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+      return next(new CustomError(mediaUploadLimitMessage(mimetype), HttpStatusCode.PAYLOAD_TOO_LARGE));
+    }
+    if (error) return next(error);
+    if (req.file && req.file.size > mediaUploadLimit(mimetype)) {
+      const failure = new CustomError(mediaUploadLimitMessage(mimetype), HttpStatusCode.PAYLOAD_TOO_LARGE);
+      return fs.unlink(req.file.path, cleanupError => {
+        if (cleanupError && cleanupError.code !== 'ENOENT') console.warn('Media upload cleanup failed', { code: cleanupError.code });
+        delete req.file;
+        next(failure);
+      });
+    }
+    next(error);
+  });
+};

@@ -11,6 +11,7 @@ import ContactTagRelationModel from '@surefy/console/models/contactTagRelation.m
 import ContactTagModel from '@surefy/console/models/contactTag.model';
 import XLSXParserService from '@surefy/console/services/xlsxParser.service';
 import * as path from 'path';
+import { buildContactImportSummary } from '../utils/contactImportSummary';
 
 const BATCH_SIZE = 500; // Process 500 contacts at a time
 
@@ -31,8 +32,11 @@ export async function processContactImport(data: ContactImportJobData, updatePro
 
   try {
     console.log(`[Job ${jobId}] Starting contact import processing`);
+    const savedOptions = { ...(importJob.import_options || {}) };
     await ImportJobModel.updateStatus(jobId, 'processing', {
       failed_at: null, error_message: null, error_stack: null,
+      processed_rows: 0, successful_rows: 0, failed_rows: 0, skipped_rows: 0, progress_percentage: 0, errors: [],
+      import_options: { ...savedOptions, statistics: null, progress: { stage: 'preparing', updated_at: Date.now() } },
     });
 
     // Validate and parse file
@@ -53,6 +57,17 @@ export async function processContactImport(data: ContactImportJobData, updatePro
     console.log(`Contacts Results ${JSON.stringify(parseResult)}`);
 
     console.log(`[Job ${jobId}] Parsed ${parseResult.contacts.length} contacts from file`);
+
+    // Parser output already contains normalized full phone numbers. Counting repeats
+    // here needs no database lookup and stays the same when the job retries.
+    const statistics = {
+      ...buildContactImportSummary(parseResult, options.phoneColumn),
+      created_count: 0,
+      updated_count: 0,
+    };
+    // Make parsed counts durable before list creation or any contact writes can fail.
+    await ImportJobModel.update(jobId, { import_options: { ...savedOptions, statistics,
+      progress: { stage: 'preparing', updated_at: Date.now() } } });
 
     // List creation and its job association commit together so retries cannot create orphan lists.
     const list = await ImportJobModel.getOrCreateContactList(jobId, {
@@ -86,6 +101,28 @@ export async function processContactImport(data: ContactImportJobData, updatePro
     let failedCount = parseResult.invalid;
     let skippedCount = 0;
     const allErrors: any[] = [...parseResult.errors];
+    const processingStartedAt = Date.now();
+    let lastProgressAt = processingStartedAt;
+    const progressMetadata = (stage: string, rows: number) => ({ ...savedOptions, statistics: { ...statistics }, progress: {
+      stage, rows_processed: rows, rows_total: totalContacts,
+      processing_started_at: processingStartedAt, updated_at: Date.now(),
+    } });
+    await ImportJobModel.update(jobId, {
+      import_options: progressMetadata('importing', 0),
+      processed_rows: parseResult.invalid, failed_rows: parseResult.invalid, errors: allErrors.slice(-100),
+      progress_percentage: Math.min(99, Math.round(parseResult.invalid / Math.max(1, totalContacts + parseResult.invalid) * 100)),
+    });
+    const publishProgress = async (stage: 'importing' | 'saving', rows: number, force = false, notifyQueue = true) => {
+      if (!force && Date.now() - lastProgressAt < 2000) return;
+      const processedRows = rows + parseResult.invalid;
+      await ImportJobModel.updateProgress(jobId, {
+        processed_rows: processedRows, successful_rows: successfulCount,
+        failed_rows: failedCount, skipped_rows: skippedCount,
+        errors: allErrors.slice(-100), import_options: progressMetadata(stage, rows),
+      });
+      lastProgressAt = Date.now();
+      if (notifyQueue) await updateProgress?.(Math.round(processedRows / Math.max(1, totalContacts + parseResult.invalid) * 100));
+    };
 
     for (let batchIndex = 0; batchIndex < batches; batchIndex++) {
       const start = batchIndex * BATCH_SIZE;
@@ -95,10 +132,11 @@ export async function processContactImport(data: ContactImportJobData, updatePro
       console.log(`[Job ${jobId}] Processing batch ${batchIndex + 1}/${batches} (${start}-${end})`);
 
       // Process each contact in the batch
-      for (const contactData of batch) {
+      for (const [rowIndex, contactData] of batch.entries()) {
         try {
           // Check if contact exists
           let contact = await ContactModel.findOwnedByPhone(userId, contactData.phone_number, phone_number_id, companyId, contactData.country_code);
+          const existingContact = Boolean(contact);
 
           if (contact) {
             // Update existing contact
@@ -132,6 +170,8 @@ export async function processContactImport(data: ContactImportJobData, updatePro
           }
 
           successfulCount++;
+          if (existingContact) statistics.updated_count++;
+          else statistics.created_count++;
         } catch (error: any) {
           if (getDatabaseFailure(error)) throw error;
           console.error(`[Job ${jobId}] Error processing contact ${contactData.phone_number}:`, error);
@@ -139,27 +179,25 @@ export async function processContactImport(data: ContactImportJobData, updatePro
           allErrors.push({
             phone_number: contactData.phone_number,
             error: error.message,
-            row: start + batch.indexOf(contactData) + 1,
+            row: start + rowIndex + 1,
           });
         }
+        // Publish at most once every two seconds inside a large batch.
+        await publishProgress('importing', start + rowIndex + 1);
       }
 
       // Update progress after each batch
       const processedRows = end + parseResult.invalid;
-      await ImportJobModel.updateProgress(jobId, {
-        processed_rows: processedRows,
-        successful_rows: successfulCount,
-        failed_rows: failedCount,
-        skipped_rows: skippedCount,
-        errors: allErrors.slice(-100), // Keep last 100 errors
-      });
+      await publishProgress('importing', end, true);
 
       // Update job progress percentage
       const progressPercentage = Math.round((processedRows / (totalContacts + parseResult.invalid)) * 100);
-      await updateProgress?.(progressPercentage);
 
       console.log(`[Job ${jobId}] Progress: ${progressPercentage}% (${processedRows}/${totalContacts})`);
     }
+
+    // Includes all-invalid files; row completion still leaves tag/list persistence to finish.
+    await publishProgress('saving', totalContacts, true, batches === 0);
 
     // Replayed rows can already have these tags. Count saved relations once per tag,
     // rather than recounting an expanding tag for every contact in a large import.
@@ -174,18 +212,6 @@ export async function processContactImport(data: ContactImportJobData, updatePro
       invalid_phone_numbers: parseResult.invalid,
     });
 
-    // Includes all-invalid files, which do not enter the contact batch loop.
-    if (batches === 0) {
-      await ImportJobModel.updateProgress(jobId, {
-        processed_rows: parseResult.invalid,
-        successful_rows: successfulCount,
-        failed_rows: failedCount,
-        skipped_rows: skippedCount,
-        errors: allErrors.slice(-100),
-      });
-      await updateProgress?.(100);
-    }
-
     // Mark job as completed
     const result = {
       list_id: list.id,
@@ -193,8 +219,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
       imported: successfulCount,
       failed: failedCount,
       skipped: skippedCount,
-      invalid_count: parseResult.invalid,
-      needs_country_count: parseResult.needs_country,
+      ...statistics,
       total: totalContacts + parseResult.invalid,
       errors: allErrors.slice(0, 50), // Return first 50 errors in result
     };

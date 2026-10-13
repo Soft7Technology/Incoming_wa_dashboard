@@ -2,7 +2,7 @@
 
 Run the API and `npm run worker` in development. Production: apply database migrations, build with `npm run build`, then run `npm run start:worker` with your environment variables loaded. The API enqueues work; a separate worker must be running against the same Redis database. Restart both processes after updating the code. If the API reports `EADDRINUSE`, another process owns its port; stop that instance or configure another port.
 
-This one worker command runs `dist/src/workers/index.js`, which starts the `campaign-execution`, `contact-import`, `bulk-message-send`, and `chatbot-delay` consumers and the reminder scheduler together. Contact imports use the same worker process as campaigns; there is no separate contact-worker startup command.
+This one worker command runs `dist/src/workers/index.js`, which starts the `campaign-execution`, `contact-import`, `bulk-message-send`, `chatbot-delay` and `media-upload` consumers and the reminder scheduler together. Contact imports use the same worker process as campaigns; there is no separate contact-worker startup command. See [gallery media uploads](media-upload-workers.md) for the 3 MB threshold and frontend polling contract.
 
 See [background database failure handling](background-database-errors.md) for worker readiness checks, bounded retries, API 503 responses and Kubernetes database diagnosis. A missing table or column needs the correct database configuration and migrations; runtime guards leave waiting jobs available while that is repaired.
 

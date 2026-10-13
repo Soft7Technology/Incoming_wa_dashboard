@@ -22,7 +22,7 @@ for (const file of ['src/server.ts', 'src/workers/index.ts']) {
         if (id.includes('reminderScheduler.service')) return { start() {} };
         const worker = { name: 'test-worker', opts: { concurrency: 1 } };
         return { contactImportWorker: worker, campaignExecutionWorker: worker,
-          bulkMessageSendWorker: worker, chatbotDelayWorker: worker };
+          bulkMessageSendWorker: worker, chatbotDelayWorker: worker, mediaUploadWorker: worker };
       },
     });
     assert.equal(loaded[0], 'dotenv/config');
@@ -42,6 +42,7 @@ test('combined worker starts all consumers and drains every job and scheduler be
     'campaignExecution.processor': ['campaignExecutionWorker', 'campaign-execution'],
     'bulkMessageSend.processor': ['bulkMessageSendWorker', 'bulk-message-send'],
     'chatbotDelay.processor': ['chatbotDelayWorker', 'chatbot-delay'],
+    'mediaUpload.processor': ['mediaUploadWorker', 'media-upload'],
   };
   let started;
   const js = ts.transpileModule(fs.readFileSync('src/workers/index.ts', 'utf8'), {
@@ -68,21 +69,23 @@ test('combined worker starts all consumers and drains every job and scheduler be
       };
       if (id.endsWith('/database')) return { destroy: async () => { calls.push('database'); } };
       if (id.endsWith('/redis.config')) return { redisConnection: { quit: async () => { calls.push('redis'); } } };
+      if (id.endsWith('/mediaUpload.queue')) return { closeMediaUploadQueue: async () => { calls.push('media-queue'); } };
+      if (id.endsWith('/contactImport.queue')) return { closeContactImportQueue: async () => { calls.push('contact-queue'); } };
       throw new Error(`Unexpected worker dependency: ${id}`);
     },
   });
   assert.deepEqual(Array.from(started.workers, worker => worker.name),
-    ['contact-import', 'campaign-execution', 'bulk-message-send', 'chatbot-delay']);
-  assert.equal(workerDrains.length, 4);
+    ['contact-import', 'campaign-execution', 'bulk-message-send', 'chatbot-delay', 'media-upload']);
+  assert.equal(workerDrains.length, 5);
   signals.SIGTERM();
   signals.SIGINT();
   const drainingCalls = ['scheduler-start', 'scheduler-drain',
-    'contact-import', 'campaign-execution', 'bulk-message-send', 'chatbot-delay'];
+    'contact-import', 'campaign-execution', 'bulk-message-send', 'chatbot-delay', 'media-upload'];
   assert.deepEqual(calls, drainingCalls);
   for (const drain of workerDrains) drain.resolve();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(calls, drainingCalls);
   schedulerDrain.resolve();
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(calls, [...drainingCalls, 'database', 'redis', 'exit:0']);
+  assert.deepEqual(calls, [...drainingCalls, 'database', 'redis', 'media-queue', 'contact-queue', 'exit:0']);
 });

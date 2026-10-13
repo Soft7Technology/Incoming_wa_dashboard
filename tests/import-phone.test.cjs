@@ -159,6 +159,11 @@ test('validated preview counts all rows and preserves existing sample fields', a
     assert.equal(result.preview.length,5);
     assert.equal(result.valid_count,5);
     assert.equal(result.invalid_count,1);
+    assert.equal(result.duplicate_count,2); assert.equal(result.unique_count,3);
+    assert.deepEqual(result.duplicate_preview, [
+      {phone_number:'+19169435965',occurrences:2,duplicate_rows:1},
+      {phone_number:'+447879543645',occurrences:2,duplicate_rows:1},
+    ]);
     assert.equal(result.errors[0].row,7);
     assert.equal(result.errors[0].phone_number,'abc');
     assert.equal(result.normalized_preview[0].phone_number,'+19169435965');
@@ -168,6 +173,8 @@ test('validated preview counts all rows and preserves existing sample fields', a
     fs.writeFileSync(file,'Name,Number\nSG,81234567\nBad,abc\n');
     const hinted=await parser.getValidatedPreview(file,{phone_column:'Number',country_code:'65'});
     assert.equal(hinted.valid_count,1); assert.equal(hinted.invalid_count,1);
+    assert.equal(hinted.duplicate_count,0); assert.equal(hinted.unique_count,1);
+    assert.deepEqual(hinted.duplicate_preview,[]);
     const imported=await parser.parseContactsFromFile(file,'65','Number');
     assert.equal(hinted.valid_count,imported.valid);
     assert.deepEqual(hinted.errors,imported.errors);
@@ -191,8 +198,38 @@ test('Needs country differs from invalid and selected countries resolve local nu
     assert.equal(result.total_rows,4);assert.equal(result.valid_count,2);
     assert.equal(result.invalid_count,1);assert.equal(result.needs_country_count,1);
     assert.equal(result.importable_count,3);
+    assert.equal(result.duplicate_count,1); assert.equal(result.unique_count,2);
+    assert.deepEqual(result.duplicate_preview,[{phone_number:'+447879543645',occurrences:2,duplicate_rows:1}]);
     assert.equal(result.needs_country[0].country_code,null);
     assert.equal(result.errors[0].status,'invalid');
+  } finally {fs.unlinkSync(file);fs.rmdirSync(dir);}
+});
+
+test('preview counts repeats across the entire file and excludes malformed repeated rows', async () => {
+  const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+  const parser=require('../src/app/services/xlsxParser.service').default;
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'duplicate-preview-')),file=path.join(dir,'contacts.csv');
+  try {
+    // Repetitions beyond the raw five-row preview still contribute to the counts.
+    fs.writeFileSync(file,'phone\n+447879543645\n447879543645\n+44 7879 543645\n9372597458\n9372597458\n447879543645\nabc\nabc\n');
+    const result=await parser.getValidatedPreview(file);
+    assert.equal(result.total_rows,8);assert.equal(result.preview.length,5);
+    assert.equal(result.valid_count,4);assert.equal(result.needs_country_count,2);assert.equal(result.invalid_count,2);
+    assert.equal(result.importable_count,6);assert.equal(result.unique_count,2);assert.equal(result.duplicate_count,4);
+    assert.deepEqual(result.duplicate_preview,[
+      {phone_number:'+447879543645',occurrences:4,duplicate_rows:3},
+      {phone_number:'+9372597458',occurrences:2,duplicate_rows:1},
+    ]);
+    fs.writeFileSync(file,'phone\nabc\nabc\n');
+    const invalid=await parser.getValidatedPreview(file);
+    assert.equal(invalid.invalid_count,2);assert.equal(invalid.valid_count,0);
+    assert.equal(invalid.duplicate_count,0);assert.equal(invalid.unique_count,0);
+    assert.deepEqual(invalid.duplicate_preview,[]);
+    const phones=['+19169435965','+447879543645','+6581234567','+491783433573','+33635295378','+32470205982'];
+    fs.writeFileSync(file,'phone\n'+[...phones,...phones].join('\n')+'\n');
+    const bounded=await parser.getValidatedPreview(file);
+    assert.equal(bounded.valid_count,12);assert.equal(bounded.duplicate_count,6);assert.equal(bounded.unique_count,6);
+    assert.equal(bounded.duplicate_preview.length,5);
   } finally {fs.unlinkSync(file);fs.rmdirSync(dir);}
 });
 

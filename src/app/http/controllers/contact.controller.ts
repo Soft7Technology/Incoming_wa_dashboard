@@ -279,7 +279,7 @@ class ContactController {
   });
 
   /**
-   * POST /v1/contacts/import/preview
+   * POST /v1/admin/contacts/import/preview
    * Preview XLSX file before import
    */
   previewImport = tryCatchAsync(async (req: Request, res: Response) => {
@@ -305,7 +305,7 @@ class ContactController {
 
 
   /**
-   * POST /v1/contacts/import
+   * POST /v1/admin/contacts/import
    * Queue contact import from XLSX (async processing)
    */
 
@@ -364,19 +364,22 @@ class ContactController {
         status: importJob.status,
         total_rows: importJob.total_rows,
         progress_percentage: importJob.progress_percentage,
+        status_url: `/v1/admin/contacts/import/${importJob.id}/status`,
+        poll_after_ms: 2000,
       },
       HttpStatusCode.ACCEPTED
     );
   });
 
   /**
-   * GET /v1/contacts/import/:jobId/status
+   * GET /v1/admin/contacts/import/:jobId/status
    * Get import job status and progress
    */
   getImportStatus = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const { jobId } = req.params;
 
-    const status = await ContactService.getImportJobStatus(jobId);
+    const status = await ContactService.getImportJobStatus(jobId, { userId: req.ownerId ?? req.userId!, companyId: req.companyId! });
+    res.setHeader('Cache-Control', 'no-store');
 
     return successResponse(req, res, 'Import job status retrieved successfully', status);
   });
@@ -492,12 +495,12 @@ class ContactController {
   });
 
   /**
-   * GET /v1/contacts/lists
+   * GET /v1/admin/contacts/lists
    * Get all contact lists
    */
   getLists = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
-    const lists = await ContactService.getLists(effectiveUserId);
+    const lists = await ContactService.getLists(effectiveUserId, req.companyId!);
     return successResponse(req, res, 'Lists retrieved successfully', lists);
   });
 

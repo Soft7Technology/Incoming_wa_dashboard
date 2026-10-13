@@ -5,6 +5,7 @@ import imageUploadController from '@surefy/console/http/controllers/imageUpload.
 const imageUploadRoute = Router();
 
 imageUploadRoute.post('/upload', uploadMediaMiddleware, imageUploadController.uploadImage);
+imageUploadRoute.get('/jobs/:jobId', imageUploadController.getUploadStatus);
 imageUploadRoute.get('/list', imageUploadController.getUploadedImages);
 imageUploadRoute.delete('/:id', imageUploadController.deleteUploadedImage);
 
