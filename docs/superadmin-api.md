@@ -1,3 +1,5 @@
+Development examples are kept on the `dev` branch. Test pages and Postman collections are not deployed from main.
+
 # Superadmin API
 
 Base path: `/v1/super-admin`. Send `Authorization: Bearer <superadmin-login-JWT>` and `Content-Type: application/json`. The live users table must show role `superadmin`, status `active`, and no deleted_at value; an old JWT role cannot grant access after demotion. User API keys are not accepted.
