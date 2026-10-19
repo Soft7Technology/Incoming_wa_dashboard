@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Connect Shopify | RSVPDesk</title>
+    <link rel="stylesheet" href="/v1/integrations/shopify/test.css" />
+    <script defer src="/v1/integrations/shopify/test.js"></script>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/v1/integrations/shopify/app"><span>R</span> RSVPDesk</a><span class="tag">SHOPIFY</span
+      ><button id="logout" hidden>Sign out</button>
+    </header>
+    <main>
+      <p class="eyebrow">INTEGRATIONS / SHOPIFY</p>
+      <h1>Your store. Connected.</h1>
+      <p class="lead">Connect your Shopify store, choose the updates you need, and check that they arrive.</p>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <div id="configuration" class="configuration">Checking configuration...</div>
+      <div class="grid">
+        <section class="card">
+          <p class="eyebrow"><span class="step">01</span> YOUR RSVPDESK ACCOUNT</p>
+          <h2 id="account-heading">Sign in to RSVPDesk</h2>
+          <p class="muted">Use your account-owner login to keep this store connected to your company.</p>
+          <form id="login-form">
+            <label for="email">Dashboard email</label><input id="email" type="email" autocomplete="username" required />
+            <label for="password">Dashboard password</label
+            ><input id="password" type="password" autocomplete="current-password" required />
+            <label for="domain">Company login domain</label
+            ><input id="domain" autocomplete="off" required placeholder="localhost" />
+            <button class="primary" type="submit">Sign in</button>
+          </form>
+          <details id="token-details" hidden>
+            <summary>Use a dashboard JWT instead</summary>
+            <form id="token-form">
+              <label for="jwt">Dashboard JWT</label
+              ><input id="jwt" type="password" autocomplete="off" required /><button type="submit">Use token</button>
+            </form>
+          </details>
+          <p id="identity" class="success" hidden>Signed in</p>
+        </section>
+        <section class="card">
+          <p class="eyebrow"><span class="step">02</span> SHOPIFY AUTHORIZATION</p>
+          <h2>Connect your store</h2>
+          <p class="muted">Enter your store domain. Shopify will open so you can approve access.</p>
+          <form id="connect-form">
+            <p class="hint">
+              By connecting a store, you instruct Soft7 to process its selected events as described in the
+              <a href="/v1/integrations/shopify/privacy" target="_blank" rel="noopener">Shopify privacy disclosure</a>.
+            </p>
+            <label for="name">Connection name</label><input id="name" maxlength="120" placeholder="My clothing store" />
+            <label for="shop">Store domain</label
+            ><input id="shop" required autocomplete="off" placeholder="your-store.myshopify.com" />
+            <p class="hint">Use your store name or myshopify.com domain, without https:// or a path.</p>
+            <button id="connect" class="primary" type="submit" disabled>Connect Shopify</button>
+            <button id="check" type="button" disabled>Check connections</button>
+          </form>
+          <p id="connection-hint" class="hint">Sign in to connect a store. No Shopify token needs to be copied.</p>
+        </section>
+      </div>
+      <section class="card">
+        <p class="eyebrow"><span class="step">03</span> STORE UPDATES</p>
+        <div class="heading">
+          <h2>Choose your triggers</h2>
+          <span id="badge" class="tag">No store selected</span>
+        </div>
+        <label for="connection">Connected store</label
+        ><select id="connection" disabled>
+          <option value="">Connect a store first</option>
+        </select>
+        <p id="store-detail" class="hint">Your connected stores will appear here.</p>
+        <form id="trigger-form">
+          <div id="triggers" class="triggers"></div>
+          <button id="save" class="primary" disabled>Save triggers</button
+          ><button id="sync" type="button" disabled>Retry event delivery</button>
+        </form>
+        <p class="hint">Selected store updates appear in your event inbox. Review each update in the app.</p>
+        <button id="disconnect" class="danger" disabled>Disconnect selected store</button>
+      </section>
+      <section class="card" aria-labelledby="whatsapp-heading">
+        <div class="heading">
+          <div>
+            <p class="eyebrow">ORDER NOTIFICATIONS</p>
+            <h2 id="whatsapp-heading">WhatsApp messages</h2>
+          </div>
+          <button id="whatsapp-refresh" disabled>Refresh messages</button>
+        </div>
+        <p class="muted">
+          Send approved order-update templates to customers who agreed to receive them. Each event has its own rule;
+          rules are off until you enable and save them.
+        </p>
+        <form id="whatsapp-form">
+          <div class="grid">
+            <div>
+              <label for="whatsapp-topic">Order event</label
+              ><select id="whatsapp-topic" disabled></select>
+              <label for="whatsapp-sender">WhatsApp sending number</label
+              ><select id="whatsapp-sender" disabled></select>
+            </div>
+            <div>
+              <label for="whatsapp-template">Approved utility template</label
+              ><select id="whatsapp-template" disabled></select>
+              <pre id="whatsapp-preview" hidden></pre>
+            </div>
+          </div>
+          <p id="whatsapp-help" class="hint">Select a store to configure order messages.</p>
+          <div id="whatsapp-mapping" class="triggers"></div>
+          <label for="whatsapp-consent-attribute">Checkout consent attribute</label>
+          <input
+            id="whatsapp-consent-attribute"
+            value="soft7_whatsapp_opt_in"
+            maxlength="80"
+            pattern="[a-zA-Z][a-zA-Z0-9_]{0,79}"
+            disabled
+          />
+          <p class="hint">
+            Your store must collect consent to order messages and include this order attribute with the value true. An
+            order or a phone number alone is not consent. Missing consent or phone data skips the message.
+          </p>
+          <label class="trigger"
+            ><input id="whatsapp-consent-confirmed" type="checkbox" disabled /><span
+              >My checkout records customer consent to business order messages in this attribute.</span
+            ></label
+          >
+          <label class="trigger"
+            ><input id="whatsapp-enabled" type="checkbox" disabled /><span
+              >Enable WhatsApp messages for this event</span
+            ></label
+          >
+          <button id="whatsapp-save" type="submit" class="primary" disabled>Save message rule</button>
+        </form>
+        <p class="hint">
+          Rules apply to future events. Order updated may trigger frequent notifications. Sent means accepted by
+          WhatsApp; check your inbox for delivery status. Unknown outcomes require review and are not retried
+          automatically.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Event</th>
+                <th>Order</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="whatsapp-jobs"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="card">
+        <div class="heading">
+          <div>
+            <p class="eyebrow"><span class="step">04</span> VERIFY DELIVERY</p>
+            <h2>Event inbox</h2>
+          </div>
+          <button id="events-refresh" disabled>Refresh events</button>
+        </div>
+        <p class="muted">
+          After saving your triggers, create or update an order in the connected store. Its event will appear below.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Received</th>
+                <th>Event</th>
+                <th>Resource</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="events">
+              <tr>
+                <td colspan="5" class="muted">No events loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <pre id="payload" hidden></pre>
+      </section>
+      <section class="card" aria-labelledby="privacy-heading">
+        <div class="heading">
+          <div>
+            <p class="eyebrow">CUSTOMER PRIVACY</p>
+            <h2 id="privacy-heading">Data requests</h2>
+          </div>
+          <button id="privacy-refresh" disabled>Refresh requests</button>
+        </div>
+        <p id="privacy-summary" role="status">Select a store to view customer requests.</p>
+        <p class="muted">
+          Complete requests within 30 days. Download all matching retained data, deliver it to the merchant through a
+          secure channel, then confirm delivery here. Customer erasures are processed automatically.
+        </p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Received</th>
+                <th>Request</th>
+                <th>Due</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="privacy-requests"></tbody>
+          </table>
+        </div>
+      </section>
+      <details class="card" id="developer-setup" hidden>
+        <summary>Shopify app configuration</summary>
+        <p class="hint">Register this exact allowed redirection URL in your Shopify app:</p>
+        <code id="callback">Loading...</code>
+        <p class="hint">
+          Use a standalone app with the authorization code install flow. Test with a development store before public
+          distribution.
+        </p>
+      </details>
+      <footer>
+        <p id="retention-notice">
+          Event data is retained for up to 30 days, with a hold for outstanding privacy requests.
+        </p>
+        <a href="/v1/integrations/shopify/privacy">Privacy disclosure</a>
+        <p>Your session is cleared when you close this page.</p>
+      </footer>
+    </main>
+  </body>
+</html>

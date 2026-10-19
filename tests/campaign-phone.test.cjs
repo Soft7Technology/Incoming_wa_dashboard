@@ -46,6 +46,24 @@ test('campaign phone payload validation rejects malformed arrays and unsafe numb
   assert.doesNotThrow(() => validate({ contactNumber: [919372597458, '+6581234567', '81234567'] }, '+65'));
 });
 
+test('direct number lists allow 150 submitted entries and reject 151 before deduplication', () => {
+  const { validateCampaignPhoneInputs: validate, MAX_CAMPAIGN_DIRECT_NUMBERS } = require('../src/app/utils/campaignPhone');
+  assert.equal(MAX_CAMPAIGN_DIRECT_NUMBERS, 150);
+  for (const count of [1, 149, 150]) assert.doesNotThrow(() => validate({ contactNumber: Array(count).fill('+919372597458') }));
+  assert.throws(() => validate({ contactNumber: Array(151).fill('+919372597458') }), error => {
+    assert.match(error.message, /150 phone numbers.*151.*select a contact list/);
+    assert.deepEqual(error.details, { code: 'CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED',
+      field: 'contact_filters.contactNumber', limit: 150, received: 151, required_action: 'SELECT_CONTACT_LIST' });
+    return true;
+  });
+  assert.doesNotThrow(() => validate({ list_ids: ['23860277-69cd-44c2-b557-08f00ecaf2cf'] }));
+  assert.throws(() => validate({ contactNumber: Array(151).fill('+919372597458'),
+    list_ids: ['23860277-69cd-44c2-b557-08f00ecaf2cf'] }), /select a contact list/);
+  for (const list_ids of [null, [], 'list', ['not-a-uuid'], [123], [{}]]) {
+    assert.throws(() => validate({ list_ids }), /contact_filters.list_ids/);
+  }
+});
+
 const {resolveOptionalCampaignPhone, campaignRecipientNumber}=require('../src/app/utils/campaignPhone');
 test('campaigns retain unresolved numbers without guessing a country',()=>{
  for(const input of ['9372597458','+9372597458']) {

@@ -2,6 +2,7 @@ import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
 import { countTeamSeats } from './planUsage.service';
+import { snapshotFeatures } from '../utils/planFeatures';
 
 export function subscriptionPricePaise(price: unknown): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(price));
@@ -41,11 +42,7 @@ class PaymentPlanService {
     const amount = subscriptionPricePaise(plan.price);
     const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features;
     if (!features || typeof features !== 'object' || Array.isArray(features)) throw new HTTP400Error({ message: 'Invalid plan features' });
-    const limits: Record<string, any> = {}, usage: Record<string, number> = {};
-    for (const key of Object.keys(features)) {
-      limits[key] = { limit: features[key]?.limit_value ?? null };
-      usage[key] = 0;
-    }
+    const { limits, usage } = snapshotFeatures(features);
     const now = new Date();
     const period = calculatePlanPeriod(plan, now);
     // Snapshot the purchased price/limits. Later catalogue edits must not change this purchase.
@@ -53,7 +50,7 @@ class PaymentPlanService {
       user_id: userId, company_id: companyId, subscription_id: plan.id,
       plan_name: plan.plan_name, price: plan.price, billing_cycle: plan.billing_cycle,
       active: false, status: 'pending', start_date: now, end_date: period.endDate,
-      duration_days: period.durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage),
+      duration_days: period.durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage), entitlement_version: 2,
     }).returning('*');
     return { userPlanId: pending.id, amount };
   }

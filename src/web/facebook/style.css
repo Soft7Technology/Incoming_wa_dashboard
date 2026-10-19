@@ -402,3 +402,124 @@ footer a {
     margin-left: 8px;
   }
 }
+.leads-workspace details.card,
+.leads-workspace #forms-panel,
+.leads-workspace #leads-panel {
+  margin-top: 24px;
+}
+#publisher fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.profile-details dt {
+  font-weight: 600;
+}
+.profile-details dd {
+  margin: 4px 0 16px;
+  overflow-wrap: anywhere;
+}
+#instagram-profile a {
+  display: inline-block;
+  margin-right: 12px;
+}
+.publish-preview {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  margin: 12px 0;
+}
+.publish-preview[hidden] {
+  display: none;
+}
+#publisher input[type='checkbox'] {
+  width: auto;
+}
+#publications article {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid #dfe6ef;
+  border-radius: 12px;
+}
+#publications p {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.leads-workspace .card button {
+  margin: 6px 6px 0 0;
+}
+.leads-workspace table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.leads-workspace th,
+.leads-workspace td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid #dfe6ef;
+  overflow-wrap: anywhere;
+}
+.leads-workspace summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.leads-workspace dt {
+  font-weight: 600;
+}
+.leads-workspace dd {
+  margin: 0 0 10px;
+  overflow-wrap: anywhere;
+}
+.leads-workspace #leads {
+  display: grid;
+  gap: 16px;
+}
+.leads-workspace article,
+.leads-workspace .heading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.content-workspace .card {
+  margin: 16px 0;
+}
+.content-workspace fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.content-workspace article {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.content-workspace article p {
+  white-space: pre-wrap;
+}
+.content-workspace article a {
+  display: block;
+  margin: 12px 0;
+}
+.content-workspace button {
+  margin: 4px 6px 4px 0;
+}
+@media (max-width: 600px) {
+  .content-workspace .heading,
+  .content-workspace header {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 600px) {
+  .leads-workspace .heading {
+    flex-wrap: wrap;
+  }
+  .leads-workspace header {
+    flex-wrap: wrap;
+  }
+  .leads-workspace th,
+  .leads-workspace td {
+    padding: 6px;
+  }
+}

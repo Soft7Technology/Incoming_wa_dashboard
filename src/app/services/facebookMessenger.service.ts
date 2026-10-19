@@ -209,6 +209,18 @@ export class FacebookMessengerService {
     return this.database.transaction(async (trx) => {
       await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`facebook-page:${pageId}`]);
       const existing = await trx('facebook_pages').where({ page_id: pageId }).forUpdate().first();
+      const contentPage = await trx('facebook_content_pages').where({ page_id: pageId }).first();
+      if (contentPage && (contentPage.company_id !== scope.companyId || contentPage.owner_id !== scope.ownerId))
+        throw new FacebookError(409, 'This Page is connected to Page posts in another workspace.');
+      const leadPage = await trx('facebook_lead_pages').where({ page_id: pageId }).first();
+      const instagram = await trx('instagram_accounts').where({ page_id: pageId }).first();
+      if (instagram && (instagram.company_id !== scope.companyId || instagram.owner_id !== scope.ownerId))
+        throw new FacebookError(409, 'This Page is linked to an Instagram integration in another workspace.');
+      if (leadPage && (leadPage.company_id !== scope.companyId || leadPage.owner_id !== scope.ownerId))
+        throw new FacebookError(
+          409,
+          'This Page is connected to another account for lead syncing. Delete its stored integration before transferring it.',
+        );
       if (existing && (existing.company_id !== scope.companyId || existing.owner_id !== scope.ownerId))
         throw new FacebookError(
           409,
@@ -229,7 +241,7 @@ export class FacebookMessengerService {
           page.access_token,
           'POST',
           {},
-          { subscribed_fields: subscriptions.join(',') },
+          { subscribed_fields: [...subscriptions, ...(leadPage?.status === 'connected' ? ['leadgen'] : [])].join(',') },
         );
         if (result.success !== true) throw new FacebookError(502, 'Meta did not confirm the webhook subscription.');
         const check = await this.meta.call(`${pageId}/subscribed_apps`, page.access_token, 'GET', {
@@ -287,17 +299,31 @@ export class FacebookMessengerService {
     if (scope.reviewPageId) throw new FacebookError(403, 'Public review sessions cannot disconnect or delete Pages.');
     await this.access(scope, 'manage');
     this.validateId(id);
+    const selected = await scoped(this.database, scope).where({ id }).first();
+    if (!selected) throw new FacebookError(404, 'Page not found in your account.');
     return this.database.transaction(async (trx) => {
+      await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`facebook-page:${selected.page_id}`]);
       const page = await scoped(trx, scope).where({ id }).forUpdate().first();
       if (!page) throw new FacebookError(404, 'Page not found in your account.');
       let warning: string | null = null;
-      if (page.token_ciphertext && page.status !== 'disconnected') {
+      const instagram = await trx('instagram_accounts')
+        .where({ page_id: page.page_id, status: 'connected' })
+        .whereNotNull('token_ciphertext')
+        .first();
+      if (page.token_ciphertext && page.status !== 'disconnected' && !instagram) {
         try {
-          const result = await this.meta.call(
-            `${page.page_id}/subscribed_apps`,
-            decrypt(page.token_ciphertext),
-            'DELETE',
-          );
+          const leadPage = await trx('facebook_lead_pages')
+            .where({ page_id: page.page_id, status: 'connected' })
+            .first();
+          const result = leadPage?.token_ciphertext
+            ? await this.meta.call(
+                `${page.page_id}/subscribed_apps`,
+                decrypt(leadPage.token_ciphertext),
+                'POST',
+                {},
+                { subscribed_fields: 'leadgen' },
+              )
+            : await this.meta.call(`${page.page_id}/subscribed_apps`, decrypt(page.token_ciphertext), 'DELETE');
           if (result.success !== true) throw new FacebookError(502, 'Meta did not confirm unsubscription.');
         } catch {
           warning =
@@ -615,28 +641,67 @@ export class FacebookMessengerService {
   async revoke(facebookUserId: string, erase: boolean) {
     const pages = await this.database('facebook_pages').where({ facebook_user_id: facebookUserId });
     // Meta may already have revoked tokens. Local revocation/deletion always proceeds.
-    for (const page of pages) {
-      if (page.token_ciphertext) {
-        try {
-          await this.meta.call(`${page.page_id}/subscribed_apps`, decrypt(page.token_ciphertext), 'DELETE');
-        } catch {
-          /* No token or payload logging. */
+    for (const selected of pages) {
+      await this.database.transaction(async (trx) => {
+        await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`facebook-page:${selected.page_id}`]);
+        const page = await trx('facebook_pages')
+          .where({ id: selected.id, facebook_user_id: facebookUserId })
+          .forUpdate()
+          .first();
+        if (!page) return;
+        const instagram = await trx('instagram_accounts')
+          .where({ page_id: page.page_id, status: 'connected' })
+          .whereNot({ facebook_user_id: facebookUserId })
+          .whereNotNull('token_ciphertext')
+          .first();
+        if (page.token_ciphertext && !instagram) {
+          try {
+            const leadPage = await trx('facebook_lead_pages')
+              .where({ page_id: page.page_id, status: 'connected' })
+              .whereNot({ facebook_user_id: facebookUserId })
+              .first();
+            if (leadPage?.token_ciphertext)
+              await this.meta.call(
+                `${page.page_id}/subscribed_apps`,
+                decrypt(leadPage.token_ciphertext),
+                'POST',
+                {},
+                { subscribed_fields: 'leadgen' },
+              );
+            else await this.meta.call(`${page.page_id}/subscribed_apps`, decrypt(page.token_ciphertext), 'DELETE');
+          } catch {
+            /* No token or payload logging. */
+          }
         }
-      }
-    }
-    await this.database.transaction(async (trx) => {
-      await trx('facebook_oauth_sessions').where({ facebook_user_id: facebookUserId }).delete();
-      if (erase) await trx('facebook_pages').where({ facebook_user_id: facebookUserId }).delete();
-      else
-        await trx('facebook_pages')
-          .where({ facebook_user_id: facebookUserId })
-          .update({
+        if (erase) await trx('facebook_pages').where({ id: page.id }).delete();
+        else
+          await trx('facebook_pages').where({ id: page.id }).update({
             status: 'disconnected',
             token_ciphertext: null,
             error: 'Facebook authorization was removed. Reconnect to resume support.',
             updated_at: new Date(),
           });
-    });
+      });
+    }
+    await this.database('facebook_oauth_sessions').where({ facebook_user_id: facebookUserId }).delete();
+    const contentPages = await this.database('facebook_content_pages')
+      .where({ facebook_user_id: facebookUserId })
+      .select('id');
+    for (const selected of contentPages) {
+      await this.database.transaction(async (trx) => {
+        const page = await trx('facebook_content_pages')
+          .where({ id: selected.id, facebook_user_id: facebookUserId })
+          .forUpdate()
+          .first();
+        if (!page) return;
+        if (erase) await trx('facebook_content_pages').where({ id: page.id }).delete();
+        else
+          await trx('facebook_content_pages')
+            .where({ id: page.id })
+            .update({ token_ciphertext: null, status: 'disconnected' });
+      });
+    }
+    await this.database('facebook_content_oauth').where({ facebook_user_id: facebookUserId }).delete();
     if (!erase) return null;
     const confirmation = random();
     await this.database('facebook_deletion_requests').insert({

@@ -7,11 +7,15 @@ const { load, fixture, utils } = require('./facebook-helpers.cjs');
 
 test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, callbacks and assets', {
   skip: !process.env.FACEBOOK_TEST_DATABASE_URL && 'Set FACEBOOK_TEST_DATABASE_URL to an isolated local PostgreSQL database.',
-}, () => fixture(async ({ database, service, connect, inbound, a, b }) => {
+}, () => fixture(async ({ database, service, leadService, instagramService, connect, inbound, a, b }) => {
   const controllerModule = load('src/app/http/controllers/facebookMessenger.controller.ts', {
     '../../services/facebookMessenger.service': { __esModule: true, default: service }, '../../utils/facebook': utils,
+    '../../services/facebookLeads.service': { __esModule: true, default: leadService },
+    '../../services/instagram.service': { __esModule: true, default: instagramService },
   });
   const publicRoute = load('src/routes/facebookPublic.route.ts', {
+    '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) },
+    '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookMessenger.controller': controllerModule,
     './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts'),
     './facebookReviewLogin.route': load('src/routes/facebookReviewLogin.route.ts', {

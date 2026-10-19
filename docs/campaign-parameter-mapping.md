@@ -1,5 +1,54 @@
 # Campaign parameter mapping
 
+## Direct recipient limit
+
+Campaign create and recipient preview accept at most **150 entries** in `contact_filters.contactNumber`. This applies to the dashboard routes (`/v1/admin/campaigns`, `/v1/admin/campaigns/preview-recipients`) and the corresponding `/v1/api/campaigns` routes. The server checks the submitted array before deduplication, contact lookups/creation, plan quota checks, or queueing. Repeated entries still count toward the submitted-array limit. `save_contacts: false` does not bypass validation.
+
+With 151 or more entries, the response is **HTTP 400 Bad Request**:
+
+```json
+{
+  "success": false,
+  "message": "You can add up to 150 phone numbers directly to a campaign. You provided 151. For more than 150 numbers, select a contact list using contact_filters.list_ids.",
+  "error": {
+    "code": "CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED",
+    "field": "contact_filters.contactNumber",
+    "limit": 150,
+    "received": 151,
+    "required_action": "SELECT_CONTACT_LIST"
+  }
+}
+```
+
+The response also includes the standard `meta.timestamp`. The frontend can display `message`, highlight `error.field`, and open the contact-list selector when `error.required_action` is `SELECT_CONTACT_LIST`.
+
+For larger recipient sets, select an existing contact list using `contact_filters.list_ids` and omit `contactNumber`. If a new list is needed, use the Excel contact-import flow (`POST /v1/admin/contacts/import`), wait for the import job to finish, then select its list. Adding `list_ids` does not allow more than 150 direct numbers in the same request. The 150-entry rule applies to the direct-number input; list/tag filters can select larger recipient sets, subject to the existing subscription and eligibility checks. The campaign JSON endpoint does not accept an Excel attachment directly.
+
+```json
+{
+  "name": "Imported list campaign",
+  "template_id": "23860277-69cd-44c2-b557-08f00ecaf2cf",
+  "phone_number_id": "661886587013056",
+  "contact_filters": { "list_ids": ["IMPORTED_LIST_UUID"] },
+  "parameter_mapping": { "1": "fullName" },
+  "send_immediately": true
+}
+```
+
+## Contact lists for a sending phone
+
+`GET /v1/admin/contacts/phone-number/661886587013056/lists`
+
+Use `Authorization: Bearer <token>`. The equivalent API-key route is `GET /v1/api/contacts/phone-number/:phoneNumberId/lists`. The path accepts either the Meta phone number ID or the local sender UUID. No request body is required.
+
+The response uses the existing list shape: `{ success: true, message: "Lists retrieved successfully", data: [...] }`, with the standard `meta.timestamp`. Each entry includes its `id`, `name`, `phone_number_id`, contact counts, file headers, and existing import-summary fields. Pass the selected entries' `id` values in `contact_filters.list_ids`. Only non-deleted lists for the authenticated account owner, company, and selected sending number are returned; no lists produces `data: []`.
+
+Malformed sender identifiers return HTTP 400; unavailable or foreign senders return HTTP 404. The existing `GET /v1/admin/contacts/lists` continues to return all account lists.
+
+Campaign creation and recipient preview validate `list_ids` as a non-empty array of UUIDs. Every selected list must belong to the account and sending phone. An unavailable, deleted, foreign, or other-phone list returns HTTP 400 with `error.code: "CAMPAIGN_CONTACT_LIST_NOT_AVAILABLE"`, `error.field: "contact_filters.list_ids"`, and `error.required_action: "SELECT_CONTACT_LIST"`, before contact creation or campaign quota consumption.
+
+## Mapping payload
+
 Send `parameter_mapping` in the existing campaign creation payload. Keys match template placeholders (`1` for `{{1}}`, etc.). The frontend can build these entries dynamically from contact columns and custom field keys; no backend field registration or migration is needed.
 
 ```json

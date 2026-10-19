@@ -11,6 +11,7 @@ import { Model } from 'firebase-admin/lib/machine-learning/machine-learning';
 import permissionModel from '../models/permission.model';
 import { bulkUpdateTableExecutionQueue } from '@surefy/console/queues/bulkTableUpdate.queue';
 import companyDomainModel from '../models/companyDomain.model';
+import { assertStrongPassword } from '../utils/passwordPolicy';
 
 class teamService{
     async inviteTeam(data: any) {
@@ -41,6 +42,7 @@ class teamService{
     }
 
     async setUpTeammatePassword(token: string, password: string, domain_name: string) {
+        assertStrongPassword(password);
         const found = await userTeamModel.findOne({ invite_token: token });
         if (!found) throw new HTTP400Error({ message: 'Invalid invite token' });
         const domain = await companyDomainModel.findByDomain(domain_name);

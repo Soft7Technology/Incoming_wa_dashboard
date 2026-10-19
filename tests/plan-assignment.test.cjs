@@ -13,6 +13,8 @@ function load(path, dependency) {
   return exports;
 }
 const duration = load('src/app/utils/subscriptionDuration.ts', () => HTTPError);
+const featureUtils = load('src/app/utils/planFeatures.ts', () => HTTPError);
+const trialPolicy = load('src/app/utils/freeTrialPolicy.ts', name => name.includes('planFeatures') ? featureUtils : name.includes('subscriptionDuration') ? duration : HTTPError);
 function fixture({ existing, failTable, balance = 500, recipientBalance = 20, company = 'c' } = {}) {
   let state = {
     users: [{ id: 'u', company_id: company, name: 'User', assigned_plan: existing?.id },
@@ -66,6 +68,8 @@ function fixture({ existing, failTable, balance = 500, recipientBalance = 20, co
     if (name === '@surefy/database') return db;
     if (name.includes('activityContext')) return { markActivityRecorded() {} };
     if (name.includes('subscriptionDuration')) return duration;
+    if (name.includes('freeTrialPolicy')) return trialPolicy;
+    if (name.includes('planFeatures')) return load('src/app/utils/planFeatures.ts', () => HTTPError);
     if (name.includes('planUsage.service')) return { countTeamSeats: async () => 2 };
     return HTTPError;
   }).default;
@@ -117,7 +121,19 @@ test('Free trial activation lasts seven days, updates assigned_plan, and prevent
   assert.equal(result.plan.end_date - result.plan.start_date, 7 * 86400000);
   assert.equal(result.user.assigned_plan, result.plan.id);
   assert.equal(f.state().credit_transactions.length, 0);
+  assert.equal(JSON.parse(result.plan.limits).Contact.limit, 500);
   await assert.rejects(f.service.updateUser('u', { assigned_plan: 'f' }, undefined, true));
+});
+
+test('manual assignment cannot reset an expired trial or grant tampered Free plan limits', async () => {
+  const f = fixture();
+  f.state().subscription_plans[1].features = { Contact: { limit_value: null } };
+  const result = await f.service.updateUser('u', { assigned_plan: 'f' }, actor);
+  assert.equal(JSON.parse(result.plan.limits).Contact.limit, 500);
+  assert.equal(JSON.parse(result.plan.limits).WabaNumber.limit, 1);
+  f.state().user_plans[0].end_date = '2020-01-01';
+  f.state().user_plans[0].active = false;
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'f' }, actor), /another free trial/);
 });
 test('an active paid plan cannot be replaced by a Free plan and cross-company plans are rejected', async () => {
   const f = fixture({ existing: { id: 'old', user_id: 'u', active: true, subscription_id: 'old-p', billing_cycle: 'Monthly', end_date: '2099-01-01' } });

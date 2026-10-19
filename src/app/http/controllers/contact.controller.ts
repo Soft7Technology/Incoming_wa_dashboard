@@ -504,6 +504,12 @@ class ContactController {
     return successResponse(req, res, 'Lists retrieved successfully', lists);
   });
 
+  getListsByPhoneNumber = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const lists = await ContactService.getListsByPhoneNumber(
+      req.ownerId ?? req.userId!, req.companyId!, req.params.phoneNumberId);
+    return successResponse(req, res, 'Lists retrieved successfully', lists);
+  });
+
   /**
    * GET /v1/contacts/lists/:id
    * Get list by ID

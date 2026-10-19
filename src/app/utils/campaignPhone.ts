@@ -1,6 +1,32 @@
 import { parseImportedPhone, parseWhatsAppPhone, parseStoredContactPhone } from './importPhone';
+import { validate as isUUID } from 'uuid';
 
 interface SavedPhone { id: string; phone_number: string; country_code?: string | null }
+
+export const MAX_CAMPAIGN_DIRECT_NUMBERS = 150;
+
+export class CampaignDirectNumberLimitError extends Error {
+  readonly details: {
+    code: string;
+    field: string;
+    limit: number;
+    received: number;
+    required_action: string;
+  };
+
+  constructor(received: number) {
+    super(`You can add up to ${MAX_CAMPAIGN_DIRECT_NUMBERS} phone numbers directly to a campaign. ` +
+      `You provided ${received}. For more than ${MAX_CAMPAIGN_DIRECT_NUMBERS} numbers, select a contact list using contact_filters.list_ids.`);
+    this.name = 'CampaignDirectNumberLimitError';
+    this.details = {
+      code: 'CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED',
+      field: 'contact_filters.contactNumber',
+      limit: MAX_CAMPAIGN_DIRECT_NUMBERS,
+      received,
+      required_action: 'SELECT_CONTACT_LIST',
+    };
+  }
+}
 
 /** Saved contact metadata supplies the country for national numbers; no global default. */
 export function resolveCampaignPhone(value: string, contacts: SavedPhone[], options: { countryCode?: string; allowBareInternational?: boolean } = {}) {
@@ -34,9 +60,17 @@ export function validateCampaignPhoneInputs(filters: any, countryCode?: unknown)
   if (countryCode !== undefined && !/^(?:\+?\d{1,3}|00\d{1,3}|[a-zA-Z]{2})$/.test(String(countryCode).trim())) {
     throw new Error('country_code must be a calling code such as 65 or +91, or an ISO code such as SG');
   }
+  if (filters?.list_ids !== undefined && (!Array.isArray(filters.list_ids) || !filters.list_ids.length ||
+      !filters.list_ids.every((id: unknown) => typeof id === 'string' && isUUID(id)))) {
+    throw new Error('contact_filters.list_ids must be a non-empty array of contact list UUIDs');
+  }
   if (filters?.contactNumber === undefined) return;
   if (!Array.isArray(filters.contactNumber) || !filters.contactNumber.length) {
     throw new Error('contact_filters.contactNumber must be a non-empty array of phone numbers');
+  }
+  // Bound the submitted entries before phone resolution, deduplication, or database work.
+  if (filters.contactNumber.length > MAX_CAMPAIGN_DIRECT_NUMBERS) {
+    throw new CampaignDirectNumberLimitError(filters.contactNumber.length);
   }
   filters.contactNumber.forEach((value: unknown, index: number) => {
     if ((typeof value !== 'string' && typeof value !== 'number') ||

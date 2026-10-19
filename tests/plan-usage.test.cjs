@@ -11,7 +11,7 @@ function load(file, deps) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: id => deps[id] || (id === '../utils/importPhone' ? phoneUtils : HttpError), Date, console });
+  vm.runInNewContext(code, { exports, require: id => deps[id] || (id === '../utils/planFeatures' ? load('src/app/utils/planFeatures.ts', {}) : id === '../utils/importPhone' ? phoneUtils : HttpError), Date, console });
   return exports;
 }
 const source = 'src/app/services/planUsage.service.ts';
@@ -115,8 +115,7 @@ test('team limit uses pending plus accepted seats, ignores expired, and deletion
 test('preflight middleware checks owner plan for team-member requests and forwards async failures', async () => {
   let queried, error;
   const api = load('library/surefy/src/middleware/plan.middleware.ts', {
-    '@surefy/console/app/models/userPlans.model': { getPlanByUserId: async id => { queried = id; return plan(); } },
-    '@surefy/console/app/services/planUsage.service': { checkUsage },
+    '@surefy/console/app/services/planUsage.service': { __esModule: true, default: { assert: async id => { queried = id; checkUsage(plan(), 'Contact'); } } },
   });
   await api.checkPlanLimit('Contact')({ userId: 'member', ownerId: 'owner' }, {}, value => { error = value; });
   assert.equal(queried, 'owner'); assert.equal(error, undefined);
@@ -148,7 +147,7 @@ test('contact service persists in the usage transaction without controller incre
     } },
   }).default;
   const result = await contacts.createContact('owner', 'company', { phone_number: '9876543210', country_code: '91' });
-  assert.equal(result.phone_number, '9876543210');
+  assert.equal(result.phone_number, '+919876543210');
   assert.equal(JSON.parse(h.state().user_plans[0].usage).Contact, 1);
 });
 test('chatbot creation consumes the active plan in its persistence transaction', async () => {

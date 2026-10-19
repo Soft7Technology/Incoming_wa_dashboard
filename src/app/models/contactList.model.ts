@@ -5,11 +5,19 @@ class ContactListModel extends BaseModel {
     super('contact_lists');
   }
 
-  async findByUserId(userId: string, companyId: string) {
-    return this.query()
+  async findByUserId(userId: string, companyId: string, phoneNumberId?: string) {
+    const query = this.query()
       .where({ user_id: userId, company_id: companyId })
       .whereNull('deleted_at')
       .orderBy('created_at', 'desc');
+    if (phoneNumberId) query.where('phone_number_id', phoneNumberId);
+    return query;
+  }
+
+  async findSelectedForPhone(userId: string, companyId: string, phoneNumberId: string, listIds: string[]) {
+    return this.query().select('id')
+      .where({ user_id: userId, company_id: companyId, phone_number_id: phoneNumberId })
+      .whereNull('deleted_at').whereIn('id', listIds);
   }
 
   async findByName(userId: string, name: string) {

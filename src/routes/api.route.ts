@@ -5,6 +5,9 @@ import AdminRoute from './admin.route';
 import ApiConsumerRoute from './apiConsumer.route';
 import WebhookPublicRoute from './webhookPublic.route';
 import FacebookPublicRoute from './facebookPublic.route';
+import GoogleSheetsPublicRoute from './googleSheetsPublic.route';
+import GooglePeoplePublicRoute from './googlePeoplePublic.route';
+import ShopifyPublicRoute from './shopifyPublic.route';
 
 const ApiRoute = Router();
 
@@ -25,6 +28,9 @@ const ApiRoute = Router();
 // Public routes - no authentication
 ApiRoute.use('/auth', AuthRoute); // Login, register
 ApiRoute.use('/facebook', FacebookPublicRoute);
+ApiRoute.use('/integrations/google', GoogleSheetsPublicRoute);
+ApiRoute.use('/integrations/google-people', GooglePeoplePublicRoute);
+ApiRoute.use('/integrations/shopify', ShopifyPublicRoute);
 
 // Public webhook routes - no authentication (Meta webhooks validated with their own signature)
 ApiRoute.use('/webhooks', WebhookPublicRoute);

@@ -1,0 +1,20 @@
+# Prepared from this integration's configuration. Not released to Shopify.
+# Confirm the app name in the dashboard before deploying this configuration.
+client_id = "69efc7856fb1dcc385b9ecb33392b5b6"
+name = "RSVPDesk"
+application_url = "https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/shopify/app"
+embedded = false
+
+[access_scopes]
+scopes = "read_orders,read_customers"
+use_legacy_install_flow = true
+
+[auth]
+redirect_urls = ["https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/shopify/callback"]
+
+[webhooks]
+api_version = "2026-10"
+
+[[webhooks.subscriptions]]
+compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+uri = "https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/shopify/webhook"

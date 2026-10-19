@@ -10,7 +10,7 @@ export class FacebookGraph {
     params: Record<string, unknown> = {},
     body?: unknown,
   ): Promise<any> {
-    const c = config();
+    const c = config('transport');
     try {
       const result = await axios.request({
         url: `https://graph.facebook.com/${c.version}/${path}`,
@@ -40,12 +40,12 @@ export class FacebookGraph {
     }
   }
 
-  async authorize(code: string) {
-    const c = config();
+  async authorize(code: string, callback?: string) {
+    const c = config('transport');
     const short = await this.call('oauth/access_token', null, 'GET', {
       client_id: c.appId,
       client_secret: c.secret,
-      redirect_uri: c.callback,
+      redirect_uri: callback || c.callback,
       code,
     });
     if (!short.access_token) throw new FacebookError(502, 'Meta did not return a user access token.');
@@ -56,7 +56,11 @@ export class FacebookGraph {
       fb_exchange_token: short.access_token,
     });
     if (!long.access_token) throw new FacebookError(502, 'Meta did not return a long-lived user access token.');
-    const token = long.access_token;
+    return this.inspectUser(long.access_token);
+  }
+
+  async inspectUser(token: string) {
+    const c = config('transport');
     const debug = await this.call('debug_token', `${c.appId}|${c.secret}`, 'GET', { input_token: token });
     if (
       !debug.data?.is_valid ||
@@ -64,8 +68,15 @@ export class FacebookGraph {
       !debug.data.user_id ||
       debug.data.type !== 'USER'
     ) {
-      throw new FacebookError(403, 'Configure Facebook Login to issue a user access token for this app.');
+      throw new FacebookError(403, 'Use a valid Facebook USER access token generated for this app.');
     }
+    const dates = [debug.data.expires_at, debug.data.data_access_expires_at];
+    if (dates.some((value) => value && Number(value) * 1000 <= Date.now()))
+      throw new FacebookError(
+        409,
+        'Facebook authorization expired. Generate a new token or reconnect.',
+        'TOKEN_EXPIRED',
+      );
     const grants = await this.call('me/permissions', token);
     return {
       token,
@@ -75,7 +86,7 @@ export class FacebookGraph {
     };
   }
 
-  async pages(token: string) {
+  async pages(token: string, purpose: 'messenger' | 'leads' = 'messenger') {
     const pages: any[] = [];
     let after: string | undefined;
     for (let i = 0; i < 100; i++) {
@@ -89,9 +100,18 @@ export class FacebookGraph {
         if (!pages.length)
           throw new FacebookError(
             403,
-            'Facebook approved the app permissions but returned no Pages for this account. Check that the selected Page is assigned to the Facebook account you used to log in and is selected in this app\'s Business Integration, then connect again.',
+            "Facebook approved the app permissions but returned no Pages for this account. Check that the selected Page is assigned to the Facebook account you used to log in and is selected in this app's Business Integration, then connect again.",
             'NO_PAGES_RETURNED',
           );
+        if (purpose === 'leads') {
+          const eligible = pages.filter((p) => p.access_token);
+          if (!eligible.length)
+            throw new FacebookError(
+              403,
+              'No Page tokens returned. Check Page access and selected assets in Facebook consent.',
+            );
+          return eligible;
+        }
         const messagingPages = pages.filter((p) =>
           (p.tasks || []).some((t: string) => ['MESSAGE', 'MESSAGING', 'PROFILE_PLUS_MESSAGING'].includes(t)),
         );
@@ -105,7 +125,7 @@ export class FacebookGraph {
         if (!eligible.length)
           throw new FacebookError(
             403,
-            'Facebook returned Pages with messaging access but did not provide a usable Page access token. Check the selected Page and its permissions in this app\'s Business Integration, then connect again.',
+            "Facebook returned Pages with messaging access but did not provide a usable Page access token. Check the selected Page and its permissions in this app's Business Integration, then connect again.",
             'PAGE_TOKEN_MISSING',
           );
         return eligible;
@@ -117,7 +137,7 @@ export class FacebookGraph {
   }
 
   async inspectPage(pageId: string, token: string) {
-    const c = config();
+    const c = config('transport');
     // Page metadata reads require pages_read_engagement. The token debugger can
     // verify the authorized Page without adding a permission to Messenger login.
     const debug = await this.call('debug_token', `${c.appId}|${c.secret}`, 'GET', { input_token: token });
@@ -125,7 +145,10 @@ export class FacebookGraph {
       throw new FacebookError(409, 'Invalid Page authorization. Reconnect.', 'TOKEN_EXPIRED');
     if (String(debug.data.profile_id) !== pageId)
       throw new FacebookError(403, 'Meta returned a token for a different Page.');
-    return { expires: debug.data.expires_at ? new Date(debug.data.expires_at * 1000) : null };
+    return {
+      expires: debug.data.expires_at ? new Date(debug.data.expires_at * 1000) : null,
+      granted: Array.isArray(debug.data.scopes) ? (debug.data.scopes as string[]) : [],
+    };
   }
 }
 

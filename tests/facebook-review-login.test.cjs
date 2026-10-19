@@ -27,9 +27,13 @@ test('review access requires an enabled, unexpired private key and uses normal l
     } } },
   });
   const controller = load('src/app/http/controllers/facebookMessenger.controller.ts', {
+    '../../services/instagram.service': { default: {} },
+    '../../services/facebookLeads.service': { default: {} },
     '../../services/facebookMessenger.service': { default: {} }, '../../utils/facebook': utils,
   });
   const publicRoute = load('src/routes/facebookPublic.route.ts', {
+    '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) },
+    '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookMessenger.controller': controller,
     './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts'),
     './facebookReviewLogin.route': reviewRoute,

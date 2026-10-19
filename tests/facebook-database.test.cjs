@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { fixture, utils, migration } = require('./facebook-helpers.cjs');
+const { fixture, utils, migration, leadMigration } = require('./facebook-helpers.cjs');
 const dbTest = (name, fn) => test(name, { skip: !process.env.FACEBOOK_TEST_DATABASE_URL && 'Set FACEBOOK_TEST_DATABASE_URL to an isolated local PostgreSQL database.' }, () => fixture(fn));
 
 dbTest('authorization is browser-bound, single-use, cancellable and permission checked', async ({ service, a, b, meta, database }) => {
@@ -136,5 +136,5 @@ dbTest('deauthorization revokes tokens, data deletion cascades and migration rol
   const confirmation = await service.revoke('30001', true); assert.equal((await service.deletionStatus(confirmation)).status, 'completed');
   assert.equal((await database('facebook_pages')).length, 0); assert.equal((await database('facebook_messages')).length, 0);
   await assert.rejects(service.deletionStatus('not-valid'));
-  await migration.down(database); assert.equal(await database.schema.hasTable('facebook_pages'), false);
+  await leadMigration.down(database); await migration.down(database); assert.equal(await database.schema.hasTable('facebook_pages'), false);
 });

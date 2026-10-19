@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Instagram Inbox, Comments &amp; Posts</title>
+    <link rel="stylesheet" href="/v1/facebook/style.css" />
+    <script defer src="/v1/facebook/instagram.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/v1/facebook/instagram" class="brand"
+        >Instagram <span class="badge">Inbox, Comments &amp; Posts</span></a
+      >
+      <nav>
+        <a href="/v1/facebook/posts">Page posts</a> · <a href="/v1/facebook/page">Messenger</a> ·
+        <a href="/v1/facebook/leads">Lead Forms</a>
+        <button id="logout" class="quiet" hidden>Log out</button>
+      </nav>
+    </header>
+    <main>
+      <section id="login-panel" class="login card">
+        <h1>Log into your application</h1>
+        <p>
+          Use your application account to connect Instagram. Reviewers can use the application login supplied in the
+          review instructions.
+        </p>
+        <form id="login-form">
+          <label>Email<input id="email" type="email" autocomplete="username" required /></label>
+          <label>Password<input id="password" type="password" autocomplete="current-password" required /></label>
+          <button id="login-button">Log in</button>
+        </form>
+      </section>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="workspace" hidden>
+        <div class="heading">
+          <div>
+            <p class="eyebrow">Settings / Integrations / Instagram</p>
+            <h1>Instagram Inbox, Comments &amp; Posts</h1>
+            <p class="muted">Connect your professional Instagram account directly. A Facebook Page is optional.</p>
+          </div>
+          <div>
+            <button id="connect">Connect with Instagram</button>
+            <button id="connect-facebook" class="quiet">Connect with Facebook</button>
+          </div>
+        </div>
+        <p id="configuration" class="callout" hidden></p>
+        <section id="selection" class="card" hidden>
+          <h2>Choose your Instagram account</h2>
+          <label>Instagram account<select id="page-select"></select></label
+          ><button id="select-page">Connect selected account</button>
+        </section>
+        <div id="accounts" class="page-grid"></div>
+        <section id="account-workspace" hidden>
+          <h2 id="account-name"></h2>
+          <section id="instagram-profile" class="card" aria-labelledby="profile-title">
+            <h2 id="profile-title">Connected Instagram profile</h2>
+            <p class="muted">Profile information for the professional account you authorized.</p>
+            <dl class="profile-details">
+              <dt>Username</dt>
+              <dd id="profile-username"></dd>
+              <dt>Instagram account ID</dt>
+              <dd id="profile-id"></dd>
+              <dt>Connection</dt>
+              <dd id="profile-status"></dd>
+            </dl>
+            <a id="profile-link" target="_blank" rel="noopener noreferrer">View profile on Instagram</a>
+            <button id="refresh-profile" class="quiet">Refresh profile</button>
+          </section>
+          <section id="publisher" class="card">
+            <h2>Create an Instagram post</h2>
+            <p id="publish-account" class="muted"></p>
+            <p id="publish-issue" class="callout" hidden></p>
+            <form id="publish-form">
+              <fieldset id="publish-fields">
+                <label
+                  >Post type<select id="publish-kind">
+                    <option value="IMAGE">Photo post (JPEG)</option>
+                    <option value="REELS">Reel (MP4)</option>
+                  </select></label
+                >
+                <label
+                  >Media source<select id="publish-source">
+                    <option value="upload">Upload a file</option>
+                    <option value="url">Public media URL</option>
+                  </select></label
+                >
+                <label id="publish-file-label"
+                  >Media file<input id="publish-file" type="file" accept="image/jpeg"
+                /></label>
+                <label id="publish-url-label" hidden
+                  >Public HTTPS media URL<input id="publish-url" type="url" placeholder="https://example.com/photo.jpg"
+                /></label>
+                <p class="muted">
+                  JPEG photos up to 8 MB; MP4 Reels up to 100 MB. Instagram must be able to download the media. Uploaded
+                  media is available through a temporary link for 24 hours.
+                </p>
+                <img id="publish-photo-preview" class="publish-preview" alt="Selected photo preview" hidden />
+                <video id="publish-video-preview" class="publish-preview" controls preload="metadata" hidden></video>
+                <label
+                  >Caption<textarea
+                    id="publish-caption"
+                    maxlength="2200"
+                    rows="4"
+                    placeholder="Write a caption…"
+                  ></textarea>
+                </label>
+                <label id="publish-feed-label" hidden
+                  ><input id="publish-feed" type="checkbox" checked /> Also show the Reel in the feed</label
+                >
+                <button id="prepare-post" type="submit">Prepare post</button>
+                <button id="new-post-draft" class="quiet" type="button">New draft</button>
+              </fieldset>
+            </form>
+            <p class="muted">Prepare the media, then choose Publish to Instagram when it is ready.</p>
+            <button id="refresh-publications" class="quiet">Refresh publishing history</button>
+            <div id="publications" aria-live="polite"></div>
+          </section>
+          <div class="page-grid">
+            <section class="card">
+              <h2>Direct messages</h2>
+              <p class="muted">
+                Read customer DMs and reply within 24 hours of their latest message. Showing up to 100 recent items.
+              </p>
+              <button id="refresh-conversations">Refresh inbox</button>
+              <button id="more-conversations" class="quiet" hidden>Import more conversations</button>
+              <div id="conversations"></div>
+            </section>
+            <section id="thread" class="card" hidden>
+              <h2 id="thread-name">Conversation</h2>
+              <button id="refresh-messages" class="quiet">Refresh messages</button
+              ><button id="more-messages" class="quiet" hidden>Import earlier messages</button>
+              <div id="messages"></div>
+              <p id="reply-window" class="muted"></p>
+              <form id="reply-form">
+                <label>Your reply<textarea id="message-text" maxlength="1000" required></textarea></label
+                ><button id="send-message">Send reply</button>
+              </form>
+            </section>
+          </div>
+          <section class="card">
+            <h2>Post comments</h2>
+            <p class="muted">
+              Choose a published post to read, reply to, or hide its comments. Showing up to 100 recent items.
+            </p>
+            <button id="refresh-media">Refresh posts</button>
+            <button id="more-media" class="quiet" hidden>Import more posts</button>
+            <div id="media" class="page-grid"></div>
+          </section>
+          <section id="comments-panel" class="card" hidden>
+            <h2 id="comments-title">Comments</h2>
+            <button id="refresh-comments" class="quiet">Refresh comments</button>
+            <button id="more-comments" class="quiet" hidden>Import more comments</button>
+            <div id="comments"></div>
+          </section>
+        </section>
+        <details class="card">
+          <summary>Meta App Review recording guide</summary>
+          <p>
+            For profile access, sign in with the supplied application login, then follow these steps using your own
+            Instagram professional account. Enter Instagram credentials only on Instagram's authorization screen.
+          </p>
+          <ol>
+            <li>
+              Click Connect with Instagram, sign into your professional account, and grant access. Select the authorized
+              Instagram account to finish connecting.
+            </li>
+            <li>
+              Under Connected Instagram profile, show the username and Instagram account ID. Click Refresh profile to
+              retrieve current profile information, then View profile on Instagram to compare the account. You can
+              return to this section using Open account on its card.
+            </li>
+            <li>
+              From another Instagram account, send a DM to the connected account. Refresh inbox, open the conversation,
+              read the message and send a reply. Show the reply arriving in Instagram.
+            </li>
+            <li>
+              Comment on a post from the other account. Refresh posts, select the post, refresh comments, then reply to
+              and hide/unhide the comment. Show the result on Instagram.
+            </li>
+            <li>
+              For publishing access, reconnect with Instagram, upload a JPEG or MP4, enter a caption, prepare the post
+              and publish it. Show the resulting post on Instagram.
+            </li>
+          </ol>
+          <p>
+            Direct Instagram login uses <code>instagram_business_manage_messages</code> for DMs,
+            <code>instagram_business_manage_comments</code> for comments and <code>instagram_business_basic</code> for
+            profile and posts. The Facebook connection remains available for professional accounts linked to a Page.
+            Publishing photos and Reels uses <code>instagram_business_content_publish</code>.
+          </p>
+          <p>
+            <code>instagram_business_basic</code> identifies the connected profile and lists its media. It is also
+            requested as a dependent permission for <code>instagram_business_manage_messages</code> and
+            <code>instagram_business_manage_comments</code>.
+          </p>
+        </details>
+        <p>
+          <a href="/v1/facebook/privacy">Privacy notice</a> · <a href="/v1/facebook/data-deletion">Data deletion</a>
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

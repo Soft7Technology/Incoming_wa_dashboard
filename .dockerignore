@@ -10,6 +10,7 @@ tmp
 temp
 logs
 .cache
+backups
 coverage
 *.log
 *.tsbuildinfo

@@ -8,8 +8,8 @@ const customFields = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/utils/contactCustomFields.ts','utf8'),{
  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
 }).outputText,{exports:customFields,require:()=>HttpError});
-function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, tag=null}={}) {
-  const writes=[], predicates=[];
+function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, tag=null, availableLists}={}) {
+  const writes=[], predicates=[], reads=[];
   const phone={id:'sender-db',phone_number_id:'payload-sender',user_id:wrongSender?'other':'u',company_id:'c'};
   const query={where(key,value){predicates.push([key,value]);return query;},whereRaw(){return query;},then(resolve,reject){return Promise.resolve(saved).then(resolve,reject);}};
   const deps={
@@ -21,19 +21,67 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
     '../models/campaign.model':{create:async data=>{writes.push({campaign:data});return {id:'campaign',...data};}},
     '../models/campaignMessage.model':{bulkCreate:async data=>{writes.push({messages:data});}},
     './contact.service':{getContactsByFilters:async()=>contacts},
-    '../models/template.model':{findById:async()=>({status:'APPROVED',components:[]})},
+    '../models/template.model':{findById:async()=>{reads.push('template');return {status:'APPROVED',components:[]};}},
     '../models/contact.model':{findCampaignPhoneCandidates:async()=>saved,findWithFilters:()=>query,bulkCreate:async()=>writes.push('contacts')},
+    '../models/contactList.model':{findSelectedForPhone:async(...args)=>{reads.push(['lists',...args]);return availableLists ?? args[3].map(id=>({id}));}},
     '../models/contactTag.model':{findByName:async()=>tag},
-    '../models/phoneNumber.model':{findByPhoneNumberId:async()=>phone},
+    '../models/phoneNumber.model':{findByPhoneNumberId:async()=>{reads.push('sender');return phone;}},
     '../../queues/campaignExecution.queue':{campaignExecutionQueue:{add:async()=>writes.push('queue')}},
   };
   const exports={};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/services/campaign.service.ts','utf8'),{
     compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
   }).outputText,{exports,Date,console:{log(){},warn(){}},require:name=>deps[name]||(name.includes('Error')?HttpError:{})});
-  return {service:exports.default,writes,predicates};
+  return {service:exports.default,writes,predicates,reads};
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
+
+test('create and preview reject unavailable lists before any contact writes or quota consumption',async()=>{
+ for(const method of ['createCampaign','previewRecipients']) {
+  const f=fixture({availableLists:[]});
+  const listId='23860277-69cd-44c2-b557-08f00ecaf2cf';
+  await assert.rejects(f.service[method]('u','c',{...payload,
+   contact_filters:{list_ids:[listId],contactNumber:['+919372597458']}}),error=>{
+    assert.equal(error.details.code,'CAMPAIGN_CONTACT_LIST_NOT_AVAILABLE');
+    assert.equal(error.details.field,'contact_filters.list_ids');return true;
+   });
+  const lookup=f.reads.find(read=>Array.isArray(read));
+  assert.deepEqual(JSON.parse(JSON.stringify(lookup)),['lists','u','c','sender-db',[listId]]);
+  assert.deepEqual(f.writes,[]);
+ }
+});
+
+test('repeated valid list IDs are checked once and accepted',async()=>{
+ const listId='23860277-69cd-44c2-b557-08f00ecaf2cf';
+ const f=fixture();
+ await f.service.previewRecipients('u','c',{...payload,contact_filters:{list_ids:[listId,listId]}});
+ assert.equal(f.reads.find(read=>Array.isArray(read))[4].length,1);
+ assert.deepEqual(f.writes,[]);
+});
+
+test('create and preview reject over 150 direct numbers before lookups, writes, quota consumption or queueing',async()=>{
+ for(const method of ['createCampaign','previewRecipients']) {
+  const f=fixture();
+  await assert.rejects(f.service[method]('u','c',{...payload,save_contacts:false,send_immediately:true,
+   contact_filters:{contactNumber:Array(151).fill('+919372597458')}}),error=>{
+    assert.equal(error.details.code,'CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED');
+    assert.equal(error.details.limit,150);assert.equal(error.details.received,151);
+    assert.equal(error.details.required_action,'SELECT_CONTACT_LIST');return true;
+   });
+  assert.deepEqual(f.reads,[]);assert.deepEqual(f.writes,[]);
+ }
+});
+
+test('150 direct numbers can create a campaign; imported lists can contain more than 150 recipients',async()=>{
+ const makeContacts=count=>Array.from({length:count},(_,index)=>({id:`contact-${index}`,
+  phone_number:`+91987654${String(index).padStart(4,'0')}`,country_code:'91',phone_number_id:'sender-db'}));
+ const direct=makeContacts(150),f=fixture({contacts:direct});
+ assert.equal((await f.service.createCampaign('u','c',{...payload,
+  contact_filters:{contactNumber:direct.map(contact=>contact.phone_number)}})).total_recipients,150);
+ const imported=fixture({contacts:makeContacts(151)});
+ assert.equal((await imported.service.createCampaign('u','c',{...payload,
+  contact_filters:{list_ids:['23860277-69cd-44c2-b557-08f00ecaf2cf']}})).total_recipients,151);
+});
 
 test('contact-prefixed custom fields and legacy attributes resolve independently into worker parameters', async()=>{
  const checks=['Hello','Welcome'];
@@ -253,7 +301,7 @@ test('recipient preview counts unique list matches for the sender, excluding opt
   {id:'foreign',phone_number:'+919372597460',phone_number_id:'other-sender'},
  ];
  const f=fixture({contacts,excluded:['919372597459']});
- const result=await f.service.previewRecipients('u','c',{phone_number_id:'payload-sender',contact_filters:{list_ids:['list']}});
+ const result=await f.service.previewRecipients('u','c',{phone_number_id:'payload-sender',contact_filters:{list_ids:['23860277-69cd-44c2-b557-08f00ecaf2cf']}});
  assert.equal(result.total_recipients,1);
  assert.equal(result.contacts[0].id,'first');
  assert.equal(result.contacts[0].recipient_number,'919372597458');
@@ -269,7 +317,7 @@ test('preview returns zero matches and previews external numbers without creatin
  assert.equal(result.contacts[0].id,null);
  assert.equal(external.writes.length,0);
  const filtered=fixture();
- assert.equal((await filtered.service.previewRecipients('u','c',{...payload,contact_filters:{contactNumber:['+919372597458'],list_ids:['list']}})).total_recipients,0);
+ assert.equal((await filtered.service.previewRecipients('u','c',{...payload,contact_filters:{contactNumber:['+919372597458'],list_ids:['23860277-69cd-44c2-b557-08f00ecaf2cf']}})).total_recipients,0);
  assert.equal(filtered.writes.length,0);
 });
 test('empty filter matches reject campaign before writes or queueing',async()=>{
@@ -315,4 +363,19 @@ test('contacts connected to another sender cannot create a campaign',async()=>{
  const f=fixture({contacts:[{id:'other',phone_number:'+919372597458',phone_number_id:'other-sender'}]});
  await assert.rejects(f.service.createCampaign('u','c',payload),/no contacts match.*selected sending phone number/);
  assert.equal(f.writes.length,0);
+});
+
+test('integration receipt commits after recipient writes and before queueing; receipt failure never queues', async()=>{
+ const contacts=[{id:'contact',phone_number:'+919372597458',phone_number_id:'sender-db'}];
+ const f=fixture({contacts});
+ await f.service.createCampaign('u','c',{...payload,send_immediately:true},false,async(campaign)=>{
+  assert.equal(campaign.id,'campaign');
+  assert.ok(f.writes.some(w=>w.messages));
+  assert.ok(!f.writes.includes('queue'));
+  f.writes.push('receipt');
+ });
+ assert.ok(f.writes.indexOf('receipt') < f.writes.indexOf('queue'));
+ const failed=fixture({contacts});
+ await assert.rejects(failed.service.createCampaign('u','c',{...payload,send_immediately:true},false,async()=>{throw Error('Receipt failed');}),/Receipt failed/);
+ assert.ok(!failed.writes.includes('queue'));
 });

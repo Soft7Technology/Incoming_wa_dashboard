@@ -76,7 +76,9 @@ class SuperAdminService {
   }
   async createCompany(actor: string, body: unknown) {
     const data = validate.object(body);
-    validate.allowed(data, ['name', 'email', 'phone', 'business_id', 'user', 'reason']);
+    validate.allowed(data, ['name', 'email', 'phone', 'business_id', 'user', 'reason', 'trial_days']);
+    const trialDays = data.trial_days === undefined ? 10 : data.trial_days;
+    validate.requireInput(trialDays === 3 || trialDays === 7 || trialDays === 10, 'trial_days must be 3, 7, or 10');
     const fields = this.fields(data, true) as unknown as CompanyFields;
     const user = validate.object(data.user);
     validate.allowed(user, ['name', 'email', 'phone', 'password']);
@@ -85,7 +87,7 @@ class SuperAdminService {
       'Initial admin password must contain at least 12 characters and at most 72 UTF-8 bytes');
     admin.password = await bcrypt.hash(user.password, 12);
     const reason = validate.text(data.reason, 'reason', 1000);
-    return this.write(() => model.createCompany(actor, fields, admin, reason));
+    return this.write(() => model.createCompany(actor, fields, admin, reason, trialDays as 3 | 7 | 10));
   }
   updateCompany(actor: string, id: string, body: unknown) {
     validate.uuid(id, 'companyId');

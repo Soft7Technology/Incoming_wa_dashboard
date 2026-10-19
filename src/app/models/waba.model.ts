@@ -1,6 +1,7 @@
 import { BaseModel } from '@surefy/models/base.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
+import planUsage, { checkUsage } from '../services/planUsage.service';
 
 class WabaModel extends BaseModel {
   constructor() {
@@ -32,7 +33,7 @@ class WabaModel extends BaseModel {
 
   /** Save one complete Meta snapshot; preserve local phone UUIDs and their relations. */
   async syncAccountAndPhones(waba: any, details: any, phones: any[]) {
-    return this.db.transaction(async trx => {
+    return planUsage.run(waba.user_id, 'WabaNumber', async (trx, plan) => {
       const scope = { id: waba.id, user_id: waba.user_id, company_id: waba.company_id };
       const current = await trx('waba_accounts').where(scope).whereNull('deleted_at').forUpdate().first();
       if (!current || current.waba_id !== waba.waba_id) {
@@ -47,6 +48,8 @@ class WabaModel extends BaseModel {
         throw new HTTP400Error({ message: 'A phone number is already connected to another account or WABA' });
       }
       const byMetaId = new Map(existing.map(phone => [phone.phone_number_id, phone]));
+      const newNumbers = phones.filter(phone => !byMetaId.get(phone.id) || byMetaId.get(phone.id).deleted_at).length;
+      checkUsage(plan, 'WabaNumber', newNumbers);
       const now = new Date();
       const [account] = await trx('waba_accounts').where(scope).update({
         name: details.name ?? current.name,
@@ -87,7 +90,7 @@ class WabaModel extends BaseModel {
       const updated = phones.filter(phone => byMetaId.has(phone.id)).length;
       return { waba: account, phone_numbers: phoneNumbers, total_phone_numbers: phones.length,
         created: phones.length - updated, updated };
-    });
+    }, 0);
   }
 
   async findByIdInternal(id: string) {

@@ -1,4 +1,6 @@
 import { markActivityRecorded } from '../utils/activityContext';
+import { snapshotFeatures } from '../utils/planFeatures';
+import { freeTrialFeatures } from '../utils/freeTrialPolicy';
 import { countTeamSeats } from './planUsage.service';
 import db from '@surefy/database';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -70,24 +72,20 @@ class PlanAssignmentService {
       if (unexpired && existing.subscription_id === plan.id) {
         throw new HTTP400Error({ message: 'User is already assigned to this subscription plan' });
       }
-      if (trialOnly) {
-        const trial = await trx('user_plans').where({ user_id: userId, billing_cycle: 'Free' }).first();
-        if (trial || unexpired) throw new HTTP400Error({ message: 'User is not eligible for a free trial' });
-      }
       if (unexpired && existing.billing_cycle !== 'Free' && plan.billing_cycle === 'Free') {
         throw new HTTP400Error({ message: 'Cancel the active paid plan before assigning a Free plan' });
       }
+      if (plan.billing_cycle === 'Free') {
+        const trial = await trx('user_plans').where({ user_id: userId, billing_cycle: 'Free' }).first();
+        if (trial || unexpired) throw new HTTP400Error({ message: 'User is not eligible for another free trial' });
+      }
       const { endDate, durationDays, remainingDays } = calculatePlanPeriod(plan, now, existing);
-      const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features;
+      const features = plan.billing_cycle === 'Free' ? freeTrialFeatures()
+        : typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features;
       if (!features || typeof features !== 'object' || Array.isArray(features)) {
         throw new HTTP400Error({ message: 'Invalid subscription features' });
       }
-      const limits: any = {};
-      const usage: any = {};
-      for (const key of Object.keys(features)) {
-        limits[key] = { limit: features[key]?.limit_value ?? null };
-        usage[key] = 0;
-      }
+      const { limits, usage } = snapshotFeatures(features);
       usage.TeamInvite = await countTeamSeats(trx, userId);
       if (fee > 0) {
         const company = user.company_id
@@ -122,7 +120,7 @@ class PlanAssignmentService {
         user_id: userId, company_id: user.company_id, subscription_id: plan.id,
         plan_name: plan.plan_name, price: plan.price, billing_cycle: plan.billing_cycle,
         status: 'COMPLETED', active: true, start_date: now, end_date: endDate,
-        duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage),
+        duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage), entitlement_version: 2,
       }).returning('*');
       const [updated] = await trx('users').where({ id: userId }).update({
         ...updates, ...(management ? {} : { status: 'active' }), assigned_plan: newPlan.id,

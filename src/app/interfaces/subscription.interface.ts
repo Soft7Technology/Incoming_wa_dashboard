@@ -7,11 +7,15 @@ export interface subscriptionPlans {
   trial_days?: 3 | 7 | 10 | null;
   description: string;
   active: boolean;
+  /** Display text shown on plan cards; does not grant access or increase limits. */
+  marketing_features?: string[];
 
   features: {
     [key: string]: {
-      limit_type: string;
+      limit_type?: string;
       limit_value: number | null;
+      enabled?: boolean;
+      reset_period?: 'never' | 'monthly' | 'yearly';
     };
   };
 }

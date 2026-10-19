@@ -157,7 +157,8 @@ function persistenceFixture({ phones = [], failBatch = 0, race = false, missingA
     return result;
   };
   class BaseModel { constructor() { this.db = db; } query() { return db('waba_accounts'); } }
-  return { model: load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel } }),
+  return { model: load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel },
+    '../services/planUsage.service': { run: (userId, feature, callback) => db.transaction(trx => callback(trx, {})), checkUsage() {} } }),
     state: () => state, batches, lookups };
 }
 const savedPhone = (id, changes = {}) => ({ id: `local-${id}`, phone_number_id: id,
@@ -228,7 +229,8 @@ test('identifier lookups and conflict SQL retain owner/company/WABA scope withou
     return [{ ...savedPhone('1001') }];
   } });
   class BaseModel { constructor() { this.db = connection; } query() { return db('waba_accounts'); } }
-  const model = load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel } });
+  const model = load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel },
+    '../services/planUsage.service': { run: (userId, feature, callback) => connection.transaction(trx => callback(trx, {})), checkUsage() {} } });
   try {
     for (const [id, column] of [[account.waba_id, 'waba_id'], [account.id, 'id']]) {
       await model.findOwnedForSync(id, 'owner', 'company');

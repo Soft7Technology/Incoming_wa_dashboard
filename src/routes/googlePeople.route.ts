@@ -1,0 +1,17 @@
+import { Router } from 'express';
+import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
+import { accountScope } from '../app/http/middleware/accountScope';
+import controller, { noStore } from '../app/http/controllers/googlePeople.controller';
+const route = Router();
+route.use(accountScope, requireRole('user'), noStore);
+route.get('/setup', controller.setup);
+route.put('/oauth-app', controller.saveApp);
+route.delete('/oauth-app', controller.removeApp);
+route.post('/oauth/start', controller.start);
+route.get('/connection', controller.connection);
+route.delete('/connection', controller.disconnect);
+route.get('/contacts', controller.list);
+route.post('/contacts', controller.create);
+route.get('/contacts/:personId', controller.get);
+route.patch('/contacts/:personId', controller.update);
+export default route;

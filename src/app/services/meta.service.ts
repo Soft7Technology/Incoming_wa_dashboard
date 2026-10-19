@@ -28,7 +28,7 @@ class MetaService {
   /**
    * Send a message via WhatsApp Business API
    */
-  async sendMessage(phoneNumberId: string, payload: any, allowUnverifiedRecipient = false): Promise<any> {
+  async sendMessage(phoneNumberId: string, payload: any, allowUnverifiedRecipient = false, redactLogs = false): Promise<any> {
     if (allowUnverifiedRecipient && payload.to !== undefined) {
       payload = { ...payload, to: campaignRecipientNumber(payload.to) };
     } else if (payload.to !== undefined) {
@@ -42,6 +42,10 @@ class MetaService {
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {
+      if (redactLogs) {
+        console.error('Meta API - Shopify message attempt failed; recipient and content omitted.');
+        throw new HTTP500Error({ message: 'WhatsApp message outcome could not be confirmed.' });
+      }
       console.log(
         `Sending message via Meta API to phone number ID: ${phoneNumberId} with payload: ${JSON.stringify(payload)}`,
       );

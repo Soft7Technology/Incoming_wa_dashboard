@@ -86,10 +86,10 @@ test('read status filters both total and page while composing search, list and m
       for (const query of queries) {
         assert.match(query.sql, /LIMIT 1\s+\) = \?/);
         assert.ok(query.bindings.includes(read_status === 'read'));
-        for (const fragment of ['"contacts"."company_id" = ?', 'assigned_to @>', '"name" ilike', '"id" in (?)']) {
+        for (const fragment of ['"contacts"."company_id" = ?', 'assigned_to @>', '"name" ilike', '"contacts"."id" in (select']) {
           assert.ok(query.sql.includes(fragment), fragment);
         }
-        for (const value of ['owner', 'sender', 'company', 'member', '%Parth%', 'contact']) {
+        for (const value of ['owner', 'sender', 'company', 'member', '%Parth%', 'list']) {
           assert.ok(query.bindings.includes(value), value);
         }
       }
@@ -141,7 +141,7 @@ test('contact stage status filters totals and rows on both global and sender-spe
           assert.match(query.sql, /assigned_to @>/);
           assert.match(query.sql, /"deleted_at" is null/);
           assert.match(query.sql, /"name" ilike/);
-          assert.match(query.sql, /"id" in \(\?\)/);
+          assert.match(query.sql, /"contacts"\."id" in \(select "contact_id" from "contact_list_relations"/);
           assert.equal(query.bindings.includes('sender'), Boolean(sender));
         }
         assert.match(queries[0].sql, /^select count\(\*\)/);

@@ -13,11 +13,15 @@ const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 test('browser logs in, renders incoming text automatically, sends reply and keeps follow-up in same thread', {
   skip: (!process.env.FACEBOOK_TEST_DATABASE_URL || !process.env.FACEBOOK_TEST_CHROME) && 'Set FACEBOOK_TEST_DATABASE_URL and FACEBOOK_TEST_CHROME for browser testing.',
   timeout: 60000,
-}, () => fixture(async ({ database, service, meta, connect, inbound, a }) => {
+}, () => fixture(async ({ database, service, leadService, instagramService, meta, connect, inbound, a }) => {
   const controllerModule = load('src/app/http/controllers/facebookMessenger.controller.ts', {
     '../../services/facebookMessenger.service': { __esModule: true, default: service }, '../../utils/facebook': utils,
+    '../../services/facebookLeads.service': { __esModule: true, default: leadService },
+    '../../services/instagram.service': { __esModule: true, default: instagramService },
   });
   const deps = { '../app/http/controllers/facebookMessenger.controller': controllerModule,
+    '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) },
+    '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts') };
   const app = express();
   app.use(express.json({ verify: (req, _res, body) => { req.rawBody = body; } }));

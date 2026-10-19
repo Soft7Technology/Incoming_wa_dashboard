@@ -1,6 +1,12 @@
 import { recordActivity } from '../app/middleware/activity.middleware';
 import UserApiKeyRoute from './userApiKey.route';
 import FacebookMessengerRoute from './facebookMessenger.route';
+import FacebookLeadsRoute from './facebookLeads.route';
+import InstagramRoute from './instagram.route';
+import FacebookContentRoute from './facebookContent.route';
+import GoogleSheetsRoute from './googleSheets.route';
+import GooglePeopleRoute from './googlePeople.route';
+import ShopifyRoute from './shopify.route';
 import { Router } from 'express';
 import PaymentRoute from './payment.route';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
@@ -31,6 +37,12 @@ const AdminRoute = Router();
 AdminRoute.use(jwtAuthMiddleware);
 AdminRoute.use(recordActivity);
 AdminRoute.use('/facebook-messenger', FacebookMessengerRoute);
+AdminRoute.use('/facebook-leads', FacebookLeadsRoute);
+AdminRoute.use('/instagram', InstagramRoute);
+AdminRoute.use('/facebook-content', FacebookContentRoute);
+AdminRoute.use('/google-sheets', GoogleSheetsRoute);
+AdminRoute.use('/google-people', GooglePeopleRoute);
+AdminRoute.use('/shopify', ShopifyRoute);
 
 AdminRoute.use('/api-keys', UserApiKeyRoute);
 AdminRoute.use('/payments', PaymentRoute);

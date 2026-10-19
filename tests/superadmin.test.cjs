@@ -80,6 +80,12 @@ test('company creation allowlists fields and hashes the initial password', async
   await s.createCompany(id, body);
   assert.equal(saved[1].email, 'owner@example.com');
   assert.equal(saved[2].password, 'hashed');
+  assert.equal(saved[4], 10);
+  for (const trial_days of [3, 7, 10]) {
+    await s.createCompany(id, { ...body, trial_days });
+    assert.equal(saved[4], trial_days);
+  }
+  await assert.rejects(s.createCompany(id, { ...body, trial_days: 14 }), /3, 7, or 10/);
   await assert.rejects(s.createCompany(id, { ...body, credit_balance: 999 }), /Unsupported/);
   await assert.rejects(s.createCompany(id, { ...body, user: { ...body.user, role: 'superadmin' } }), /Unsupported/);
 });
