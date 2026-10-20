@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Google Sheets connection test · RSVPDesk</title>
+    <link rel="stylesheet" href="/v1/integrations/google/test.css" />
+    <script defer src="/v1/integrations/google/test.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a href="/v1/integrations/google/test" class="brand"
+        ><span class="brand-icon">R</span> RSVPDesk <span class="tag">Connection test</span></a
+      ><button id="logout" class="quiet" hidden>Clear session</button>
+    </header>
+    <main>
+      <div class="intro">
+        <p class="eyebrow">INTEGRATIONS / GOOGLE SHEETS</p>
+        <h1>Check your Google connection.</h1>
+        <p class="lead">Connect your Google account, choose a spreadsheet, and confirm that its rows are available.</p>
+      </div>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <div id="configuration" class="configuration">
+        <span class="status-dot"></span><span id="configuration-text">Checking application configuration…</span
+        ><a id="correct-host" hidden>Open the correct test URL</a>
+      </div>
+      <div class="layout">
+        <section class="card" aria-labelledby="login-title">
+          <div class="section-label"><span class="step">01</span><span>YOUR DASHBOARD ACCOUNT</span></div>
+          <h2 id="login-title">Sign in to RSVPDesk</h2>
+          <p class="muted">Use your existing account-owner login. Google sign-in comes next.</p>
+          <form id="login-form">
+            <label for="email">Dashboard email</label
+            ><input id="email" type="email" autocomplete="username" required placeholder="you@company.com" />
+            <label for="password">Dashboard password</label
+            ><input id="password" type="password" autocomplete="current-password" required />
+            <label for="domain">Company login domain</label
+            ><input id="domain" autocomplete="off" required placeholder="app.soft7.in" /><small
+              >Use your dashboard domain, or localhost when testing this development server.</small
+            >
+            <button id="login-button" type="submit" class="primary">Sign in</button>
+          </form>
+          <details id="token-details">
+            <summary>Use an existing dashboard JWT instead</summary>
+            <form id="token-form">
+              <label for="jwt">Dashboard JWT</label
+              ><input
+                id="jwt"
+                type="password"
+                autocomplete="off"
+                placeholder="Paste your dashboard token"
+                required
+              /><button id="token-button" type="submit">Use token</button>
+            </form>
+          </details>
+          <div id="signed-in" class="signed-in" hidden>
+            <span class="check">✓</span>
+            <div>
+              <strong id="identity">Signed in</strong>
+              <p class="muted">Your dashboard session is ready.</p>
+            </div>
+          </div>
+        </section>
+        <section class="card" aria-labelledby="google-title">
+          <div class="section-label"><span class="step">02</span><span>GOOGLE AUTHORIZATION</span></div>
+          <div class="card-heading">
+            <h2 id="google-title">Connect Google Sheets</h2>
+            <span id="connection-badge" class="badge">Sign in first</span>
+          </div>
+          <p class="muted">Google will ask you to approve access to spreadsheets you select for this app.</p>
+          <div class="actions">
+            <button id="connect" class="primary" disabled>Connect Google</button
+            ><button id="refresh" disabled>Check connection</button
+            ><button id="disconnect" class="quiet danger" disabled>Disconnect</button>
+          </div>
+          <p id="connection-detail" class="muted">Sign in to test OAuth using your app’s server configuration.</p>
+          <div class="divider"></div>
+          <p class="small-label">REGISTERED CALLBACK</p>
+          <code id="callback" class="callback">Loading…</code>
+          <p class="hint">This URL must match the authorised redirect URI in your Google Cloud OAuth client.</p>
+        </section>
+      </div>
+      <section class="card spreadsheet-card" aria-labelledby="sheets-title">
+        <div class="section-label"><span class="step">03</span><span>VERIFY SPREADSHEET ACCESS</span></div>
+        <div class="card-heading">
+          <div>
+            <h2 id="sheets-title">Read a spreadsheet</h2>
+            <p class="muted">Choose a file in Google Picker, then load a tab to verify the connection.</p>
+          </div>
+          <div class="actions">
+            <button id="pick" class="primary" disabled>Choose spreadsheet</button
+            ><button id="list" disabled>Refresh files</button>
+          </div>
+        </div>
+        <p id="picker-hint" class="hint">Connect Google to enable spreadsheet access.</p>
+        <form id="sheet-form" class="sheet-controls">
+          <div>
+            <label for="spreadsheet">Spreadsheet</label
+            ><select id="spreadsheet" disabled>
+              <option value="">Choose a file first</option>
+            </select>
+          </div>
+          <button id="load-tabs" type="submit" disabled>Load tabs</button>
+          <div>
+            <label for="tab">Tab</label
+            ><select id="tab" disabled>
+              <option value="">Select a spreadsheet</option>
+            </select>
+          </div>
+          <button id="read-rows" type="button" disabled>Read sample rows</button>
+        </form>
+        <details>
+          <summary>Use an already-authorized spreadsheet ID</summary>
+          <form id="manual-form" class="manual-form">
+            <input
+              id="manual-id"
+              aria-label="Spreadsheet ID"
+              placeholder="Spreadsheet ID or Google Sheets URL"
+              autocomplete="off"
+            /><button id="manual-button" type="submit" disabled>Load spreadsheet</button>
+          </form>
+          <p class="hint">An ID alone does not grant access. First select the file with this app’s Google Picker.</p>
+        </details>
+        <div id="empty-state" class="empty-state">
+          <span class="sheet-icon">▤</span><strong>Your sheet preview will appear here</strong>
+          <p>Sample reads do not import contacts or create campaigns.</p>
+        </div>
+        <div id="table-wrap" class="table-wrap" hidden>
+          <table id="sample-table">
+            <caption id="table-caption">
+              Spreadsheet sample
+            </caption>
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="card activity-card">
+        <div class="card-heading">
+          <h2>Test activity</h2>
+          <button id="clear-activity" class="quiet">Clear</button>
+        </div>
+        <ol id="activity" aria-live="polite">
+          <li class="muted">Connection checks will appear here.</li>
+        </ol>
+      </section>
+      <footer>
+        Google credentials stay on the server. Dashboard and Picker access tokens are held only in this page’s memory.
+      </footer>
+    </main>
+  </body>
+</html>

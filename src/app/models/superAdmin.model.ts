@@ -350,7 +350,7 @@ class SuperAdminModel extends BaseModel {
     });
   }
 
-  async createCompany(actor: string, fields: CompanyFields, admin: Record<string, string>, reason: string) {
+  async createCompany(actor: string, fields: CompanyFields, admin: Record<string, string>, reason: string, trialDays?: 3 | 7 | 10) {
     return this.db.transaction(async (trx) => {
       const [company] = await trx('companies')
         .insert({ ...fields, status: 'active', credit_balance: '0.00' })
@@ -358,12 +358,12 @@ class SuperAdminModel extends BaseModel {
       const [user] = await trx('users')
         .insert({ ...admin, company_id: company.id, role: 'admin', status: 'active' })
         .returning(userColumns);
-      await subscriptionModel.createFreePlan(user.id, company.id, trx);
+      const freePlan = await subscriptionModel.createFreePlan(user.id, company.id, trx, trialDays);
       await this.audit(trx, actor, company.id, company.id, 'company.create', reason, {
         name: company.name,
         initial_admin_id: user.id,
       });
-      return { company, user };
+      return { company, user: { ...user, assigned_plan: freePlan.user_plan.id }, freePlan };
     });
   }
 

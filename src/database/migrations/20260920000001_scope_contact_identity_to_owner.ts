@@ -3,16 +3,27 @@ import { Knex } from 'knex';
 // Fails without changing data if existing contacts violate the new identity.
 // Consolidate those duplicates before retrying; never delete contacts here.
 export async function up(knex: Knex): Promise<void> {
+  const duplicates = await knex.raw(`SELECT count(*)::int AS groups FROM (
+    SELECT 1 FROM contacts WHERE deleted_at IS NULL
+    GROUP BY company_id, user_id, COALESCE(phone_number_id::text, ''),
+      regexp_replace(phone_number, '[^0-9]', '', 'g')
+    HAVING count(*) > 1
+  ) duplicate_contacts`);
+  if (Number(duplicates.rows[0].groups) > 0) {
+    throw new Error(`Contact identity migration blocked by ${duplicates.rows[0].groups} duplicate contact groups. ` +
+      'Run node scripts/repair-contact-duplicates.cjs --dry-run to create a backup and reviewable repair report. ' +
+      'No contacts have been changed.');
+  }
   await knex.raw(`CREATE UNIQUE INDEX contacts_owner_phone_unique
     ON contacts (company_id, user_id, (COALESCE(phone_number_id::text, '')),
       (regexp_replace(phone_number, '[^0-9]', '', 'g')))
     WHERE deleted_at IS NULL`);
   await knex.raw('ALTER TABLE contacts DROP CONSTRAINT IF EXISTS contacts_company_id_phone_number_unique');
-  await knex.raw(`CREATE INDEX contacts_owner_page_idx
+  await knex.raw(`CREATE INDEX IF NOT EXISTS contacts_owner_page_idx
     ON contacts (user_id, company_id, created_at DESC, id DESC) WHERE deleted_at IS NULL`);
-  await knex.raw(`CREATE INDEX waba_accounts_owner_idx
+  await knex.raw(`CREATE INDEX IF NOT EXISTS waba_accounts_owner_idx
     ON waba_accounts (user_id, company_id) WHERE deleted_at IS NULL`);
-  await knex.raw(`CREATE INDEX phone_numbers_owner_idx
+  await knex.raw(`CREATE INDEX IF NOT EXISTS phone_numbers_owner_idx
     ON phone_numbers (user_id, company_id, waba_id) WHERE deleted_at IS NULL`);
 }
 

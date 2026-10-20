@@ -282,7 +282,7 @@ class ContactController {
    * POST /v1/admin/contacts/import/preview
    * Preview XLSX file before import
    */
-  previewImport = tryCatchAsync(async (req: Request, res: Response) => {
+  previewImport = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
 
     if (!file) {
@@ -293,7 +293,7 @@ class ContactController {
       const { phone_column, name_column, email_column, country_code } = req.body || {};
       const preview = await ContactService.getXLSXPreview(file.path, {
         phone_column, name_column, email_column, country_code,
-      });
+      }, { userId: req.ownerId ?? req.userId!, companyId: req.companyId!, phoneNumberId: req.body?.phone_number_id });
       return successResponse(req, res, 'File preview generated successfully', preview);
     } finally {
       // Preview uploads are temporary, including when validation fails.
@@ -353,6 +353,10 @@ class ContactController {
       nameColumn: name_column,
       emailColumn: email_column,
       tagIds: tag_ids ? tag_ids.split(',') : undefined,
+    }).catch(async error => {
+      // Keep files belonging to failed queue jobs for retry; quota failures created no job.
+      if (error.details?.feature === 'Contact') await fs.promises.unlink(filePath).catch(() => undefined);
+      throw error;
     });
 
     return successResponse(
@@ -501,6 +505,12 @@ class ContactController {
   getLists = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     const effectiveUserId = req.ownerId ?? req.userId!;
     const lists = await ContactService.getLists(effectiveUserId, req.companyId!);
+    return successResponse(req, res, 'Lists retrieved successfully', lists);
+  });
+
+  getListsByPhoneNumber = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const lists = await ContactService.getListsByPhoneNumber(
+      req.ownerId ?? req.userId!, req.companyId!, req.params.phoneNumberId);
     return successResponse(req, res, 'Lists retrieved successfully', lists);
   });
 

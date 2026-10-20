@@ -28,18 +28,37 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
     contentSecurityPolicy: false, // Allow Swagger UI to load
   }));
   
-  app.use(cors());
+  app.use(cors<express.Request>((req, done) => {
+    // Google OAuth sets a browser-binding cookie on the API origin. Only the
+    // configured dashboard origin may use credentialed cross-origin requests.
+    if (req.url.startsWith('/v1/admin/google-sheets') || req.url.startsWith('/v1/integrations/google/') ||
+        req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/') ||
+        req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/')) {
+      let origin: string | false = false;
+      try {
+        const shopifyRequest = req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/');
+        const peopleRequest = req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/');
+        const configured = new URL((shopifyRequest ? process.env.SHOPIFY_FRONTEND_URL :
+          peopleRequest ? process.env.GOOGLE_PEOPLE_FRONTEND_URL || process.env.GOOGLE_FRONTEND_URL : process.env.GOOGLE_FRONTEND_URL) || '');
+        if (!configured.username && !configured.password && (configured.protocol === 'https:' ||
+            (configured.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(configured.hostname)))) origin = configured.origin;
+      } catch { /* Same-origin and server-to-server usage need no CORS header. */ }
+      return done(null, { origin, credentials: true });
+    }
+    done(null, { origin: '*' });
+  }));
   // Contact filters accept multiple country codes in repeated query parameters.
   app.use(hpp({ whitelist: ['country_code'] }));
   app.use(compression());
   app.use(express.json({ limit: '10mb', verify: (req, _res, buffer) => {
     // Signature validation must use the exact bytes received, before JSON parsing.
-    if (req.url?.split('?')[0] === '/v1/facebook/webhook') {
+    if (['/v1/facebook/webhook', '/v1/facebook/instagram/webhook', '/v1/webhooks/meta'].includes(req.url?.split('?')[0] || '') ||
+        /^\/v1\/integrations\/shopify\/webhook(?:\/|$)/.test(req.url?.split('?')[0] || '')) {
       (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
     }
   } }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(morgan('dev', { skip: req => req.originalUrl.startsWith('/v1/facebook/') }));
+  app.use(morgan('dev', { skip: req => req.originalUrl.startsWith('/v1/admin/waba/onboard') || req.originalUrl.startsWith('/v1/facebook/') || req.originalUrl.startsWith('/v1/integrations/google/') || req.originalUrl.startsWith('/v1/integrations/shopify/') || req.originalUrl.startsWith('/v1/integrations/google-people/') || req.originalUrl.startsWith('/v1/admin/google-people') }));
   // app.use(express.json());
 
   // Serve uploaded files

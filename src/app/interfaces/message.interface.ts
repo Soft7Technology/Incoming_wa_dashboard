@@ -101,6 +101,7 @@ export interface SendBulkMessageDto {
 }
 
 export interface SendMessageDto {
+  shopify_job_id?: string;
   user_id:string;
   company_id?: string;
   messageUUID?: string;

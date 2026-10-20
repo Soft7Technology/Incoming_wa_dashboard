@@ -43,7 +43,7 @@ class ContactListRelationModel extends BaseModel {
       .ignore();
   }
 
-  async getContactsInList(listId: string, filters: any = {}) {
+  private contactsInListQuery(listId: string, filters: any = {}) {
     let query = this.db
       .select('c.*')
       .from('contacts as c')
@@ -59,7 +59,21 @@ class ContactListRelationModel extends BaseModel {
       query = query.where('c.is_valid', filters.is_valid);
     }
 
-    return query.orderBy('c.created_at', 'desc');
+    return query;
+  }
+
+  async getContactsInList(listId: string, filters: any = {}) {
+    return this.contactsInListQuery(listId, filters).orderBy('c.created_at', 'desc');
+  }
+
+  async getContactsPage(listId: string, filters: any, page: number, limit: number) {
+    const query = this.contactsInListQuery(listId, filters);
+    const [count, contacts] = await Promise.all([
+      query.clone().clearSelect().count('* as count').first(),
+      query.clone().orderBy('c.created_at', 'desc').orderBy('c.id', 'desc')
+        .limit(limit).offset((page - 1) * limit),
+    ]);
+    return { contacts, total: Number(count?.count ?? 0), page, limit };
   }
 
   async getContactIdsByLists(listIds: string[]) {

@@ -5,6 +5,8 @@ import HTTP500Error from '@surefy/exceptions/HTTP500Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { bucket } from '@surefy/config/firebase.config';
 import activityLogsModel from '../models/activityLogs.model';
+import wabaCredentials from './wabaCredentials.service';
+import crypto from 'crypto';
 
 class MetaService {
   private client: AxiosInstance;
@@ -23,12 +25,36 @@ class MetaService {
         Authorization: `Bearer ${this.accessToken}`,
       },
     });
+    this.client.interceptors?.request.use(async request => {
+      const resource = /^\/(\d+)(?:\/|$)/.exec(request.url || '')?.[1];
+      if (resource) {
+        const token = await wabaCredentials.forResource(resource);
+        if (token) {
+          request.headers.set('Authorization', `Bearer ${token}`);
+          const secret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+          if (secret) request.params = { ...(request.params || {}), appsecret_proof: crypto.createHmac('sha256', secret).update(token).digest('hex') };
+        }
+      }
+      return request;
+    });
+    this.client.interceptors?.response.use(response => response, error => {
+      // Downstream legacy handlers must not receive Axios config/headers or Meta messages
+      // that could echo an access token. Keep only safe error classification fields.
+      const safe = Object.assign(new Error('Meta request could not be completed.'), {
+        response: error.response ? { status: error.response.status, data: { error: {
+          code: Number(error.response.data?.error?.code) || undefined,
+          error_subcode: Number(error.response.data?.error?.error_subcode) || undefined,
+          message: 'Meta rejected this operation. Check account authorization and configuration.',
+        } } } : undefined,
+      });
+      return Promise.reject(safe);
+    });
   }
 
   /**
    * Send a message via WhatsApp Business API
    */
-  async sendMessage(phoneNumberId: string, payload: any, allowUnverifiedRecipient = false): Promise<any> {
+  async sendMessage(phoneNumberId: string, payload: any, allowUnverifiedRecipient = false, redactLogs = false): Promise<any> {
     if (allowUnverifiedRecipient && payload.to !== undefined) {
       payload = { ...payload, to: campaignRecipientNumber(payload.to) };
     } else if (payload.to !== undefined) {
@@ -42,6 +68,10 @@ class MetaService {
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {
+      if (redactLogs) {
+        console.error('Meta API - Shopify message attempt failed; recipient and content omitted.');
+        throw new HTTP500Error({ message: 'WhatsApp message outcome could not be confirmed.' });
+      }
       console.log(
         `Sending message via Meta API to phone number ID: ${phoneNumberId} with payload: ${JSON.stringify(payload)}`,
       );
@@ -327,7 +357,7 @@ class MetaService {
         throw new Error('Webhook subscription failed');
       }
 
-      console.log('Webhook response', response);
+      // The Axios response includes request authorization headers; never log it.
 
       if (options?.user_id && options?.company_id) {
         await activityLogsModel.create({

@@ -5,6 +5,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import aiAssistantModel from '../../models/aiAssistant.model';
 import { encryptApiKey, decryptApiKey} from '../../utils/crypto.util';
 import aiAgentService from '../../services/aiAssistant.service';
+import planUsage from '../../services/planUsage.service';
 
 
 export const openAiModelMap: Record<string, string> = {
@@ -16,13 +17,13 @@ export const openAiModelMap: Record<string, string> = {
 
 class AIAssistantController {
   getAssistants = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const userId = req.userId!;
+    const userId = req.ownerId ?? req.userId!;
     const assistants = await aiAssistantModel.findByUserId(userId);
     return successResponse(req, res, 'Assistants retrieved successfully', assistants);
   });
 
   createAssistant = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    const userId = req.userId!;
+    const userId = req.ownerId ?? req.userId!;
 
     const {
       name,
@@ -95,7 +96,7 @@ class AIAssistantController {
       api_key: encryptedApiKey,
     };
 
-    const response = await aiAssistantModel.create(payload);
+    const response = await planUsage.run(userId, 'AiAssistant', trx => aiAssistantModel.create(payload, trx));
 
     const message = connectionVerified
       ? 'Assistant created and connection verified successfully'

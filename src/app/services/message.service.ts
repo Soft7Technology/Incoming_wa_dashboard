@@ -32,6 +32,7 @@ import messageModel from '@surefy/console/models/message.model';
 import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
 import { downloadMedia } from '../utils';
+import { assertActivePhone } from '../utils/activePhone';
 
 const supportedIncomingMessageTypes = new Set([
   'text', 'image', 'video', 'document', 'audio', 'template',
@@ -61,10 +62,14 @@ class MessageService {
    * Send messages
    */
   async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any; allowUnverifiedRecipient?: boolean; source?: string; campaignMessageId?: string }) {
+    if (data.shopify_job_id && (resolved?.source !== 'shopify' || data.messageUUID !== data.shopify_job_id || !uuidValidate(data.shopify_job_id))) {
+      throw new HTTP400Error({ message: 'Shopify job linkage is reserved for the Shopify message worker' });
+    }
     const phoneNumber = resolved?.phoneNumber || await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
+    assertActivePhone(phoneNumber);
 
 
     // Verify company has sufficient credits
@@ -82,7 +87,7 @@ class MessageService {
       if (resolved?.allowUnverifiedRecipient) {
         data = { ...data, to: campaignRecipientNumber(data.to, data.country_code) };
       } else {
-      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
+      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to], phoneNumber.id);
       const recipient = data.country_code
         ? parseImportedPhone(data.to, data.country_code, true)
         : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
@@ -225,7 +230,7 @@ class MessageService {
       };
     }
 
-    if (data.campaign_id && await contactOptOut.isBlocked(phoneNumber, metaPayload.to)) {
+    if ((data.campaign_id || data.shopify_job_id) && await contactOptOut.isBlocked(phoneNumber, metaPayload.to)) {
       const error: any = new Error('Contact opted out of campaign messages');
       error.code = 'CONTACT_OPTED_OUT';
       throw error;
@@ -245,6 +250,7 @@ class MessageService {
       status: 'queued',
       content: contentToStore,
       template_id: templateRecordId,
+      ...(data.shopify_job_id ? { shopify_job_id: data.shopify_job_id } : {}),
       // cost: messageCost,
       queued_at: new Date(),
     });
@@ -265,7 +271,7 @@ class MessageService {
           workerMode: process.env.WORKER_MODE === 'true',
         });
       }
-      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, resolved?.allowUnverifiedRecipient);
+      const metaResponse = await MetaService.sendMessage(phoneNumber.phone_number_id, metaPayload, resolved?.allowUnverifiedRecipient, Boolean(data.shopify_job_id));
 
       // Update message with WAMID
       await MessageModel.update(message.id, {
@@ -310,6 +316,7 @@ class MessageService {
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
+    assertActivePhone(phoneNumber);
 
     // Verify company has sufficient credits
     const user = await userModel.findById(data.user_id);
@@ -323,7 +330,7 @@ class MessageService {
     // }
 
     try {
-      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to]);
+      const candidates = await ContactModel.findCampaignPhoneCandidates(data.user_id, data.company_id, [data.to], phoneNumber.id);
       const recipient = data.country_code
         ? parseImportedPhone(data.to, data.country_code, true)
         : resolveCampaignPhone(data.to, candidates.filter((contact: any) => contact.phone_number_id === phoneNumber.id));
@@ -793,6 +800,7 @@ class MessageService {
       console.warn(`Phone number not found: ${phoneNumberId}`);
       return;
     }
+    assertActivePhone(phoneNumber);
 
     try {
       let metaPayload: any = {
@@ -848,7 +856,7 @@ class MessageService {
 
   async bulkSendMessages(userId: string, messages: BulkSendMessageDto[]) {
     // Validate messages array length
-    if (!messages || messages.length === 0) {
+    if (!Array.isArray(messages) || messages.length === 0) {
       throw new HTTP400Error({ message: 'Messages array cannot be empty' });
     }
 
@@ -856,25 +864,25 @@ class MessageService {
       throw new HTTP400Error({ message: 'Maximum 1000 messages allowed per request' });
     }
 
-    // Verify company exists
-    const user = await userModel.findById(userId);
-    if (!user) {
-      throw new HTTP404Error({ message: 'User not found' });
-    }
-
-    // Validate all messages have required fields
+    // Validate before database work, then resolve each distinct sender in one account-scoped query.
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
-      const phone = await PhoneNumberModel.findByPhoneNumberId(msg.phone_number_id);
-      if (!phone || phone.user_id !== userId || phone.company_id !== user.company_id) {
-        throw new HTTP404Error({ message: 'Phone number not found in your account' });
-      }
-      if (!msg.phone_number_id || !msg.to || !msg.type) {
+      if (!msg || !msg.phone_number_id || !msg.to || !msg.type ||
+          !['string', 'number'].includes(typeof msg.phone_number_id)) {
         throw new HTTP400Error({
           message: `Message at index ${i}: Phone number ID, recipient, and message type are required`,
         });
       }
     }
+    const user = await userModel.findById(userId);
+    if (!user) throw new HTTP404Error({ message: 'User not found' });
+    const identifiers = [...new Set(messages.map(msg => String(msg.phone_number_id)))];
+    const phones = await PhoneNumberModel.findOwnedByIdentifiers(userId, user.company_id, identifiers);
+    const available = new Set(phones.flatMap(phone => [phone.id, phone.phone_number_id]));
+    if (identifiers.some(id => !available.has(id))) {
+      throw new HTTP404Error({ message: 'Phone number not found in your account' });
+    }
+    phones.forEach(assertActivePhone);
 
     // Calculate total estimated cost
     // const totalEstimatedCost = messages.reduce((sum, msg) => {

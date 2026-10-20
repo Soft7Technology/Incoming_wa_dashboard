@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Google Contacts | Soft7</title>
+    <link rel="stylesheet" href="/v1/integrations/google/test.css" />
+    <link rel="stylesheet" href="/v1/integrations/google-people/style.css" />
+    <script defer src="/v1/integrations/google-people/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/v1/integrations/google-people/app">Soft7</a><button id="logout" hidden>Sign out</button>
+    </header>
+    <main>
+      <h1>Google Contacts</h1>
+      <p>Connect a Google account to create contacts and edit their names, email addresses and phone numbers.</p>
+      <p id="notice" role="status" aria-live="polite"></p>
+      <section class="card">
+        <h2>1. Your dashboard account</h2>
+        <form id="login-form">
+          <label for="email">Dashboard email</label><input id="email" type="email" autocomplete="username" required />
+          <label for="password">Dashboard password</label
+          ><input id="password" type="password" autocomplete="current-password" required />
+          <label for="domain">Company login domain</label><input id="domain" required />
+          <button type="submit">Sign in</button>
+        </form>
+        <p id="identity" hidden>Signed in</p>
+      </section>
+      <section class="card">
+        <h2>2. Google connection</h2>
+        <p id="connection-status">Sign in first.</p>
+        <p>
+          Enable <strong>People API</strong> in your Google Cloud project. Register this exact authorized redirect URI:
+        </p>
+        <pre id="callback">Loading configuration...</pre>
+        <details>
+          <summary>White-label OAuth app credentials</summary>
+          <p>
+            Save your account's own Google OAuth app here. Changing these settings disconnects this account's Google
+            Contacts connection.
+          </p>
+          <form id="app-form">
+            <label for="client-id">Client ID</label><input id="client-id" autocomplete="off" required />
+            <label for="client-secret">Client Secret</label
+            ><input id="client-secret" type="password" autocomplete="off" required />
+            <button id="save-app" disabled>Save credentials</button>
+          </form>
+          <button id="remove-app" disabled>Remove account credentials</button>
+        </details>
+        <button id="connect" disabled>Connect Google Contacts</button>
+        <button id="disconnect" disabled>Disconnect Google Contacts</button>
+      </section>
+      <section class="card">
+        <h2>3. Find a contact</h2>
+        <button id="load" disabled>Load contacts</button><button id="next" disabled>Next page</button>
+        <div id="contacts"></div>
+        <form id="read-form">
+          <label for="person-id">Contact ID or resource name</label
+          ><input id="person-id" placeholder="people/c123" required /> <button id="read" disabled>Read contact</button>
+        </form>
+      </section>
+      <section class="card">
+        <h2 id="editor-heading">4. Create a contact</h2>
+        <p>
+          This API test editor supports names, emailAddresses and phoneNumbers. When editing, each supplied array
+          replaces that field; keep every entry you want to retain. Omit a field to leave it unchanged; use [] to clear
+          it.
+        </p>
+        <form id="contact-form">
+          <label for="person">Contact JSON</label
+          ><textarea id="person" rows="14" spellcheck="false" required>
+{
+  "names": [{ "givenName": "Test", "familyName": "Contact" }],
+  "emailAddresses": [{ "value": "test@example.com", "type": "work" }],
+  "phoneNumbers": [{ "value": "+14155552671", "type": "mobile" }]
+}</textarea
+          ><button id="save-contact" disabled>Create contact</button>
+        </form>
+        <button id="new-contact" disabled>Start a new contact</button>
+        <pre id="result"></pre>
+      </section>
+    </main>
+  </body>
+</html>

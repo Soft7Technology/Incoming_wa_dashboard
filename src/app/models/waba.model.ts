@@ -1,6 +1,7 @@
 import { BaseModel } from '@surefy/models/base.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
+import planUsage from '../services/planUsage.service';
 
 class WabaModel extends BaseModel {
   constructor() {
@@ -32,7 +33,7 @@ class WabaModel extends BaseModel {
 
   /** Save one complete Meta snapshot; preserve local phone UUIDs and their relations. */
   async syncAccountAndPhones(waba: any, details: any, phones: any[]) {
-    return this.db.transaction(async trx => {
+    return planUsage.syncWabaNumbers(waba.user_id, async (trx, capacity) => {
       const scope = { id: waba.id, user_id: waba.user_id, company_id: waba.company_id };
       const current = await trx('waba_accounts').where(scope).whereNull('deleted_at').forUpdate().first();
       if (!current || current.waba_id !== waba.waba_id) {
@@ -55,24 +56,34 @@ class WabaModel extends BaseModel {
         message_template_namespace: details.message_template_namespace ?? current.message_template_namespace,
         meta_data: JSON.stringify({ ...current.meta_data, ...details }),
         updated_at: now,
+        last_synced_at: now,
       }).returning('*');
 
       const phoneNumbers: any[] = [];
       for (let offset = 0; offset < phones.length; offset += 200) {
         const rows = phones.slice(offset, offset + 200).map(phone => {
           const saved = byMetaId.get(phone.id);
+          const retained = saved && !saved.deleted_at;
+          const active = retained ? saved.active !== false : capacity.remaining > 0;
+          if (!retained && active) capacity.remaining--;
           return {
             user_id: current.user_id, company_id: current.company_id, waba_id: current.id,
             phone_number_id: phone.id, display_phone_number: phone.display_phone_number,
             verified_name: phone.verified_name ?? saved?.verified_name ?? null,
             quality_rating: phone.quality_rating ?? saved?.quality_rating ?? null,
             code_verification_status: phone.code_verification_status ?? saved?.code_verification_status ?? null,
+            active, inactive_reason: active ? null : (retained && saved.inactive_reason) || capacity.inactiveReason,
+            connection_status: current.connection_status === 'pending' ? 'pending' : phone.status
+              ? phone.status === 'CONNECTED' && phone.platform_type !== 'ON_PREMISE' ? 'connected' : 'pending'
+              : saved?.connection_status ?? 'legacy',
             meta_data: JSON.stringify(phone), updated_at: now, deleted_at: null,
           };
         });
         const saved = await trx('phone_numbers').insert(rows).onConflict('phone_number_id').merge([
           'display_phone_number', 'verified_name', 'quality_rating', 'code_verification_status',
           'meta_data', 'updated_at', 'deleted_at',
+          'active', 'inactive_reason',
+          'connection_status',
         ]).where({
           'phone_numbers.user_id': current.user_id,
           'phone_numbers.company_id': current.company_id,
@@ -86,7 +97,9 @@ class WabaModel extends BaseModel {
       }
       const updated = phones.filter(phone => byMetaId.has(phone.id)).length;
       return { waba: account, phone_numbers: phoneNumbers, total_phone_numbers: phones.length,
-        created: phones.length - updated, updated };
+        created: phones.length - updated, updated,
+        active_count: phoneNumbers.filter(phone => phone.active).length,
+        inactive_count: phoneNumbers.filter(phone => !phone.active).length };
     });
   }
 

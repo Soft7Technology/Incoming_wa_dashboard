@@ -29,7 +29,6 @@ class teamController {
       console.log('Assigned Plan', assigned_plan);
 
       const existingEmail = await userModel.findByEmailPhone(email, phone_number);
-      console.log('EXISTING', existingEmail);
       if (existingEmail) {
         return res.status(400).json({
           success: false,

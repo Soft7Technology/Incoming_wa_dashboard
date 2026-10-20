@@ -34,7 +34,7 @@ class SuperAdminUserPlanModel extends BaseModel {
     if (!company) throw new HTTP404Error({ message: 'Company not found' });
     const query = this.db('subscription_plans').where({ company_id: companyId, active: true });
     const count = await query.clone().count('* as total').first();
-    const items = await query.clone().select('id', 'company_id', 'plan_name', 'price', 'billing_cycle', 'active', 'features')
+    const items = await query.clone().select('id', 'company_id', 'plan_name', 'price', 'billing_cycle', 'active', 'features', 'marketing_features')
       .orderBy('created_at', 'desc').orderBy('id', 'desc').limit(limit).offset((page - 1) * limit);
     return { items, pagination: { page, limit, total: Number(count?.total || 0) } };
   }

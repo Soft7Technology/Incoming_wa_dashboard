@@ -12,6 +12,9 @@ import crypto from 'crypto';
 import userTeamModel from '../models/team.model';
 import db from '@surefy/database';
 import companyDomainModel from '../models/companyDomain.model';
+import { assertStrongPassword } from '../utils/passwordPolicy';
+import subscriptionModel from '../models/subscription.model';
+import { newTrialDays } from '../utils/freeTrialPolicy';
 
 interface LoginCredentials {
   identifier: string; // email or phone
@@ -186,9 +189,7 @@ class AuthService {
   }
 
   async verifyOtp(otp: string,email: string, ) {
-    console.log('Verifying OTP for email:', email);
     const record = await passwordResetModel.findLatestByEmail(email);
-    console.log('OTP Record:', record);
 
     if (!record) {
       throw new HTTP400Error({ message: 'Invalid request' });
@@ -233,7 +234,6 @@ class AuthService {
   }) {
     const { name, email, phone, company_id, password, hostname, domain_name } = data;
 
-    console.log('Registering user with data:', data);
 
     // Validate
     if (!email && !phone) {
@@ -378,6 +378,7 @@ class AuthService {
       password: string;
       role: 'admin' | 'superadmin';
       company_id?: string;
+      trial_days?: 3 | 7 | 10;
     },
     createdBy: string,
     creatorRole: string,
@@ -388,6 +389,8 @@ class AuthService {
     }
 
     const { name, email, phone, password, role, company_id } = data;
+    if (role === 'admin' && !company_id) throw new HTTP400Error({ message: 'company_id is required when creating an admin with a free trial' });
+    const trialDays = newTrialDays(data.trial_days);
 
     // Validate at least email or phone is provided
     if (!email && !phone) {
@@ -413,20 +416,14 @@ class AuthService {
     const hashedPassword = await this.hashPassword(password);
 
     // Create user
-    const user = await UserModel.create({
-      name,
-      email,
-      phone,
-      password: hashedPassword,
-      role,
-      company_id,
-      status: 'active',
+    return db.transaction(async trx => {
+      const user = await UserModel.create({
+        name, email, phone, password: hashedPassword, role, company_id, status: 'active',
+      }, trx);
+      const trial = role === 'admin' ? await subscriptionModel.createFreePlan(user.id, company_id!, trx, trialDays) : null;
+      const { password: _, ...userWithoutPassword } = user;
+      return { ...userWithoutPassword, ...(trial ? { assigned_plan: trial.user_plan.id, freePlan: trial } : {}) };
     });
-
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
-
-    return userWithoutPassword;
   }
 
   /**
@@ -453,6 +450,7 @@ class AuthService {
    * Hash password
    */
   async hashPassword(password: string): Promise<string> {
+    assertStrongPassword(password);
     const saltRounds = 10;
     return bcrypt.hash(password, saltRounds);
   }
@@ -522,7 +520,7 @@ class AuthService {
 
     const { userId }:any = decoded;
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const hashedPassword = await this.hashPassword(newPassword);
 
     await UserModel.update(userId, { password: hashedPassword });
 

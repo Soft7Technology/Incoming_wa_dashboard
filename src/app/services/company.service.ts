@@ -1,4 +1,6 @@
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
+import { newTrialDays } from '../utils/freeTrialPolicy';
+import { snapshotPlanAddons } from '../utils/planFeatures';
 import planAssignmentService from './planAssignment.service';
 import db from '@surefy/database';
 import CompanyRepository from '@surefy/console/repository/company.repository';
@@ -30,6 +32,7 @@ class CompanyService {
     if (!data.user) {
       throw new HTTP400Error({ message: 'Initial user is required' });
     }
+    const trialDays = newTrialDays(data.trial_days);
     return db.transaction(async (trx) => {
       // Check if email already exists
 
@@ -40,7 +43,7 @@ class CompanyService {
 
       // Extract user data before creating company
       const userData = data.user;
-      const { user, ...companyData } = data;
+      const { user, trial_days, ...companyData } = data;
 
       // Create company (without user field)
       const company = await CompanyRepository.create(companyData, trx);
@@ -61,7 +64,8 @@ class CompanyService {
         }, trx);
       }
 
-      const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id, trx);
+      const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id, trx, trialDays);
+      createdUser = { ...createdUser, assigned_plan: freePlan.user_plan.id };
 
       // Return company with key and user (only returned once during onboarding)
       return {
@@ -263,6 +267,7 @@ class CompanyService {
     const { plan_name, price, billing_cycle, features } = planData;
 
     const { limits, usage } = transformFeatures(features);
+    const addons = snapshotPlanAddons(planData.addons);
     console.log('Transformed limits:', limits);
     console.log('Transformed usage:', usage);
 
@@ -281,6 +286,7 @@ class CompanyService {
       end_date: endDate,
       limits: JSON.stringify(limits), // JSONB
       usage: JSON.stringify(usage), // JSONB
+      addons: addons === null ? null : JSON.stringify(addons),
       active: false,
       duration_days: durationDays,
     });

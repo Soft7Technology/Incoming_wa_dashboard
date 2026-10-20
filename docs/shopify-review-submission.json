@@ -1,0 +1,370 @@
+{
+  "prepared_on": "2026-10-17",
+  "status": "prepared_not_submitted_by_agent",
+  "shopify_client_id": "69efc7856fb1dcc385b9ecb33392b5b6",
+  "local_product_name": "RSVPDesk",
+  "dashboard_app_name": "Soft7 (from user screenshot; confirm app client ID before releasing configuration)",
+  "latest_dashboard_attempt": {
+    "date": "2026-10-17",
+    "profile_save": "Shopify sign-in was confirmed by the user and recorded; profile cookies were saved successfully.",
+    "run_id": "af05b6c3-fb5c-4d1a-9528-c486754ac6db",
+    "result": "TinyFish automatic safety check rejected the read-only dashboard inspection. It stated the request may violate its usage policies, provided no specific reason, and instructed not to retry.",
+    "dashboard_inspected": false,
+    "dashboard_settings_changed": false,
+    "review_submitted": false
+  },
+  "scope": "Protected customer data access and associated App Store review prerequisites",
+  "current_functionality": {
+    "description": "Account owners connect stores with OAuth, select order/customer event subscriptions and view an encrypted, minimized event inbox. The API schedules legacy scrubbing, expiry and erasure work. Owners can download all pages of matching customer data and explicitly confirm secure delivery to the merchant. Data access is audited. Merchants can now configure Shopify order events to queue approved utility WhatsApp templates to consenting customers, using the existing WhatsApp sender and an encrypted durable outbox.",
+    "supported_topics": [
+      "orders/create",
+      "orders/paid",
+      "orders/cancelled",
+      "orders/updated",
+      "customers/create"
+    ],
+    "scopes": [
+      "read_orders",
+      "read_customers"
+    ],
+    "not_implemented": [
+      "Automatic Shopify campaign creation or chatbot flow execution",
+      "Abandoned-checkout recovery",
+      "Automatic delivery of customer exports to the merchant (the owner delivers them manually)",
+      "Reconciliation of missed Shopify events",
+      "Merchant storefront/theme changes to collect and persist the order-message consent attribute; this repository contains the backend and merchant settings only."
+    ]
+  },
+  "form_draft": {
+    "protected_customer_data": {
+      "requested": true,
+      "reason": "Our app receives merchant-selected Shopify order and customer events to display store updates and optionally send customer-consented WhatsApp order notifications. Order/customer identifiers, order status, timestamps and selected order fields associate each event with the correct store and render the merchant-selected approved utility template. The customer default or billing phone is used only for configured order-message rules. Inbox events are minimized and encrypted; message recipients and selected fields are stored in an encrypted queue, with scoped access, retention and customer erasure controls.",
+      "use_only_if": "The Shopify listing describes this implemented event-inbox functionality. Confirm the remaining hosting, dashboard and operational requirements before certifying compliance."
+    },
+    "protected_customer_fields": {
+      "name": {
+        "request_recommended": false,
+        "reason": "No implemented feature requiring customer names was identified."
+      },
+      "email": {
+        "request_recommended": false,
+        "reason": "No implemented Shopify email feature was identified."
+      },
+      "phone": {
+        "request_recommended": true,
+        "reason": "To send merchant-configured WhatsApp order confirmations, payment updates, cancellations and order-change notifications to customers who have agreed to receive them. The customer default or billing phone number identifies the message recipient."
+      },
+      "address": {
+        "request_recommended": false,
+        "reason": "No implemented shipping or address feature was identified."
+      },
+      "qualification": "Phone now has an implemented purpose. Name, Email and Address are not required by the supported order-message mappings. Sending requires merchant configuration, an approved utility template, explicit order consent, an available international phone and no existing opt-out. Public Phone access approval and a live store send remain unverified. Queued phone data is encrypted; sent content also enters linked WhatsApp history, which follows Shopify job erasure and retention."
+    }
+  },
+  "verified_in_local_code": [
+    {
+      "control": "AES-256-GCM encryption of Shopify credentials and inbox payloads",
+      "evidence": "src/app/utils/shopify.ts; src/app/services/shopify.service.ts"
+    },
+    {
+      "control": "Owner and company restrictions for connection management and payload retrieval",
+      "evidence": "src/app/utils/shopify.ts; src/app/services/shopify.service.ts; src/routes/shopify.route.ts"
+    },
+    {
+      "control": "Webhook HMAC verification, store-bound delivery destinations and duplicate delivery protection",
+      "evidence": "src/app/utils/shopify.ts; src/app/services/shopify.service.ts"
+    },
+    {
+      "control": "Customer-ID-based payload redaction and cascading shop deletion handlers",
+      "evidence": "src/app/services/shopify.service.ts; src/database/migrations/20261016000002_create_shopify.ts",
+      "qualification": "Identifier/order/contact-hash matching and linked Shopify WhatsApp-history erasure are implemented and fixture-tested. Live compliance subscription release remains unverified."
+    }
+  ],
+  "submission_blockers": [
+    {
+      "item": "Public hosting",
+      "status": "browser_warning_observed",
+      "action": "A fresh Edge browser at the supplied ngrok URL returned the ngrok interstitial instead of the app. Configure an address without that warning and keep the host continuously available. The current environment remains development."
+    },
+    {
+      "item": "Shopify dashboard access",
+      "status": "previous_tinyfish_safety_rejection",
+      "action": "The previous TinyFish dashboard inspection was blocked by its safety review with an instruction not to retry. No dashboard changes or submission have been made."
+    },
+    {
+      "item": "Compliance subscriptions and live flows",
+      "status": "unverified",
+      "action": "Live store identity, scopes and seven ordinary/lifecycle subscriptions were verified. Release and verify all three app-configured compliance subscriptions, then demonstrate Shopify-generated privacy events and consented WhatsApp delivery with dedicated test data. Fixture tests do not prove these live flows."
+    },
+    {
+      "item": "App listing and reviewer access",
+      "status": "unverified",
+      "action": "A dedicated empty development reviewer tenant has a verified working login. Final deployment, dedicated WhatsApp assets/store, consent demonstration, screencast, private testing credentials and listing/automated checks still need completion. OAuth callback now returns merchants to the app; live App Store entry/reinstall needs validation."
+    },
+    {
+      "item": "Operational security and merchant agreements",
+      "status": "unverified",
+      "action": "The actual database connection is not using TLS and a verified TLS probe was refused because the server does not support TLS. Hosting/server configuration is required. New password enforcement, sensitive authentication log removal, encrypted-export tooling and operating procedures were prepared; provider encryption/backups, staff-policy adoption, separate production data, infrastructure access and merchant agreements remain unverified."
+    },
+    {
+      "item": "Phone access and live message setup",
+      "status": "owner_configuration_required",
+      "action": "Request Shopify Phone access, choose the real sender and approved utility template, configure the checkout consent attribute and an enabled order rule, and perform an authorized live customer/test-recipient send. Fixture tests have not sent messages to real customers."
+    }
+  ],
+  "validation": {
+    "command": "npm run test:shopify",
+    "passed": 40,
+    "failed": 0,
+    "additional": [
+      "npm run build passed",
+      "node scripts/shopify-db-check.cjs passed using a temporary schema and complete rollback",
+      "Edge desktop/mobile browser checks passed with isolated fixture data, including multi-page download and explicit completion",
+      "Public programmatic requests: app 200, privacy 200, setup 200, invalid-signature webhook 401",
+      "Migration 20261017000001_shopify_privacy.ts applied to the configured development database",
+      "Manual development maintenance completed with zero failed stores, pending requests or overdue requests",
+      "npm run check:shopify passed local settings/build checks, with hosting and development-environment warnings",
+      "WhatsApp sender/opt-out/reminder/message regression tests passed with mocked providers; no live customer messaging.",
+      "PostgreSQL fixture now covers message outbox claim, semantic deduplication, privacy export, message-history erasure and cascade constraints.",
+      "Browser fixture covers template selection, order-field mappings, consent confirmation, rule save and multi-section privacy export.",
+      "Migration 20261017000002_shopify_whatsapp.ts applied to configured development database.",
+      "Signed HTTP fixture now exercises all three compliance topics, owner export/delivery completion and customer/shop erasure.",
+      "Authenticated backup binary round-trip and tampering/wrong-key/no-overwrite checks passed.",
+      "Registration/change/reset password policy checks passed; existing staff credentials were not changed.",
+      "Dedicated empty development reviewer tenant created; real local login and empty scoped Shopify connections API verified.",
+      "Live development-store identity, granted scopes and seven current-destination order/customer/lifecycle subscriptions verified; normal expired credential refresh succeeded.",
+      "Owner/template/consent/export/mobile browser fixtures passed after review preparation changes.",
+      "Build and additional user-account regression tests passed."
+    ],
+    "limitation": "No live Shopify merchant installation, production hosting/security certification, App Store submission or approval is established by these checks."
+  },
+  "sources": [
+    "https://shopify.dev/docs/apps/launch/protected-customer-data",
+    "https://shopify.dev/docs/apps/build/compliance/privacy-law-compliance",
+    "https://ngrok.com/docs/pricing-limits/free-plan-limits",
+    "https://developers.facebook.com/documentation/business-messaging/whatsapp/getting-opt-in",
+    "https://developers.facebook.com/documentation/business-messaging/whatsapp/templates/overview"
+  ],
+  "submission_rule": "Save only factual, verified answers. Do not assert unmet controls, invent business details or describe unimplemented messaging features. A successful application submission is not Shopify approval.",
+  "business_name": "Soft7",
+  "resolved_in_development": [
+    {
+      "item": "Data minimization",
+      "implementation": "Explicit field allowlist; legacy payload scrubbing; read/export sanitization.",
+      "evidence": "src/app/utils/shopify.ts; src/app/services/shopify.service.ts"
+    },
+    {
+      "item": "Retention",
+      "implementation": "1–30 day configurable event expiry (default 30); minute scheduler; outstanding-request hold; completed requests and suppression hashes expire after 30 days; access logs after 90 days.",
+      "evidence": "src/app/services/shopifyPrivacyScheduler.service.ts; src/server.ts"
+    },
+    {
+      "item": "Customer erasure",
+      "implementation": "Customer, requested order and contact-hash matching; immediate suppression via pending requests; background erasure; shop cascade deletion and 48-hour uninstall fallback.",
+      "evidence": "src/app/services/shopify.service.ts"
+    },
+    {
+      "item": "Customer export",
+      "implementation": "Owner-only paginated export; browser downloads all pages; explicit merchant-delivery confirmation; pending/overdue dashboard and monitoring; audit trail. Merchant delivery remains manual.",
+      "evidence": "src/routes/shopify.route.ts; src/web/shopify/app.js"
+    },
+    {
+      "item": "Merchant interface and disclosure",
+      "implementation": "/v1/integrations/shopify/app and /privacy; Soft7 identity and existing integration privacy contact configured; diagnostic controls hidden on merchant screen.",
+      "evidence": "src/web/shopify/index.html; src/app/http/controllers/shopify.controller.ts"
+    },
+    {
+      "item": "Shopify-triggered customer WhatsApp messaging",
+      "implementation": "Owner-only order rules; approved utility template mapping; consent and opt-out gates; encrypted transactional outbox; worker claims, deduplication and reconciliation of uncertain attempts; privacy export/erase/retention of linked outbound history.",
+      "evidence": "src/app/services/shopifyMessaging.service.ts; src/app/utils/shopifyMessaging.ts; src/app/services/shopifyMessageScheduler.service.ts"
+    }
+  ],
+  "review_configuration": "shopify.app.review.toml",
+  "app_url": "https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/shopify/app",
+  "privacy_url": "https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/shopify/privacy",
+  "development_messaging_runtime": {
+    "worker_pid": 46180,
+    "worker_running": true,
+    "enabled_rules_at_start": 0,
+    "queued_messages_at_start": 0,
+    "live_customer_messages_sent_by_task": 0,
+    "checkout_consent_capture": "requires merchant storefront configuration"
+  },
+  "review_guide": "docs/shopify-review-guide.md",
+  "security_operations_procedure": "docs/shopify-security-operations.md",
+  "development_reviewer_access": {
+    "provisioned": true,
+    "login_and_empty_tenant_verified": true,
+    "credentials_location": "tmp/shopify-review-login.json (ignored; not for public publication)",
+    "production_ready": false,
+    "remaining": "Deploy the final review environment and configure dedicated store, consent capture, WhatsApp sender/template and consenting test recipient."
+  },
+  "latest_review_evidence": {
+    "checked_at": "2026-10-17T05:18:01.816Z",
+    "environment": "development",
+    "app_url": "https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/shopify/app",
+    "checks": [
+      {
+        "check": "public_app",
+        "passed": false,
+        "detail": {
+          "status": 200,
+          "tunnel_warning": true,
+          "no_store": false
+        }
+      },
+      {
+        "check": "public_privacy",
+        "passed": false,
+        "detail": {
+          "status": 200,
+          "tunnel_warning": true,
+          "no_store": false
+        }
+      },
+      {
+        "check": "unauthenticated_owner_api_rejected",
+        "passed": true,
+        "detail": {
+          "status": 401,
+          "tunnel_warning": false,
+          "no_store": false
+        }
+      },
+      {
+        "check": "unsigned_webhook_rejected",
+        "passed": true,
+        "detail": {
+          "status": 401,
+          "tunnel_warning": false,
+          "no_store": true
+        }
+      },
+      {
+        "check": "database_connection_uses_tls",
+        "passed": false,
+        "detail": "TLS not active; confirm a private encrypted network or configure verified TLS before production."
+      },
+      {
+        "check": "table_shopify_connections",
+        "passed": true,
+        "detail": "Schema existence only."
+      },
+      {
+        "check": "table_shopify_privacy_requests",
+        "passed": true,
+        "detail": "Schema existence only."
+      },
+      {
+        "check": "table_shopify_whatsapp_jobs",
+        "passed": true,
+        "detail": "Schema existence only."
+      },
+      {
+        "check": "privacy_request_monitoring",
+        "passed": true,
+        "detail": {
+          "pending": 0
+        }
+      },
+      {
+        "check": "requested_development_store_connected",
+        "passed": true,
+        "detail": {
+          "store": "my-store-pvotisf6.myshopify.com",
+          "connections": [
+            {
+              "status": "connected",
+              "topics": [
+                "orders/create",
+                "orders/paid",
+                "orders/cancelled",
+                "orders/updated",
+                "customers/create"
+              ],
+              "subscription_issue_present": false
+            }
+          ]
+        }
+      },
+      {
+        "check": "production_environment",
+        "passed": false,
+        "detail": "Current configuration only; no hosting certification."
+      }
+    ],
+    "limitations": [
+      "HTTP checks do not establish browser usability, continuous uptime or Shopify approval.",
+      "No valid privacy webhook is sent to a real store by this command.",
+      "Provider backup encryption, staff practices and live WhatsApp delivery require separate evidence."
+    ]
+  },
+  "live_store_evidence": {
+    "checked_at": "2026-10-17T05:20:20.077Z",
+    "store": "my-store-pvotisf6.myshopify.com",
+    "actions": "Shopify shop identity and subscription queries with normal credential refresh if needed; no customer fields, subscription changes or messages.",
+    "checks": [
+      {
+        "check": "live_store_identity",
+        "passed": true
+      },
+      {
+        "check": "granted_scopes",
+        "handles": [
+          "read_orders",
+          "read_customers"
+        ]
+      },
+      {
+        "check": "live_shop_subscriptions",
+        "subscriptions": [
+          {
+            "topic": "APP_UNINSTALLED",
+            "current_app_destination": true
+          },
+          {
+            "topic": "APP_SCOPES_UPDATE",
+            "current_app_destination": true
+          },
+          {
+            "topic": "ORDERS_CREATE",
+            "current_app_destination": true
+          },
+          {
+            "topic": "ORDERS_PAID",
+            "current_app_destination": true
+          },
+          {
+            "topic": "ORDERS_CANCELLED",
+            "current_app_destination": true
+          },
+          {
+            "topic": "ORDERS_UPDATED",
+            "current_app_destination": true
+          },
+          {
+            "topic": "CUSTOMERS_CREATE",
+            "current_app_destination": true
+          }
+        ]
+      }
+    ],
+    "limitations": [
+      "Shop-scoped API results do not establish App Store review status or verify the released app configuration/compliance subscriptions.",
+      "This check is not a live order, privacy erasure or WhatsApp delivery demonstration."
+    ]
+  },
+  "tls_probe": {
+    "verified_tls_connection": false,
+    "configuration_changed": false,
+    "reason": "server_does_not_support_tls"
+  },
+  "preparation_changes": [
+    "OAuth callback returns a fixed 303 redirect to the merchant app without exposing authorization parameters.",
+    "Removed password-bearing registration/onboarding, OTP-record and account-object debug logs from authentication/team paths.",
+    "New registration/change/reset/team password setting requires at least 12 characters and no more than 72 UTF-8 bytes.",
+    "Added authenticated encrypted export utility; did not create, schedule or configure provider backups.",
+    "Added strict review checks that detect the ngrok warning with browser request headers, database transport and development environment.",
+    "Added review guide, truthful control evidence matrix, backup/restore and incident procedures."
+  ]
+}

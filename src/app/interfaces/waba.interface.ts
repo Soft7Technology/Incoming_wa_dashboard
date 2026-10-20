@@ -1,4 +1,7 @@
 export interface WabaAccount {
+  connection_status?: 'legacy' | 'pending' | 'connected' | 'disconnected';
+  connected_at?: Date;
+  last_synced_at?: Date;
   id: string;
   company_id: string;
   waba_id: string;
@@ -14,6 +17,9 @@ export interface WabaAccount {
 }
 
 export interface PhoneNumber {
+  connection_status?: 'legacy' | 'pending' | 'connected';
+  active: boolean;
+  inactive_reason?: string | null;
   id: string;
   company_id: string;
   waba_id: string;
@@ -42,6 +48,7 @@ export interface CreateWabaDto {
 }
 
 export interface CreatePhoneNumberDto {
+  active?: boolean;
   user_id: string;
   company_id: string;
   waba_id: string;

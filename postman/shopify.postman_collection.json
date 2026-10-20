@@ -1,0 +1,229 @@
+{
+  "info": {
+    "name": "RSVPDesk Shopify",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Owner-authenticated Shopify store connections. Use the browser test page for OAuth: the callback needs the browser cookie created by oauth/start. No real secrets are included."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{dashboard_jwt}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "dashboard_jwt",
+      "value": ""
+    },
+    {
+      "key": "shop_domain",
+      "value": "your-store.myshopify.com"
+    },
+    {
+      "key": "connection_id",
+      "value": ""
+    },
+    {
+      "key": "event_id",
+      "value": ""
+    },
+    {
+      "key": "whatsapp_phone_id",
+      "value": ""
+    },
+    {
+      "key": "whatsapp_template_id",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Configuration",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/v1/admin/shopify/setup",
+        "header": []
+      }
+    },
+    {
+      "name": "Start OAuth (complete consent in the same browser)",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/v1/admin/shopify/oauth/start",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"shop\": \"{{shop_domain}}\",\n  \"name\": \"My store\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "List connections",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/v1/admin/shopify/connections",
+        "header": []
+      }
+    },
+    {
+      "name": "Save event triggers",
+      "request": {
+        "method": "PUT",
+        "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/triggers",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"topics\": [\n    \"orders/create\",\n    \"orders/paid\",\n    \"orders/cancelled\"\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Retry subscriptions",
+      "request": {
+        "method": "POST",
+        "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/sync",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Latest events",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/events",
+        "header": []
+      }
+    },
+    {
+      "name": "Event payload",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/events/{{event_id}}",
+        "header": []
+      }
+    },
+    {
+      "name": "Disconnect store",
+      "request": {
+        "method": "DELETE",
+        "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}",
+        "header": []
+      }
+    },
+    {
+      "name": "Customer WhatsApp order messages",
+      "description": "Configure only after collecting customer consent and obtaining Phone access. Templates must be approved utility text templates for the selected owned WhatsApp number.",
+      "item": [
+        {
+          "name": "Sender options and rules",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/whatsapp"
+          }
+        },
+        {
+          "name": "Approved utility templates for sender",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/whatsapp?phone_number_id={{whatsapp_phone_id}}"
+          }
+        },
+        {
+          "name": "Enable paid-order message rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/whatsapp/rule",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"orders/paid\",\n  \"enabled\": true,\n  \"phone_number_id\": \"{{whatsapp_phone_id}}\",\n  \"template_id\": \"{{whatsapp_template_id}}\",\n  \"consent_attribute\": \"soft7_whatsapp_opt_in\",\n  \"consent_confirmed\": true,\n  \"parameter_mapping\": {\n    \"body.1\": {\n      \"field\": \"order_number\"\n    },\n    \"body.2\": {\n      \"field\": \"payment_status\"\n    }\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Disable paid-order message rule",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/whatsapp/rule",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"topic\": \"orders/paid\",\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Recent order message statuses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/shopify/connections/{{connection_id}}/whatsapp/jobs"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import MessageModel from '../models/message.model';
 import { parseStoredContactPhone, parseContactPhoneUpdate } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
+import { assessContactImport, requireContactImportCapacity, ImportAccountScope } from './contactImportLimit.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
@@ -18,9 +19,10 @@ import * as path from 'path';
 import { filter } from 'lodash';
 import db from '@surefy/database';
 import { parseContactCustomFields } from '../utils/contactCustomFields';
-import { reportBackgroundError } from '@surefy/utils/databaseErrors';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import { contactImportStatus } from '../utils/contactImportStatus';
 import { contactListImportSummary } from '../utils/contactImportSummary';
+import { validate as isUUID } from 'uuid';
 
 class ContactService {
   /**
@@ -134,32 +136,6 @@ class ContactService {
     if (preference !== undefined) query.where('contacts.is_opted_out', preference);
 
     // Country and tag filters are applied together by ContactModel.findWithFilters.
-
-    // -------------------------
-    // LIST FILTER
-    // -------------------------
-    if (filters.list_ids?.length) {
-      const listContactIds =
-        await ContactListRelationModel.getContactIdsByLists(
-          filters.list_ids
-        );
-
-      if (!listContactIds.length) {
-        if (filters.unpaginated) return { contacts: [], total: 0 };
-        return {
-          contacts: [],
-          pagination: {
-            total: 0,
-            page,
-            limit,
-            total_pages: 0,
-          },
-        };
-      }
-
-      query.whereIn("id", listContactIds);
-
-    }
 
     // -------------------------
     // COUNT
@@ -308,7 +284,7 @@ class ContactService {
         throw new HTTP400Error({ message: 'Cannot update contact: this number already exists for the selected sending phone number' });
     }
     let updated;
-    try { updated = await ContactModel.update(contactId, updatePayload); }
+    try { updated = await ContactModel.update(contactId, updatePayload, contact); }
     catch (error: any) {
       if (error.code === '23505') throw new HTTP400Error({ message: 'Cannot update contact: this number already exists for the selected sending phone number' });
       throw error;
@@ -385,6 +361,10 @@ class ContactService {
     } catch (error) {
       throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Invalid import column' });
     }
+
+    const parsed = await XLSXParserService.parseContactsFromFile(filePath, country_code,
+      options.phoneColumn, options.nameColumn, options.emailColumn);
+    requireContactImportCapacity(await assessContactImport({ userId, companyId, phoneNumberId: phone_number_id }, parsed.contacts));
 
     // Create import job record in database
     const importJob = await ImportJobModel.create({
@@ -575,10 +555,12 @@ class ContactService {
   /**
    * Get file preview before import
    */
-  async getXLSXPreview(filePath: string, options: ImportPreviewOptions = {}) {
+  async getXLSXPreview(filePath: string, options: ImportPreviewOptions = {}, scope?: ImportAccountScope) {
     try {
-      return await XLSXParserService.getValidatedPreview(filePath, options);
+      return await XLSXParserService.getValidatedPreview(filePath, options,
+        scope ? parsed => assessContactImport(scope, parsed.contacts) : undefined);
     } catch (error) {
+      if ((error as { statusCode?: number }).statusCode || getDatabaseFailure(error)) throw error;
       throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Unable to preview import file' });
     }
   }
@@ -642,54 +624,20 @@ class ContactService {
   /**
    * Get contacts by filters (for campaign targeting)
    */
-  async getContactsByFilters(userId: string, companyId: string, filters: any) {
+  async getContactsByFilters(userId: string, companyId: string, filters: any, phoneNumberId?: string) {
     if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
-    let query = ContactModel.findWithFilters(userId, filters).where('contacts.company_id', companyId);
+    let query = ContactModel.findWithFilters(userId, filters, phoneNumberId).where('contacts.company_id', companyId);
 
     // Exclude invalid numbers by default
     if (filters.exclude_invalid !== false) {
       query = query.where({ is_valid: true });
     }
 
-    // Filter by tags (OR condition)
-    if (filters.tag_ids && filters.tag_ids.length > 0) {
-      const contactIds = await ContactTagRelationModel.getContactIdsByTags(filters.tag_ids);
-      query = query.whereIn('contacts.id', contactIds);
-    }
-
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       query = query.whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [filters.contactNumber.map((value: string) => value.replace(/^\+/, ''))]);
     }
 
-    // Filter by lists (OR condition)
-    // if (filters.list_ids && filters.list_ids.length > 0) {
-    //   console.log("Filters",filters.list_ids.length)
-    //   const contactIds = await ContactListRelationModel.getContactIdsByLists(filters.list_ids);
-    //   console.log("Contacts",contactIds)
-    //   query = query.whereIn('id', contactIds);
-    // }
-    if (filters.list_ids && filters.list_ids.length > 0) {
-      const contactIds =
-        await ContactListRelationModel.getContactIdsByLists(filters.list_ids);
-
-      if (!contactIds || contactIds.length === 0) {
-        query.whereRaw('false'); // return empty safely
-      } else {
-        query.whereRaw(
-          'contacts.id = ANY(?::uuid[])',
-          [contactIds]
-        );
-      }
-    }
-
-
-
-    // Filter by custom attributes
-    if (filters.attributes) {
-      for (const [key, value] of Object.entries(filters.attributes)) {
-        query = query.whereRaw(`attributes->>'${key}' = ?`, [value]);
-      }
-    }
+    // List, tag and attribute predicates are already applied by findWithFilters.
 
     return query;
   }
@@ -736,9 +684,22 @@ class ContactService {
   /**
    * List Management
    */
-  async getLists(userId: string, companyId: string) {
+  async getListsByPhoneNumber(userId: string, companyId: string, phoneNumberId: unknown) {
     if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
-    const lists = await ContactListModel.findByUserId(userId, companyId);
+    if (typeof phoneNumberId !== 'string' || phoneNumberId.length > 255 ||
+        !(isUUID(phoneNumberId) || /^\d+$/.test(phoneNumberId))) {
+      throw new HTTP400Error({ message: 'phone_number_id must be a sender UUID or Meta phone number ID' });
+    }
+    const phone = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
+    if (!phone || phone.deleted_at || phone.user_id !== userId || phone.company_id !== companyId) {
+      throw new HTTP404Error({ message: 'Phone number not found in your account' });
+    }
+    return this.getLists(userId, companyId, phone.id);
+  }
+
+  async getLists(userId: string, companyId: string, phoneNumberId?: string) {
+    if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
+    const lists = await ContactListModel.findByUserId(userId, companyId, phoneNumberId);
     if (!lists.length) return lists;
     const jobs = await ImportJobModel.latestForLists(userId, companyId, lists.map(list => list.id));
     const byList = new Map(jobs.map(job => [job.list_id, job]));
@@ -756,14 +717,8 @@ class ContactService {
   async getListContacts(listId: string, filters: any = {}) {
     const page = parseInt(filters.page) || 1;
     const limit = parseInt(filters.limit) || 20;
-    const offset = (page - 1) * limit;
-
-    let contacts = await ContactListRelationModel.getContactsInList(listId, filters);
-
-    const total = contacts.length;
-    contacts = contacts.slice(offset, offset + limit);
-
-    return { contacts, total, page, limit };
+    if (page < 1 || limit < 1) throw new HTTP400Error({ message: 'page and limit must be positive integers' });
+    return ContactListRelationModel.getContactsPage(listId, filters, page, limit);
   }
 
   async deleteList(listId: string) {

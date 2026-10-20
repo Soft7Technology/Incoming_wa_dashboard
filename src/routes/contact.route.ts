@@ -16,6 +16,7 @@ ContactRoute.put('/:id/opt-in-out', ownedResource('contacts', 'id'), requireRole
 // All contact endpoints require authentication (applied at route group level)
 
 // Lists management
+ContactRoute.get('/phone-number/:phoneNumberId/lists', ContactController.getListsByPhoneNumber);
 ContactRoute.get('/lists', ContactController.getLists);
 ContactRoute.get('/lists/:id', ownedResource('contact_lists', 'id'), ContactController.getListById);
 ContactRoute.get('/lists/:id/contacts', ownedResource('contact_lists', 'id'), ContactController.getListContacts);

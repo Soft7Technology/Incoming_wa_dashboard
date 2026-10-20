@@ -13,9 +13,13 @@ import { closeMediaUploadQueue } from '../queues/mediaUpload.queue';
 import { closeContactImportQueue } from '../queues/contactImport.queue';
 import db from '../../library/surefy/src/database';
 import ReminderScheduler from '../app/services/reminderScheduler.service';
+import ShopifyMessageScheduler from '../app/services/shopifyMessageScheduler.service';
+import WabaOnboardingScheduler from '../app/services/wabaOnboardingScheduler.service';
 import { redisConnection } from '../../library/surefy/src/config/redis.config';
 
 ReminderScheduler.start();
+ShopifyMessageScheduler.start();
+WabaOnboardingScheduler.start();
 
 const workers = [
   contactImportWorker,
@@ -36,7 +40,7 @@ async function shutdown(signal: string) {
   stopping = true;
   console.info('[Workers] Draining active jobs', { signal, pid: process.pid });
   try {
-    await Promise.all([ReminderScheduler.stop(), ...workers.map(worker => worker.close())]);
+    await Promise.all([ReminderScheduler.stop(), ShopifyMessageScheduler.stop(), WabaOnboardingScheduler.stop(), ...workers.map(worker => worker.close())]);
     await Promise.all([db.destroy(), redisConnection.quit(), closeMediaUploadQueue(), closeContactImportQueue()]);
     console.info('[Workers] Shutdown complete');
     process.exit(0);
