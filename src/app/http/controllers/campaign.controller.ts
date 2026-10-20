@@ -40,8 +40,6 @@ class CampaignController {
       send_immediately,
     } = req.body;
 
-    console.log('Creating campaign with data:', req.body);
-
     if (!name || !phone_number_id || !template_id) {
       throw new HTTP400Error({ message: 'Name, phone_number_id, and template_id are required' });
     }

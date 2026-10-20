@@ -1,28 +1,18 @@
 # Campaign parameter mapping
 
-## Direct recipient limit
+## Direct recipients and drafts
 
-Campaign create and recipient preview accept at most **150 entries** in `contact_filters.contactNumber`. This applies to the dashboard routes (`/v1/admin/campaigns`, `/v1/admin/campaigns/preview-recipients`) and the corresponding `/v1/api/campaigns` routes. The server checks the submitted array before deduplication, contact lookups/creation, plan quota checks, or queueing. Repeated entries still count toward the submitted-array limit. `save_contacts: false` does not bypass validation.
+Campaign create and recipient preview no longer impose a 150-entry limit on `contact_filters.contactNumber`. Every entry must still be a phone number string or exact positive integer. Non-empty array validation, contact-list ownership checks, opt-outs, subscription limits, and HTTP request-body limits still apply.
 
-With 151 or more entries, the response is **HTTP 400 Bad Request**:
+For large audiences, submit existing contact-list IDs in `contact_filters.list_ids` instead of sending all phone numbers. Use the Excel contact-import flow (`POST /v1/admin/contacts/import`) to create a list first if needed. The campaign JSON endpoint does not accept an Excel attachment directly.
 
-```json
-{
-  "success": false,
-  "message": "You can add up to 150 phone numbers directly to a campaign. You provided 151. For more than 150 numbers, select a contact list using contact_filters.list_ids.",
-  "error": {
-    "code": "CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED",
-    "field": "contact_filters.contactNumber",
-    "limit": 150,
-    "received": 151,
-    "required_action": "SELECT_CONTACT_LIST"
-  }
-}
-```
+Create with `send_immediately: false` and omit `scheduled_at` to save a draft. The existing create request loads matching contacts and saves pending `campaign_messages` before returning; it does not send messages. Start the saved draft using `POST /v1/admin/campaigns/:id/start`. Sending is handled by the existing background worker. Removing the recipient-count cap does not make preparation asynchronous or guarantee arbitrary audience sizes fit server resources.
 
-The response also includes the standard `meta.timestamp`. The frontend can display `message`, highlight `error.field`, and open the contact-list selector when `error.required_action` is `SELECT_CONTACT_LIST`.
+Direct-number preparation deduplicates identical submitted entries, looks up scoped contact candidates with grouped array predicates, and parses each saved contact once into a reusable phone index. It reuses those candidates instead of issuing a second existing-contact query. National numbers, country hints, ambiguous local matches, opt-outs, and existing targeting filters retain their validation rules. Missing contacts are inserted in batches of 200 inside the existing contact-quota transaction; recipient rows also retain their existing batched insertion. These changes preserve the HTTP response and scheduling behavior and require no migration or frontend payload change.
 
-For larger recipient sets, select an existing contact list using `contact_filters.list_ids` and omit `contactNumber`. If a new list is needed, use the Excel contact-import flow (`POST /v1/admin/contacts/import`), wait for the import job to finish, then select its list. Adding `list_ids` does not allow more than 150 direct numbers in the same request. The 150-entry rule applies to the direct-number input; list/tag filters can select larger recipient sets, subject to the existing subscription and eligibility checks. The campaign JSON endpoint does not accept an Excel attachment directly.
+Regression checks: `node --test tests/campaign-phone.test.cjs tests/campaign-create.test.cjs tests/campaign-contacts.test.cjs tests/campaign-direct-number-limit.test.cjs tests/campaign-recipients.test.cjs`. Set `CAMPAIGN_PHONE_DATABASE_TEST=true` to include the PostgreSQL lookup comparison and 3,000-contact fixture; it runs in an isolated schema and rolls back all fixture data.
+
+`send_immediately: true` still automatically queues sending, and a future `scheduled_at` still creates a scheduled campaign. `save_contacts` is not consumed by this endpoint.
 
 ```json
 {
@@ -31,7 +21,7 @@ For larger recipient sets, select an existing contact list using `contact_filter
   "phone_number_id": "661886587013056",
   "contact_filters": { "list_ids": ["IMPORTED_LIST_UUID"] },
   "parameter_mapping": { "1": "fullName" },
-  "send_immediately": true
+  "send_immediately": false
 }
 ```
 

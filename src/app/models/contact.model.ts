@@ -46,15 +46,27 @@ class ContactModel extends BaseModel {
 
   async findCampaignPhoneCandidates(userId: string, companyId: string, numbers: string[], phoneNumberId?: string) {
     if (!numbers.length) return [];
-    const suffixes = [...new Set(numbers.map(value => String(value).replace(/[^0-9]/g, '').replace(/^00/, '')))];
+    const suffixes = new Set<string>();
+    const byLength = new Map<number, Set<string>>();
+    for (const value of numbers) {
+      const digits = String(value).replace(/[^0-9]/g, '').replace(/^00/, '');
+      // Invalid lengths will be rejected by the recipient resolver, without a broad lookup.
+      if (digits.length < 4 || digits.length > 15) continue;
+      let group = byLength.get(digits.length);
+      if (!group) { group = new Set(); byLength.set(digits.length, group); }
+      group.add(digits);
+      // input LIKE '%' || stored: expand the bounded phone suffixes once in Node.
+      for (let offset = 0; offset < digits.length; offset++) suffixes.add(digits.slice(offset));
+    }
+    if (!byLength.size) return [];
     const query = this.query().where({ user_id: userId, company_id: companyId }).whereNull('deleted_at');
     if (phoneNumberId) query.where('phone_number_id', phoneNumberId);
     return query.select('id', 'phone_number', 'country_code', 'phone_number_id')
       .andWhere(builder => {
-        for (const digits of suffixes) {
-          // Match local digits against saved international numbers, and vice versa.
-          builder.orWhereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') LIKE ?", [`%${digits}`])
-            .orWhereRaw("? LIKE '%' || regexp_replace(phone_number, '[^0-9]', '', 'g')", [digits]);
+        builder.whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?::text[])", [[...suffixes]]);
+        for (const [length, digits] of byLength) {
+          // stored LIKE '%' || input: one array predicate per length, not per number.
+          builder.orWhereRaw("right(regexp_replace(phone_number, '[^0-9]', '', 'g'), ?) = ANY(?::text[])", [length, [...digits]]);
         }
       });
   }
