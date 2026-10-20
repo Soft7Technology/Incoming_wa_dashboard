@@ -261,9 +261,13 @@ Content-Type: application/json
 }
 ```
 
-`days` is required: an integer from 1 to 3650. `expected_end_date` is required: copy the current row's full UTC `end_date` timestamp. `reason` is optional, with 1–500 characters when supplied. Never send company/user IDs, a calculated new end date, price, or limits in this body. Authenticated company admins can extend only their own company's users; superadmins can extend users across companies through the same endpoint.
+`days` is required: an integer from **5 to 30**. Each assigned `user_plans` record can receive **at most 30 extension days in total**, including earlier recorded extensions. `expected_end_date` is required: copy the current row's full UTC `end_date` timestamp. `reason` is optional, with 1–500 characters when supplied. Never send company/user IDs, a calculated new end date, fee, extension counters, price, or limits in this body. Authenticated company admins can extend only their own company's users; superadmins can extend users across companies through the same endpoint.
 
-An active, completed **current assigned** subscription can be extended, including a Free trial. The API adds days to its existing end date. If that date has passed, it adds days from the server's current time. Start date and billing cycle remain unchanged; duration is recalculated from the original start to the new expiry. Pending payments, cancelled/suspended plans, future plans and historical/replaced assignments return HTTP 409. Extending a plan does not change the user's account activation/suspension status. A manually suspended plan must be resumed separately before extension. This is a manual time grant without a wallet charge or renewal; usage/limits are preserved, billing-period resets retain their original anchor, and purchased packs receive the same new expiry.
+The first **10 cumulative extension days** are free. The extension that takes the total above 10 days applies the **current superadmin monthly platform fee once**, initially INR 100 / 10000 paise, from the target company's wallet to the platform wallet. Later extensions of that same assignment, up to 30 days total, do not charge it again. Splitting requests into 5-day grants does not bypass the threshold or cap. Monthly pricing is used for this up-to-30-day grant even if the original plan is Free or Yearly. A configured zero monthly fee is recorded as an applied waiver; it is not charged later if pricing changes. Normal plan renewal/reassignment creates a new `user_plans` record with a fresh extension allowance.
+
+Before opening the modal, fetch `GET /v1/admin/subscription/user-plans/<user_plan_id>/extension-policy` with the administrator token. Its `data` includes `min_days: 5`, `max_days: 30`, `free_days: 10`, `extension_days_used`, `extension_days_remaining`, `free_days_remaining`, `extension_fee_applied`, `extension_platform_fee_paise`, live `monthly_platform_fee_paise`, `max_request_days`, `can_extend`, and the current `expected_end_date`. Show the maximum as `max_request_days`, disable submission if `can_extend` is false, and offer 5/10-day quick choices when within the remaining allowance. Display the fee when `extension_days_used + selectedDays > 10 && !extension_fee_applied`. A successful POST rechecks the current monthly price; prices/waivers must never be supplied by the frontend.
+
+An active, completed **current assigned** subscription can be extended, including a Free trial. The API adds days to its existing end date. If that date has passed, it adds days from the server's current time. Start date and billing cycle remain unchanged; duration is recalculated from the original start to the new expiry. Pending payments, cancelled/suspended plans, future plans and historical/replaced assignments return HTTP 409. Extending a plan does not change the user's account activation/suspension status. A manually suspended plan must be resumed separately before extension. Usage/limits are preserved, billing-period resets retain their original anchor, and purchased packs receive the same new expiry. A paid extension is not a subscription renewal or an upgrade to the plan's feature limits.
 
 The October 23 example returns HTTP 200 with the new November 22 expiry:
 
@@ -283,14 +287,21 @@ The October 23 example returns HTTP 200 with the new November 22 expiry:
     "end_date": "2026-11-22T12:00:00.000Z",
     "duration_days": 60,
     "active": true,
-    "status": "COMPLETED"
+    "status": "COMPLETED",
+    "currency": "INR",
+    "extension_days_used": 30,
+    "extension_days_remaining": 0,
+    "extension_fee_paise": 10000,
+    "extension_platform_fee_paise": 10000
   }
 }
 ```
 
-For the Extend modal, retain the row's original `end_date` while it is open. Preview `max(Date.now(), Date.parse(row.end_date)) + days * 86400000`, disable Extend while submitting, and use the API's `data.end_date` as the final date. On success, update that row and refetch the subscription list and that user's entitlements; existing user-plan endpoints read the updated row directly. Do not edit the subscription catalog definition.
+For the Extend modal, retain the row's original `end_date` while it is open. Preview `max(Date.now(), Date.parse(row.end_date)) + days * 86400000`, disable Extend while submitting, and use the API's `data.end_date` as the final date. On success, update that row and refetch the subscription list, that user's entitlements, and the extension policy; refresh the company wallet balance when `extension_fee_paise > 0`. Existing user-plan endpoints read the updated row directly. Do not edit the subscription catalog definition.
 
-Two requests using the same `expected_end_date` can apply at most one extension. A duplicate/retry or stale form receives HTTP 409 with details code `PLAN_EXTENSION_CONFLICT` and `current_end_date`. Refresh the row to reconcile a lost response. Only replace the expected timestamp after the admin deliberately requests another extension; never automatically retry with the new timestamp. HTTP 400 indicates invalid input, 403 an unauthorized role, and 404 an unavailable or foreign-company plan. All date and pack changes are transactional with an activity audit; an audit failure rolls everything back.
+Two requests using the same `expected_end_date` can apply at most one extension and fee. A duplicate/retry or stale form receives HTTP 409 with details code `PLAN_EXTENSION_CONFLICT` and `current_end_date`. Exceeding the cumulative cap returns HTTP 409 / `PLAN_EXTENSION_CAP_REACHED`, including remaining days. Invalid day counts return HTTP 400 / `INVALID_EXTENSION_DAYS`; insufficient wallet balance returns HTTP 400 / `INSUFFICIENT_COMPANY_WALLET_BALANCE` with required/available paise. Refresh the row to reconcile a lost response. Only replace the expected timestamp after the admin deliberately requests another extension; never automatically retry with the new timestamp. HTTP 403 indicates an unauthorized role, and 404 an unavailable or foreign-company plan. Dates, pack expiry, extension counters, both wallets, debit/credit ledger records and activity audit commit together; any failure rolls everything back.
+
+Migration `20261020000002_subscription_extension_policy.ts` adds `user_plans.extension_days` and nullable `extension_platform_fee_paise`. NULL means no threshold fee has been applied; zero means an applied waiver. It counts identifiable historical manual extensions from their activity audits, without altering expiry dates or charging past fees. Existing assignments that already received 30 or more days cannot receive additional extensions; renew/reassign instead. Apply this migration before deploying the updated extension API. The ledger uses `reference_type: "subscription_extension"` with `reference_id` set to the assigned user-plan UUID. Rollback refuses to remove tracking after the new policy has been used.
 
 ## Fixed trial on admin registration
 

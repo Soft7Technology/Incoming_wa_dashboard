@@ -4,6 +4,11 @@ import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
 
 const chatBotRoute = Router();
 
+chatBotRoute.get('/templates/categories', chatBotController.templateCategories);
+chatBotRoute.get('/templates', chatBotController.listTemplates);
+chatBotRoute.get('/templates/:templateId', chatBotController.getTemplate);
+chatBotRoute.post('/templates/:templateId/use', checkPlanLimit('Chatbot'), chatBotController.useTemplate);
+
 chatBotRoute.post('/create', checkPlanLimit('Chatbot'), chatBotController.createChatBot);
 chatBotRoute.post('/flow/:chatBotId', chatBotController.createChatBotFlow);
 chatBotRoute.get('/', chatBotController.getChatBots);
