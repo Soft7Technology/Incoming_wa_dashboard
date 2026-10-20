@@ -15,7 +15,7 @@ function load(file, deps) {
   return exports;
 }
 
-test('actual campaign routes return HTTP 400 with actionable error metadata before any plan or controller work', async () => {
+test('campaign routes accept larger direct arrays and reject malformed recipients before plan or controller work', async () => {
   const middleware = load('src/app/http/middleware/campaignPhoneValidation.ts', {
     '@surefy/exceptions/HTTP400Error': HttpError,
     '../../utils/campaignPhone': require('../src/app/utils/campaignPhone'),
@@ -53,18 +53,22 @@ test('actual campaign routes return HTTP 400 with actionable error metadata befo
   try {
     for (const prefix of ['/v1/admin/campaigns', '/v1/api/campaigns']) {
       for (const suffix of ['', '/preview-recipients']) {
-        const response = await post(prefix + suffix, { save_contacts: false, send_immediately: true,
-          contact_filters: { contactNumber: Array(151).fill('+919372597458') } });
-        assert.equal(response.status, 400);
-        const body = await response.json();
-        assert.equal(body.success, false); assert.match(body.message, /150.*151.*select a contact list/);
-        assert.deepEqual(body.error, { code: 'CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED',
-          field: 'contact_filters.contactNumber', limit: 150, received: 151, required_action: 'SELECT_CONTACT_LIST' });
+        for(const count of [151,3000]) {
+          const response=await post(prefix+suffix,{send_immediately:false,
+            contact_filters:{contactNumber:Array(count).fill('+919372597458')}});
+          assert.equal(response.status,201);
+        }
       }
     }
-    assert.equal(planChecks, 0); assert.equal(handlerCalls, 0);
-    const allowed = await post('/v1/admin/campaigns', { contact_filters: { contactNumber: Array(150).fill('+919372597458') } });
-    assert.equal(allowed.status, 201); assert.equal(planChecks, 1); assert.equal(handlerCalls, 1);
+    assert.equal(planChecks,4);assert.equal(handlerCalls,8);
+    const invalid=Array(3000).fill('+919372597458');invalid[2999]='invalid';
+    for(const suffix of ['', '/preview-recipients']) {
+      const response=await post('/v1/admin/campaigns'+suffix,{contact_filters:{contactNumber:invalid}});
+      assert.equal(response.status,400);
+      const body=await response.json();
+      assert.equal(body.success,false);assert.match(body.message,/contactNumber\[2999\]/);
+    }
+    assert.equal(planChecks,4);assert.equal(handlerCalls,8);
     const imported = await post('/v1/admin/campaigns', { contact_filters: { list_ids: ['23860277-69cd-44c2-b557-08f00ecaf2cf'] } });
     assert.equal(imported.status, 201);
   } finally {

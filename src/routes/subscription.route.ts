@@ -22,6 +22,7 @@ SubscriptionRoute.delete('/addons/:id', planCatalog.disableAddon);
 SubscriptionRoute.post('/addon-purchases', planCatalog.purchase);
 SubscriptionRoute.get('/entitlements', planCatalog.entitlements);
 SubscriptionRoute.post('/user-plans/:userPlanId/extend', planExtension.extend);
+SubscriptionRoute.get('/user-plans/:userPlanId/extension-policy', planExtension.policy);
 
 SubscriptionRoute.get('/plan', SubscriptionController.getSubscription);
 SubscriptionRoute.post('/plan', SubscriptionController.createSubscription);

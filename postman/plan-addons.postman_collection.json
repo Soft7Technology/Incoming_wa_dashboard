@@ -133,15 +133,15 @@
     },
     {
       "key": "extension_days",
-      "value": "30",
+      "value": "10",
       "type": "string",
-      "description": "Whole days to grant, 1 through 3650."
+      "description": "Whole days from 5 to 30, subject to the remaining cumulative 30-day allowance. First 10 total days are free; crossing 10 charges the monthly platform fee once."
     },
     {
       "key": "extension_expected_end_date",
       "value": "",
       "type": "string",
-      "description": "Copy the target user plan current end_date UTC timestamp. Keep unchanged on retries; refresh only for a deliberate NEW extension."
+      "description": "Copy the current assigned plan end_date. Policy preview fills this only if empty. Retain it on retries; clear it only to deliberately request another extension."
     }
   ],
   "item": [
@@ -1529,6 +1529,31 @@
       },
       "item": [
         {
+          "name": "Preview extension allowance and live monthly fee",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/user-plans/{{user_plan_id}}/extension-policy",
+            "description": "Read-only preview: current expiry, total extra days used/remaining, minimum request days, live monthly platform fee and whether that assignment already paid/waived its one-time fee. This request fills extension_expected_end_date only if it is empty; clear it explicitly to start a deliberate new extension."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Policy loaded\", function () { pm.expect(pm.response.code).to.eql(200); });",
+                  "if (pm.response.code === 200) {",
+                  "  const policy = pm.response.json().data;",
+                  "  pm.test(\"Policy cap\", function () { pm.expect(policy.max_days).to.eql(30); pm.expect(policy.min_days).to.eql(5); });",
+                  "  if (!pm.collectionVariables.get(\"extension_expected_end_date\")) pm.collectionVariables.set(\"extension_expected_end_date\", policy.expected_end_date);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Extend current user plan by days",
           "request": {
             "method": "POST",
@@ -1539,7 +1564,7 @@
               }
             ],
             "url": "{{base_url}}/v1/admin/subscription/user-plans/{{user_plan_id}}/extend",
-            "description": "Use user_plans.id, including Free if desired. Set extension_expected_end_date from the existing subscription row before sending. Updates that assigned record, duration and purchased-pack expiry with no wallet charge or quota reset. Duplicate/stale requests return 409 PLAN_EXTENSION_CONFLICT. Never automatically replace the expected timestamp on retry. Historical, pending or suspended plans cannot be extended.",
+            "description": "Use user_plans.id, including Free if desired. Requests accept only days, expected_end_date and optional reason. A 30-day request charges the current monthly platform fee once (initially INR 100); the default extension_days is 10. Counters persist on user_plans. Existing extensions count toward the 30-day total cap. HTTP 409 rejects a stale expiry or exhausted allowance. Wallet, ledger, date, pack expiry and audit updates are atomic. Never automatically replace the expected timestamp on retry.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"days\": {{extension_days}},\n  \"expected_end_date\": \"{{extension_expected_end_date}}\",\n  \"reason\": \"Customer support extension\"\n}",
@@ -1566,7 +1591,8 @@
             }
           ]
         }
-      ]
+      ],
+      "description": "Each assigned user plan can receive at most 30 extra days in total. Each request must add 5 through 30 days. The first 10 cumulative days are free; crossing 10 debits the current monthly platform fee (initially INR 100) from the target company wallet exactly once. Later extensions of the same plan do not charge again. Preview policy and fee before granting time."
     }
   ]
 }

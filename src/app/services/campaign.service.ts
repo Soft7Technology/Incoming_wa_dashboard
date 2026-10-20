@@ -1,5 +1,5 @@
 import contactOptOut from './contactOptOut.service';
-import { resolveOptionalCampaignPhone, campaignRecipientNumber, validateCampaignPhoneInputs } from '../utils/campaignPhone';
+import { createOptionalCampaignPhoneResolver, campaignRecipientNumber, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { parseContactCustomFields } from '../utils/contactCustomFields';
@@ -88,12 +88,10 @@ class CampaignService {
         });
       }
     }
-    console.log('Template',template)
     if (!preview && !template) {
       throw new HTTP404Error({ message: 'Template not found' });
     }
 
-    console.log('Creating campaign with data:', data);
 
     if (!preview && template!.status !== 'APPROVED') {
       throw new HTTP400Error({ message: 'Template must be approved before use in campaigns' });
@@ -131,14 +129,27 @@ class CampaignService {
     let previewNewContacts: any[] = [];
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // Infer only from the supplied international number; never default to the sender's country.
-      const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber, phoneNumberId.id);
+      const submittedNumbers = [...new Set(filters.contactNumber)];
+      const countryCode = data.country_code === undefined ? undefined : String(data.country_code);
+      const resolveWithoutContacts = createOptionalCampaignPhoneResolver([], countryCode);
+      const lookupNumbers = new Set(submittedNumbers);
+      for (const value of submittedNumbers) {
+        try {
+          const resolved = resolveWithoutContacts(value);
+          // Include inferred international identities, e.g. national trunk-prefix input + country hint.
+          lookupNumbers.add('+' + campaignRecipientNumber(resolved.phone_number, resolved.country_code));
+        } catch (error) {
+          throw new HTTP400Error({ message: `Invalid campaign recipient: ${error instanceof Error ? error.message : 'invalid number'}` });
+        }
+      }
+      const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, [...lookupNumbers], phoneNumberId.id);
       const senderContacts = savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id);
+      const resolvePhone = createOptionalCampaignPhoneResolver(senderContacts, countryCode);
       const matchedNumbers = new Set<string>();
       const normalizedPhones = new Map<string, string | null>();
-      for (const value of filters.contactNumber) {
+      for (const value of submittedNumbers) {
         try {
-          const resolvedPhone = resolveOptionalCampaignPhone(value, senderContacts,
-            data.country_code === undefined ? undefined : String(data.country_code));
+          const resolvedPhone = resolvePhone(value);
           const parsed = { ...resolvedPhone, phone_number: campaignRecipientNumber(resolvedPhone.phone_number, resolvedPhone.country_code) };
           if (parsed.contact) {
             matchedNumbers.add(parsed.phone_number);
@@ -153,12 +164,10 @@ class CampaignService {
       canonicalRecipientNumbers = [...normalizedPhones.keys()];
       filters.contactNumber = canonicalRecipientNumbers;
 
-      // 2. Find existing numbers in the DB
-      const existingContacts = await ContactModel.findWithFilters(userId, {})
-        .where('contacts.company_id', companyId)
-        .where('phone_number_id', phoneNumberId.id)
-        .whereRaw("regexp_replace(phone_number, '[^0-9]', '', 'g') = ANY(?)", [canonicalRecipientNumbers]);
-
+      // The scoped candidate lookup already contains exact stored-number matches.
+      const requestedNumbers = new Set(canonicalRecipientNumbers);
+      const existingContacts = senderContacts.filter((contact: any) =>
+        requestedNumbers.has(String(contact.phone_number).replace(/[^0-9]/g, '')));
       const existingNumbers = new Set(existingContacts.map((c: any) => campaignRecipientNumber(c.phone_number, c.country_code)));
 
       // 3. Filter missing numbers
@@ -186,7 +195,12 @@ class CampaignService {
             previewNewContacts = newContacts.map(contact => ({ ...contact, id: null }));
           }
         } else {
-          await planUsageService.run(userId, 'Contact', trx => ContactModel.bulkCreate(newContacts, trx), newContacts.length);
+          await planUsageService.run(userId, 'Contact', async trx => {
+            // Keep parameter counts and returned rows bounded inside one quota transaction.
+            for (let offset = 0; offset < newContacts.length; offset += 200) {
+              await ContactModel.bulkCreate(newContacts.slice(offset, offset + 200), trx);
+            }
+          }, newContacts.length);
         }
       }
     }

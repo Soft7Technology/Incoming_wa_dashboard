@@ -15,6 +15,7 @@ tests/*
 !tests/feature-limit-middleware.test.cjs
 !tests/unmetered-features-database.test.cjs
 !tests/plan-extension.test.cjs
+!tests/chatbot-templates.test.cjs
 
 # Runtime data belongs on persistent storage, never in a source checkout.
 uploads/
@@ -29,32 +30,4 @@ backups/
 /a.ts
 /password.js
 /split-phone-tests.txt
-
-# BEGIN MAIN-ONLY FILES
-/tests/
-/postman/
-/docs/postman/
-/docs/payment-test.html
-/docs/subscription-checkout.html
-/docs/facebook-login-test.md
-/scripts/facebook-login-test.cjs
-/src/routes/facebookLoginTest.route.ts
-/src/web/facebook/login-test.html
-/src/web/facebook/login-test.js
-/src/web/facebook/login-test.css
-/AI_ASSISTANT_EXPLANATION.md
-/PROJECT_SUMMARY.md
-/package-lock.json
-*.test.cjs
-*.test.mjs
-*.test.js
-*.test.ts
-*.test.tsx
-*.spec.cjs
-*.spec.mjs
-*.spec.js
-*.spec.ts
-*.spec.tsx
-*.postman_collection.json
-*.postman_environment.json
-# END MAIN-ONLY FILES
+/tests

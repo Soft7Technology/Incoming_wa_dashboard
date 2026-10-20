@@ -46,19 +46,16 @@ test('campaign phone payload validation rejects malformed arrays and unsafe numb
   assert.doesNotThrow(() => validate({ contactNumber: [919372597458, '+6581234567', '81234567'] }, '+65'));
 });
 
-test('direct number lists allow 150 submitted entries and reject 151 before deduplication', () => {
-  const { validateCampaignPhoneInputs: validate, MAX_CAMPAIGN_DIRECT_NUMBERS } = require('../src/app/utils/campaignPhone');
-  assert.equal(MAX_CAMPAIGN_DIRECT_NUMBERS, 150);
-  for (const count of [1, 149, 150]) assert.doesNotThrow(() => validate({ contactNumber: Array(count).fill('+919372597458') }));
-  assert.throws(() => validate({ contactNumber: Array(151).fill('+919372597458') }), error => {
-    assert.match(error.message, /150 phone numbers.*151.*select a contact list/);
-    assert.deepEqual(error.details, { code: 'CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED',
-      field: 'contact_filters.contactNumber', limit: 150, received: 151, required_action: 'SELECT_CONTACT_LIST' });
-    return true;
-  });
-  assert.doesNotThrow(() => validate({ list_ids: ['23860277-69cd-44c2-b557-08f00ecaf2cf'] }));
-  assert.throws(() => validate({ contactNumber: Array(151).fill('+919372597458'),
-    list_ids: ['23860277-69cd-44c2-b557-08f00ecaf2cf'] }), /select a contact list/);
+test('direct numbers have no 150-entry cap and still validate every entry and list ID', () => {
+  const { validateCampaignPhoneInputs: validate } = require('../src/app/utils/campaignPhone');
+  for (const count of [150, 151, 2000, 3000]) {
+    assert.doesNotThrow(() => validate({ contactNumber: Array(count).fill('+919372597458') }));
+  }
+  const numbers=Array(3000).fill('+919372597458');
+  numbers[2999]='invalid';
+  assert.throws(() => validate({contactNumber:numbers}), /contactNumber\[2999\]/);
+  assert.doesNotThrow(() => validate({contactNumber:Array(151).fill('+919372597458'),
+    list_ids:['23860277-69cd-44c2-b557-08f00ecaf2cf']}));
   for (const list_ids of [null, [], 'list', ['not-a-uuid'], [123], [{}]]) {
     assert.throws(() => validate({ list_ids }), /contact_filters.list_ids/);
   }
@@ -74,4 +71,35 @@ test('campaigns retain unresolved numbers without guessing a country',()=>{
  assert.equal(campaignRecipientNumber('+919372597458','91'),'919372597458');
  assert.equal(campaignRecipientNumber('9372597458','91'),'919372597458');
  for(const input of ['abc','12+345','1234567890123456']) assert.throws(()=>resolveOptionalCampaignPhone(input,[]));
+});
+
+
+test('bulk resolver preserves local ambiguity, explicit country, duplicate and unresolved-number behavior',()=>{
+ const {createOptionalCampaignPhoneResolver:create}=require('../src/app/utils/campaignPhone');
+ const contacts=[
+  {id:'in',phone_number:'+917579380000',country_code:'91'},
+  {id:'us',phone_number:'+17579380000',country_code:'1'},
+  {id:'sg-old',phone_number:'81234567',country_code:'65'},
+  {id:'sg-new',phone_number:'+6581234567',country_code:'65'},
+  {id:'invalid',phone_number:'bad',country_code:'91'},
+ ];
+ const resolve=create(contacts);
+ assert.throws(()=>resolve('7579380000'),/Multiple contacts/);
+ assert.equal(resolve('+917579380000').contact.id,'in');
+ assert.equal(resolve('6581234567').contact.id,'sg-new');
+ assert.equal(resolve('081234567').contact.id,'sg-new');
+ assert.equal(resolve('9372597458').country_code,null);
+ assert.equal(create(contacts,'91')('7579380000').contact.id,'in');
+ assert.throws(()=>resolve('12+345'));
+});
+
+test('bulk resolver reads saved phone metadata once for 3000 submitted recipients',()=>{
+ const {createOptionalCampaignPhoneResolver:create}=require('../src/app/utils/campaignPhone');
+ let reads=0;
+ const contacts=Array.from({length:3000},(_,i)=>({id:String(i),country_code:'91',
+  get phone_number(){reads++;return '+91987654'+String(i).padStart(4,'0');}}));
+ const resolve=create(contacts);
+ assert.equal(reads,3000);
+ for(let i=0;i<3000;i++) assert.equal(resolve('+91987654'+String(i).padStart(4,'0')).contact.id,String(i));
+ assert.equal(reads,3000,'resolving another number must not reparse every saved contact');
 });
