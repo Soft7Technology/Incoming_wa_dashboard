@@ -130,6 +130,18 @@
       "value": "",
       "type": "string",
       "description": "Saved by company-admin creation. Only this company can select/edit this owned pack; superadmin controls its price."
+    },
+    {
+      "key": "extension_days",
+      "value": "30",
+      "type": "string",
+      "description": "Whole days to grant, 1 through 3650."
+    },
+    {
+      "key": "extension_expected_end_date",
+      "value": "",
+      "type": "string",
+      "description": "Copy the target user plan current end_date UTC timestamp. Keep unchanged on retries; refresh only for a deliberate NEW extension."
     }
   ],
   "item": [
@@ -1496,6 +1508,59 @@
                   "  pm.expect(pm.response.code).to.be.within(200, 299);",
                   "  pm.expect(pm.response.json().success).to.eql(true);",
                   "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Admin - extend assigned subscription",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Extend current user plan by days",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/user-plans/{{user_plan_id}}/extend",
+            "description": "Use user_plans.id, including Free if desired. Set extension_expected_end_date from the existing subscription row before sending. Updates that assigned record, duration and purchased-pack expiry with no wallet charge or quota reset. Duplicate/stale requests return 409 PLAN_EXTENSION_CONFLICT. Never automatically replace the expected timestamp on retry. Historical, pending or suspended plans cannot be extended.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"days\": {{extension_days}},\n  \"expected_end_date\": \"{{extension_expected_end_date}}\",\n  \"reason\": \"Customer support extension\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Extension succeeds or a stale request is rejected\", function () { pm.expect(pm.response.code).to.be.oneOf([200, 409]); });",
+                  "if (pm.response.code === 200) {",
+                  "  pm.test(\"New expiry returned\", function () { pm.expect(pm.response.json().data.end_date).to.be.a(\"string\"); });",
+                  "  // Retain extension_expected_end_date to make retries safe.",
+                  "}"
                 ]
               }
             }

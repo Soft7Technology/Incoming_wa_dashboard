@@ -216,9 +216,11 @@ New registration trials use `plan_name: "Free"`. Existing catalog names and assi
 | `limit_value: null` | Unlimited |
 | `limit_value: 0` | No units |
 | `enabled: false, limit_value: 0` | Feature disabled |
-| Omitted feature | Disabled for newly assigned plans |
+| Omitted quota-controlled feature | Disabled for newly assigned plans |
 
-The optional `enabled` flag defaults to `true`. Updating `features` replaces the whole feature map; omitting `features` preserves it. Include additional features such as `Tag` if the plan should permit them.
+The optional `enabled` flag defaults to `true`. Updating `features` replaces the whole feature map; omitting `features` preserves it. Tags, messages, and custom contact columns are always unrestricted by subscription quotas. Do not include them in `features`, plan limit controls, or add-on selectors. Historical payload keys for these resources are ignored; the feature catalog and entitlement summary omit them. Contact creation/import and the other quota-controlled resources still enforce their existing limits. Authentication, ownership checks, bulk request safety limits, and Meta messaging requirements still apply.
+
+Migration `20261020000001_unmetered_tags_messages_columns.ts` removes these quota fields from existing `subscription_plans.features` and `user_plans.limits`, `usage`, and `usage_periods`. It removes their plan add-on selections and retires their catalog entries without deleting purchased receipts, contacts, tags, messages, columns, or wallet history. Other feature limits and plan prices/dates remain intact. Previous configurations are saved in `unmetered_plan_features_audit`; rollback refuses to overwrite subsequent plan changes. Deploy this migration before serving the updated API. The frontend should render configurable features from `GET /v1/admin/subscription/features`, which excludes these resources.
 
 ## Billing and limits
 
@@ -240,6 +242,55 @@ Capacity represents resources that still exist. On renewal, the plan's base capa
 Manual contact creation and spreadsheet imports enforce the contact limit. Existing automatic inbound-contact capture remains available so receiving WhatsApp messages does not fail due to contact capacity. Those stored contacts count toward subsequent capacity checks.
 
 Plan edits affect future assignments/purchases. Assigned plans keep their saved limits. Existing assigned records remain version 1 with their legacy omitted-feature behavior until replaced through assignment or renewal; no existing customer entitlements are silently rewritten by the migration.
+
+## Extend an assigned user subscription
+
+Use the `user_plans.id` from the subscription list, **not** `subscription_plans.id` or the user ID:
+
+```http
+POST /v1/admin/subscription/user-plans/<user_plan_id>/extend
+Authorization: Bearer <admin_token>
+Content-Type: application/json
+```
+
+```json
+{
+  "days": 30,
+  "expected_end_date": "2026-10-23T12:00:00.000Z",
+  "reason": "Customer support extension"
+}
+```
+
+`days` is required: an integer from 1 to 3650. `expected_end_date` is required: copy the current row's full UTC `end_date` timestamp. `reason` is optional, with 1–500 characters when supplied. Never send company/user IDs, a calculated new end date, price, or limits in this body. Authenticated company admins can extend only their own company's users; superadmins can extend users across companies through the same endpoint.
+
+An active, completed **current assigned** subscription can be extended, including a Free trial. The API adds days to its existing end date. If that date has passed, it adds days from the server's current time. Start date and billing cycle remain unchanged; duration is recalculated from the original start to the new expiry. Pending payments, cancelled/suspended plans, future plans and historical/replaced assignments return HTTP 409. Extending a plan does not change the user's account activation/suspension status. A manually suspended plan must be resumed separately before extension. This is a manual time grant without a wallet charge or renewal; usage/limits are preserved, billing-period resets retain their original anchor, and purchased packs receive the same new expiry.
+
+The October 23 example returns HTTP 200 with the new November 22 expiry:
+
+```json
+{
+  "success": true,
+  "message": "Subscription extended successfully",
+  "data": {
+    "id": "<user_plan_id>",
+    "user_id": "<user_id>",
+    "plan_name": "Pro",
+    "billing_cycle": "Monthly",
+    "days_added": 30,
+    "previous_end_date": "2026-10-23T12:00:00.000Z",
+    "extension_starts_at": "2026-10-23T12:00:00.000Z",
+    "start_date": "2026-09-23T12:00:00.000Z",
+    "end_date": "2026-11-22T12:00:00.000Z",
+    "duration_days": 60,
+    "active": true,
+    "status": "COMPLETED"
+  }
+}
+```
+
+For the Extend modal, retain the row's original `end_date` while it is open. Preview `max(Date.now(), Date.parse(row.end_date)) + days * 86400000`, disable Extend while submitting, and use the API's `data.end_date` as the final date. On success, update that row and refetch the subscription list and that user's entitlements; existing user-plan endpoints read the updated row directly. Do not edit the subscription catalog definition.
+
+Two requests using the same `expected_end_date` can apply at most one extension. A duplicate/retry or stale form receives HTTP 409 with details code `PLAN_EXTENSION_CONFLICT` and `current_end_date`. Refresh the row to reconcile a lost response. Only replace the expected timestamp after the admin deliberately requests another extension; never automatically retry with the new timestamp. HTTP 400 indicates invalid input, 403 an unauthorized role, and 404 an unavailable or foreign-company plan. All date and pack changes are transactional with an activity audit; an audit failure rolls everything back.
 
 ## Fixed trial on admin registration
 

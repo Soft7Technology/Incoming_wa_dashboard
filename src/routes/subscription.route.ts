@@ -3,6 +3,7 @@ import SubscriptionController from '@surefy/console/http/controllers/subscriptio
 import subscriptionController from '@surefy/console/http/controllers/subscription.controller';
 import planCatalog from '../app/http/controllers/planCatalog.controller';
 import pricing from '../app/http/controllers/platformPricing.controller';
+import planExtension from '../app/http/controllers/planExtension.controller';
 
 // companyRoute.post('/user/:planId/activate-plan', CompanyController.subscribePlan);
 // companyRoute.get('/user/plan/:userId', companyController.getUserPlan)
@@ -20,6 +21,7 @@ SubscriptionRoute.patch('/addons/:id', planCatalog.updateCompanyAddon);
 SubscriptionRoute.delete('/addons/:id', planCatalog.disableAddon);
 SubscriptionRoute.post('/addon-purchases', planCatalog.purchase);
 SubscriptionRoute.get('/entitlements', planCatalog.entitlements);
+SubscriptionRoute.post('/user-plans/:userPlanId/extend', planExtension.extend);
 
 SubscriptionRoute.get('/plan', SubscriptionController.getSubscription);
 SubscriptionRoute.post('/plan', SubscriptionController.createSubscription);
