@@ -1,0 +1,273 @@
+{
+  "info": {
+    "name": "Editable Industry Chatbot Templates",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Nine platform starter flows: real-estate-starter, health-care-starter, e-commerce-starter, travel-starter, digital-marketing-starter, hotels-resorts-starter, education-starter, it-saas-starter, mlm-affiliates-starter. These are not Meta-approved outbound templates. Browse and preview without using quota. Use creates one private unpublished draft and consumes one Chatbot slot. Saving and publishing use the existing flow APIs. No credentials or customer IDs are included."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{admin_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "admin_token",
+      "value": ""
+    },
+    {
+      "key": "category",
+      "value": "real-estate"
+    },
+    {
+      "key": "template_id",
+      "value": "real-estate-starter"
+    },
+    {
+      "key": "chatbot_id",
+      "value": ""
+    },
+    {
+      "key": "phone_number_id",
+      "value": ""
+    },
+    {
+      "key": "chatbot_nodes",
+      "value": "[]"
+    },
+    {
+      "key": "chatbot_edges",
+      "value": "[]"
+    }
+  ],
+  "item": [
+    {
+      "name": "List industry categories",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/templates/categories",
+        "description": "Nine industry categories."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List all ready-made templates",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/templates",
+        "description": "Metadata only; no chatbot creation or plan usage."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Filter templates by category",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/templates?category={{category}}",
+        "description": "Use category slug, e.g. health-care or travel."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Preview template graph",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/templates/{{template_id}}",
+        "description": "Read-only nodes/edges for the existing builder."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Use template - create my editable draft",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/chatbot/templates/{{template_id}}/use",
+        "description": "Creates a NEW draft on every successful request. Edit the business details in this body. Save returned graph variables for the existing flow editor. No receiving phone is reserved and no messages are sent.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Industry Assistant\",\n  \"customizations\": {\n    \"business_name\": \"Example Business\",\n    \"support_contact\": \"our team in this WhatsApp chat\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));",
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const bot = pm.response.json().data;",
+              "  pm.collectionVariables.set(\"chatbot_id\", bot.id);",
+              "  pm.collectionVariables.set(\"chatbot_nodes\", JSON.stringify(bot.nodes));",
+              "  pm.collectionVariables.set(\"chatbot_edges\", JSON.stringify(bot.edges));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read my saved draft",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/{{chatbot_id}}",
+        "description": "Reads the ordinary saved chatbot, including its copied nodes/edges."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));",
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const bot = pm.response.json().data;",
+              "  pm.collectionVariables.set(\"chatbot_id\", bot.id);",
+              "  pm.collectionVariables.set(\"chatbot_nodes\", JSON.stringify(bot.nodes));",
+              "  pm.collectionVariables.set(\"chatbot_edges\", JSON.stringify(bot.edges));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Save edited flow with receiving phone",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/chatbot/flow/{{chatbot_id}}",
+        "description": "Select an owned receiving phone. Edit chatbot_nodes/chatbot_edges through your builder or collection variables first. Existing keyword/default routing validation applies. Save does not publish this draft.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"My Industry Assistant\",\n  \"nodes\": {{chatbot_nodes}},\n  \"edges\": {{chatbot_edges}},\n  \"phoneNumberIds\": [\"{{phone_number_id}}\"]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Publish saved chatbot",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/{{chatbot_id}}/publish",
+        "description": "Only run after reviewing the flow and saving a receiving phone assignment. Activates incoming-message routing."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Unpublish chatbot",
+      "request": {
+        "method": "PUT",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/{{chatbot_id}}/unpublish",
+        "description": "Existing unpublish behavior; deactivates this chatbot routing."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Request succeeded\", () => pm.expect(pm.response.code).to.be.within(200,299));"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

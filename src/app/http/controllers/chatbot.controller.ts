@@ -8,8 +8,24 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import wabaModel from '../../models/waba.model';
 import phoneNumberModel from '../../models/phoneNumber.model';
 import userPlansModel from '../../models/userPlans.model';
+import chatbotTemplates from '../../services/chatbotTemplate.service';
 
 class chatBotController {
+    templateCategories = tryCatchAsync(async (req: AuthRequest, res: Response) =>
+        successResponse(req, res, 'Chatbot template categories', chatbotTemplates.categories()));
+
+    listTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) =>
+        successResponse(req, res, 'Ready-made chatbot templates', chatbotTemplates.list(req.query.category)));
+
+    getTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) =>
+        successResponse(req, res, 'Chatbot template preview', chatbotTemplates.detail(req.params.templateId)));
+
+    useTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+        const bot = await chatbotTemplates.use({ userId: req.userId, ownerId: req.ownerId, companyId: req.companyId },
+            req.params.templateId, req.body);
+        return successResponse(req, res, 'Editable draft chatbot created from template', bot, HttpStatusCode.CREATED);
+    });
+
     updateChatBotName = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         const result = await chatBotService.updateChatBotName(
             (req.ownerId ?? req.userId!), req.params.chatBotId, req.body?.name

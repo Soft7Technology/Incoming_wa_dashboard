@@ -15,6 +15,7 @@ tests/*
 !tests/feature-limit-middleware.test.cjs
 !tests/unmetered-features-database.test.cjs
 !tests/plan-extension.test.cjs
+!tests/chatbot-templates.test.cjs
 
 # Runtime data belongs on persistent storage, never in a source checkout.
 uploads/
