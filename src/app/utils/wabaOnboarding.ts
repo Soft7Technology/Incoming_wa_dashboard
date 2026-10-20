@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { CustomError } from '@surefy/exceptions/CustomError';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 
 export class WabaOnboardingError extends CustomError {
   constructor(public code: string, message: string, public retryable = false, status = 400) {
@@ -10,7 +11,7 @@ export interface WabaScope { userId: string; companyId: string }
 export const digest = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 export function metaId(value: unknown, field: string): string | null {
   if (value === undefined || value === null || value === '') return null;
-  if (typeof value !== 'string' || !/^\d{1,255}$/.test(value)) throw new WabaOnboardingError('INVALID_SIGNUP_INPUT', `${field} must be a Meta ID string or null.`);
+  if (typeof value !== 'string' || !/^\d{1,255}$/.test(value)) throw new HTTP400Error({ message: `${field} must be a Meta ID string or null.` });
   return value;
 }
 export function encryptionKey() {
@@ -45,11 +46,12 @@ export function openToken(encrypted: string, scope: WabaScope, id: string) {
 }
 export function safeOnboardingError(error: any): WabaOnboardingError {
   if ((typeof error?.code === 'string' && error.code.startsWith('WABA_')) ||
-      ['INVALID_SIGNUP_INPUT', 'CODE_EXCHANGE_UNCONFIRMED', 'META_CODE_INVALID', 'META_PERMISSION_REQUIRED',
+      ['META_PERMISSION_REQUIRED',
         'META_TEMPORARILY_UNAVAILABLE', 'SIGNUP_SELECTION_REQUIRED', 'SIGNUP_NO_AUTHORIZED_WABA', 'SIGNUP_TOKEN_INVALID',
         'SIGNUP_PHONE_NOT_IN_WABA', 'SIGNUP_IDEMPOTENCY_CONFLICT', 'SIGNUP_STATE_INVALID', 'SIGNUP_AUTHORIZATION_USED',
         'SIGNUP_LEASE_LOST', 'SIGNUP_RETRY_EXHAUSTED'].includes(error?.code)) return error;
-  if (error?.isOperational && [400, 403, 404, 409].includes(error.statusCode)) return new WabaOnboardingError(
+  if (error?.isOperational && error.statusCode === 400) return new WabaOnboardingError('WABA_BAD_REQUEST', error.message);
+  if (error?.isOperational && [403, 404, 409].includes(error.statusCode)) return new WabaOnboardingError(
     'WABA_ACCOUNT_CONFLICT', 'The selected account or phone conflicts with an existing connection. Check account ownership and the selected WABA before retrying.', false, 409);
   return new WabaOnboardingError('WABA_SETUP_UNAVAILABLE', 'WhatsApp setup could not be saved or confirmed. Check onboarding status before reconnecting.', true, 503);
 }

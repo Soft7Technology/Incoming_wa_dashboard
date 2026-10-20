@@ -435,23 +435,28 @@
           "response": []
         },
         {
-          "name": "onboard Client",
+          "name": "Onboard WABA by ID",
           "request": {
             "auth": {
               "type": "bearer",
               "bearer": [
                 {
                   "key": "token",
-                  "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI3ZmUyYjdlNC0zNjMxLTQ3MWYtOGFhZC00ZmVjNmRiZTZmOTQiLCJlbWFpbCI6InZpbmF5QHBvd2VydHJhY2NvcnBvcmF0aW9uLmNvbSIsInBob25lIjpudWxsLCJyb2xlIjoiY29tcGFueSIsImNvbXBhbnlJZCI6ImM2ZDYxMjJjLTViZWEtNGI0NC1hOWZlLTdlZTAxNjg4NGFiNCIsImlhdCI6MTc3MDAzNzc2NCwiZXhwIjoxNzcwNjQyNTY0fQ.YARq9qQVrUzi1Z8uxhXWv5geQvrDCzpyTLQa6Zu_uMc",
+                  "value": "{{admin_jwt}}",
                   "type": "string"
                 }
               ]
             },
             "method": "POST",
-            "header": [],
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n    \"waba_id\":\"1914505612431099\"\r\n}\r\n\r\n\r\n// https://consoleapinew.surefy.co/\r\n\r\n\r\n// https://consoledevapinew.surefy.co/v1/admin/waba/onboard",
+              "raw": "{\n  \"waba_id\": \"{{meta_waba_id}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -467,9 +472,23 @@
                 "waba",
                 "onboard"
               ]
-            }
+            },
+            "description": "Creates or updates the account, syncs numbers, subscribes webhooks and syncs templates before HTTP 201. No code, state, redirect URI, job or polling."
           },
-          "response": []
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Setup completed', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.data?.data?.clientWabaAccount?.id) pm.environment.set('waba_id', body.data.data.clientWabaAccount.id);"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -2407,6 +2426,11 @@
     {
       "key": "base_url",
       "value": "http://localhost:3001/v1"
+    },
+    {
+      "key": "admin_jwt",
+      "value": "",
+      "type": "string"
     }
   ]
 }

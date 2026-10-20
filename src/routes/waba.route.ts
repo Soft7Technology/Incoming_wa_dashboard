@@ -1,15 +1,14 @@
 import { accountScope, ownedResource, ownedPhone } from '../app/http/middleware/accountScope';
 import { Router } from 'express';
 import WabaController from '@surefy/console/http/controllers/waba.controller';
-import wabaController from '@surefy/console/http/controllers/waba.controller';
 import onboarding from '../app/http/controllers/wabaOnboarding.controller';
 
 const WabaRoute = Router();
 WabaRoute.use(accountScope);
 
 // All WABA endpoints require authentication (applied at route group level)
-WabaRoute.post('/onboard', onboarding.onboard);
-WabaRoute.post('/onboard/state', onboarding.state);
+WabaRoute.post('/onboard', WabaController.onboardingWaba);
+// Existing saved jobs remain inspectable; new onboarding completes in the request.
 WabaRoute.get('/onboard/:onboardingId', onboarding.status);
 WabaRoute.post('/onboard/:onboardingId/retry', onboarding.retry);
 
