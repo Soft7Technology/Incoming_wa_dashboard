@@ -89,6 +89,38 @@ test('feature aliases normalize to stable keys; disabled, zero and unlimited sta
   for (const input of [{ Contact: { limit_value: -1 } }, { Contact: {} }, { Contact: { limit_value: '20' } }, { Contact: { limit_value: 1.5 } }, { Contact: { limit_value: 1, enabled: 'false' } }, { TeamMembers: { limit_value: 2 }, TeamInvite: { limit_value: 2 } }]) assert.throws(() => utils.normalizeFeatures(input));
 });
 
+test('unlimited resources are omitted from new snapshots, feature catalogs and add-ons', async () => {
+  const f = fixture();
+  const features = { Contact: { limit_value: 500 }, Tag: { limit_value: 0, enabled: false },
+    messages: { limit_value: 1 }, custom_columns: { limit_value: 2 } };
+  const saved = utils.snapshotFeatures(features);
+  assert.deepEqual(Object.keys(saved.limits), ['Contact']);
+  assert.deepEqual(Object.keys(saved.usage), ['Contact']);
+  for (const key of ['Tag', 'Message', 'CustomColumn']) {
+    f.state().plan_features.push({ key, active: true, addon_allowed: true, kind: 'usage' });
+    f.state().plan_addons.push({ id: uuid(300 + f.state().plan_addons.length), feature_key: key, active: true });
+  }
+  assert.deepEqual(Array.from(await f.catalog.features(), row => row.key), ['TeamInvite', 'Campaign']);
+  assert.equal((await f.catalog.addons(true)).length, 1);
+  const superadmin = { userId: uuid(2), userRole: 'superadmin' };
+  await assert.rejects(f.catalog.createFeature(superadmin, { key: 'Tags', label: 'Tags', kind: 'usage' }), /reserved/);
+  await assert.rejects(f.catalog.createAddon(superadmin, { feature_key: 'Message' }), /unlimited/);
+  const addon = f.state().plan_addons[1];
+  await assert.rejects(f.catalog.validatePlanAddons([{ addon_id: addon.id, enabled: false }], features, 'Monthly'), /unlimited/);
+  await assert.rejects(f.catalog.updateAddon(superadmin, addon.id, { active: true }), /unlimited/);
+  f.state().user_plans[0].limits = { Tag: { enabled: true, limit: 1 } };
+  f.state().user_plans[0].addons = null;
+  await assert.rejects(f.addons.purchase(f.actor, { ...f.body, addon_id: addon.id }, 'unmetered-purchase'), /unlimited/);
+  assert.equal(f.state().user_plan_addons.length, 0);
+  assert.equal(f.state().companies[0].credit_balance, '1000.00');
+});
+
+test('entitlement summary omits historical unlimited resources while keeping metered features', async () => {
+  const f = fixture();
+  Object.assign(f.state().user_plans[0].limits, { Tag: { limit: 0 }, Message: { limit: 10 }, Column: { limit: null } });
+  assert.deepEqual(Object.keys((await f.limits.summary(uuid(1))).features), ['TeamInvite']);
+});
+
 test('new plans deny omitted/disabled features and add-ons increase only the purchased finite limit', () => {
   const f = fixture(), plan = f.state().user_plans[0];
   assert.throws(() => usage.checkUsage(plan, 'Contact'), /not included/);

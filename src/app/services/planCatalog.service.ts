@@ -1,7 +1,7 @@
 import db from '@surefy/database';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
-import { normalizeFeatures, featureKey, snapshotPlanAddons } from '../utils/planFeatures';
+import { normalizeFeatures, featureKey, isUnmeteredFeature, snapshotPlanAddons } from '../utils/planFeatures';
 
 export interface CatalogActor {
   userId?: string;
@@ -24,16 +24,17 @@ export function positiveInt(value: unknown, name: string, max = 100000000) {
 }
 
 class PlanCatalogService {
-  features() {
-    return db('plan_features').orderBy('label');
+  async features() {
+    return (await db('plan_features').orderBy('label')).filter(row => !isUnmeteredFeature(row.key));
   }
-  addons(includeInactive = false, companyId?: string, allCompanies = false) {
+  async addons(includeInactive = false, companyId?: string, allCompanies = false) {
     const query = db('plan_addons').orderBy('name');
     if (!allCompanies) query.where(scope => {
       scope.whereNull('company_id');
       if (companyId) scope.orWhere({ company_id: companyId });
     });
-    return includeInactive ? query : query.where({ active: true });
+    const rows = await (includeInactive ? query : query.where({ active: true }));
+    return rows.filter(row => !isUnmeteredFeature(row.feature_key));
   }
 
   async validatePlanAddons(input: unknown, inputFeatures: unknown, billingCycle: string, companyId?: string) {
@@ -51,6 +52,7 @@ class PlanCatalogService {
     for (const selection of selections) {
       const addon = byId.get(selection.addon_id);
       if (!addon) throw new HTTP400Error({ message: 'Selected add-on does not exist or is unavailable to this company' });
+      if (isUnmeteredFeature(addon.feature_key)) throw new HTTP400Error({ message: 'Tags, messages and custom columns are unlimited and cannot be plan add-ons' });
       if (!selection.enabled) continue;
       const feature = features[addon.feature_key], definition = registry.get(addon.feature_key);
       if (billingCycle === 'Free' || !addon.active || !definition?.active || !definition.addon_allowed ||
@@ -103,7 +105,7 @@ class PlanCatalogService {
     const key = textField(body.key, 'key', 64);
     if (
       !/^[A-Za-z][A-Za-z0-9_]*$/.test(key) ||
-      ['constructor', 'prototype', '__proto__'].includes(key) || featureKey(key) !== key
+      ['constructor', 'prototype', '__proto__'].includes(key) || featureKey(key) !== key || isUnmeteredFeature(key)
     )
       throw new HTTP400Error({ message: 'Invalid or reserved feature key' });
     if (!['capacity', 'usage'].includes(body.kind))
@@ -129,6 +131,7 @@ class PlanCatalogService {
     platformAdmin(actor);
     if (body.active !== undefined && typeof body.active !== 'boolean') throw new HTTP400Error({ message: 'active must be boolean' });
     const feature_key = featureKey(textField(body.feature_key, 'feature_key', 64));
+    if (isUnmeteredFeature(feature_key)) throw new HTTP400Error({ message: 'Tags, messages and custom columns are unlimited and cannot be plan add-ons' });
     const feature = await db('plan_features').where({ key: feature_key, active: true, addon_allowed: true }).first();
     if (!feature) throw new HTTP400Error({ message: 'Feature is inactive, unknown, or does not allow add-ons' });
     const [addon] = await db('plan_addons')
@@ -172,6 +175,7 @@ class PlanCatalogService {
     return db.transaction(async trx => {
       const previous = await trx('plan_addons').where({ id }).forUpdate().first();
       if (!previous) throw new HTTP400Error({ message: 'Add-on not found' });
+      if (isUnmeteredFeature(previous.feature_key)) throw new HTTP400Error({ message: 'Tags, messages and custom columns are unlimited and cannot be plan add-ons' });
       const [row] = await trx('plan_addons').where({ id })
         .update({ ...values, updated_at: new Date() }).returning('*');
       await trx('platform_pricing_changes').insert({ actor_id: actor.userId, resource_type: 'addon', resource_id: id,

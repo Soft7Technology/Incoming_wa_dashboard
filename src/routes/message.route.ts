@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import MessageController from '@surefy/console/http/controllers/message.controller';
-import { checkPlanLimit } from '@surefy/middleware/plan.middleware';
 
 const MessageRoute = Router();
 
