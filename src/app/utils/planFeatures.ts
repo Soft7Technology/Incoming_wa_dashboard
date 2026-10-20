@@ -49,12 +49,21 @@ export const FEATURE_ALIASES: Record<string, string> = {
 export const featureKey = (key: string) =>
   Object.prototype.hasOwnProperty.call(FEATURE_ALIASES, key) ? FEATURE_ALIASES[key] : key;
 
+/** These resources are available independently of subscription entitlements. */
+export function isUnmeteredFeature(key: string): boolean {
+  return ['tag', 'tags', 'message', 'messages', 'column', 'columns',
+    'customcolumn', 'customcolumns', 'contactcolumn', 'contactcolumns',
+    'createcolumn', 'createcolumns'].includes(key.replace(/[_\s-]/g, '').toLowerCase());
+}
+
 export function normalizeFeatures(input: unknown): Record<string, FeatureLimit> {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     throw new HTTP400Error({ message: 'features must be an object' });
   }
   const result: Record<string, FeatureLimit> = Object.create(null);
   for (const [rawKey, raw] of Object.entries(input)) {
+    // Ignore historical client fields; never persist quotas for these resources.
+    if (isUnmeteredFeature(rawKey)) continue;
     const key = featureKey(rawKey);
     if (
       !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key) ||

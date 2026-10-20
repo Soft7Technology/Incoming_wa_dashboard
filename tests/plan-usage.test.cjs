@@ -31,6 +31,15 @@ test('expiry boundary, future start, inactive plan and malformed counts are reje
   assert.throws(() => checkUsage(plan({ active: false }), 'Campaign'), /No active/);
   assert.throws(() => checkUsage(plan(), 'Campaign', -1), /non-negative/);
 });
+
+test('unmetered resources bypass missing, expired and disabled subscriptions', () => {
+  for (const feature of ['Tag', 'messages', 'Column', 'custom_columns', 'ContactColumn']) {
+    assert.equal(checkUsage(null, feature, 10000).limit, null);
+    assert.equal(checkUsage(plan({ active: false, limits: { [feature]: { enabled: false, limit: 0 } } }), feature).limit, null);
+    assert.throws(() => checkUsage(null, feature, -1), /non-negative/);
+  }
+  assert.throws(() => checkUsage(null, 'Contact'), /No active/);
+});
 function harness({ usage = {}, limits = {}, seats = [] } = {}) {
   let state = { users: [{ id: 'owner' }], user_plans: [plan({ usage, limits }), plan({ id: 'old', active: false, usage: { Contact: 88 } })],
     contacts: [], user_team: seats };
@@ -96,6 +105,19 @@ test('failed creation rolls back both resource and usage', async () => {
   }), /recipient write failed/);
   assert.equal(h.state().contacts.length, 0);
   assert.equal(h.state().user_plans[0].usage.Campaign, undefined);
+});
+
+test('unmetered assertion never reads plans and transactional creation never locks or updates quotas', async () => {
+  const h = harness({ limits: { Tag: { enabled: false, limit: 0 } }, usage: { Tag: 99 } });
+  const before = structuredClone(h.state().user_plans);
+  assert.equal((await h.service.assert('owner', 'Tag')).limit, null);
+  await h.service.run('owner', 'Tag', async (trx, subscription) => {
+    assert.equal(subscription, null);
+    await trx('contacts').insert({ id: 'resource' });
+  });
+  assert.equal(h.state().contacts.length, 1);
+  assert.deepEqual(h.state().user_plans, before);
+  assert.deepEqual(h.locks, []);
 });
 test('team limit uses pending plus accepted seats, ignores expired, and deletion releases a seat', async () => {
   const h = harness({ usage: { TeamInvite: 0 }, limits: { TeamInvite: { limit: 2 } }, seats: [

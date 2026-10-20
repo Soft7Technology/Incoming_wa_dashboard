@@ -4,7 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { CatalogActor, positiveInt, textField } from './planCatalog.service';
-import { snapshotPlanAddons } from '../utils/planFeatures';
+import { isUnmeteredFeature, snapshotPlanAddons } from '../utils/planFeatures';
 
 export function walletPaise(value: unknown): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value));
@@ -71,6 +71,7 @@ class PlanAddonService {
       const addon = await trx('plan_addons').where({ id: addonId, active: true }).forShare().first();
       if (!addon) throw new HTTP400Error({ message: 'Add-on is unavailable' });
       if (addon.company_id != null && addon.company_id !== actor.companyId) throw new HTTP404Error({ message: 'Add-on is unavailable in your company' });
+      if (isUnmeteredFeature(addon.feature_key)) throw new HTTP400Error({ message: 'Tags, messages and custom columns are unlimited; no add-on purchase is required' });
       const feature = await trx('plan_features')
         .where({ key: addon.feature_key, active: true, addon_allowed: true })
         .first();

@@ -1,12 +1,13 @@
 import db from '@surefy/database';
 import { Knex } from 'knex';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
-import { featureKey, usagePeriodStart } from '../utils/planFeatures';
+import { featureKey, isUnmeteredFeature, usagePeriodStart } from '../utils/planFeatures';
 
 export type PlanFeature = string;
 
 export function checkUsage(plan: any, feature: PlanFeature, count = 1, now = new Date()) {
   if (!Number.isSafeInteger(count) || count < 0) throw new Error('Usage count must be a non-negative integer');
+  if (isUnmeteredFeature(feature)) return { key: feature, used: 0, usage: {}, periods: {}, limit: null };
   if (!plan || !plan.active) throw new HTTP403Error({ message: 'No active subscription plan found' });
   const start = new Date(plan.start_date).getTime();
   const end = new Date(plan.end_date).getTime();
@@ -112,6 +113,10 @@ class PlanUsageService {
   }
 
   async run<T>(userId: string, feature: PlanFeature, create: (trx: Knex.Transaction, plan: any) => Promise<T>, count = 1): Promise<T> {
+    if (isUnmeteredFeature(feature)) {
+      checkUsage(null, feature, count);
+      return db.transaction(trx => create(trx, null));
+    }
     return db.transaction(async trx => {
       // Same lock order as assignment: owner first, then current plan.
       await trx('users').where({ id: userId }).forUpdate().first();
@@ -140,6 +145,7 @@ class PlanUsageService {
     const usage = typeof plan.usage === 'string' ? JSON.parse(plan.usage) : { ...plan.usage };
     const features: Record<string, any> = {};
     for (const key of Object.keys(limits)) {
+      if (isUnmeteredFeature(key)) continue;
       const capacity = await currentCapacity(db, userId, key);
       if (capacity !== undefined) usage[key] = capacity;
       const config = limits[key];
@@ -156,6 +162,7 @@ class PlanUsageService {
   }
 
   async assert(userId: string, feature: PlanFeature, count = 1) {
+    if (isUnmeteredFeature(feature)) return checkUsage(null, feature, count);
     feature = featureKey(feature);
     const plan = await db('user_plans').where({ user_id: userId, active: true }).first();
     if (plan && (feature === 'TeamInvite' || feature === 'WabaNumber' || plan.entitlement_version >= 2)) {
