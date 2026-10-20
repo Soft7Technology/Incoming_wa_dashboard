@@ -255,6 +255,8 @@ test('all seven GET paths require JWT and superadmin authorization, pass URL IDs
     '@surefy/utils/Controller': helpers, '../../services/superAdminOperations.service': {},
   });
   const route = load('src/routes/superAdmin.route.ts', {
+    '../app/http/controllers/platformPricing.controller':Object.fromEntries(['get','update','allAddons','updateAddon'].map(key=>[key,(_req,res)=>res.end()])),
+    '../app/http/controllers/planCatalog.controller':Object.fromEntries(['features','createFeature','createAddon','disableAddon'].map(key=>[key,(_req,res)=>res.end()])),
     express, '../app/http/controllers/superAdmin.controller': controller,
     '../app/http/controllers/superAdminOperations.controller': operations,
     '../app/http/controllers/superAdminUserPlan.controller': {

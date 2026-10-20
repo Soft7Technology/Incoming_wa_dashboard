@@ -13,7 +13,7 @@ function load(file, deps = {}) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: id => id.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[id] || {}, Date,
+  vm.runInNewContext(code, { exports, require: id => id.endsWith('/activePhone') ? require('./helpers/active-phone.cjs') : id.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[id] || {}, Date,
     console: { log() {}, info() {}, warn() {}, error() {} } });
   return exports.default;
 }

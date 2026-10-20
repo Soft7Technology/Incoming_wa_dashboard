@@ -1,0 +1,1507 @@
+{
+  "info": {
+    "name": "Soft7 - Dynamic Plan Add-ons (Superadmin Pricing + Company Wallet)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Superadmin controls global pack prices. Company admins choose addons [{addon_id, enabled}] on plan definitions. Registration ensures four shared default packs: WABA number x1, Chatbot x1, Team member x1 and Contacts x3000, initially INR 20 each. Set base_url, JWT variables, user_id and subscription_plan_id. Load existing default pack IDs before creating extra custom packs. Enabling a pack does not charge money or add capacity. Assignments snapshot selections; purchases require an enabled selected pack and an included finite feature. Purchase requests debit the company wallet at the CURRENT superadmin catalog price. INR 20 = 2000 paise. Add-ons expire with the assigned paid plan, without recurring renewal/proration. Retain the per-purchase Idempotency-Key for retries and use a new key for a new purchase. Importing this file does not execute requests. No live credentials are included. Company admins can create owned WabaNumber, Chatbot and TeamInvite packs with name/units/active only. Each starts at INR 20; superadmin alone can edit price_paise. Company listings/plans/purchases isolate owned packs by authenticated company. Shared packs remain read-only to company admins."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8001",
+      "type": "string",
+      "description": "API origin only, without /v1 or trailing slash."
+    },
+    {
+      "key": "superadmin_token",
+      "value": "",
+      "type": "string",
+      "description": "Superadmin JWT. Keep token local; do not export populated credentials."
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "type": "string",
+      "description": "Company admin JWT. Keep token local; do not export populated credentials."
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string",
+      "description": "Recipient user UUID in the authenticated admin company."
+    },
+    {
+      "key": "user_plan_id",
+      "value": "",
+      "type": "string",
+      "description": "Assigned active PAID user_plans UUID. Saved by the entitlements request."
+    },
+    {
+      "key": "addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Selected existing pack UUID for generic edit/purchase/disable requests."
+    },
+    {
+      "key": "waba_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by its create-pack request; can also be copied from the catalog."
+    },
+    {
+      "key": "chatbot_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by its create-pack request; can also be copied from the catalog."
+    },
+    {
+      "key": "team_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by its create-pack request; can also be copied from the catalog."
+    },
+    {
+      "key": "contacts_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by its create-pack request; can also be copied from the catalog."
+    },
+    {
+      "key": "campaigns_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by its create-pack request; can also be copied from the catalog."
+    },
+    {
+      "key": "ai_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by its create-pack request; can also be copied from the catalog."
+    },
+    {
+      "key": "waba_purchase_key",
+      "value": "",
+      "type": "string",
+      "description": "Generated once before the first WABA purchase. Retain for retries; clear for a new purchase."
+    },
+    {
+      "key": "chatbot_purchase_key",
+      "value": "",
+      "type": "string",
+      "description": "Generated once before the first Chatbot purchase. Retain for retries; clear for a new purchase."
+    },
+    {
+      "key": "other_purchase_key",
+      "value": "",
+      "type": "string",
+      "description": "Generated once before the generic purchase. Retain for retries; clear for a new purchase."
+    },
+    {
+      "key": "custom_feature_key",
+      "value": "CustomFeature",
+      "type": "string",
+      "description": "Example optional future feature key."
+    },
+    {
+      "key": "custom_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by optional future-feature pack creation."
+    },
+    {
+      "key": "subscription_plan_id",
+      "value": "",
+      "type": "string",
+      "description": "Company catalog definition UUID for plan-form selection endpoints; different from assigned user_plan_id."
+    },
+    {
+      "key": "company_waba_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by company-admin creation. Only this company can select/edit this owned pack; superadmin controls its price."
+    },
+    {
+      "key": "company_chatbot_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by company-admin creation. Only this company can select/edit this owned pack; superadmin controls its price."
+    },
+    {
+      "key": "company_team_addon_id",
+      "value": "",
+      "type": "string",
+      "description": "Saved by company-admin creation. Only this company can select/edit this owned pack; superadmin controls its price."
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Superadmin - create add-on packs",
+      "description": "The four registration default packs already exist. Load their IDs from the company admin catalog; do not recreate them. These optional create requests add extra custom packs to the superadmin catalog. All example prices are INR 20 (2000 paise). Create responses save their IDs; use PATCH for later price/status changes. Only superadmin can create/edit prices.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{superadmin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "List feature catalog",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/super-admin/billing/features",
+            "description": "Read canonical feature keys, kinds, active status and addon_allowed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List all add-on packs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Includes active and disabled packs. Reuse existing IDs instead of recreating packs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create WABA number pack - INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Adds 1 WabaNumber unit(s) per pack for INR 20. Example price: edit before sending if needed. Server requires an active feature with addon_allowed=true. Saves waba_addon_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra WABA number\",\n  \"feature_key\": \"WabaNumber\",\n  \"units\": 1,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"waba_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Chatbot pack - INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Adds 1 Chatbot unit(s) per pack for INR 20. Example price: edit before sending if needed. Server requires an active feature with addon_allowed=true. Saves chatbot_addon_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra Chatbot\",\n  \"feature_key\": \"Chatbot\",\n  \"units\": 1,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"chatbot_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create Team member pack - INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Adds 1 TeamInvite unit(s) per pack for INR 20. Example price: edit before sending if needed. Server requires an active feature with addon_allowed=true. Saves team_addon_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra Team member\",\n  \"feature_key\": \"TeamInvite\",\n  \"units\": 1,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"team_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create 3,000 contacts pack - INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Optional additional contacts pack: 3,000 contacts per pack at INR 20. The registration default already exists and can be reused. Saves contacts_addon_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra 3,000 contacts\",\n  \"feature_key\": \"Contact\",\n  \"units\": 3000,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"contacts_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create 10 campaigns pack - INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Adds 10 Campaign unit(s) per pack for INR 20. Example price: edit before sending if needed. Server requires an active feature with addon_allowed=true. Saves campaigns_addon_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra 10 campaigns\",\n  \"feature_key\": \"Campaign\",\n  \"units\": 10,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"campaigns_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create AI assistant pack - INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Adds 1 AiAssistant unit(s) per pack for INR 20. Example price: edit before sending if needed. Server requires an active feature with addon_allowed=true. Saves ai_addon_id.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra AI assistant\",\n  \"feature_key\": \"AiAssistant\",\n  \"units\": 1,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"ai_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Superadmin - change prices",
+      "description": "Price edits are dynamic and affect FUTURE purchases. Previous purchases keep their saved charge, units and expiry. Change price_paise in these requests; feature_key cannot be edited.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{superadmin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Set WABA pack price - INR 20",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons/{{waba_addon_id}}",
+            "description": "2000 paise = INR 20. Send 3000 to charge INR 30 for future purchases. Existing purchases are not repriced.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Set Chatbot pack price - INR 20",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons/{{chatbot_addon_id}}",
+            "description": "Set the current platform price for one extra chatbot. This does not debit any wallet.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit any pack - price, units, name, publication",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons/{{addon_id}}",
+            "description": "Set addon_id to any existing pack UUID. Any non-empty subset of name, units, price_paise and active is accepted. feature_key is immutable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra capacity pack\",\n  \"units\": 1,\n  \"price_paise\": 2000,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3. Company admin - display prices and current plan",
+      "description": "Use a company admin JWT. Set user_id to the recipient UUID in that company. Prices shown in the UI come from the platform catalog, not a frontend constant. user_plan_id is the assigned user_plans UUID, not the subscription_plans definition UUID.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Get current platform charges and active add-ons",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/charges",
+            "description": "data.addons contains active packs and integer price_paise values. Display INR = price_paise / 100. Refetch when opening the purchase form. Platform activation fees are separate from add-on prices."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List available add-on packs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/addons",
+            "description": "Only active packs are listed. Feature eligibility still depends on the selected assigned plan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get recipient plan and save user_plan_id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/entitlements?user_id={{user_id}}",
+            "description": "Returns data.user_plan_id, billing_cycle, dates and features with base_limit, addon_limit and effective_limit. Saves user_plan_id for subsequent purchases. Recipient needs an active, unexpired PAID plan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.user_plan_id) pm.collectionVariables.set(\"user_plan_id\", payload.data.user_plan_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List company catalog definitions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/plan",
+            "description": "Catalog definitions are separate from assigned plans. Registration defaults Basic, Pro and Enterprise are inactive until explicitly published; catalog IDs cannot be used as user_plan_id."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3a. Company admin - enable or disable add-ons in a plan",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "description": "Plan selections contain IDs/booleans only. Prices remain controlled by superadmin. Enable does not charge/add capacity. Omission on create = []; omission on update preserves selections; [] clears them. Updates affect future assignments. Existing assignments keep their snapshot.",
+      "item": [
+        {
+          "name": "Load registration default pack IDs",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/addons",
+            "description": "Loads the four active shared defaults created during registration/migration. Saves WABA, Chatbot, Team and Contacts pack IDs for form/purchase examples. Superadmin price/status edits are preserved."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "const mapping = {\"waba_number\": \"waba_addon_id\", \"chatbot\": \"chatbot_addon_id\", \"team_member\": \"team_addon_id\", \"contacts_3000\": \"contacts_addon_id\"};",
+                  "if (payload.success && Array.isArray(payload.data)) {",
+                  "  for (const row of payload.data) if (mapping[row.default_key]) pm.collectionVariables.set(mapping[row.default_key], row.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Read saved plan switches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/addons?plan_id={{subscription_plan_id}}",
+            "description": "subscription_plan_id is a company catalog definition UUID. Returns full catalog including inactive packs and the plan-specific enabled switches. Use these rows to build the edit form."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update plan switches only",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/plan/{{subscription_plan_id}}",
+            "description": "Example: enable WABA, Chatbot and Contacts, disable Team members. Replace the entire addons selection list. The definition must have finite limits for enabled pack features.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addons\": [\n    {\n      \"addon_id\": \"{{waba_addon_id}}\",\n      \"enabled\": true\n    },\n    {\n      \"addon_id\": \"{{chatbot_addon_id}}\",\n      \"enabled\": true\n    },\n    {\n      \"addon_id\": \"{{team_addon_id}}\",\n      \"enabled\": false\n    },\n    {\n      \"addon_id\": \"{{contacts_addon_id}}\",\n      \"enabled\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a plan with add-on switches",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/plan",
+            "description": "Creates an inactive Pro catalog definition with selectable add-ons. This does not assign/activate it. Prices/units are not accepted inside addons entries.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"plan_name\": \"Pro\",\n  \"price\": 200,\n  \"billing_cycle\": \"Monthly\",\n  \"description\": \"Pro plan with optional add-ons\",\n  \"active\": false,\n  \"features\": {\n    \"TeamInvite\": {\n      \"limit_value\": 2\n    },\n    \"Contact\": {\n      \"limit_value\": 20000\n    },\n    \"Campaign\": {\n      \"limit_value\": null\n    },\n    \"WabaNumber\": {\n      \"limit_value\": 3\n    },\n    \"Chatbot\": {\n      \"limit_value\": 10\n    },\n    \"AiAssistant\": {\n      \"limit_value\": null\n    }\n  },\n  \"addons\": [\n    {\n      \"addon_id\": \"{{waba_addon_id}}\",\n      \"enabled\": true\n    },\n    {\n      \"addon_id\": \"{{chatbot_addon_id}}\",\n      \"enabled\": true\n    },\n    {\n      \"addon_id\": \"{{team_addon_id}}\",\n      \"enabled\": false\n    },\n    {\n      \"addon_id\": \"{{contacts_addon_id}}\",\n      \"enabled\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data && payload.data.id) pm.collectionVariables.set(\"subscription_plan_id\", payload.data.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Company admin - purchase extra capacity (wallet debit)",
+      "description": "These POST requests debit the company wallet and credit the platform wallet. At the current INR 20 prices, one WABA pack plus one Chatbot pack costs INR 40 total. No payment checkout is used. The server reads current catalog prices; never submit price_paise or units in a purchase. Each request keeps its own Idempotency-Key for safe retries. Clear/set a new key only when intentionally making a NEW purchase. Free, expired, disabled-feature and unlimited-feature plans cannot purchase the corresponding add-on.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Buy 1 extra WABA number",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{waba_purchase_key}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addon-purchases",
+            "description": "Adds one pack of WABA-number capacity to this active paid assignment. With units=1 and price_paise=2000, allowance increases by 1 and wallet debit is INR 20. It does not create/register a Meta number or automatically activate previously inactive numbers. The assigned plan must include this pack with enabled=true (or retain historical null selections); changing a catalog plan affects future assignments only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"user_plan_id\": \"{{user_plan_id}}\",\n  \"addon_id\": \"{{waba_addon_id}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generate once for this purchase; retain the key for network retries.",
+                  "if (!pm.variables.get(\"waba_purchase_key\")) {",
+                  "  pm.collectionVariables.set(\"waba_purchase_key\", pm.variables.replaceIn(\"{{$guid}}\"));",
+                  "}",
+                  "// For a NEW purchase, clear this key or set a new UUID before sending."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buy 1 extra Chatbot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{chatbot_purchase_key}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addon-purchases",
+            "description": "Adds one Chatbot pack. With units=1 and price_paise=2000, allowance increases by 1 and wallet debit is INR 20. Use normal chatbot creation after purchase. The assigned plan must include this pack with enabled=true (or retain historical null selections); changing a catalog plan affects future assignments only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"user_plan_id\": \"{{user_plan_id}}\",\n  \"addon_id\": \"{{chatbot_addon_id}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generate once for this purchase; retain the key for network retries.",
+                  "if (!pm.variables.get(\"chatbot_purchase_key\")) {",
+                  "  pm.collectionVariables.set(\"chatbot_purchase_key\", pm.variables.replaceIn(\"{{$guid}}\"));",
+                  "}",
+                  "// For a NEW purchase, clear this key or set a new UUID before sending."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Buy any pack / multiple packs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{other_purchase_key}}"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addon-purchases",
+            "description": "Set addon_id to the selected pack UUID and edit quantity. Capacity added = catalog units * quantity; charge = catalog price_paise * quantity. This is a separate purchase from the two example requests above. The assigned plan must include this pack with enabled=true (or retain historical null selections); changing a catalog plan affects future assignments only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{user_id}}\",\n  \"user_plan_id\": \"{{user_plan_id}}\",\n  \"addon_id\": \"{{addon_id}}\",\n  \"quantity\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Generate once for this purchase; retain the key for network retries.",
+                  "if (!pm.variables.get(\"other_purchase_key\")) {",
+                  "  pm.collectionVariables.set(\"other_purchase_key\", pm.variables.replaceIn(\"{{$guid}}\"));",
+                  "}",
+                  "// For a NEW purchase, clear this key or set a new UUID before sending."
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Refresh effective limits after purchase",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/entitlements?user_id={{user_id}}",
+            "description": "Verify data.features.WabaNumber.addon_limit/effective_limit and Chatbot equivalents. In Pro, buying one of each increases WABA 3 to 4 and Chatbot 10 to 11. Add-ons expire with this assigned plan; they do not change the base catalog plan."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.user_plan_id) pm.collectionVariables.set(\"user_plan_id\", payload.data.user_plan_id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Superadmin - disable or restore a pack",
+      "description": "Catalog maintenance. Disabling prevents future purchases without removing previous purchases or their capacity.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{superadmin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Disable selected pack",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/v1/super-admin/billing/addons/{{addon_id}}",
+            "description": "Set addon_id to the selected pack. This soft-disables the pack; it does not refund or remove previous purchases."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Restore selected pack",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons/{{addon_id}}",
+            "description": "Re-enable an existing pack for future purchases at its saved catalog price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Optional - future feature catalog",
+      "description": "For a new feature only. Registering a catalog key does not implement resource enforcement; the corresponding resource service must support that feature. Standard six feature keys must not be registered again. developer_api currently does not allow add-ons.",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{superadmin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Register a future feature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/features",
+            "description": "Example new capacity feature. Change custom_feature_key/label/description to match a real feature implemented by your backend. Only superadmin can register it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"{{custom_feature_key}}\",\n  \"label\": \"Custom feature\",\n  \"description\": \"Capacity for a future implemented feature\",\n  \"kind\": \"capacity\",\n  \"addon_allowed\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create a pack for the future feature",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons",
+            "description": "Available after the feature is registered. A paid plan must include this feature with a finite limit before a pack can be purchased.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra custom feature\",\n  \"feature_key\": \"{{custom_feature_key}}\",\n  \"units\": 1,\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data) {",
+                  "  if (payload.data.id) pm.collectionVariables.set(\"custom_addon_id\", payload.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Company admin - create and edit owned packs",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{admin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "description": "Admin controls feature at creation, name, units and publication. Only superadmin controls prices; new packs start at INR 20 per pack. Company identity comes from the JWT. Restore by PATCH active=true.",
+      "item": [
+        {
+          "name": "List own and shared packs including disabled",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/addons?include_inactive=true",
+            "description": "Only editable=true rows can be edited by this company admin; shared rows are read-only. Other companies packs are hidden."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create owned WABA number pack - default INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addons",
+            "description": "Price is server-assigned at 2000 paise. Never submit price_paise or ownership IDs. This creates a company-scoped pack, without a wallet debit.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra WABA number\",\n  \"feature_key\": \"WabaNumber\",\n  \"units\": 1,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data && payload.data.id) pm.collectionVariables.set(\"company_waba_addon_id\", payload.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create owned Chatbot pack - default INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addons",
+            "description": "Price is server-assigned at 2000 paise. Never submit price_paise or ownership IDs. This creates a company-scoped pack, without a wallet debit.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra Chatbot\",\n  \"feature_key\": \"Chatbot\",\n  \"units\": 1,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data && payload.data.id) pm.collectionVariables.set(\"company_chatbot_addon_id\", payload.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create owned Team members pack - default INR 20",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addons",
+            "description": "Price is server-assigned at 2000 paise. Never submit price_paise or ownership IDs. This creates a company-scoped pack, without a wallet debit.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra Team members\",\n  \"feature_key\": \"TeamInvite\",\n  \"units\": 2,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});",
+                  "const payload = pm.response.json();",
+                  "if (payload.success && payload.data && payload.data.id) pm.collectionVariables.set(\"company_team_addon_id\", payload.data.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Edit own team pack units (keep superadmin price)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/addons/{{company_team_addon_id}}",
+            "description": "Only name, units and active may be edited. If superadmin changed the price, it remains unchanged by this request.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Extra 3 team members\",\n  \"units\": 3,\n  \"active\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Select owned packs on a subscription plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/admin/subscription/plan/{{subscription_plan_id}}",
+            "description": "Replaces the entire plan selection list; include shared pack selections as well if you want to retain them. Assignment snapshots and prices work as documented.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addons\": [\n    {\n      \"addon_id\": \"{{company_waba_addon_id}}\",\n      \"enabled\": true\n    },\n    {\n      \"addon_id\": \"{{company_chatbot_addon_id}}\",\n      \"enabled\": false\n    },\n    {\n      \"addon_id\": \"{{company_team_addon_id}}\",\n      \"enabled\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Disable own team pack",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{base_url}}/v1/admin/subscription/addons/{{company_team_addon_id}}",
+            "description": "Prevents future purchases without deleting previous receipts or capacity."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Superadmin - price a company-owned pack",
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{superadmin_token}}",
+            "type": "string"
+          }
+        ]
+      },
+      "item": [
+        {
+          "name": "Set company team pack price to INR 20",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{base_url}}/v1/super-admin/billing/addons/{{company_team_addon_id}}",
+            "description": "Change price_paise to any positive integer paise amount. Applies to future purchases; company admin limit edits preserve this price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price_paise\": 2000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Request succeeded\", function () {",
+                  "  pm.expect(pm.response.code).to.be.within(200, 299);",
+                  "  pm.expect(pm.response.json().success).to.eql(true);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

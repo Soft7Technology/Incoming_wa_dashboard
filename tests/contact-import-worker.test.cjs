@@ -11,6 +11,9 @@ function load(file, deps, globals = {}) {
   }).outputText;
   vm.runInNewContext(code, { exports, require: id => {
     if (id === './contactImport.service') throw Error('API must not execute the importer');
+    if (id === './contactImportLimit.service') return deps[id] || {
+      assessContactImport: async () => ({ can_import: true }), requireContactImportCapacity() {},
+    };
     if (id.endsWith('/databaseErrors')) return background.databaseErrors;
     if (id.endsWith('/databaseAwareWorker')) return background.processorFactory(deps);
     if (id === '../utils/contactImportStatus') return background.loadSource('src/app/utils/contactImportStatus.ts');
@@ -28,6 +31,7 @@ test('API queues a tracked import with account scope and column mappings and ret
     './xlsxParser.service': {
       validateFile: async () => ({ valid: true }),
       getFilePreview: async () => ({ headers: ['Phone'], total_rows: 2 }),
+      parseContactsFromFile: async () => ({ contacts: [] }),
     },
     '../models/importJob.model': {
       create: async row => { stored = { ...row, id: 'job' }; return stored; },
@@ -57,7 +61,8 @@ test('enqueue failures persist a failed import job and propagate instead of retu
   const service = load('src/app/services/contact.service.ts', {
     path: require('node:path'),
     '../utils/importColumn': { resolveImportColumn: (_, value) => value },
-    './xlsxParser.service': { validateFile: async () => ({ valid: true }), getFilePreview: async () => ({ headers: ['Phone'], total_rows: 2 }) },
+    './xlsxParser.service': { validateFile: async () => ({ valid: true }), getFilePreview: async () => ({ headers: ['Phone'], total_rows: 2 }),
+      parseContactsFromFile: async () => ({ contacts: [] }) },
     '../models/importJob.model': { create: async () => ({ id: 'job' }), markAsFailed: async (id, error) => { failure = { id, error }; } },
     '../../queues/contactImport.queue': { ensureContactImportQueueReady() {}, contactImportQueue: { add: async () => { throw Error('Redis unavailable'); } } },
   }).default;
@@ -72,6 +77,26 @@ test('invalid files are rejected before creating or enqueueing jobs', async () =
     '@surefy/exceptions/HTTP400Error': class extends Error { constructor({ message }) { super(message); } },
   }).default;
   await assert.rejects(service.queueContactImport('owner', 'company', 'phone', '', '/upload.xlsx', 'List'), /Invalid XLSX file: No rows/);
+});
+
+test('API rejects an oversized upload before creating a tracked import or enqueueing a worker', async () => {
+  let jobs = 0, enqueues = 0;
+  const limits = background.loadSource('src/app/services/contactImportLimit.service.ts', {
+    '@surefy/database': {}, '../models/phoneNumber.model': {}, './planUsage.service': {}, '@surefy/exceptions/HTTP404Error': Error,
+    '@surefy/exceptions/HTTP403Error': class extends Error { constructor({ message, details }) { super(message); this.details = details; this.statusCode = 403; } },
+  });
+  const service = load('src/app/services/contact.service.ts', {
+    path: require('node:path'), '../utils/importColumn': { resolveImportColumn: (_, value) => value },
+    './xlsxParser.service': { validateFile: async () => ({ valid: true }), getFilePreview: async () => ({ headers: ['Phone'], total_rows: 5000 }),
+      parseContactsFromFile: async () => ({ contacts: [{ phone_number: '+919372597458' }] }) },
+    './contactImportLimit.service': { ...limits, assessContactImport: async () => ({ can_import: false, feature: 'Contact',
+      code: 'CONTACT_IMPORT_LIMIT_EXCEEDED', message: '5000 new contacts exceed 3000 remaining slots' }) },
+    '../models/importJob.model': { create: async () => { jobs++; } },
+    '../../queues/contactImport.queue': { ensureContactImportQueueReady() {}, contactImportQueue: { add: async () => { enqueues++; } } },
+  }).default;
+  await assert.rejects(service.queueContactImport('owner', 'company', 'phone', '91', '/upload.xlsx', 'List'),
+    error => error.statusCode === 403 && error.details.code === 'CONTACT_IMPORT_LIMIT_EXCEEDED');
+  assert.equal(jobs, 0); assert.equal(enqueues, 0);
 });
 
 test('completed historical API imports retain status polling without connecting to Redis', async () => {
@@ -135,6 +160,14 @@ function importer(fatal = false, allInvalid = false, failProgressOnce = false, r
   const progressHistory = [];
   const deps = {
     path: require('node:path'),
+    './contactImportLimit.service': {
+      assessContactImport: async () => fixtures.quota || { can_import: true },
+      requireContactImportCapacity: background.loadSource('src/app/services/contactImportLimit.service.ts', {
+        '@surefy/database': {}, '../models/phoneNumber.model': {}, './planUsage.service': {},
+        '@surefy/exceptions/HTTP404Error': Error,
+        '@surefy/exceptions/HTTP403Error': class extends Error { constructor({ message, details }) { super(message); this.details = details; } },
+      }).requireContactImportCapacity,
+    },
     './planUsage.service': { run: async (owner, feature, create) => {
       calls.push([owner, feature]); return create('transaction');
     } },
@@ -208,6 +241,15 @@ test('worker importer retains plan checks, list/tag writes, progress, and partia
   assert.equal(result.duplicate_count, 0); assert.equal(result.created_count, 1);
   assert.equal(result.updated_count, 0);
   assert.deepEqual(h.calls, [['owner', 'Contact'], ['owner', 'Contact']]);
+});
+
+test('worker rejects changed capacity before creating a list or writing contacts', async () => {
+  const h = importer(false, false, false, false, 0, { quota: {
+    can_import: false, code: 'CONTACT_IMPORT_LIMIT_EXCEEDED', feature: 'Contact', message: 'Only one contact slot remains',
+  } });
+  await assert.rejects(h.run(), error => error.details.code === 'CONTACT_IMPORT_LIMIT_EXCEEDED');
+  assert.equal(h.result.listCreations, undefined); assert.equal(h.calls.length, 0);
+  assert.equal(h.result.failure, 'Only one contact slot remains');
 });
 test('fatal import failures persist failed status and reject for worker retry', async () => {
   const h = importer(true);

@@ -32,6 +32,7 @@ import messageModel from '@surefy/console/models/message.model';
 import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
 import { downloadMedia } from '../utils';
+import { assertActivePhone } from '../utils/activePhone';
 
 const supportedIncomingMessageTypes = new Set([
   'text', 'image', 'video', 'document', 'audio', 'template',
@@ -68,6 +69,7 @@ class MessageService {
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
+    assertActivePhone(phoneNumber);
 
 
     // Verify company has sufficient credits
@@ -314,6 +316,7 @@ class MessageService {
     if (!phoneNumber || !data.user_id || !data.company_id || phoneNumber.user_id !== data.user_id || phoneNumber.company_id !== data.company_id) {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
+    assertActivePhone(phoneNumber);
 
     // Verify company has sufficient credits
     const user = await userModel.findById(data.user_id);
@@ -797,6 +800,7 @@ class MessageService {
       console.warn(`Phone number not found: ${phoneNumberId}`);
       return;
     }
+    assertActivePhone(phoneNumber);
 
     try {
       let metaPayload: any = {
@@ -878,6 +882,7 @@ class MessageService {
     if (identifiers.some(id => !available.has(id))) {
       throw new HTTP404Error({ message: 'Phone number not found in your account' });
     }
+    phones.forEach(assertActivePhone);
 
     // Calculate total estimated cost
     // const totalEstimatedCost = messages.reduce((sum, msg) => {

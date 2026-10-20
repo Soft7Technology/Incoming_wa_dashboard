@@ -112,7 +112,8 @@ export async function handleIncomingMessageChatBot(phoneNumberId: any, message: 
     const mappedUserId = fpo_info?.id ? fpo_info?.id: bot.user_id;
 
     const receivingPhoneNumber = await phoneNumberModel.findByPhoneNumberId(phoneNumberId);
-    if (!receivingPhoneNumber) return null;
+    if (!receivingPhoneNumber || receivingPhoneNumber.active === false ||
+        receivingPhoneNumber.connection_status && !['legacy', 'connected'].includes(receivingPhoneNumber.connection_status)) return null;
     await contactModel.findOrCreateIncoming({
       user_id: receivingPhoneNumber.user_id,
       company_id: receivingPhoneNumber.company_id,

@@ -22,6 +22,7 @@ function fixture({ existing, failTable, balance = 500, recipientBalance = 20, co
     companies: [{ id: 'c', company_name: 'Company', credit_balance: balance }],
     subscription_plans: [{ id: 'p', company_id: 'c', active: true, billing_cycle: 'Monthly', price: 500, plan_name: 'Pro', features: {} },
       { id: 'f', company_id: 'c', active: true, billing_cycle: 'Free', trial_days: 7, price: 0, plan_name: 'Trial', features: {} }],
+    platform_fee_settings: [{id:'default',monthly_fee_paise:10000,yearly_fee_paise:100000}],
     user_plans: existing ? [existing] : [], credit_transactions: [], activity_logs: [], superadmin_audit_logs: [],
   };
   const locks = [];
@@ -70,12 +71,39 @@ function fixture({ existing, failTable, balance = 500, recipientBalance = 20, co
     if (name.includes('subscriptionDuration')) return duration;
     if (name.includes('freeTrialPolicy')) return trialPolicy;
     if (name.includes('planFeatures')) return load('src/app/utils/planFeatures.ts', () => HTTPError);
+    if (name.includes('platformPricing.service')) return load('src/app/services/platformPricing.service.ts', dep => dep === '@surefy/database' ? db : dep.includes('planCatalog.service') ? {platformAdmin(){}} : HTTPError).default;
     if (name.includes('planUsage.service')) return { countTeamSeats: async () => 2 };
     return HTTPError;
   }).default;
   return { service, state: () => state, locks };
 }
 const actor = { userId: 'admin', userRole: 'admin', companyId: 'c' };
+
+test('manual assignment snapshots plan add-on choices independently of later catalog edits', async () => {
+  const f = fixture(), selections = [{ addon_id: '00000000-0000-4000-8000-000000000006', enabled: true }];
+  f.state().subscription_plans[0].addons = selections;
+  const result = await f.service.updateUser('u', { assigned_plan: 'p' }, actor);
+  assert.deepEqual(JSON.parse(result.plan.addons), selections);
+  f.state().subscription_plans[0].addons = [];
+  assert.equal(JSON.parse(result.plan.addons)[0].enabled, true);
+});
+
+test('manual assignment charges the configured decimal fee and snapshots it on the assigned plan',async()=>{
+ const f=fixture();f.state().platform_fee_settings[0].monthly_fee_paise=14999;
+ const result=await f.service.updateUser('u',{assigned_plan:'p'},actor);
+ assert.equal(result.plan.platform_fee_paise,14999);assert.equal(f.state().companies[0].credit_balance,350.01);
+ assert.equal(f.state().users.find(row=>row.id==='sa').credit_balance,169.99);
+ assert.equal(f.state().credit_transactions[0].amount,-149.99);
+ assert.equal(f.state().credit_transactions[0].balance_after,350.01);
+});
+
+test('a waived platform fee assigns a paid plan without a wallet debit or platform recipient',async()=>{
+ const f=fixture({balance:0});f.state().platform_fee_settings[0].monthly_fee_paise=0;
+ f.state().users=f.state().users.filter(row=>row.id!=='sa');
+ const result=await f.service.updateUser('u',{assigned_plan:'p'},actor);
+ assert.equal(result.plan.platform_fee_paise,0);assert.equal(f.state().companies[0].credit_balance,0);
+ assert.equal(f.state().credit_transactions.length,0);
+});
 test('assignment links the new user plan and transfers only the platform fee with matching ledger balances', async () => {
   const f = fixture();
   const result = await f.service.updateUser('u', { assigned_plan: 'p', name: 'Updated' }, actor);

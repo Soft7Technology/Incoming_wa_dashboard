@@ -89,13 +89,14 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     }
     const template = await TemplateModel.findById(campaign.template_id);
     if (!template) throw new Error('Template not found');
-    const phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
+    let phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
     if (!phone) throw new Error('Business phone number not found');
     if (phone.user_id !== campaign.user_id || phone.company_id !== campaign.company_id) {
       throw new Error('Campaign cannot run: the selected sending phone number is not connected to the campaign user account.');
     }
     campaign.phone_number_id = phone.phone_number_id;
     while (true) {
+    if (phone.active === false) throw new Error('Campaign cannot run: the selected WABA number is inactive.');
     const batchStartedAt = Date.now();
     const senderCooldown = await getCampaignSenderCooldown(campaign.phone_number_id);
     if (senderCooldown > 0) {
@@ -171,6 +172,11 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     if (current?.status !== 'running') {
       releaseSlot = true;
       return { status: current?.status };
+    }
+    // Refresh once per batch so a long-running campaign observes number deactivation.
+    phone = await PhoneNumberModel.findByPhoneNumberId(campaign.phone_number_id);
+    if (!phone || phone.user_id !== campaign.user_id || phone.company_id !== campaign.company_id) {
+      throw new Error('Campaign sending phone number is no longer available in this account.');
     }
     // Continue immediately with the next batch. Only provider or infrastructure
     // cooldowns, deferred recipients, and an explicit pause delay this job.

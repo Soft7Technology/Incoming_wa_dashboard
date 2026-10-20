@@ -10,7 +10,7 @@ function load(file, deps = {}) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
-  }).outputText, { exports, require: name => deps[name] || (name.includes('Error') ? HttpError : {}),
+  }).outputText, { exports, require: name => name.endsWith('/activePhone') ? require('./helpers/active-phone.cjs') : deps[name] || (name.includes('Error') ? HttpError : {}),
     console: { log() {}, warn() {}, error() {} } });
   return exports.default || exports;
 }

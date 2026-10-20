@@ -1,6 +1,8 @@
 import { Knex } from 'knex';
 import { BaseModel } from '@surefy/models/base.model';
-import { freeTrialFeatures, newTrialDays } from '../utils/freeTrialPolicy';
+import { newTrialDays } from '../utils/freeTrialPolicy';
+import { defaultSubscriptionPlans } from '../utils/defaultSubscriptionPlans';
+import { ensureDefaultPlanAddons } from '../utils/defaultPlanAddons';
 import { snapshotFeatures } from '../utils/planFeatures';
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -81,17 +83,30 @@ class SubscriptionModel extends BaseModel {
   async createFreePlan(userId: string, companyId: string, trx?: Knex.Transaction, trialDays?: unknown) {
     const days = newTrialDays(trialDays);
     const create = async (transaction: Knex.Transaction) => {
+      // Serialize company catalog initialization without conflicting with FK key-share locks.
+      const company = await transaction('companies').where({ id: companyId }).forNoKeyUpdate().first();
+      if (!company) throw new HTTP400Error({ message: 'Company not found for registration plans' });
       const user = await transaction('users').where({ id: userId, company_id: companyId }).whereNull('deleted_at').forUpdate().first();
       if (!user || !['admin', 'company'].includes(user.role)) throw new HTTP400Error({ message: 'A company administrator is required for the registration trial' });
       const prior = await transaction('user_plans').where({ user_id: userId, billing_cycle: 'Free' }).first();
       const active = await transaction('user_plans').where({ user_id: userId, active: true }).first();
       if (prior || active) throw new HTTP400Error({ message: 'User already has a subscription or has used a free trial' });
-      const features = freeTrialFeatures();
+      const addonCatalog = await ensureDefaultPlanAddons(transaction);
+      const [free, ...paid] = defaultSubscriptionPlans(days);
+      const features = free.features;
       const definition = await this.create({
-        plan_name: 'Free Trial', price: 0, billing_cycle: 'Free', trial_days: days,
-        description: 'Free trial with fixed platform limits', active: true, features,
+        ...free, addons: [],
         user_id: userId, company_id: companyId,
       }, transaction);
+      const subscriptionPlans = [definition];
+      for (const preset of paid) {
+        // Later administrators share the company's existing paid catalog, including its edits/status.
+        const existing = await transaction('subscription_plans').where({ company_id: companyId,
+          plan_name: preset.plan_name, billing_cycle: preset.billing_cycle }).first();
+        subscriptionPlans.push(existing || await this.create({ ...preset, addons: addonCatalog.map(addon => ({
+          addon_id: addon.id, enabled: addon.active === true,
+        })), user_id: userId, company_id: companyId }, transaction));
+      }
       const now = new Date();
       const { endDate, durationDays } = calculatePlanPeriod({ billing_cycle: 'Free', trial_days: days }, now);
       const { limits, usage } = snapshotFeatures(features);
@@ -101,6 +116,7 @@ class SubscriptionModel extends BaseModel {
         active: true, status: 'COMPLETED', start_date: now, end_date: endDate,
         duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage),
         entitlement_version: 2,
+        addons: JSON.stringify([]),
       }).returning('*');
       await transaction('users').where({ id: userId }).update({ assigned_plan: plan.id });
       await transaction('activity_logs').insert({
@@ -108,7 +124,7 @@ class SubscriptionModel extends BaseModel {
         entity_id: plan.id, read: false, status: 'SUCCESS', description: `Activated ${days}-day registration trial`,
         new_data: JSON.stringify({ subscription_id: definition.id, user_plan_id: plan.id, trial_days: days, limits }),
       });
-      return { ...definition, user_plan: plan };
+      return { ...definition, user_plan: plan, subscription_plans: subscriptionPlans, addon_catalog: addonCatalog };
     };
     return trx ? create(trx) : this.db.transaction(create);
   }

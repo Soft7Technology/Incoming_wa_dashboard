@@ -1,10 +1,189 @@
 # Dynamic plans and wallet add-ons
 
-The platform superadmin owns the feature/add-on catalog. Company administrators create plans and assign them to users using the existing assignment endpoints. A company administrator buys extra units for a specific user's current paid plan from the company wallet. The platform wallet receives the same amount.
+The platform superadmin owns feature registration, shared packs and all add-on prices. Company administrators can also create their own company-owned WABA, Chatbot and TeamInvite packs, editing pack limits without controlling prices. They create plans and assign them using the existing assignment endpoints. A company administrator buys extra units for a specific user's current paid plan from the company wallet. The platform wallet receives the same amount.
 
-All endpoints below use the existing JWT authentication and start with `/v1/admin/subscription`.
+Endpoints use the existing JWT authentication. Company subscription endpoints start with `/v1/admin/subscription`; superadmin pricing endpoints below start with `/v1/super-admin/billing`.
+
+## Importable add-on API collection
+
+Import [the plan add-ons Postman collection](../postman/plan-addons.postman_collection.json). Set its `base_url` (origin without `/v1`), `superadmin_token`, `admin_token`, recipient `user_id`, and `subscription_plan_id` when editing a catalog definition. It includes catalog management, plan selection switches, the company charge feed, entitlements, wallet purchases, disabling/restoring packs, and optional future feature registration. Default WABA/chatbot/team packs contain one unit each; the contacts pack contains 3,000 contacts. Each starts at INR 20 (`price_paise: 2000`). Superadmin can change pack prices through the existing PATCH API; registration never overwrites those changes.
+
+1. As superadmin, create/reuse the WABA and Chatbot packs. Create responses automatically save `waba_addon_id` and `chatbot_addon_id` in collection variables. Creating/editing a pack does not charge a wallet.
+2. As company admin, fetch charges and the recipient's entitlements. The entitlements request saves `user_plan_id`, the assigned plan UUID. Use an active, unexpired paid assignment with the corresponding included, enabled, finite feature limit. Paid catalog definitions created inactive during registration must first be published and assigned through the existing plan flow.
+3. Send the WABA purchase and/or Chatbot purchase. At one unit per pack and INR 20 per pack, each request charges INR 20 from the company wallet; buying both charges INR 40. The server reads the current superadmin catalog price. If the superadmin changes a pack to INR 30 before a new purchase, that purchase charges INR 30. Client-supplied prices are rejected. A purchase is not a previously locked frontend quote: refresh the charge feed and show the returned `amount_paise` in the receipt.
+4. Refresh entitlements. For a Pro assignment, one of each pack changes WABA capacity 3 to 4 and Chatbot capacity 10 to 11. This increases allowance; it does not create a chatbot, register a Meta phone, or automatically activate an existing inactive phone. Existing resource APIs still perform those actions.
+
+Each purchase request generates its own `Idempotency-Key` once and retains it for retries. For another intentional purchase, clear/set a new corresponding `*_purchase_key` variable. Retrying the same key and body returns the saved purchase without charging again; changing the body with the old key is rejected. The generic purchase example is an additional purchase, not a prerequisite for the two specific examples.
+
+Subscription create/update accepts `addons: [{ "addon_id": "<pack UUID>", "enabled": true }]`. These are pack selections, not prices or already-purchased capacity. Company admins can select shared packs or their own company-owned packs; other companies' packs are hidden and rejected. Purchase adds units to the assigned plan's `addon_limit`; the base feature limit stays the same. Per-plan prices are not accepted. Add-ons expire at assignment expiry and are charged once, without automatic renewal or proration. They are not added to each future subscription renewal charge. Existing purchases preserve their recorded price after catalog changes. Free plans, disabled features and unlimited features cannot purchase corresponding packs.
+
+## Company admin creates and edits add-on packs
+
+Apply `20261019000009_company_owned_addons.ts` before deploying this flow. Existing packs keep NULL `company_id` and remain the shared superadmin catalog. New company-owned packs use the authenticated company and creator IDs. No existing pack ownership, units, prices or purchase receipts are rewritten.
+
+Company admins can create packs for **WabaNumber**, **Chatbot**, and **TeamInvite**. `units` is the extra capacity per purchased pack, not the plan's base limit. Every new company-owned pack starts at **2000 paise / INR 20 per pack**, regardless of its units. For example, `units: 3` is three extra seats for INR 20 per pack until superadmin changes that pack's price. A purchase quantity of two buys six seats for INR 40 at that price.
+
+```http
+POST /v1/admin/subscription/addons
+Authorization: Bearer <company-admin-JWT>
+Content-Type: application/json
+```
+
+```json
+{
+  "name": "Extra team members",
+  "feature_key": "TeamInvite",
+  "units": 3,
+  "active": true
+}
+```
+
+Use `feature_key: "WabaNumber"` or `"Chatbot"` for those packs. Accepted aliases continue to normalize to canonical keys. The response's `data` contains the saved `id`, `company_id`, `created_by`, `price_paise: 2000`, and `editable: true`. Do not send `price_paise`, company/user ownership IDs or `default_key`: those fields are rejected. Non-admin company users cannot create/edit packs.
+
+```http
+PATCH /v1/admin/subscription/addons/<company-owned-pack-UUID>
+```
+
+```json
+{ "name": "Extra 5 team members", "units": 5, "active": true }
+```
+
+PATCH accepts any non-empty subset of `name`, `units`, and `active`. `feature_key` is fixed after creation. Admin edits never reset a price previously changed by superadmin. `DELETE /v1/admin/subscription/addons/:id` disables an owned pack; PATCH `{ "active": true }` restores it. Shared packs and other-company packs cannot be edited through these company APIs.
+
+Only superadmin changes the price, using the same pack UUID:
+
+```http
+PATCH /v1/super-admin/billing/addons/<company-owned-pack-UUID>
+```
+
+```json
+{ "price_paise": 3000 }
+```
+
+Future purchases of that pack now cost INR 30. A later company-admin units/name edit preserves INR 30. Superadmin's existing add-on list includes all companies' packs and shared packs, with `company_id` identifying ownership.
+
+For the company add-on management page, fetch `GET /v1/admin/subscription/addons?include_inactive=true`. It returns shared packs plus that company's packs, and `editable` identifies rows the company admin may edit. Show price read-only on every company-admin row. Show create/name/units/status controls for owned rows only. The charges feed and plan form use the same company visibility boundary. An owned pack can then be selected using the existing plan `addons` array shown below. Creating/editing a pack does not assign a plan, buy capacity or debit a wallet; admin edits and their audit records commit together.
+
+The collection contains placeholder credentials only. Its requests use the existing APIs; generating/importing the collection does not create live packs or debit wallets.
+
+## Add-on switches in the plan form
+
+Migration `20261019000008_plan_addon_selections.ts` registers four shared default packs: `default_key` values `waba_number`, `chatbot`, `team_member`, and `contacts_3000`. New-company registration also ensures those packs exist, without duplicating packs or changing their edited prices/status. It returns the catalog as `freePlan.addon_catalog`. New Basic/Pro/Enterprise defaults select all four available default packs; Free selects none. The paid definitions themselves still start with `active: false`.
+
+For a **new plan**, fetch `GET /v1/admin/subscription/addons` using the admin JWT. Each active visible catalog row contains `id`, `name`, `feature_key`, `units`, `price_paise`, `active`, `default_key`, `company_id`, `editable`, and `enabled: false`. Render a table with an enable switch, feature, pack size and INR price (`price_paise / 100`). Match switches to `row.id`. Offer "Enable all" / "Disable all" by changing form state; this does not call a wallet purchase API. Enable rows only for included finite features on a paid plan.
+
+For **editing**, call `GET /v1/admin/subscription/addons?plan_id=<company-owned catalog plan UUID>`. This returns the saved `enabled` flags, including disabled catalog rows so previous selections remain visible. A pack with `active: false` cannot be newly enabled or purchased. The plan lookup checks the authenticated company; a request cannot select another company's definition. Do not use an assigned `user_plan_id` in this query.
+
+Submit the selections with the normal `POST /v1/admin/subscription/plan` or `PUT /v1/admin/subscription/plan/:id` payload:
+
+```json
+{
+  "addons": [
+    { "addon_id": "<WABA pack UUID>", "enabled": true },
+    { "addon_id": "<Chatbot pack UUID>", "enabled": true },
+    { "addon_id": "<Team member pack UUID>", "enabled": false },
+    { "addon_id": "<3,000 contacts pack UUID>", "enabled": true }
+  ]
+}
+```
+
+This partial payload is sufficient for PUT; POST also requires the normal plan name, price, billing cycle, description, active flag and feature limits. `addons` replaces the whole selection list. On update, omit it to preserve the list or send `[]` to disable all packs. On create, omission defaults to `[]`. Send boolean `enabled` values, unique real UUIDs, and no `price_paise`, `units` or company/user IDs inside a selection. Enabled unavailable packs, missing/disabled/unlimited features and enabled Free-plan selections are rejected before saving. Disabled rows may remain in the list.
+
+Enabling a row only makes the pack available for purchase; it does not increase a limit, debit a wallet, or change the subscription's base price. For example, a Pro catalog definition at INR 200 remains INR 200 when the WABA and Chatbot switches are enabled. Buying one pack of each at INR 20 later costs INR 40 and raises WABA capacity 3 to 4 and Chatbot capacity 10 to 11. Buying one contacts pack raises 20,000 to 23,000.
+
+Assignment, renewal and checkout snapshot the selected `addons` into `user_plans`, alongside feature limits. `GET /v1/admin/subscription/entitlements?user_id=<UUID>` exposes that snapshot in `data.addons`. A disabled or unselected pack cannot be purchased for that assignment (`PLAN_ADDON_DISABLED`, HTTP 403). Editing a catalog definition changes future assignments, not existing snapshots. Disabling a pack globally as superadmin blocks future purchases across all plans; existing purchased capacity/receipts remain valid. Historical plan definitions and assignments retain SQL `NULL` selections and their previous feature-based eligibility until explicitly replaced; clients should treat `data.addons: null` as that legacy behavior, not as an empty list.
+
+## Superadmin platform fees and add-on charges
+
+`GET /v1/super-admin/billing/platform-fees` returns the current global policy. Only superadmin can update it:
+
+```http
+PUT /v1/super-admin/billing/platform-fees
+Authorization: Bearer <superadmin-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "monthly_fee_paise": 14900,
+  "yearly_fee_paise": 149000
+}
+```
+
+These are fixed INR wallet charges per paid plan assignment/activation, distinct from the customer's subscription price. Amounts are integer paise: `14900` means INR 149. Zero waives the platform fee; Free plans always charge zero. Both fields are required for PUT. Negative values, fractional paise, string amounts, unknown fields and amounts above 100000000 paise return HTTP 400. Non-superadmin mutations return HTTP 403. The migration initially preserves the old INR 100 monthly / INR 1000 yearly platform fees.
+
+`POST /v1/super-admin/billing/addons` creates a pack:
+
+```json
+{
+  "name": "Extra team member",
+  "feature_key": "TeamInvite",
+  "units": 1,
+  "price_paise": 5000
+}
+```
+
+Use the same API for every feature:
+
+| Feature | Canonical `feature_key` | Example units |
+| --- | --- | --- |
+| Team members | `TeamInvite` | 1 |
+| Contacts | `Contact` | 1000 |
+| Campaigns | `Campaign` | 10 |
+| WABA numbers | `WabaNumber` | 1 |
+| Chatbots | `Chatbot` | 1 |
+| AI assistants | `AiAssistant` | 1 |
+
+`TeamMembers`, `WABANumber`, and `AIAssistant` are also accepted aliases on pack creation. Set the price separately for each pack. Packs remain dynamic: `GET/POST /v1/super-admin/billing/features` reads/registers feature definitions, and a registered feature can have its own packs.
+
+`GET /v1/super-admin/billing/addons` includes active and disabled packs. Edit a pack with:
+
+```http
+PATCH /v1/super-admin/billing/addons/ADDON_UUID
+```
+
+```json
+{
+  "name": "Extra team member",
+  "units": 1,
+  "price_paise": 7500,
+  "active": true
+}
+```
+
+PATCH accepts any non-empty subset of these four fields. `feature_key` is immutable; create another pack to change the feature. Units and add-on prices must remain positive integers. `DELETE /v1/super-admin/billing/addons/ADDON_UUID` disables a pack without deleting historical purchases.
+
+For the company admin panel, fetch **`GET /v1/admin/subscription/charges`**, with an admin JWT and no body. Its `data` contains `currency: "INR"`, `platform_fees`, `features`, `addons`, `platform_fee_applies_to: "paid_plan_assignment_or_activation"`, and `addon_charge_type: "one_time_until_plan_expiry"`. Disabled packs are omitted; platform fees include `free_fee_paise: 0`. The response sets `Cache-Control: no-store`. Refetch after pricing changes or when opening the purchase form so the panel displays current charges.
+
+Company admins buy packs through the existing `POST /v1/admin/subscription/addon-purchases` with `Idempotency-Key` and `{ "user_id": "USER_UUID", "user_plan_id": "ACTIVE_PLAN_UUID", "addon_id": "ADDON_UUID", "quantity": 1 }`. Server catalog prices determine the debit; client-supplied prices are rejected. Add-ons are charged once and expire with the assigned plan; they are not automatically renewed or prorated. An unlimited/disabled feature or a Free plan cannot buy extra capacity.
+
+Price changes apply to future purchases. Existing purchases retain saved units, charges and expiry. A pending checkout stores its quoted platform fee in `user_plans.platform_fee_paise`; later policy changes cannot reprice that checkout. Existing pending checkouts are backfilled with their legacy fee. Paid checkout verification debits the quoted platform fee once, and manual assignment uses the current policy. Neither policy edits nor catalog edits charge wallets by themselves. Fee changes and pack edits have transactional pricing audit records.
+
+Apply `20261019000003_platform_pricing.ts` before using these APIs. If older unrelated migrations are blocked, apply only this migration with `npm run knex -- migrate:up 20261019000003_platform_pricing.ts` after the dynamic plan/add-on migration is present, then build and restart the API/workers. Do not bypass unresolved contact-data migrations by editing their history.
 
 ## Create the requested plan
+
+Plan names are fixed: **Free, Basic, Pro, Enterprise**. Render a select/dropdown rather than a free-text name field. Fetch `GET /v1/admin/subscription/plan-options` with the existing JWT to receive:
+
+```json
+{
+  "success": true,
+  "message": "Subscription plan options",
+  "data": {
+    "plan_names": [
+      { "label": "Free", "value": "Free" },
+      { "label": "Basic", "value": "Basic" },
+      { "label": "Pro", "value": "Pro" },
+      { "label": "Enterprise", "value": "Enterprise" }
+    ],
+    "custom_names_allowed": false
+  }
+}
+```
+
+Submit the selected `value` as `plan_name` in the existing create/update payload. Exact casing is required; custom text, `pro`, `Free Trial`, surrounding whitespace and non-string values return HTTP 400 with `plan_name must be Free, Basic, Pro, or Enterprise`. Name and billing cycle are separate fields; monthly and yearly definitions can share the same fixed name.
+
+New registration trials use `plan_name: "Free"`. Existing catalog names and assigned user-plan snapshots are not renamed. When editing an older custom-named plan, display its current name and offer these four choices; omit `plan_name` if leaving that legacy name unchanged, or send a fixed value to explicitly rename it. Partial price/description/duration edits continue to work. Renaming a catalog definition does not rename already assigned snapshots. No database migration is needed for this naming validation.
 
 `POST /plan`
 
@@ -64,7 +243,20 @@ Plan edits affect future assignments/purchases. Assigned plans keep their saved 
 
 ## Fixed trial on admin registration
 
-New company/admin registration creates a company-owned Free trial definition **and** activates a matching `user_plans` snapshot in the same transaction. It sets `users.assigned_plan` to the active snapshot ID. The default is 10 days; the only allowed choices are 3, 7, and 10. Trial activation charges no wallet fee.
+New company/admin registration creates the company's default catalog **and** activates only a matching Free `user_plans` snapshot in the same transaction. It sets `users.assigned_plan` to the active Free snapshot ID. The default is 10 days; the only allowed choices are 3, 7, and 10. Trial activation charges no wallet fee.
+
+| Default catalog plan | Price (INR) | Billing | Catalog `active` |
+| --- | --- | --- | --- |
+| Free | 0 | Free / chosen trial duration | `true` |
+| Basic | 99 | Monthly | `false` |
+| Pro | 200 | Monthly | `false` |
+| Enterprise | 999 | Monthly | `false` |
+
+The three paid definitions use the agreed feature limits and marketing text in `src/app/utils/defaultSubscriptionPlans.ts`. Basic includes 2 team seats, 5,000 contacts, 20 campaigns per month, 1 WABA number, 2 chatbots, 1 AI assistant and disabled developer API access. Pro includes 2 seats, 20,000 contacts, unlimited campaigns, 3 WABA numbers, 10 chatbots, unlimited AI assistants and enabled developer API access. Enterprise includes 10 seats, 100,000 contacts, unlimited campaigns, 10 WABA numbers, 50 chatbots, unlimited AI assistants and enabled developer API access. Developer API request quotas/access enforcement remain separate work; these are catalog entitlement values, not newly enforced API limits.
+
+Do not submit a `plans` array during registration: defaults are server-controlled. Basic/Pro/Enterprise are saved for later editing/publication, with no paid `user_plans`, checkout orders, wallet debits or automatic paid activation. Fetch `GET /v1/admin/subscription/plan` without `active=true` to see all four definitions. Publish a paid definition with `PUT /v1/admin/subscription/plan/:id` and `{ "active": true }` before it can be assigned/purchased. Prices and feature limits remain editable through the existing plan APIs.
+
+Company catalog initialization is serialized in PostgreSQL. Adding another administrator reuses any existing company-owned monthly Basic/Pro/Enterprise definition without changing its owner, price, features or `active` setting. The established per-admin trial policy remains in place. Existing companies/plans are not backfilled or repriced by this change, and no yearly defaults are created automatically.
 
 ```http
 POST /v1/auth/register-company
@@ -92,7 +284,7 @@ When creating a Free plan through `POST /plan`, `features` can be omitted; the s
 
 Admins may update a company-owned Free trial definition with `PUT /v1/admin/subscription/plan/:id` and `{ "trial_days": 7 }`. This changes **future activations**, not the dates or usage of an already-running trial. Every activation path checks trial history so manual reassignment cannot restart an expired trial. Existing catalogue Free plans receive the fixed policy when newly assigned, even if their legacy feature JSON specifies unlimited limits. Existing active trial snapshots are not rewritten by this code change.
 
-Registration responses contain `freePlan` (the definition) with a nested `user_plan` (the active snapshot). The returned admin's `assigned_plan` is the snapshot ID, not the definition ID. Registration rolls back if trial creation, assignment, or activity logging fails. No additional database migration is required beyond the existing trial-day and entitlement columns.
+Registration responses preserve `freePlan` (the Free definition) and its nested `user_plan` (the active snapshot), and additionally expose `freePlan.subscription_plans` with the four catalog definitions and their saved IDs. The returned admin's `assigned_plan` is the Free snapshot ID, not the definition ID. Registration rolls back if any default creation, trial assignment, or activity logging fails. Apply `20261019000007_register_developer_api_feature.ts` alongside the existing trial-day, marketing-feature and entitlement migrations; it registers the developer API catalog key on fresh installations while preserving existing superadmin settings. It does not add enforcement or rewrite customer plans.
 
 ## Dynamic form
 
@@ -164,16 +356,130 @@ await planUsageService.run(ownerId, 'Export', async trx => {
 
 Write the resource in the supplied transaction. For a new capacity feature, also add its resource-count query to `currentCapacity` so deleting resources and renewing plans preserve correct availability. Registering a key alone does not implement its product behavior. External side effects should use a persisted job/outbox rather than run inside the database transaction.
 
-## Rollout and verification
+## Feature limits and import warnings (admin frontend)
 
-Apply `20261019000001_dynamic_plan_addons.ts` before running this API version. It creates `plan_features`, `plan_addons`, and `user_plan_addons`, and adds `entitlement_version` and `usage_periods` to `user_plans`. It seeds feature definitions but no priced add-ons and no customer plan changes.
+Contact, campaign, chatbot, AI assistant, and team-invite creation use the account owner's allowance, including purchased add-ons. A full quota returns HTTP **403**, with structured details under `error`:
+
+```json
+{
+  "success": false,
+  "message": "Contact plan limit reached",
+  "error": {
+    "code": "PLAN_LIMIT_EXCEEDED",
+    "feature": "Contact",
+    "limit": 3000,
+    "used": 3000,
+    "requested": 1,
+    "remaining": 0,
+    "required_action": "UPGRADE_PLAN_OR_BUY_ADDON"
+  }
+}
+```
+
+Call `POST /v1/admin/contacts/import/preview` with bearer authentication and **multipart/form-data**. Let the browser set the multipart content type and boundary:
+
+```js
+const form = new FormData();
+form.append('file', selectedFile);
+form.append('phone_number_id', selectedPhoneId); // Local UUID or Meta phone ID
+form.append('phone_column', 'Phone'); // Exact header; optional if detected
+form.append('country_code', '91'); // Optional default for local numbers
+const response = await fetch(`${API_BASE}/v1/admin/contacts/import/preview`, {
+  method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form,
+});
+const body = await response.json();
+if (!response.ok) throw new Error(body.message);
+const quota = body.data.subscription;
+setImportDisabled(quota?.can_import !== true);
+setImportWarning(quota?.can_import ? '' : quota?.message);
+```
+
+Preview stays HTTP **200** when the file exceeds capacity. Existing samples, column information, and validation counts remain in `data`. The new `data.subscription` for **5,000 new contacts and 3,000 remaining slots** is:
+
+```json
+{
+  "checked": true,
+  "feature": "Contact",
+  "limit": 3000,
+  "used": 0,
+  "remaining": 3000,
+  "unique_contacts": 5000,
+  "duplicate_rows": 0,
+  "existing_contacts": 0,
+  "new_contacts": 5000,
+  "excess_contacts": 2000,
+  "can_import": false,
+  "code": "CONTACT_IMPORT_LIMIT_EXCEEDED",
+  "message": "This file would add 5000 new contacts, but your plan has room for 3000. Remove 2000 new contacts or increase your contact allowance before importing.",
+  "required_action": "REDUCE_FILE_OR_BUY_ADDON"
+}
+```
+
+`remaining` subtracts contacts already stored across the owner's account. `limit` includes add-ons. Unlimited plans return `limit: null` and `remaining: null`. Duplicate rows and existing contacts for the **same owner, company, and selected number** consume no extra slots. Contacts stored for another number count as new identities for this import. Use identical column mappings and country code in preview and import. Recheck after changing the file, sender, country, or mappings, and after buying an add-on.
+
+Without `phone_number_id`, the raw preview still works but `subscription.checked` and `subscription.can_import` are false with code `PHONE_NUMBER_REQUIRED`. An unavailable Contact entitlement produces a blocked preview with code `PLAN_UNAVAILABLE`.
+
+Once allowed, call `POST /v1/admin/contacts/import` with the same multipart fields plus `list_name`. Success still returns **202** and a job ID. An oversized import returns **403** with `error` containing the assessment above, before any job or contacts are created. It does not silently import a subset. The worker rechecks capacity after queue wait, and each new contact retains its transaction check. Preview does not reserve capacity: refresh entitlements and display the error message on a later 403. Poll the job's `status_url`; capacity changes before execution can fail the queued job with an explanatory `error_message`.
+
+## WABA inventory and activation
+
+`POST /v1/admin/waba/:wabaId/sync` saves **all** Meta numbers. With an allowance of two and three Meta numbers, two are active and the third is saved with `active: false` and `inactive_reason: "PLAN_LIMIT_EXCEEDED"`. The response includes `phone_numbers`, `active_count`, and `inactive_count`. Phone-list APIs also return `active` and `inactive_reason`. Onboarding and the older sync endpoint use the same allocation rules. Without a usable WABA entitlement, numbers are saved inactive with reason `PLAN_UNAVAILABLE`.
+
+Use **`active`** for the enabled badge and sender picker. `status` keeps its existing meaning, and `code_verification_status` remains Meta's verification state. Inactive numbers remain visible in settings and cannot send outbound messages, create campaigns, or run chatbot/AI flows. Repeated syncs preserve inactive numbers. After a downgrade, a sync keeps the oldest allowed active numbers and deactivates overflow without deleting number records or contacts. Running campaigns observe deactivation between batches; in-flight sends can finish.
+
+Enable or disable using the **local UUID**:
+
+```http
+PUT /v1/admin/waba/phone-numbers/{local-phone-uuid}
+Authorization: Bearer <token>
+Content-Type: application/json
+```
+
+```json
+{ "active": true }
+```
+
+Send `{ "active": false }` to disable and free capacity. Enabling another number at capacity returns **403** `PLAN_LIMIT_EXCEEDED` for `WabaNumber`. Buy an add-on or disable another number, then explicitly enable the desired number. Buying an add-on does not automatically reactivate saved numbers. Sending with an inactive number returns **403** `WABA_NUMBER_INACTIVE` with `required_action: "ACTIVATE_WABA_NUMBER"`.
+
+## Existing subscription and user-plan backfill
+
+`20261019000005_backfill_plan_entitlements.ts` upgrades existing records; it does not assign or purchase a new plan. The migration was applied to the configured development database on 2026-10-19 (batch 24): **41 subscription plans and 138 user-plan snapshots were updated**. The other two subscription plans and one user-plan snapshot were already correct. All **43 subscription plans and 139 user-plan snapshots** now contain `TeamInvite`, `Contact`, `Campaign`, `WabaNumber`, `Chatbot`, and `AiAssistant`.
+
+Legacy names such as `contacts`, `campaigns`, `team_invites`, and `ai_assistant` become the canonical keys above. `-1`, `Unlimited`, and `unlimited` become JSON `null`. The API also accepts those historical key aliases and rejects duplicate definitions for one feature. Existing custom features remain in the plan. The existing `developer_api` feature is registered for catalog editing; this change does not introduce an enforcement hook or paid add-on for that feature.
+
+For paid plans, existing explicit limits remain. Missing features default to two team members, three WABA numbers, ten chatbots, and unlimited AI assistants. An omitted legacy Contact/Campaign allowance remains explicitly unlimited. Free catalog plans use the fixed platform trial policy (2 members, 500 contacts, 2 campaigns, 1 WABA number, 2 chatbots, 1 assistant); configured 3/7/10-day durations remain unchanged, and a missing catalog trial duration defaults to ten days.
+
+Existing user snapshots are handled separately from the catalog: explicit unlimited allowances remain unlimited until that plan ends. Missing trial capacity defaults to the trial allowance. Current capacity and campaign usage are reconciled, without resetting consumed campaign quota or removing purchased add-on units. When a current legacy user already exceeds a finite allowance, their snapshot is raised to cover the existing usage. `legacy_base_limit` and `grandfathered_at` explain that exception. This protected **21 Contact, 2 WABA, and 2 Campaign allowances** during deployment. No contacts or phone numbers were deleted or deactivated. An allowance already filled by existing usage requires an add-on/upgrade for additional capacity. Renewals and new assignments use the catalog; current-plan grandfathering does not automatically carry forward.
+
+Legacy snapshots become entitlement version 2 so capacity checks count saved resources. Other omitted registered features that were implicitly unlimited under version 1 remain explicitly unlimited. Version 2 features that were already disabled or omitted retain that denial. Plan prices, billing cycles, assignments, payment status, wallet balances, start/end dates, and phone activation states are unchanged. Cancelled, pending, and expired snapshots are normalized without assigning current resource usage to their history.
+
+Read-only preview and local backup:
 
 ```powershell
-npm run migrate:latest
+node scripts/preview-plan-entitlement-backfill.cjs
+```
+
+It writes before/after JSON under `backups/plan-entitlement-backfill/`. A second preview after deployment reports zero remaining changes. The database table `plan_entitlement_backfill_audit` also stores the exact prior/applied values for 180 records (41 catalog plans, 138 snapshots, 1 feature definition). The migration's down operation restores originals only while their entitlement fields still match the applied state; it refuses to overwrite later usage, edits, or add-on purchases. Test that rollback in a transaction first when needed.
+
+The build and 96 targeted/regression tests passed. A PostgreSQL transaction verified the upgrade, feature-registry validation, unchanged prices/dates/statuses, idempotence, exact rollback restoration, and refusal to overwrite newer usage. All verification changes were rolled back before the actual migration was applied. A post-apply check validated 474 current entitlements and confirmed unchanged wallets, ledger counts, assignments, and number activation states.
+
+## Rollout and verification
+
+Apply `20261019000001_dynamic_plan_addons.ts`, `20261019000003_platform_pricing.ts`, and `20261019000004_phone_number_entitlements.ts` before running this API version. The first creates `plan_features`, `plan_addons`, and `user_plan_addons`, and adds `entitlement_version` and `usage_periods` to `user_plans`. The pricing migration creates the global fee policy and pricing audit table, adds the fee quote column, and preserves legacy fees for pending orders. The phone-number migration adds `active`, `inactive_reason`, and an index for counting active numbers; existing numbers marked `status: inactive` remain inactive. Feature definitions are seeded; priced add-on packs are created through the superadmin API.
+
+```powershell
+npm run knex -- migrate:up 20261019000001_dynamic_plan_addons.ts
+npm run knex -- migrate:up 20261019000003_platform_pricing.ts
+npm run knex -- migrate:up 20261019000004_phone_number_entitlements.ts
+npm run knex -- migrate:up 20261019000005_backfill_plan_entitlements.ts
 npm run build
-node --test tests/dynamic-plan-addons.test.cjs tests/plan-usage.test.cjs tests/plan-assignment.test.cjs tests/payment-plan.test.cjs tests/subscription-duration.test.cjs tests/waba-sync.test.cjs
+node --test tests/platform-pricing.test.cjs tests/dynamic-plan-addons.test.cjs tests/plan-usage.test.cjs tests/plan-assignment.test.cjs tests/payment-plan.test.cjs tests/subscription-duration.test.cjs tests/waba-sync.test.cjs
+node --test tests/feature-limit-middleware.test.cjs tests/contact-import-limits.test.cjs tests/contact-import-worker.test.cjs
+node --test tests/legacy-plan-backfill.test.cjs
 ```
 
 On 2026-10-19, the plan/add-on migration was applied to the configured development database using `npm run knex -- migrate:up 20261019000001_dynamic_plan_addons.ts`. Its tables, columns, and eight seeded feature definitions were verified. Older contact migrations remain pending because existing contact identities contain duplicates and invalid phone data; they must be reviewed before `migrate:latest` can finish. The local report is in `backups/migration-audit-2026-10-19/`.
+
+The phone-number migration was applied to the configured development database on 2026-10-19 (batch 23), and both new columns were verified. The build and 215 targeted/regression tests passed. A PostgreSQL transaction also verified overflow sync, activation rejection at capacity, disabling to free a slot, repeat-sync behavior, active-only usage, and the 5,000-versus-3,000 import assessment; all verification data changes were rolled back. A broader campaign-worker suite still has nine failures, reproduced against the original committed code, outside these changes.
 
 Unit tests simulate transaction serialization/rollback; they do not replace a PostgreSQL integration test in the deployment environment. The dashboard shown in the screenshots is not present in this API repository; connect its form to these endpoints.

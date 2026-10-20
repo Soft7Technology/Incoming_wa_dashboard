@@ -18,6 +18,7 @@ function serviceFixture({ waba = account, details = { id: account.waba_id, name:
   phones = [phone('1001')], remoteError } = {}) {
   const calls = [], writes = [];
   const service = load('src/app/services/waba.service.ts', {
+    './wabaCredentials.service': { forAccount: async () => null },
     uuid: require('uuid'),
     '@surefy/console/models/waba.model': {
       findOwnedForSync: async (...args) => { calls.push(['lookup', ...args]); return waba; },
@@ -113,7 +114,7 @@ test('Meta pagination rejects missing/repeated/cyclic cursors and later-page fai
 });
 
 // Transaction simulation checks rollback and identity preservation; SQL compilation is checked separately below.
-function persistenceFixture({ phones = [], failBatch = 0, race = false, missingAccount = false } = {}) {
+function persistenceFixture({ phones = [], failBatch = 0, race = false, missingAccount = false, remaining = Infinity } = {}) {
   let state = { account: { ...account }, phones: structuredClone(phones) };
   const batches = [], lookups = [];
   const query = (table, draft) => {
@@ -158,7 +159,8 @@ function persistenceFixture({ phones = [], failBatch = 0, race = false, missingA
   };
   class BaseModel { constructor() { this.db = db; } query() { return db('waba_accounts'); } }
   return { model: load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel },
-    '../services/planUsage.service': { run: (userId, feature, callback) => db.transaction(trx => callback(trx, {})), checkUsage() {} } }),
+    '../services/planUsage.service': { syncWabaNumbers: (userId, callback) => db.transaction(trx => callback(trx,
+      { remaining, inactiveReason: 'PLAN_LIMIT_EXCEEDED' })) } }),
     state: () => state, batches, lookups };
 }
 const savedPhone = (id, changes = {}) => ({ id: `local-${id}`, phone_number_id: id,
@@ -216,6 +218,24 @@ test('empty Meta phone list refreshes the account and a deleted account cannot b
   await assert.rejects(missing.model.syncAccountAndPhones(account, {}, []), /not found in your account/);
 });
 
+test('Meta sync saves overflow numbers as inactive and does not reactivate them on repeat sync', async () => {
+  const f = persistenceFixture({ remaining: 2 });
+  const result = await f.model.syncAccountAndPhones(account, {}, [phone('1001'), phone('1002'), phone('1003')]);
+  assert.equal(result.phone_numbers.length, 3); assert.equal(result.active_count, 2); assert.equal(result.inactive_count, 1);
+  const overflow = result.phone_numbers.find(p => p.phone_number_id === '1003');
+  assert.equal(overflow.active, false); assert.equal(overflow.inactive_reason, 'PLAN_LIMIT_EXCEEDED');
+  const repeated = await f.model.syncAccountAndPhones(account, {}, [phone('1003'), phone('1002'), phone('1001')]);
+  assert.equal(repeated.phone_numbers.find(p => p.id === overflow.id).active, false);
+  assert.equal(f.state().phones.length, 3);
+});
+
+test('manually inactive numbers stay inactive even when more capacity becomes available', async () => {
+  const f = persistenceFixture({ phones: [savedPhone('1001', { active: false, inactive_reason: 'MANUALLY_DISABLED' })] });
+  const result = await f.model.syncAccountAndPhones(account, {}, [phone('1001'), phone('1002')]);
+  assert.equal(result.phone_numbers[0].active, false); assert.equal(result.phone_numbers[0].inactive_reason, 'MANUALLY_DISABLED');
+  assert.equal(result.phone_numbers[1].active, true);
+});
+
 test('identifier lookups and conflict SQL retain owner/company/WABA scope without merging local UUIDs', async () => {
   const db = require('knex')({ client: 'pg' });
   const statements = [];
@@ -230,7 +250,8 @@ test('identifier lookups and conflict SQL retain owner/company/WABA scope withou
   } });
   class BaseModel { constructor() { this.db = connection; } query() { return db('waba_accounts'); } }
   const model = load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel },
-    '../services/planUsage.service': { run: (userId, feature, callback) => connection.transaction(trx => callback(trx, {})), checkUsage() {} } });
+    '../services/planUsage.service': { syncWabaNumbers: (userId, callback) => connection.transaction(trx => callback(trx,
+      { remaining: Infinity, inactiveReason: 'PLAN_LIMIT_EXCEEDED' })) } });
   try {
     for (const [id, column] of [[account.waba_id, 'waba_id'], [account.id, 'id']]) {
       await model.findOwnedForSync(id, 'owner', 'company');

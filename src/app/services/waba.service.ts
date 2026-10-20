@@ -12,10 +12,19 @@ import activityLogsModel from '../models/activityLogs.model';
 import contactListModel from '../models/contactList.model';
 import ImportJobModel from "../models/importJob.model"
 import { validate as uuidValidate } from 'uuid';
+import planUsage, { checkUsage } from './planUsage.service';
+import wabaCredentials from './wabaCredentials.service';
+import { WabaGraph } from './wabaGraph.service';
+import { WabaOnboardingError } from '../utils/wabaOnboarding';
+
+export interface WabaSyncClient {
+  getWabaDetails(id: string): Promise<any>;
+  getPhoneNumbers(id: string): Promise<any>;
+}
 
 class WabaService {
   /** Refresh an already connected WABA using its Meta ID or local UUID. */
-  async syncWaba(userId: string, companyId: string, wabaId: string) {
+  async syncWaba(userId: string, companyId: string, wabaId: string, authorizedClient?: WabaSyncClient) {
     if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
     if (typeof wabaId !== 'string' || wabaId.length > 255 ||
         (!/^\d+$/.test(wabaId) && !uuidValidate(wabaId))) {
@@ -25,9 +34,13 @@ class WabaService {
     if (!waba || waba.deleted_at || waba.user_id !== userId || waba.company_id !== companyId) {
       throw new HTTP404Error({ message: 'WABA not found in your account' });
     }
+    const savedToken = authorizedClient ? null : await wabaCredentials.forAccount(userId, companyId, waba.id);
+    if (!authorizedClient && !savedToken && waba.connection_status && waba.connection_status !== 'legacy') throw new WabaOnboardingError(
+      'WABA_SETUP_REQUIRED', 'Finish the saved onboarding or reconnect this WhatsApp account before syncing.', false, 403);
+    const client = authorizedClient || (savedToken ? new WabaGraph(savedToken) : MetaService);
     // Complete both remote reads before starting the database transaction.
     const [details, response] = await Promise.all([
-      MetaService.getWabaDetails(waba.waba_id), MetaService.getPhoneNumbers(waba.waba_id),
+      client.getWabaDetails(waba.waba_id), client.getPhoneNumbers(waba.waba_id),
     ]);
     if (!details || details.id !== waba.waba_id || !Array.isArray(response?.data)) {
       throw new HTTP400Error({ message: 'Invalid WABA sync response from Meta' });
@@ -43,142 +56,11 @@ class WabaService {
     return WabaModel.syncAccountAndPhones(waba, details, [...phones.values()]);
   }
 
-  /**
-   * Onboard WABA accounts
-   */
-  // async onboardWaba(data: CreateWabaDto) {
-  //   try {
-  //     // Step 1: Register WABA account in database
-  //     const clientWabaAccount = await this.upsertWaba(data)
-  //     console.log("✅ WABA Account registered with ID:", clientWabaAccount.id);
-
-  //     // Step 2: Fetch phone numbers from Graph API and store
-  //     const clientData = {
-  //       user_id: data.user_id,
-  //       company_id:data.company_id,
-  //       waba_id: data.waba_id,
-  //       company_WABAID: clientWabaAccount.id
-  //     }
-
-  //     const clientPhoneNumbers = await this.syncCompanyPhoneNumbers(clientData)
-  //     console.log("✅ Phone numbers registered:", clientPhoneNumbers);
-
-  //     // Step 3: Subscribe to webhooks
-  //     const registeredWebhook = await MetaService.subscribeToWebhooks(clientData.waba_id)
-  //     console.log("✅ Webhook subscription registered with ID:", registeredWebhook);
-
-  //     return {
-  //       clientAccountStatusMessage: "Client WABA account setup successfully",
-  //       data: {
-  //         clientWabaAccount,
-  //         phoneNumbers: clientPhoneNumbers,
-  //         webhook: registeredWebhook
-  //       }
-  //     };
-  //   } catch (error: any) {
-  //     throw new HTTP400Error({
-  //       message: 'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
-  //       details: error.message,
-  //     });
-  //   }
-  // }
-
-
-  async onboardWaba(data: CreateWabaDto) {
-    try {
-      console.log("Data", data)
-      const clientWabaAccount = await this.upsertWaba(data);
-
-      await activityLogsModel.create({
-        company_id: data.company_id!,
-        user_id: data.user_id,
-        action: 'CREATE',
-        entity_type: 'WABA',
-        entity_id: clientWabaAccount.id,
-        description: `Connected WhatsApp Business Account (${data.waba_id})`,
-        new_data: {
-          waba_id: data.waba_id,
-          account_id: clientWabaAccount.id
-        },
-        status: 'SUCCESS',
-        read: false
-      });
-
-      const clientData = {
-        user_id: data.user_id,
-        company_id: data.company_id,
-        waba_id: data.waba_id,
-        company_WABAID: clientWabaAccount.id
-      };
-
-      const clientPhoneNumbers =
-        await this.syncCompanyPhoneNumbers(clientData);
-
-      await activityLogsModel.create({
-        company_id: data.company_id!,
-        user_id: data.user_id,
-        action: 'SYNC',
-        entity_type: 'PHONE_NUMBER',
-        entity_id: clientWabaAccount.id,
-        description: `Synced ${clientPhoneNumbers.length} phone number(s) from Meta`,
-        new_data: {
-          phone_numbers: clientPhoneNumbers
-        },
-        status: 'SUCCESS',
-        read: false
-      });
-
-      const registeredWebhook =
-        await MetaService.subscribeToWebhooks(clientData.waba_id);
-
-      await activityLogsModel.create({
-        company_id: data.company_id!,
-        user_id: data.user_id,
-        action: 'SUBSCRIBE',
-        entity_type: 'WEBHOOK',
-        entity_id: clientWabaAccount.id,
-        description: `Subscribed WABA to Meta webhooks`,
-        new_data: {
-          waba_id: data.waba_id,
-          webhook_response: registeredWebhook
-        },
-        status: 'SUCCESS',
-        read: false
-      });
-
-      return {
-        clientAccountStatusMessage:
-          "Client WABA account setup successfully",
-        data: {
-          clientWabaAccount,
-          phoneNumbers: clientPhoneNumbers,
-          webhook: registeredWebhook
-        }
-      };
-    } catch (error: any) {
-
-      await activityLogsModel.create({
-        company_id: data.company_id!,
-        user_id: data.user_id,
-        action: 'CREATE',
-        entity_type: 'WABA',
-        entity_id: data.waba_id,
-        description: `Failed to onboard WABA (${data.waba_id})`,
-        new_data: {
-          error: error.message
-        },
-        status: 'FAILED',
-        read: false
-      });
-
-      throw new HTTP400Error({
-        message:
-          'Failed to validate WABA with Meta API. Please check the WABA ID and ensure your access token has the correct permissions.',
-        details: error.message
-      });
-    }
+  /** Compatibility entry point; all onboarding uses the durable Embedded Signup flow. */
+  async onboardWaba(data: CreateWabaDto & { code?: string; state?: string | null; phone_number_id?: string | null }) {
+    const { default: onboarding } = await import('./wabaOnboarding.service');
+    return onboarding.begin({ userId: data.user_id, companyId: data.company_id! }, data);
   }
-
 
   async upsertWaba(data: CreateWabaDto) {
     const existing = await WabaModel.findByWabaId(data.waba_id);
@@ -221,43 +103,9 @@ class WabaService {
     waba_id: string;
     company_WABAID: string;
   }) {
-    console.log("Client data", clientData)
-    const response = await MetaService.getPhoneNumbers(clientData.waba_id);
-    console.log("Phone number Response", response)
-    const results = [];
-
-    for (const phone of response.data || []) {
-      const existing = await PhoneNumberModel.findByPhoneNumberId(phone.id);
-
-      if (existing) {
-        if (existing.user_id !== clientData.user_id || existing.company_id !== clientData.company_id || existing.waba_id !== clientData.company_WABAID) {
-          throw new HTTP400Error({ message: 'Phone number is already connected to another account' });
-        }
-        // Update status changes (very important)
-        await PhoneNumberModel.update(existing.id, {
-          user_id: clientData.user_id!,
-          company_id: clientData.company_id! || undefined,
-          quality_rating: phone.quality_rating,
-          meta_data: phone,
-          updated_at: new Date(),
-        });
-        results.push({ phone_id: phone.id, status: "updated" });
-      } else {
-        await PhoneNumberModel.create({
-          user_id: clientData.user_id,
-          company_id: clientData.company_id! || undefined,
-          waba_id: clientData.company_WABAID,
-          phone_number_id: phone.id,
-          display_phone_number: phone.display_phone_number,
-          verified_name: phone.verified_name,
-          quality_rating: phone.quality_rating,
-          meta_data: phone,
-        });
-        results.push({ phone_id: phone.id, status: "created" });
-      }
-    }
-
-    return results;
+    if (!clientData.company_id) throw new HTTP400Error({ message: 'Company context is required' });
+    const result = await this.syncWaba(clientData.user_id, clientData.company_id, clientData.company_WABAID);
+    return result.phone_numbers;
   }
 
 
@@ -362,7 +210,7 @@ class WabaService {
 
     const fields = "messages,message_deliveries,message_reads"
     const url = `https://graph.facebook.com/${process.env.API_VERSION}/${waba_id}/subscribed_apps?subscribed_fields=${fields}`;
-    console.log("Webhook Subscription URL:", url, token);
+    // Never log server credentials or HTTP response/config objects.
 
     try {
       const response = await axios.post(url, null, { headers })
@@ -462,7 +310,32 @@ class WabaService {
       throw new HTTP404Error({ message: 'Phone number not found' });
     }
 
-    const { id: ignoredId, user_id, company_id, waba_id, phone_number_id, ...changes } = data;
+    if (data.active !== undefined && typeof data.active !== 'boolean') {
+      throw new HTTP400Error({ message: 'active must be a boolean' });
+    }
+    if (data.active !== undefined && ['active', 'inactive'].includes(data.status) &&
+        data.active !== (data.status === 'active')) {
+      throw new HTTP400Error({ message: 'active and status must agree' });
+    }
+    // Explicitly allow metadata fields; clients cannot restore deleted numbers or change ownership.
+    const changes: Record<string, any> = {};
+    for (const key of ['verified_name', 'status', 'messaging_limit_tier', 'capabilities']) {
+      if (data[key] !== undefined) changes[key] = data[key];
+    }
+    const active = data.active ?? (data.status === 'active' ? true : data.status === 'inactive' ? false : undefined);
+    if (active !== undefined) {
+      changes.active = active;
+      changes.inactive_reason = active ? null : 'MANUALLY_DISABLED';
+    }
+    if (active === true) {
+      return planUsage.run(phoneNumber.user_id, 'WabaNumber', async (trx, plan) => {
+        const current = await trx('phone_numbers').where({ id }).whereNull('deleted_at').forUpdate().first();
+        if (!current) throw new HTTP404Error({ message: 'Phone number not found' });
+        if (!current.active) checkUsage(plan, 'WabaNumber', 1);
+        const [updated] = await trx('phone_numbers').where({ id }).update({ ...changes, updated_at: new Date() }).returning('*');
+        return updated;
+      }, 0);
+    }
     return PhoneNumberModel.update(id, { ...changes, updated_at: new Date() });
   }
 

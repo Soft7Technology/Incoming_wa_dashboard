@@ -52,13 +52,13 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   app.use(compression());
   app.use(express.json({ limit: '10mb', verify: (req, _res, buffer) => {
     // Signature validation must use the exact bytes received, before JSON parsing.
-    if (['/v1/facebook/webhook', '/v1/facebook/instagram/webhook'].includes(req.url?.split('?')[0] || '') ||
+    if (['/v1/facebook/webhook', '/v1/facebook/instagram/webhook', '/v1/webhooks/meta'].includes(req.url?.split('?')[0] || '') ||
         /^\/v1\/integrations\/shopify\/webhook(?:\/|$)/.test(req.url?.split('?')[0] || '')) {
       (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
     }
   } }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-  app.use(morgan('dev', { skip: req => req.originalUrl.startsWith('/v1/facebook/') || req.originalUrl.startsWith('/v1/integrations/google/') || req.originalUrl.startsWith('/v1/integrations/shopify/') || req.originalUrl.startsWith('/v1/integrations/google-people/') || req.originalUrl.startsWith('/v1/admin/google-people') }));
+  app.use(morgan('dev', { skip: req => req.originalUrl.startsWith('/v1/admin/waba/onboard') || req.originalUrl.startsWith('/v1/facebook/') || req.originalUrl.startsWith('/v1/integrations/google/') || req.originalUrl.startsWith('/v1/integrations/shopify/') || req.originalUrl.startsWith('/v1/integrations/google-people/') || req.originalUrl.startsWith('/v1/admin/google-people') }));
   // app.use(express.json());
 
   // Serve uploaded files

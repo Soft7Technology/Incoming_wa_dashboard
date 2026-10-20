@@ -13,11 +13,12 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
   const phone={id:'sender-db',phone_number_id:'payload-sender',user_id:wrongSender?'other':'u',company_id:'c'};
   const query={where(key,value){predicates.push([key,value]);return query;},whereRaw(){return query;},then(resolve,reject){return Promise.resolve(saved).then(resolve,reject);}};
   const deps={
+    '../utils/activePhone': require('./helpers/active-phone.cjs'),
     './contactOptOut.service':{excluded:async()=>new Set(excluded)},
     '../utils/campaignPhone':require('../src/app/utils/campaignPhone'),
     '../utils/campaignRecipients':require('../src/app/utils/campaignRecipients'),
     '../utils/contactCustomFields':customFields,
-    './planUsage.service':{run:async(_user,_feature,fn)=>{writes.push('usage');return fn({});}},
+    './planUsage.service':{run:async(_user,feature,fn)=>{writes.push(feature === 'Contact' ? 'contact-usage' : 'usage');return fn({});}},
     '../models/campaign.model':{create:async data=>{writes.push({campaign:data});return {id:'campaign',...data};}},
     '../models/campaignMessage.model':{bulkCreate:async data=>{writes.push({messages:data});}},
     './contact.service':{getContactsByFilters:async()=>contacts},

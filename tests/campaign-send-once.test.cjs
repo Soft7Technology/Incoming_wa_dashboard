@@ -33,7 +33,7 @@ function sender({ fail = false, persistenceFailure = false } = {}) {
   const js = ts.transpileModule(fs.readFileSync('src/app/services/message.service.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(js, { exports, require: n => n.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[n] || {}, console: { info() {} }, process: { pid: 1, env: {} } });
+  vm.runInNewContext(js, { exports, require: n => n.endsWith('/activePhone') ? require('./helpers/active-phone.cjs') : n.endsWith('/databaseErrors') ? require('./helpers/background-database.cjs').databaseErrors : deps[n] || {}, console: { info() {} }, process: { pid: 1, env: {} } });
   const send = (to = '+6581234567', campaign = 'campaign') => exports.default.sendMessage({
     company_id: 'company', user_id: 'user', campaign_id: campaign, phone_number_id: 'phone',
     messageUUID: 'message', to, type: 'text', text: { body: 'hello' },

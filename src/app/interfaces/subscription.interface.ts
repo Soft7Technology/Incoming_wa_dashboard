@@ -9,6 +9,7 @@ export interface subscriptionPlans {
   active: boolean;
   /** Display text shown on plan cards; does not grant access or increase limits. */
   marketing_features?: string[];
+  addons?: Array<{ addon_id: string; enabled: boolean }>;
 
   features: {
     [key: string]: {

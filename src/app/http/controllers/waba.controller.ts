@@ -1,3 +1,4 @@
+import onboardingController from './wabaOnboarding.controller';
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
@@ -42,22 +43,7 @@ class WabaController {
   /**
    * 
    */
-  onboardingWaba = tryCatchAsync(async(req:AuthRequest,res:Response)=>{
-    const {waba_id} = req.body
-    // const {waba_id} = req.query
-    console.log("Onboarding WABA with data:", req.body);  
-    console.log("Onboarding WABA with data:",waba_id);
-    if(!waba_id){
-      throw new HTTP400Error({ message: 'WABA ID is required' });
-    }
-
-    const waba = await wabaService.onboardWaba({
-      user_id: req.ownerId ?? req.userId!,
-      company_id: req.companyId!,
-      waba_id
-    })
-    return successResponse(req, res, 'WABA account created successfully', waba, HttpStatusCode.CREATED);
-  })
+  onboardingWaba = onboardingController.onboard;
 
   /**
    * GET /v1/waba

@@ -165,6 +165,8 @@ test('requested GET routes use company handlers behind JWT and live superadmin a
     },
   }).default;
   const route = load('src/routes/superAdmin.route.ts', {
+    '../app/http/controllers/platformPricing.controller':Object.fromEntries(['get','update','allAddons','updateAddon'].map(key=>[key,(_req,res)=>res.end()])),
+    '../app/http/controllers/planCatalog.controller':Object.fromEntries(['features','createFeature','createAddon','disableAddon'].map(key=>[key,(_req,res)=>res.end()])),
     express, '../app/http/controllers/superAdmin.controller': controller,
     '../app/http/controllers/superAdminOperations.controller': operations,
     '../app/http/controllers/superAdminUserPlan.controller': {

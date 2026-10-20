@@ -1,5 +1,5 @@
 import { markActivityRecorded } from '../utils/activityContext';
-import { snapshotFeatures } from '../utils/planFeatures';
+import { snapshotFeatures, snapshotPlanAddons } from '../utils/planFeatures';
 import { freeTrialFeatures } from '../utils/freeTrialPolicy';
 import { countTeamSeats } from './planUsage.service';
 import db from '@surefy/database';
@@ -7,6 +7,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
+import platformPricing from './platformPricing.service';
 
 interface Actor { userId?: string; companyId?: string; userRole?: string }
 
@@ -22,7 +23,8 @@ class PlanAssignmentService {
       if (trialOnly && (!plan || plan.billing_cycle !== 'Free')) {
         throw new HTTP400Error({ message: 'Active Free subscription plan not found' });
       }
-      const fee = plan?.billing_cycle === 'Monthly' ? 100 : plan?.billing_cycle === 'Yearly' ? 1000 : 0;
+      const feePaise = plan ? await platformPricing.feeFor(plan.billing_cycle, trx) : 0;
+      const fee = feePaise / 100;
       const recipient = fee > 0
         ? await trx('users').where({ role: 'superadmin' }).whereNull('deleted_at').orderBy('id').first()
         : null;
@@ -86,6 +88,7 @@ class PlanAssignmentService {
         throw new HTTP400Error({ message: 'Invalid subscription features' });
       }
       const { limits, usage } = snapshotFeatures(features);
+      const addons = plan.billing_cycle === 'Free' ? [] : snapshotPlanAddons(plan.addons);
       usage.TeamInvite = await countTeamSeats(trx, userId);
       if (fee > 0) {
         const company = user.company_id
@@ -100,15 +103,17 @@ class PlanAssignmentService {
         }
         // Both wallet rows are locked above. Bind the validated balances so this
         // works with legacy varchar columns as well as numeric wallet columns.
-        await trx('companies').where({ id: company.id }).update({ credit_balance: before - fee });
-        await trx('users').where({ id: superAdmin.id }).update({ credit_balance: recipientBefore + fee });
+        const after = Math.round((before - fee) * 100) / 100;
+        const recipientAfter = Math.round((recipientBefore + fee) * 100) / 100;
+        await trx('companies').where({ id: company.id }).update({ credit_balance: after });
+        await trx('users').where({ id: superAdmin.id }).update({ credit_balance: recipientAfter });
         const createdBy = actor?.userId || userId;
         await trx('credit_transactions').insert([
           { company_id: company.id, user_id: userId, type: 'debit', amount: -fee,
-            balance_before: before, balance_after: before - fee, created_by: createdBy,
+            balance_before: before, balance_after: after, created_by: createdBy,
             reference_type: 'subscription_commission', description: `Platform fee for ${plan.plan_name}` },
           { company_id: superAdmin.company_id, user_id: superAdmin.id, type: 'credit', amount: fee,
-            balance_before: recipientBefore, balance_after: recipientBefore + fee, created_by: createdBy,
+            balance_before: recipientBefore, balance_after: recipientAfter, created_by: createdBy,
             reference_type: 'subscription_commission', description: `Platform fee from ${company.company_name || company.name}` },
         ]);
       }
@@ -121,6 +126,8 @@ class PlanAssignmentService {
         plan_name: plan.plan_name, price: plan.price, billing_cycle: plan.billing_cycle,
         status: 'COMPLETED', active: true, start_date: now, end_date: endDate,
         duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage), entitlement_version: 2,
+        platform_fee_paise: feePaise,
+        addons: addons === null ? null : JSON.stringify(addons),
       }).returning('*');
       const [updated] = await trx('users').where({ id: userId }).update({
         ...updates, ...(management ? {} : { status: 'active' }), assigned_plan: newPlan.id,
