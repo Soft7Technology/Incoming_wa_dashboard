@@ -31,3 +31,5 @@ backups/
 /password.js
 /split-phone-tests.txt
 /tests
+!/tests/
+!/tests/waba-signup-logging.test.cjs

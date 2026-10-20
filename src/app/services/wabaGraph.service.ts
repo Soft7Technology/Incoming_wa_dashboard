@@ -2,6 +2,44 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { WabaOnboardingError, wabaConfig } from '../utils/wabaOnboarding';
 
+/** Log selected diagnostics only; Axios config/URLs can contain the one-use code and app secret. */
+function logExchangeFailure(error: any, secrets: Array<string | undefined>) {
+  const sensitive = secrets.filter((value): value is string => typeof value === 'string' && value.length > 0)
+    .flatMap(value => {
+      const variants = [value, JSON.stringify(value).slice(1, -1)];
+      try { variants.push(encodeURIComponent(value)); } catch { /* A malformed input must not break error reporting. */ }
+      return variants;
+    })
+    .sort((a, b) => b.length - a.length);
+  const text = (value: unknown, limit = 1000): string | null => {
+    if (typeof value !== 'string') return null;
+    let result = value;
+    for (const secret of sensitive) result = result.split(secret).join('[REDACTED]');
+    return result
+      .replace(/\bBearer\s+[^\s"',;]+/gi, 'Bearer [REDACTED]')
+      .replace(/(\b(?:access_token|input_token|client_secret|app_secret|appsecret_proof|authorization_code|code)\b["']?\s*[:=]\s*["']?)[^\s&"',;]+/gi, '$1[REDACTED]')
+      .replace(/\bEAA[A-Za-z0-9_-]{16,}\b/g, '[REDACTED]')
+      .replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, limit);
+  };
+  const number = (value: unknown): number | null =>
+    (typeof value === 'number' || typeof value === 'string' && /^\d{1,10}$/.test(value)) &&
+      Number.isSafeInteger(Number(value)) && Number(value) >= 0 ? Number(value) : null;
+  const meta = error?.response?.data?.error;
+  const networkCodes = ['ECONNABORTED', 'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND',
+    'EAI_AGAIN', 'EHOSTUNREACH', 'EPIPE', 'ERR_NETWORK', 'ERR_BAD_REQUEST', 'ERR_BAD_RESPONSE', 'ERR_CANCELED'];
+  console.error('[WABA signup] Meta code exchange failed', {
+    endpoint: 'oauth/access_token',
+    http_status: number(error?.response?.status),
+    meta_error_code: number(meta?.code),
+    meta_error_subcode: number(meta?.error_subcode),
+    meta_error_type: text(meta?.type, 80),
+    meta_message: text(meta?.message),
+    fbtrace_id: text(meta?.fbtrace_id, 128),
+    network_code: networkCodes.includes(error?.code) ? error.code : null,
+    automatic_code_retry: false,
+  });
+}
+
 /** Dedicated transport: never log/throw an Axios object containing credentials. */
 export class WabaGraph {
   constructor(private readonly token?: string, private readonly heartbeat?: () => Promise<void>) {}
@@ -20,6 +58,8 @@ export class WabaGraph {
       // A timeout after dispatch can mean Meta consumed the code. Never replay it.
       const code = Number(error.response?.data?.error?.code);
       if (exchange) {
+        logExchangeFailure(error, [config.appSecret, this.token, params.code, params.client_secret,
+          params.access_token, params.input_token]);
         if (code === 101) throw new WabaOnboardingError('WABA_CONFIGURATION_REQUIRED',
           'Meta rejected the app credentials. Verify the app ID, app secret, Facebook Login configuration and configured redirect URI, then start a new signup.', false, 503);
         if ([10, 200, 294].includes(code)) throw new WabaOnboardingError('META_PERMISSION_REQUIRED',
@@ -43,7 +83,10 @@ export class WabaGraph {
     const { appId, appSecret } = wabaConfig();
     const result = await this.call('oauth/access_token', 'GET', { client_id: appId, client_secret: appSecret, code,
       ...(process.env.WABA_OAUTH_REDIRECT_URI ? { redirect_uri: process.env.WABA_OAUTH_REDIRECT_URI } : {}) }, undefined, true);
-    if (typeof result.access_token !== 'string' || !result.access_token) throw new WabaOnboardingError('CODE_EXCHANGE_UNCONFIRMED', 'Meta returned no usable token. Complete Embedded Signup again.', false, 502);
+    if (typeof result.access_token !== 'string' || !result.access_token) {
+      logExchangeFailure({ response: { status: 200, data: { error: { message: 'Meta returned no usable access token.' } } } }, [appSecret, code]);
+      throw new WabaOnboardingError('CODE_EXCHANGE_UNCONFIRMED', 'Meta returned no usable token. Complete Embedded Signup again.', false, 502);
+    }
     return { token: result.access_token, expiresIn: Number(result.expires_in) || null };
   }
   async inspect() {

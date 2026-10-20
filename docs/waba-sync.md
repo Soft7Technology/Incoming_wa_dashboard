@@ -128,6 +128,8 @@ Failures use a safe, stable error envelope:
 }
 ```
 
+Failed authorization-code exchanges also write a server-side `console.error` entry prefixed `[WABA signup] Meta code exchange failed`. Inspect `http_status`, `meta_error_code`, `meta_error_subcode`, `meta_error_type`, the redacted `meta_message`, `fbtrace_id`, and `network_code`. A timeout/DNS failure may have no Meta message or trace ID. A successful HTTP response without a usable token is logged as an unconfirmed exchange. Raw Axios objects, request URLs/headers, authorization codes, tokens, and app secrets are not logged. These diagnostics do not alter client responses or retry the consumed code; start a fresh Embedded Signup when the code exchange failed or is unconfirmed.
+
 Pending/action status resources may include `data.error` with `code`, `message`, and `retryable`. Terminal POST responses can also include the onboarding ID and safe status data. Display the explanation, not a generic connected banner.
 
 | Error | Frontend action |
