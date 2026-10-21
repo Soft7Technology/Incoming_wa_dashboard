@@ -165,7 +165,7 @@ class SuperAdminModel extends BaseModel {
       .where('end_date', '>', now)
       .orderBy('created_at', 'desc')
       .orderBy('id', 'desc')
-      .first('id', 'user_id', 'company_id', 'subscription_id', 'plan_name', 'price',
+      .first('id', 'user_id', 'company_id', 'plan_name', 'price',
         'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage', 'created_at');
     return { active_plan: plan ?? null };
   }
@@ -208,7 +208,7 @@ class SuperAdminModel extends BaseModel {
         .select('status').count('* as count').groupBy('status'),
       this.db('contacts').where(scope).whereNull('deleted_at').count('* as count').first(),
       user.assigned_plan ? this.db('user_plans').where({ id: user.assigned_plan, ...scope })
-        .first('id', 'user_id', 'company_id', 'subscription_id', 'plan_name', 'price',
+        .first('id', 'user_id', 'company_id', 'plan_name', 'price',
           'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage') : null,
     ]);
     return {
@@ -320,7 +320,7 @@ class SuperAdminModel extends BaseModel {
           id: user.assigned_plan, user_id: user.id, company_id: user.company_id,
         });
       })
-      .select('id', 'user_id', 'company_id', 'subscription_id', 'plan_name', 'price',
+      .select('id', 'user_id', 'company_id', 'plan_name', 'price',
         'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage') : [];
     const byAssignment = new Map(plans.map(plan => [
       `${plan.company_id}:${plan.user_id}:${plan.id}`, plan,

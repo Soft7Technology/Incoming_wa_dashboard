@@ -72,3 +72,58 @@ test('database failure saving an accepted send avoids a second failing status wr
   await assert.rejects(h.send(), { code: '42P01' });
   assert.equal(h.calls(), 1); assert.equal(h.writes(), 1);
 });
+
+function metaSender(providerError) {
+  const { loadSource } = require('./helpers/background-database.cjs');
+  const failureHandlers = [];
+  class HttpError extends Error { constructor({ message, details }) { super(message); this.details = details; } }
+  let calls = 0;
+  const service = loadSource('src/app/services/meta.service.ts', {
+    '../utils/campaignPhone': { campaignRecipientNumber: value => value },
+    '../utils/importPhone': {},
+    axios: { create: () => ({
+      interceptors: { request: { use() {} }, response: { use(_success, failure) { failureHandlers.push(failure); } } },
+      post() {
+        calls++;
+        let result = Promise.reject(providerError);
+        for (const failure of failureHandlers) result = result.catch(failure);
+        return result;
+      },
+    }) },
+    '@surefy/exceptions/HTTP500Error': HttpError, '@surefy/exceptions/HTTP400Error': HttpError,
+    '@surefy/config/firebase.config': {}, '../models/activityLogs.model': {},
+    './wabaCredentials.service': {}, crypto: require('node:crypto'),
+  }, { process: { env: { META_ACCESS_TOKEN: 'server-token' } } }).default;
+  const { getMessageError } = loadSource('src/app/utils/messageError.ts');
+  return { service, calls: () => calls, getMessageError };
+}
+
+test('campaign send errors retain the real Meta message, code and detailed reason', async () => {
+  for (const metaError of [
+    { code: 132000, error_subcode: 2494073, message: 'Number of parameters does not match the expected number of params',
+      error_data: { details: 'body: number of localizable_params (0) does not match the expected number of params (2)' } },
+    { code: 190, message: 'Error validating access token: Session has expired.' },
+  ]) {
+    const h = metaSender({ response: { status: 400, data: { error: metaError } },
+      config: { headers: { Authorization: 'Bearer server-token' } }, request: { private: true } });
+    await assert.rejects(h.service.sendMessage('1001', { to: '6581234567', type: 'template' }, true), error => {
+      const failure = h.getMessageError(error);
+      assert.equal(failure.error_code, String(metaError.code));
+      assert.equal(failure.error_message, metaError.error_data?.details || metaError.message);
+      assert.deepEqual(error.details.error, metaError);
+      assert.equal(error.config, undefined);
+      assert.equal(error.request, undefined);
+      return true;
+    });
+    assert.equal(h.calls(), 1);
+  }
+});
+
+test('campaign network failures keep their original reason and are not retried', async () => {
+  const h = metaSender(Error('timeout of 30000ms exceeded'));
+  await assert.rejects(h.service.sendMessage('1001', { to: '6581234567' }, true), error => {
+    assert.equal(h.getMessageError(error).error_message, 'timeout of 30000ms exceeded');
+    return true;
+  });
+  assert.equal(h.calls(), 1);
+});

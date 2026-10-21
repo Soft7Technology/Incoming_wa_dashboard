@@ -50,7 +50,7 @@ class PaymentPlanService {
     const period = calculatePlanPeriod(plan, now);
     // Snapshot the purchased price/limits. Later catalogue edits must not change this purchase.
     const [pending] = await trx('user_plans').insert({
-      user_id: userId, company_id: companyId, subscription_id: plan.id,
+      user_id: userId, company_id: companyId,
       plan_name: plan.plan_name, price: plan.price, billing_cycle: plan.billing_cycle,
       active: false, status: 'pending', start_date: now, end_date: period.endDate,
       addons: addons === null ? null : JSON.stringify(addons),

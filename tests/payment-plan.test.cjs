@@ -27,7 +27,17 @@ test('checkout snapshots add-on choices and preserves them when the catalog chan
 
 test('order creates one pending snapshot at server price; retry preserves original price',async()=>{
  const h=harness();const first=await h.service.create(h.req,h.body);assert.equal(first.amount_paise,14950);assert.equal(h.rows().user_plans.length,1);assert.equal(h.rows().user_plans[0].active,false);assert.equal(h.rows().users[0].assigned_plan,undefined);
+ assert.equal(Object.hasOwn(h.rows().user_plans[0],'subscription_id'),false);
  h.rows().subscription_plans[0].price='999.00';const again=await h.service.create(h.req,h.body);assert.equal(again.id,first.id);assert.equal(again.amount_paise,14950);assert.equal(h.sends(),1);assert.equal(h.rows().user_plans.length,1);
+});
+
+test('a paid checkout can finish after its catalog plan is deleted',async()=>{
+ const h=harness();const order=await h.service.create(h.req,h.body);
+ const purchased=structuredClone(h.rows().user_plans[0]);h.rows().subscription_plans=[];
+ h.paid();await h.service.verify(h.req,order.id);
+ const assigned=h.rows().user_plans[0];assert.equal(assigned.active,true);assert.equal(assigned.status,'COMPLETED');
+ for(const field of ['id','plan_name','price','billing_cycle','limits','addons','platform_fee_paise'])assert.deepEqual(assigned[field],purchased[field]);
+ assert.equal(h.rows().users[0].assigned_plan,assigned.id);
 });
 test('verified live payment activates once and updates assigned_plan; duplicate verification never extends',async()=>{
  const h=harness();const order=await h.service.create(h.req,h.body);await h.service.verify(h.req,order.id);assert.equal(h.rows().user_plans[0].active,false);
