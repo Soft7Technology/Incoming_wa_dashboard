@@ -8,8 +8,22 @@ import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
 import platformPricing from './platformPricing.service';
+import { isDeepStrictEqual } from 'node:util';
 
 interface Actor { userId?: string; companyId?: string; userRole?: string }
+
+function matchesSnapshot(existing: any, plan: any, limits: Record<string, any>, addons: ReturnType<typeof snapshotPlanAddons>) {
+  if (existing.plan_name !== plan.plan_name || Number(existing.price) !== Number(plan.price) ||
+      existing.billing_cycle !== plan.billing_cycle) return false;
+  const savedLimits = typeof existing.limits === 'string' ? JSON.parse(existing.limits) : existing.limits;
+  // Purchased extra capacity is separate from the base plan being compared.
+  const baseLimits = (input: Record<string, any>) => Object.fromEntries(Object.entries(input || {}).map(([key, value]) =>
+    [key, { limit: value.limit, enabled: value.enabled, reset_period: value.reset_period }]));
+  const sortedAddons = (value: ReturnType<typeof snapshotPlanAddons>) => value === null ? null
+    : [...value].sort((a, b) => a.addon_id.localeCompare(b.addon_id)).map(addon => ({ addon_id: addon.addon_id, enabled: addon.enabled }));
+  return isDeepStrictEqual(baseLimits(savedLimits), baseLimits(limits)) &&
+    isDeepStrictEqual(sortedAddons(snapshotPlanAddons(existing.addons)), sortedAddons(addons));
+}
 
 class PlanAssignmentService {
   async updateUser(userId: string, data: any, actor?: Actor, trialOnly = false,
@@ -71,9 +85,6 @@ class PlanAssignmentService {
       const existing = activePlans[0];
       const now = new Date();
       const unexpired = existing && new Date(existing.end_date).getTime() > now.getTime();
-      if (unexpired && existing.subscription_id === plan.id) {
-        throw new HTTP400Error({ message: 'User is already assigned to this subscription plan' });
-      }
       if (unexpired && existing.billing_cycle !== 'Free' && plan.billing_cycle === 'Free') {
         throw new HTTP400Error({ message: 'Cancel the active paid plan before assigning a Free plan' });
       }
@@ -89,6 +100,9 @@ class PlanAssignmentService {
       }
       const { limits, usage } = snapshotFeatures(features);
       const addons = plan.billing_cycle === 'Free' ? [] : snapshotPlanAddons(plan.addons);
+      if (unexpired && matchesSnapshot(existing, plan, limits, addons)) {
+        throw new HTTP400Error({ message: 'User is already assigned to this subscription plan' });
+      }
       usage.TeamInvite = await countTeamSeats(trx, userId);
       if (fee > 0) {
         const company = user.company_id
@@ -122,7 +136,7 @@ class PlanAssignmentService {
         await trx('user_plans').where({ id: existing.id }).update({ active: false, status: unexpired ? 'CANCELLED' : 'EXPIRED' });
       }
       const [newPlan] = await trx('user_plans').insert({
-        user_id: userId, company_id: user.company_id, subscription_id: plan.id,
+        user_id: userId, company_id: user.company_id,
         plan_name: plan.plan_name, price: plan.price, billing_cycle: plan.billing_cycle,
         status: 'COMPLETED', active: true, start_date: now, end_date: endDate,
         duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage), entitlement_version: 2,

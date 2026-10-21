@@ -34,3 +34,4 @@ backups/
 !/tests/
 !/tests/waba-simple-onboarding.test.cjs
 !/tests/subscription-plan-names.test.cjs
+!/tests/user-plan-independence.test.cjs

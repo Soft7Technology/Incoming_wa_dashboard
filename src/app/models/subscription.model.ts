@@ -111,7 +111,7 @@ class SubscriptionModel extends BaseModel {
       const { endDate, durationDays } = calculatePlanPeriod({ billing_cycle: 'Free', trial_days: days }, now);
       const { limits, usage } = snapshotFeatures(features);
       const [plan] = await transaction('user_plans').insert({
-        user_id: userId, company_id: companyId, subscription_id: definition.id,
+        user_id: userId, company_id: companyId,
         plan_name: definition.plan_name, price: 0, billing_cycle: 'Free',
         active: true, status: 'COMPLETED', start_date: now, end_date: endDate,
         duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage),
