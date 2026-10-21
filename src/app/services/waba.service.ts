@@ -4,7 +4,6 @@ import { CreateWabaDto, CreatePhoneNumberDto } from '@surefy/console/interfaces/
 import MetaService from '@surefy/console/services/meta.service';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
-import axios from "axios"
 import wabaModel from '@surefy/console/models/waba.model';
 import phoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import metaService from '@surefy/console/services/meta.service';
@@ -16,6 +15,7 @@ import planUsage, { checkUsage } from './planUsage.service';
 import wabaCredentials from './wabaCredentials.service';
 import { WabaGraph } from './wabaGraph.service';
 import { WabaOnboardingError } from '../utils/wabaOnboarding';
+import templateService from './template.service';
 
 export interface WabaSyncClient {
   getWabaDetails(id: string): Promise<any>;
@@ -56,43 +56,47 @@ class WabaService {
     return WabaModel.syncAccountAndPhones(waba, details, [...phones.values()]);
   }
 
-  /** Compatibility entry point; all onboarding uses the durable Embedded Signup flow. */
-  async onboardWaba(data: CreateWabaDto & { code?: string; state?: string | null; phone_number_id?: string | null }) {
-    const { default: onboarding } = await import('./wabaOnboarding.service');
-    return onboarding.begin({ userId: data.user_id, companyId: data.company_id! }, data);
+  /** Connect a WABA directly using the existing Meta authorization. */
+  async onboardWaba(data: CreateWabaDto) {
+    if (typeof data.waba_id !== 'string' || !/^\d{1,255}$/.test(data.waba_id)) {
+      throw new HTTP400Error({ message: 'A valid Meta WABA ID is required' });
+    }
+    const clientWabaAccount = await this.upsertWaba(data);
+    const phoneNumbers = await this.syncCompanyPhoneNumbers({
+      user_id: data.user_id, company_id: data.company_id, waba_id: data.waba_id,
+      company_WABAID: clientWabaAccount.id,
+    });
+    const webhook = await MetaService.subscribeToWebhooks(data.waba_id);
+    const templates = await templateService.syncTemplates(data.user_id, clientWabaAccount.id, data.company_id);
+    await activityLogsModel.create({
+      company_id: data.company_id!, user_id: data.user_id, action: 'CREATE', entity_type: 'WABA',
+      entity_id: clientWabaAccount.id, description: `Connected WhatsApp Business Account (${data.waba_id})`,
+      new_data: { waba_id: data.waba_id, account_id: clientWabaAccount.id,
+        phone_numbers_synced: phoneNumbers.length, templates_synced: templates.length },
+      status: 'SUCCESS', read: false,
+    });
+    return { clientAccountStatusMessage: 'Client WABA account setup successfully',
+      data: { clientWabaAccount, phoneNumbers, webhook, templates } };
   }
 
   async upsertWaba(data: CreateWabaDto) {
-    const existing = await WabaModel.findByWabaId(data.waba_id);
-
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    const existing = await WabaModel.findByWabaId(data.waba_id);
     if (existing && (existing.user_id !== data.user_id || existing.company_id !== data.company_id)) {
       throw new HTTP400Error({ message: 'WABA is already connected to another account' });
     }
     // Fetch latest data from Meta
     const wabaDetails = await MetaService.getWabaDetails(data.waba_id);
-
-    if (existing) {
-      return WabaModel.update(existing.id, {
-        user_id: data.user_id,
-        company_id: data.company_id,
-        name: wabaDetails.name,
-        currency: wabaDetails.currency,
-        timezone: wabaDetails.timezone,
-        meta_data: {
-          ...existing.meta_data,
-          ...wabaDetails,
-        },
-        updated_at: new Date(),
-      });
+    if (!wabaDetails || wabaDetails.id !== data.waba_id) {
+      throw new HTTP400Error({ message: 'Meta did not return the requested WABA account' });
     }
-
-    return WabaModel.create({
-      ...data,
-      name: data.name || wabaDetails.name,
-      currency: data.currency || wabaDetails.currency,
-      timezone: data.timezone || wabaDetails.timezone,
-      meta_data: wabaDetails,
+    return WabaModel.upsertOwnedAccount({
+      user_id: data.user_id, company_id: data.company_id, waba_id: data.waba_id,
+      name: data.name || wabaDetails.name || existing?.name || null,
+      currency: data.currency || wabaDetails.currency || existing?.currency || 'USD',
+      timezone: data.timezone || wabaDetails.timezone || existing?.timezone || null,
+      message_template_namespace: wabaDetails.message_template_namespace ?? existing?.message_template_namespace ?? null,
+      meta_data: { ...existing?.meta_data, ...wabaDetails }, deleted_at: null, updated_at: new Date(),
     });
   }
 
@@ -197,37 +201,6 @@ class WabaService {
       });
     }
   }
-
-  private async _subscribeToWebhooks(waba_id: any) {
-    console.log("Subscribing to webhooks for WABA ID:", waba_id);
-
-    const token = process.env.META_ACCESS_TOKEN
-
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
-    }
-
-    const fields = "messages,message_deliveries,message_reads"
-    const url = `https://graph.facebook.com/${process.env.API_VERSION}/${waba_id}/subscribed_apps?subscribed_fields=${fields}`;
-    // Never log server credentials or HTTP response/config objects.
-
-    try {
-      const response = await axios.post(url, null, { headers })
-      if (!response) {
-        throw new Error("Failed to subscribe to webhooks");
-      }
-
-      console.log("Successfully subscribed to webhooks:", response.data);
-
-      return response.data;
-    } catch (error: any) {
-      console.error("Error subscribing to webhooks:", error.message);
-      throw error;
-    }
-  }
-
-
 
   /**
    * Get WABA accounts for company

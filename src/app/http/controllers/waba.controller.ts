@@ -1,4 +1,3 @@
-import onboardingController from './wabaOnboarding.controller';
 import { Request, Response } from 'express';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
@@ -6,7 +5,6 @@ import WabaService from '@surefy/console/services/waba.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import wabaService from '@surefy/console/services/waba.service';
-import { tryCatch } from 'bullmq';
 
 class WabaController {
   /** POST /v1/admin/waba/:wabaId/sync (Meta WABA ID or local UUID). */
@@ -40,10 +38,15 @@ class WabaController {
     return successResponse(req, res, 'WABA account created successfully', waba, HttpStatusCode.CREATED);
   });
 
-  /**
-   * 
-   */
-  onboardingWaba = onboardingController.onboard;
+  /** POST /v1/admin/waba/onboard */
+  onboardingWaba = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const { waba_id } = req.body || {};
+    if (!waba_id) throw new HTTP400Error({ message: 'WABA ID is required' });
+    const result = await WabaService.onboardWaba({
+      user_id: req.ownerId ?? req.userId!, company_id: req.companyId!, waba_id,
+    });
+    return successResponse(req, res, 'WABA account setup successfully', result, HttpStatusCode.CREATED);
+  });
 
   /**
    * GET /v1/waba

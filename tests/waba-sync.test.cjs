@@ -283,5 +283,7 @@ test('controller uses the team owner and exposes the new sync route under accoun
     '../app/http/middleware/accountScope': { accountScope: scope, ownedResource: () => () => {}, ownedPhone: () => {} },
     '@surefy/console/http/controllers/waba.controller': controller });
   assert.equal(routes[0][1], scope);
+  assert.ok(routes.some(([method, path, handler]) => method === 'post' && path === '/onboard' && handler === controller.onboardingWaba));
+  assert.ok(!routes.some(([, path]) => path === '/onboard/state'));
   assert.ok(routes.some(([method, path, handler]) => method === 'post' && path === '/:wabaId/sync' && handler === controller.syncWaba));
 });
