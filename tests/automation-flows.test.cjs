@@ -43,6 +43,25 @@ test('automation mappings preserve scalar types and reject prototype access and 
   assert.throws(() => utils.action('http', 'request'));
 });
 
+test('Shopify order rows include the customer name and allow absent customer details', () => {
+  const parameters = { spreadsheet_id: 'spreadsheet_test_123', range: "'Sheet1'!A2:C", values: [['{{trigger.id}}', '{{contact.name}}', '{{trigger.total_price}}']] };
+  const definition = utils.action('google-sheets', 'appendRows');
+  const cases = [
+    [{ first_name: ' Rahul ', last_name: ' Sharma ' }, 'Rahul Sharma'],
+    [{ first_name: 'Rahul', last_name: null }, 'Rahul'],
+    [null, null],
+    [undefined, null],
+    [{ first_name: 123, last_name: '' }, null],
+  ];
+  for (const [customer, name] of cases) {
+    const trigger = { id: 1001, customer, total_price: '1500.00' };
+    const before = JSON.stringify(trigger);
+    const resolved = utils.validateParameters(definition, utils.resolveParameters(parameters, { trigger, contact: utils.shopifyContact(trigger) }));
+    assert.equal(JSON.stringify(resolved.values), JSON.stringify([[1001, name, '1500.00']]));
+    assert.equal(JSON.stringify(trigger), before);
+  }
+});
+
 test('provider webhook signatures authenticate the exact original bytes', () => {
   const raw = Buffer.from('{ "event": "payment.captured" }');
   for (const provider of ['shopify', 'razorpay']) {

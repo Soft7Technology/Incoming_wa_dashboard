@@ -29,7 +29,11 @@ export function shopifyContact(payload: any) {
   const present = (value: unknown) => value !== undefined && value !== null && value !== '' && !(typeof value === 'string' && !value.trim());
   const selected = candidates.map(candidate => ({ ...candidate, normalized: normalize(candidate.value) })).find(candidate => candidate.normalized);
   const shipping = payload?.shipping_address?.phone, shippingPhone = normalize(shipping);
+  const name = [payload?.customer?.first_name, payload?.customer?.last_name]
+    .filter((part): part is string => typeof part === 'string')
+    .map(part => part.trim()).filter(Boolean).join(' ');
   return {
+    name: name || null,
     phone: selected?.normalized || null,
     phone_source: selected?.source || null,
     phone_status: selected ? 'available' : candidates.some(candidate => present(candidate.value)) ? 'invalid' : 'missing',

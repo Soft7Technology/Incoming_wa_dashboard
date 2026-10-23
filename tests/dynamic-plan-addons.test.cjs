@@ -210,19 +210,41 @@ test('plan add-on display returns stored switches and rejects foreign company pl
   await assert.rejects(f.catalog.planAddons(f.actor, 'not-a-uuid'), /UUID/);
 });
 
-test('disabled or unselected assigned add-ons cannot debit wallets; enabled selections can be purchased', async () => {
-  for (const addons of [[], [{ addon_id: uuid(6), enabled: false }], [{ addon_id: uuid(99), enabled: true }]]) {
+test('active add-ons can be purchased later even when disabled or absent from the assigned snapshot', async () => {
+  for (const addons of [undefined, null, [], [{ addon_id: uuid(6), enabled: false }], [{ addon_id: uuid(99), enabled: true }],
+    JSON.stringify([{ addon_id: uuid(6), enabled: false }])]) {
     const f = fixture(); f.state().user_plans[0].addons = addons;
-    await assert.rejects(f.addons.purchase(f.actor, f.body, 'blocked'), /not enabled/);
-    assert.equal(f.state().companies[0].credit_balance, '1000.00'); assert.equal(f.state().user_plan_addons.length, 0);
-    assert.equal(f.state().credit_transactions.length, 0);
+    const before = structuredClone(f.state().user_plans[0]);
+    const purchase = await f.addons.purchase(f.actor, f.body, 'later');
+    assert.equal(purchase.units, 3); assert.equal(purchase.amount_paise, 15000);
+    assert.equal(f.state().companies[0].credit_balance, 850);
+    assert.equal(f.state().users[1].credit_balance, 155);
+    assert.equal(f.state().user_plan_addons.length, 1); assert.equal(f.state().credit_transactions.length, 2);
+    assert.deepEqual(f.state().user_plans[0].addons, before.addons);
+    assert.deepEqual(f.state().user_plans[0].start_date, before.start_date);
+    assert.deepEqual(f.state().user_plans[0].end_date, before.end_date);
+    assert.deepEqual(f.state().user_plans[0].usage, before.usage);
+    const limits = JSON.parse(f.state().user_plans[0].limits);
+    assert.equal(limits.TeamInvite.limit, 2); assert.equal(limits.TeamInvite.addon_limit, 3);
+    assert.equal((await f.addons.purchase(f.actor, f.body, 'later')).id, purchase.id);
+    assert.equal(f.state().companies[0].credit_balance, 850, 'Retry must not charge twice');
   }
+});
+
+test('later purchases use current pack availability while retries retain historical receipts', async () => {
   const f = fixture(); f.state().user_plans[0].addons = JSON.stringify([{ addon_id: uuid(6), enabled: true }]);
   const purchase = await f.addons.purchase(f.actor, f.body, 'enabled'); assert.equal(purchase.units, 3);
   f.state().user_plans[0].addons = [];
+  f.state().plan_addons[0].active = false;
   assert.equal((await f.addons.purchase(f.actor, f.body, 'enabled')).id, purchase.id, 'Retry keeps the historical receipt');
-  await assert.rejects(f.addons.purchase(f.actor, f.body, 'new-purchase'), /not enabled/);
+  const before = structuredClone(f.state());
+  await assert.rejects(f.addons.purchase(f.actor, f.body, 'new-purchase'), /unavailable/);
+  assert.deepEqual(f.state(), before);
   assert.equal(f.state().user_plan_addons.length, 1);
+  f.state().plan_addons[0].active = true;
+  await f.addons.purchase(f.actor, f.body, 'new-purchase');
+  assert.equal(f.state().user_plan_addons.length, 2);
+  assert.equal(f.state().companies[0].credit_balance, 700);
 });
 
 test('wallet purchase increases 2 seats to 5, transfers money with matching ledger and expires with plan', async () => {
@@ -260,6 +282,10 @@ test('insufficient balance, unavailable entitlement, stale plan and foreign tena
     f => { f.state().user_plans[0].billing_cycle = 'Free'; },
     f => { f.state().users[0].company_id = uuid(99); },
     f => { f.state().plan_addons[0].active = false; },
+    f => { f.state().plan_addons[0].company_id = uuid(99); },
+    f => { f.state().plan_features[0].active = false; },
+    f => { f.state().plan_features[0].addon_allowed = false; },
+    f => { delete f.state().user_plans[0].limits.TeamInvite; },
   ]) {
     const f = fixture(); mutate(f); const before = structuredClone(f.state());
     await assert.rejects(f.addons.purchase(f.actor, f.body, 'invalid'));
