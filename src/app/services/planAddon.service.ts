@@ -4,7 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { CatalogActor, positiveInt, textField } from './planCatalog.service';
-import { isUnmeteredFeature, snapshotPlanAddons, storedAddonLimit } from '../utils/planFeatures';
+import { isUnmeteredFeature, storedAddonLimit } from '../utils/planFeatures';
 
 export function walletPaise(value: unknown): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value));
@@ -64,10 +64,8 @@ class PlanAddonService {
         throw new HTTP400Error({ message: 'The selected user plan is inactive, expired, or has been replaced' });
       }
       if (plan.billing_cycle === 'Free') throw new HTTP400Error({ message: 'Add-ons require a paid plan' });
-      const selections = snapshotPlanAddons(plan.addons);
-      if (selections !== null && !selections.some(selection => selection.addon_id === addonId.toLowerCase() && selection.enabled))
-        throw new HTTP403Error({ message: 'This add-on is not enabled for the assigned subscription plan',
-          details: { code: 'PLAN_ADDON_DISABLED', addon_id: addonId } });
+      // Saved plan selections are assignment defaults. Later purchases use the
+      // current pack availability and the assigned plan's feature capacity.
       const addon = await trx('plan_addons').where({ id: addonId, active: true }).forShare().first();
       if (!addon) throw new HTTP400Error({ message: 'Add-on is unavailable' });
       if (addon.company_id != null && addon.company_id !== actor.companyId) throw new HTTP404Error({ message: 'Add-on is unavailable in your company' });

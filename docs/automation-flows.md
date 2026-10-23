@@ -239,6 +239,7 @@ Mapping syntax:
 - `{{trigger.payload.payment.entity.amount}}`: nested Razorpay amount in paise.
 - `{{steps.STEP_UUID.spreadsheetId}}`: output from an earlier action.
 - `{{contact.phone}}`: normalized international buyer phone derived from a Shopify event, or null if missing/invalid. Add the event detail's `contact` object as a separate mapping group in the frontend.
+- `{{contact.name}}`: Shopify customer first and last name joined with a space, or null when Shopify does not supply a name. Use this for a spreadsheet customer-name cell so orders without customer details still append successfully.
 - A whole-value mapping preserves numbers, booleans and arrays. Mixed text interpolation produces a string.
 - Mapping does not evaluate JavaScript or arithmetic. Missing fields and forbidden prototype paths fail validation/execution.
 
