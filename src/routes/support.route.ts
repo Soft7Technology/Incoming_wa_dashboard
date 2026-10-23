@@ -1,10 +1,11 @@
 import superAdmin from '../app/http/controllers/superAdmin.controller';
 import operations from '../app/http/controllers/superAdminOperations.controller';
 import { Router } from 'express';
-import UserRoute from './user.route';
 import supportController from '../app/http/controllers/support.controller';
+import liveSupportRoute from './supportLive.route';
 
 const supportRoute = Router();
+supportRoute.use('/live', liveSupportRoute);
 
 supportRoute.get('/tickets', supportController.getAllTickets); // This will be used to get all the tickets of a user by user id and company id
 supportRoute.get('/:ticketId/conversation', supportController.getTicketConversation);

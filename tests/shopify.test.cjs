@@ -1027,6 +1027,7 @@ test('base middleware retains exact Shopify raw bytes, restricts credentialed CO
   routes.get('/integrations/shopify/callback', (_req, res) => res.sendStatus(200));
   routes.get('/admin/shopify/setup', (_req, res) => res.sendStatus(200));
   const createApp = load('library/surefy/src/server.ts', {
+    './exceptions/CustomError': { CustomError },
     './middleware/errorHandler': { errorHandler: (_e, _req, res, _next) => res.sendStatus(500) },
     './routes/health.route': express.Router(),
     './middleware/upload.middleware': { UPLOADS_DIR: require('node:os').tmpdir() },

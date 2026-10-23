@@ -10,10 +10,10 @@ class PhoneNumberModel extends BaseModel {
 
   async create(data: any, trx?: Knex.Transaction) {
     if (trx) return super.create(data, trx);
-    return planUsage.syncWabaNumbers(data.user_id, (transaction, capacity) => {
-      const active = data.active !== false && data.status !== 'inactive' && capacity.remaining > 0;
+    return planUsage.run(data.user_id, 'WabaNumber', transaction => {
+      const active = data.active !== false && data.status !== 'inactive';
       return super.create({ ...data, active, inactive_reason: active ? null :
-        data.active === false || data.status === 'inactive' ? 'MANUALLY_DISABLED' : capacity.inactiveReason }, transaction);
+        'MANUALLY_DISABLED' }, transaction);
     });
   }
 

@@ -2,9 +2,9 @@
 
 ## What is implemented
 
-Open **`https://YOUR_HOST/v1/facebook/page`**. This is a separate Messenger workspace served by this API, with the existing SaaS login, Settings → Integrations → Facebook Messenger, and its own Messenger inbox. It does not change the WhatsApp inbox or contact schema.
+Open **`https://YOUR_HOST/v1/facebook/page`** directly and click **Connect Facebook Page**. No application login is required. Each visitor receives a separate browser workspace before completing Meta authorization. See [Public Meta workspaces](public-meta-workspaces.md) for the required migration, cookie behavior and public API paths.
 
-The backend uses the existing Express routers, JWT middleware, PostgreSQL/Knex migrations, company IDs, account owner IDs and live team permissions. The Next.js dashboard copy outside this repository has a Facebook Marketplace card pointing to `/`; it was inspected but not modified. Point that card at this page when integrating it into your deployed frontend. Do not pass JWTs in that link. This page provides its own login, and the authenticated API can also be called directly from your frontend using its existing Bearer JWT.
+The public browser API uses a cookie scoped to the visitor's company/owner records. The existing JWT endpoints remain available to authenticated dashboard users and retain live team permission checks. Frontend links can point directly to this page without passing a JWT.
 
 Implemented features:
 
@@ -80,11 +80,11 @@ In Windows PowerShell use `npm.cmd` if `npm.ps1` is blocked by execution policy.
 
 Use your existing API hosting and a stable domain with a publicly trusted certificate. Configure `FACEBOOK_PUBLIC_URL` to that origin and keep that URL for the entire review period. A local-only server cannot receive Meta webhooks. A short-lived tunnel is insufficient for dependable reviewer testing.
 
-The API origin must serve `/v1/facebook/*`, `/v1/admin/facebook-messenger/*` and the existing `/v1/auth/login`. Keep the page and API on the same origin so OAuth's HttpOnly browser-binding cookie returns to the callback. The cookie uses `Secure` on HTTPS and `SameSite=Lax`. No Page tokens are placed in cookies or browser storage; the SaaS JWT is stored in this tab's session storage.
+The API origin must serve `/v1/facebook/*`. Keep the page and API on the same origin for the workspace cookie and OAuth browser binding. The public browser UI uses HttpOnly cookies and stores no dashboard JWT in session storage. Existing dashboard endpoints still use Bearer JWT authentication.
 
 Use `docs/facebook-messenger.nginx.conf` as an example alongside your existing TLS configuration. Preserve request bodies and query parameters when proxying. Do not record OAuth callback query strings, verification tokens or deletion confirmation URLs in reverse proxy/APM logs. This API skips request logging for `/v1/facebook/*` and suppresses secret-bearing HTTP/database errors in the integration handlers.
 
-Before review, confirm the API process is running continuously; database migrations are applied; privacy endpoints return 200; real external webhook verification works; and the reviewer can sign into the application from a fresh browser session. Populate the broader SaaS policy with actual hosting subprocessors and backup retention. The integration notice describes active-database deletion and does not promise immediate backup erasure.
+Before review, confirm the API process is running continuously; database migrations are applied; privacy endpoints return 200; real external webhook verification works; and the reviewer can open the workspace from a fresh browser session. Populate the broader SaaS policy with actual hosting subprocessors and backup retention. The integration notice describes active-database deletion and does not promise immediate backup erasure.
 
 ## Meta App Dashboard setup
 
@@ -96,7 +96,7 @@ Menu labels can differ by app type and Dashboard rollout. Perform these concrete
 4. Under the login product's **Settings**, enable Web OAuth login and add the exact **Valid OAuth Redirect URI** below. Enable HTTPS/strict redirect matching as provided by the Dashboard. Set the **Deauthorize Callback URL** below. For classic Facebook Login, explicitly set `FACEBOOK_LOGIN_MODE=classic`; the backend requests the same three scopes using the supported OAuth code flow. Do not switch to classic just to bypass an unsupported business configuration.
 5. Under **Webhooks → Page**, or **Messenger → API Setup → Configure webhooks**, register the webhook URL and your `FACEBOOK_WEBHOOK_VERIFY_TOKEN`. Meta must receive the correct challenge response.
 6. Subscribe the Page object to **`messages`, `message_echoes`, `message_deliveries`, `message_reads`**. No postback, feed, marketing, Instagram or WhatsApp fields are used by this flow. Confirm the Page permits Messenger messages. If other messaging apps are attached, check the Page's **Advanced Messaging / conversation routing** settings and make this support app the receiving app for the test conversation. This implementation does not take thread control from another app or ingest its standby queue.
-7. Log into the application as the company/account owner and choose **Connect Facebook Page**. Grant the requested permissions and select the Page asset in Facebook's real dialog. Select the Page again in this workspace's eligible Page list. The backend calls `POST /PAGE_ID/subscribed_apps` and checks `GET /PAGE_ID/subscribed_apps`. Confirm the card actually says **connected**.
+7. Open the public workspace and choose **Connect Facebook Page**. Grant the requested permissions and select the Page asset in Facebook's real dialog. Select the Page again in this workspace's eligible Page list. The backend calls `POST /PAGE_ID/subscribed_apps` and checks `GET /PAGE_ID/subscribed_apps`. Confirm the card actually says **connected**.
 8. Open **App Review → Permissions and Features**, or the use case's permission review screen. Check each requested permission's available access level and requirements. Request Advanced Access where the Dashboard requires it to serve customer businesses/non-role users. Provide a recording demonstrating each permission's implemented feature, the use-case description below, and private reviewer-access instructions.
 
 | Setting | Exact URL with your configured origin |
@@ -132,23 +132,15 @@ Verify eligibility in your App Dashboard before recording; the coding session co
 4. App-created Facebook Test Users, where available, may have restrictions on Messenger or interaction with real Pages. Confirm the actual accounts can open native Messenger and reach the test Page before the recording. Do not create misleading personal accounts or document Facebook passwords.
 5. For reviewer testing, follow the account/test-asset mechanisms offered by the actual App Review form. A reviewer must be able to perform the required flow without assuming they have your private app role or Page password. Explain which Page is already connected for the support test and how Meta-provided reviewer/test actors can exercise authorization if required. Resolve eligibility with the app's review configuration before submission.
 
-## Secure application reviewer access
+## Public application reviewer access
 
-Create a **dedicated SaaS review company/account** using your existing administrator/company provisioning flow. Connect only the dedicated test Page; do not expose another customer's company. Give a reviewer agent accepted team membership with `inbox` permission if separate agent testing is required. The owner credential is needed for connect/reconnect/disconnect.
-
-Use a unique random SaaS password stored in your organization's password manager. Enter the application URL, SaaS username/password and company login domain **only in Meta App Review's private testing/access credential fields** (or the secure tester-access mechanism offered by that form). Keep them valid during review and rotate/revoke them afterward. Do not put passwords in this document, source control, a public Page, the recording or an emailed/shared plaintext script. Facebook credentials, App Secrets and Page tokens must not be supplied as SaaS reviewer credentials.
-
-For password-free entry, configure the optional private review link on the target API server. Set `FACEBOOK_REVIEW_ENABLED=true`, `FACEBOOK_REVIEW_EMAIL`, `FACEBOOK_REVIEW_PASSWORD`, `FACEBOOK_REVIEW_DOMAIN` (an existing company login domain), `FACEBOOK_REVIEW_KEY_HASH` (SHA-256 of a random 32-byte base64url access key), and `FACEBOOK_REVIEW_EXPIRES_AT` (an ISO timestamp). The credentials remain in the server environment. Missing configuration disables this endpoint; expired or incorrect keys cannot log in.
-
-Supply `/v1/facebook/page#review=ACCESS_KEY` only in Meta's private reviewer-access instructions. Opening that link signs into the configured account through normal password validation, company-domain checks and login auditing. The browser removes the fragment before navigating to Facebook. Anyone holding the link can access that account, so use a dedicated account with test data. Set `FACEBOOK_REVIEW_ENABLED=false` and restart the API to disable new review logins; existing sessions follow the application's normal session policy.
-
-For automatic entry on the ordinary `/v1/facebook/page` URL, also set `FACEBOOK_REVIEW_PUBLIC_ENABLED=true` and `FACEBOOK_REVIEW_PAGE_ID` to the dedicated test Page ID. Visitors without a saved login receive a short session limited to that Page's Messenger integration and conversations. The public session may authorize/reconnect only that Page and send support replies within the normal reply window. It cannot disconnect/delete the Page, access other account APIs, or act as a password-reset token. The configured password stays on the server. This exposes the test Page's inbox and reply feature to anyone visiting the URL; keep the Page dedicated to review. Disable public access with `FACEBOOK_REVIEW_PUBLIC_ENABLED=false`; existing public sessions are denied immediately by the API after its environment reloads. Public sessions also expire after at most one hour and are blocked after `FACEBOOK_REVIEW_EXPIRES_AT`.
+Share `/v1/facebook/page` directly. The page opens a separate visitor workspace automatically and shows **Connect Facebook Page**. Reviewers authorize their own eligible Meta test assets through Facebook. No application email, password, company domain or private review link is required. Apply the public-session migration described in [Public Meta workspaces](public-meta-workspaces.md).
 
 ## Reviewer testing instructions
 
 Supply the configured URL, company domain, test Page name/ID and private SaaS credential fields along with these steps:
 
-1. Open the application URL. Log in with the supplied SaaS account and company login domain. If a private review link was supplied, it signs into the configured review account automatically.
+1. Open the deployed Messenger workspace directly. No application credentials are required.
 2. Choose **Settings → Integrations**, then **Facebook Messenger**. The three permission explanations appear beside **Connect Facebook Page**.
 3. Choose **Connect Facebook Page**. The browser opens `www.facebook.com` for actual authorization. Use the eligible Meta review/test actor, grant the three required permissions, and select the designated test Page asset. If permissions were already granted, Facebook may show a reconnect/reauthorization screen rather than first-time consent.
 4. On return, select the designated Page in the application and choose **Connect selected Page**. Confirm its Page name, Page ID and **connected** status. No connected state is shown unless the subscription API and subsequent verification succeeded.
@@ -167,7 +159,7 @@ Record the real deployed application and native Messenger; hide password entry, 
 
 | Scene | Action | Suggested narration |
 | --- | --- | --- |
-| 1 | Log into the SaaS with the dedicated business account | “A business agent signs into our customer support application.” |
+| 1 | Open the public Messenger workspace | “The workspace opens directly, without application credentials.” |
 | 2 | Open Settings → Integrations → Facebook Messenger | “The business can connect its Facebook Page for Messenger support.” |
 | 3 | Click Connect; show Facebook's actual authorization and grants | “Facebook asks the Page owner to authorize Page listing, messaging and webhook management.” |
 | 4 | Select the test Page; show name, ID and connected status | “We select the business Page. The application verifies its Messenger webhook subscription.” |

@@ -27,13 +27,20 @@ The response follows the standard success envelope, with this `data`:
   ],
   "total_phone_numbers": 1,
   "created": 0,
-  "updated": 1
+  "updated": 1,
+  "skipped_count": 0,
+  "skipped_phone_numbers": [],
+  "remaining_slots": 0
 }
 ```
 
 The API fetches the account details and every page of [Meta's phone-number listing](https://www.postman.com/meta/whatsapp-business-platform/request/e9ady51/get-phone-numbers) before writing to the database. It refreshes the account name, currency, template namespace and metadata, and updates existing phone display numbers, verified names, quality ratings, verification status and metadata. New numbers are added. Existing local UUIDs, local status settings, contacts and other relations are preserved. Repeating the request updates the same rows.
 
-Database changes use a single transaction with bounded phone batches. A fetch failure or conflicting number belonging to another owner, company or WABA aborts the sync. Soft-deleted phone rows belonging to this WABA are restored if Meta still returns them. Numbers absent from Meta are retained; sync does not delete numbers or conversation history. An empty Meta list returns zero synced numbers while still refreshing the account details.
+Database changes use a single transaction with bounded phone batches. A fetch failure or conflicting number belonging to another owner, company or WABA aborts the sync. New numbers and soft-deleted restorations require a remaining `WabaNumber` slot. The effective allowance is the active user plan's base `limit` plus `addon_limit`, less the live count of active, non-deleted numbers across the owner's WABAs. The owner/plan lock prevents concurrent syncs from claiming the same last slot. Numeric integer strings in historical add-on snapshots are read as numbers; malformed values do not grant capacity.
+
+Only new numbers fitting the remaining slots are saved. Other fetched numbers appear in `skipped_phone_numbers` with `phone_number_id` and reason `PLAN_LIMIT_EXCEEDED` (or `PLAN_UNAVAILABLE` without usable entitlement); no inactive overflow row is inserted. `total_phone_numbers` counts fetched Meta numbers, `created` and `updated` count saved rows, and `skipped_count` counts unsaved numbers. `remaining_slots` is the capacity after this sync, or null for unlimited. With one remaining slot and two new Meta numbers, one is saved and the second is skipped. A zero-slot sync can still refresh existing rows. Increasing capacity and syncing again imports previously skipped numbers.
+
+Existing numbers, including inactive numbers or those absent from Meta, are retained; sync does not delete numbers or conversation history or automatically activate disabled numbers. Soft-deleted rows remain deleted if there is no slot to restore them. An empty Meta list returns zero synced numbers while still refreshing the account details. Direct single-number creation returns 403 when no slot is available.
 
 The existing `POST /v1/admin/waba/:wabaId/sync-phone-numbers` route continues to take the local WABA UUID. It now uses the same sync logic and returns all refreshed phone rows, including updated existing numbers, in its existing array response.
 
@@ -63,7 +70,18 @@ The request saves or updates the owned WABA, syncs its phone numbers, subscribes
       "clientWabaAccount": { "id": "<local UUID>", "waba_id": "123456789012345" },
       "phoneNumbers": [],
       "webhook": { "success": true },
-      "templates": []
+      "templates": [],
+      "phone_number_sync": {
+        "total_phone_numbers": 2,
+        "created": 0,
+        "updated": 0,
+        "skipped_count": 2,
+        "skipped_phone_numbers": [
+          { "phone_number_id": "<first-Meta-phone-ID>", "reason": "PLAN_LIMIT_EXCEEDED" },
+          { "phone_number_id": "<second-Meta-phone-ID>", "reason": "PLAN_LIMIT_EXCEEDED" }
+        ],
+        "remaining_slots": 0
+      }
     }
   }
 }
@@ -73,6 +91,8 @@ Only waba_id is needed in the body. No authorization code, OAuth state, redirect
 
 Configure META_ACCESS_TOKEN with access to the WABA and META_API_VERSION on the API server. The existing saved-credential support remains available for previously connected accounts. Existing job status and retry routes remain available for saved jobs.
 
-Later failures may leave earlier synced rows saved; repeating the request reuses those records. Plan limits still apply to synced numbers, and excess numbers remain inactive. No migration is required.
+Later failures may leave earlier synced rows saved; repeating the request reuses those records. Plan limits apply before new number insertion; excess fetched numbers are skipped. The existing `data.data.phoneNumbers` array contains saved numbers, and `data.data.phone_number_sync` describes quota skips. The frontend should display those skipped IDs and offer upgrading or freeing a slot; a successful WABA connection does not imply every Meta number was saved. No migration is required.
 
 Regression checks: node --test tests/waba-simple-onboarding.test.cjs tests/waba-sync.test.cjs. Set WABA_ONBOARD_DATABASE_TEST=true to include rollback-only PostgreSQL account ownership/upsert tests.
+
+Quota checks: `node --test tests/plan-usage.test.cjs tests/dynamic-plan-addons.test.cjs`. The concurrent allocation regression is `node --test tests/waba-capacity-database.test.cjs`, with `WABA_CAPACITY_TEST_DATABASE_URL` pointing to a fresh disposable loopback PostgreSQL database whose name contains `waba_capacity_test`. It creates synthetic test tables and checks the real owner locks, add-on allowance, skip reporting, direct creation, downgrade handling and tenant conflicts. Never point it at the application database.

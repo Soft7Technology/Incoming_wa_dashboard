@@ -1,6 +1,17 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { loadSource } = require('./helpers/background-database.cjs');
+const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
+function loadSource(file, dependencies, globals = {}) {
+  const exports = {};
+  const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
+  }).outputText;
+  vm.runInNewContext(code, { exports, require: id => {
+    if (id in dependencies) return dependencies[id];
+    throw Error('Missing test dependency: ' + id);
+  }, console, ...globals }, { filename: file });
+  return exports;
+}
 
 class BadRequest extends Error { constructor({ message }) { super(message); this.statusCode = 400; } }
 const input = { user_id: 'owner', company_id: 'company', waba_id: '123456' };
@@ -18,7 +29,11 @@ function fixture(options = {}) {
     async syncAccountAndPhones(waba, details, phones) {
       calls.push('save-phones');
       if (options.phoneConflict) throw new BadRequest({ message: 'Phone belongs to another account' });
-      return { waba, phone_numbers: phones.map(phone => ({ ...phone, phone_number_id: phone.id })) };
+      const saved = phones.slice(0, options.remaining ?? phones.length);
+      const skipped = phones.slice(saved.length).map(phone => ({ phone_number_id: phone.id, reason: 'PLAN_LIMIT_EXCEEDED' }));
+      return { waba, phone_numbers: saved.map(phone => ({ ...phone, phone_number_id: phone.id })),
+        total_phone_numbers: phones.length, created: saved.length, updated: 0,
+        skipped_count: skipped.length, skipped_phone_numbers: skipped, remaining_slots: 0 };
     },
   };
   const meta = {
@@ -92,6 +107,17 @@ test('repeated WABA onboarding retains its local account ID and supports no phon
   const second = await f.service.onboardWaba(input);
   assert.equal(first.data.clientWabaAccount.id, second.data.clientWabaAccount.id);
   assert.equal(second.data.phoneNumbers.length, 0);
+});
+
+test('onboard keeps the phone array compatible and exposes skipped-number quota details', async () => {
+  const f = fixture({ remaining: 1, phones: [{ id: '1001', display_phone_number: '+1 555 0101' }, { id: '1002', display_phone_number: '+1 555 0102' }] });
+  const result = await f.service.onboardWaba(input);
+  assert.equal(result.data.phoneNumbers.length, 1);
+  assert.equal(result.data.phone_number_sync.total_phone_numbers, 2);
+  assert.equal(result.data.phone_number_sync.created, 1);
+  assert.equal(result.data.phone_number_sync.skipped_count, 1);
+  assert.equal(result.data.phone_number_sync.skipped_phone_numbers[0].phone_number_id, '1002');
+  assert.equal(result.data.phone_number_sync.remaining_slots, 0);
 });
 
 test('invalid IDs and foreign WABA ownership fail before Meta calls', async () => {

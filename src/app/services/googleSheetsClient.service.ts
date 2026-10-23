@@ -2,7 +2,7 @@ import axios from 'axios';
 import { configuration, fail, googleFileScope } from '../utils/googleSheets';
 
 export class GoogleSheetsClient {
-  private async request(method: 'get' | 'post', url: string, options: any) {
+  private async request(method: 'get' | 'post' | 'put', url: string, options: any) {
     try {
       const response = await axios.request({
         method,
@@ -76,6 +76,30 @@ export class GoogleSheetsClient {
     return this.request('get', `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(id)}`, {
       headers: { Authorization: `Bearer ${token}` },
       params: { fields: 'spreadsheetId,properties(title),sheets(properties(sheetId,title,gridProperties))' },
+    });
+  }
+  async automation(key: string, input: Record<string, any>, token: string) {
+    const headers = { Authorization: `Bearer ${token}` };
+    if (key === 'createSpreadsheet') {
+      if (typeof input.title !== 'string' || !input.title.trim() || input.title.length > 255) fail(400, 'Spreadsheet title must contain 1-255 characters');
+      if (input.sheet_title !== undefined && (typeof input.sheet_title !== 'string' || !input.sheet_title.trim() || input.sheet_title.length > 100 || /[:\\/?*\[\]]/.test(input.sheet_title))) fail(400, 'Invalid spreadsheet tab title');
+      return this.request('post', 'https://sheets.googleapis.com/v4/spreadsheets', { headers,
+        params: { fields: 'spreadsheetId,spreadsheetUrl,properties(title),sheets(properties(sheetId,title))' },
+        data: { properties: { title: input.title.trim() }, ...(input.sheet_title ? { sheets: [{ properties: { title: input.sheet_title } }] } : {}) },
+      });
+    }
+    if (!['getRows', 'appendRows', 'updateRows'].includes(key)) fail(400, 'Unsupported Google Sheets flow action');
+    if (typeof input.spreadsheet_id !== 'string' || !/^[A-Za-z0-9_-]{10,200}$/.test(input.spreadsheet_id)) fail(400, 'Use a valid spreadsheet_id, not a URL');
+    const range = input.range;
+    if (typeof range !== 'string' || range.length > 512 || /[\x00-\x1f]/.test(range)) fail(400, 'Use a bounded A1 range including the tab title');
+    const match = /^(?:'(?:[^']|'')+'|[^'!\r\n]+)!\$?([A-Z]{1,3})\$?([1-9][0-9]{0,6})(?::\$?([A-Z]{1,3})(?:\$?([1-9][0-9]{0,6}))?)?$/.exec(range);
+    const column = (v: string) => v.split('').reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
+    if (!match || (match[3] && !match[4] && key !== 'appendRows') || (match[3] && (column(match[3]) < column(match[1]) || column(match[3]) - column(match[1]) >= 100)) || (match[4] && (Number(match[4]) < Number(match[2]) || Number(match[4]) - Number(match[2]) >= 1000))) fail(400, 'Use a range of at most 1,000 rows and 100 columns; open end rows are allowed only for append');
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(input.spreadsheet_id)}/values/${encodeURIComponent(range)}`;
+    if (key === 'getRows') return this.request('get', url, { headers, params: { valueRenderOption: 'UNFORMATTED_VALUE', majorDimension: 'ROWS' } });
+    return this.request(key === 'appendRows' ? 'post' : 'put', key === 'appendRows' ? `${url}:append` : url, {
+      headers, params: { valueInputOption: 'RAW', ...(key === 'appendRows' ? { insertDataOption: 'INSERT_ROWS' } : {}) },
+      data: { range, majorDimension: 'ROWS', values: input.values },
     });
   }
   async rows(id: string, title: string, token: string, sample = false) {

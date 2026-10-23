@@ -1,6 +1,6 @@
 # Facebook Page posts and user content
 
-Open `/v1/facebook/posts` and sign in with an existing application company owner account. This workspace implements `pages_read_user_content` and `pages_manage_posts`, alongside `pages_show_list` and `pages_read_engagement` for Page selection and metadata. Messenger, Lead Forms and Instagram have their own connections; the new workspace does not replace their credentials or subscribe/unsubscribe their webhooks.
+Open `/v1/facebook/posts` directly and click **Connect Facebook Page**; no application login is required. Each visitor receives a separate browser workspace. See [Public Meta workspaces](public-meta-workspaces.md) for the required migration and public API paths. This workspace implements `pages_read_user_content` and `pages_manage_posts`, alongside `pages_show_list` and `pages_read_engagement` for Page selection and metadata. Messenger, Lead Forms and Instagram retain their separate connections.
 
 ## Connect a Page
 

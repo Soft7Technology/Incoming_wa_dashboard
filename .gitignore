@@ -35,3 +35,7 @@ backups/
 !/tests/waba-simple-onboarding.test.cjs
 !/tests/subscription-plan-names.test.cjs
 !/tests/user-plan-independence.test.cjs
+!/tests/support-live.test.cjs
+!/tests/automation-flows.test.cjs
+!/tests/waba-capacity-database.test.cjs
+!/tests/facebook-public-workspace.test.cjs

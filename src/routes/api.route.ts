@@ -8,6 +8,7 @@ import FacebookPublicRoute from './facebookPublic.route';
 import GoogleSheetsPublicRoute from './googleSheetsPublic.route';
 import GooglePeoplePublicRoute from './googlePeoplePublic.route';
 import ShopifyPublicRoute from './shopifyPublic.route';
+import AutomationFlowPublicRoute from './automationFlowPublic.route';
 
 const ApiRoute = Router();
 
@@ -34,6 +35,7 @@ ApiRoute.use('/integrations/shopify', ShopifyPublicRoute);
 
 // Public webhook routes - no authentication (Meta webhooks validated with their own signature)
 ApiRoute.use('/webhooks', WebhookPublicRoute);
+ApiRoute.use('/webhook', AutomationFlowPublicRoute);
 
 
 // Admin routes - JWT authentication required (for dashboard users)

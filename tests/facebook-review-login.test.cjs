@@ -2,8 +2,6 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
 const express = require('express');
-const fs = require('node:fs');
-const vm = require('node:vm');
 const { load, utils } = require('./facebook-helpers.cjs');
 
 test('review access requires an enabled, unexpired private key and uses normal login for only the configured account', async () => {
@@ -32,10 +30,11 @@ test('review access requires an enabled, unexpired private key and uses normal l
     '../../services/facebookMessenger.service': { default: {} }, '../../utils/facebook': utils,
   });
   const publicRoute = load('src/routes/facebookPublic.route.ts', {
+    './publicMetaWorkspace.route': express.Router(),
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) },
     '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookMessenger.controller': controller,
-    './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts'),
+    './facebookLoginTest.route': express.Router(),
     './facebookReviewLogin.route': reviewRoute,
   }).default;
   const app = express();
@@ -76,55 +75,4 @@ test('review access requires an enabled, unexpired private key and uses normal l
     }
     server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   }
-});
-
-test('private browser link clears its fragment, signs in without a password and preserves ordinary login without a link', async () => {
-  const source = fs.readFileSync('src/web/facebook/app.js', 'utf8');
-  async function browser(fragment, allowed, publicEnabled = true) {
-    const nodes = new Map(), requests = [], history = [], values = new Map();
-    const node = () => ({ value: '', hidden: false, disabled: false, textContent: '', classList: { toggle() {} }, replaceChildren() {}, append() {} });
-    const document = {
-      hidden: false, addEventListener() {}, createElement: node,
-      getElementById(id) { if (!nodes.has(id)) nodes.set(id, node()); return nodes.get(id); },
-    };
-    const context = {
-      document, URL, URLSearchParams, AbortSignal, console, setInterval() {},
-      location: { hostname: 'review.example.test', pathname: '/v1/facebook/page', search: '', hash: fragment },
-      history: { replaceState(_state, _title, url) { history.push(url); } },
-      sessionStorage: { getItem: key => values.get(key), setItem: (key, value) => values.set(key, value), removeItem: key => values.delete(key) },
-      fetch: async (url, options) => {
-        requests.push({ url, options });
-        if (url.endsWith('/public') && !publicEnabled)
-          return { ok: false, status: 404, json: async () => ({ success: false }) };
-        const data = url.includes('/review-login')
-          ? allowed ? { token: 'review-jwt', data: { name: 'Reviewer' } } : null
-          : url.endsWith('/setup') ? { ready: true, privacy_ready: true, can_manage: false }
-          : url.endsWith('/pages') ? [] : { conversations: [] };
-        return { ok: allowed, status: allowed ? 200 : 403, json: async () => ({ success: allowed, data, message: 'Invalid review link' }) };
-      },
-    };
-    vm.runInNewContext(source, context);
-    for (let i = 0; i < 15; i++) await new Promise(resolve => setImmediate(resolve));
-    return { nodes, requests, history, values };
-  }
-  const key = crypto.randomBytes(32).toString('base64url');
-  const accepted = await browser('#review=' + key, true);
-  assert.equal(accepted.requests[0].url, '/v1/facebook/review-login');
-  assert.deepEqual(JSON.parse(accepted.requests[0].options.body), { key });
-  assert.equal(accepted.history[0], '/v1/facebook/page');
-  assert.equal(accepted.values.get('facebook_saas_jwt'), 'review-jwt');
-  assert.equal(accepted.nodes.get('workspace').hidden, false);
-  assert.equal(accepted.nodes.get('login-button').disabled, false);
-  const rejected = await browser('#review=' + key, false);
-  assert.equal(rejected.values.has('facebook_saas_jwt'), false);
-  assert.equal(rejected.nodes.get('login-panel').hidden, false);
-  assert.equal(rejected.nodes.get('notice').textContent, 'Invalid review link');
-  const ordinary = await browser('', true);
-  assert.equal(ordinary.requests[0].url, '/v1/facebook/review-login/public');
-  assert.deepEqual(JSON.parse(ordinary.requests[0].options.body), {});
-  assert.equal(ordinary.nodes.get('workspace').hidden, false);
-  const disabled = await browser('', true, false);
-  assert.equal(disabled.values.has('facebook_saas_jwt'), false);
-  assert.equal(disabled.nodes.get('notice').hidden, true);
-  assert.equal(typeof ordinary.nodes.get('login-form').onsubmit, 'function');
 });

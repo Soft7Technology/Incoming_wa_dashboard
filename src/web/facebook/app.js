@@ -1,7 +1,7 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-const apiBase = '/v1/admin/facebook-messenger';
-let token = sessionStorage.getItem('facebook_saas_jwt') || '';
+const apiBase = '/v1/facebook/api/messenger';
+let sessionReady = false;
 let setup,
   activeId,
   messageCursor,
@@ -22,9 +22,9 @@ function notice(text, type = 'error') {
 async function api(path, options = {}) {
   let response;
   try {
-    response = await fetch(apiBase + path, {
+    response = await window.metaWorkspace.fetch(apiBase + path, {
       ...options,
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
       signal: AbortSignal.timeout(25000),
     });
@@ -35,7 +35,6 @@ async function api(path, options = {}) {
   }
   const data = await response.json();
   if (!response.ok || !data.success) {
-    if (response.status === 401) logOut();
     throw new Error(data.message || 'Request failed.');
   }
   return data.data;
@@ -67,57 +66,6 @@ function showTab(tab) {
   $('integration-tab').classList.toggle('active', tab === 'integrations');
   $('inbox-tab').classList.toggle('active', tab === 'inbox');
 }
-function logOut() {
-  token = '';
-  generation++;
-  sessionStorage.removeItem('facebook_saas_jwt');
-  sessionStorage.removeItem('facebook_saas_name');
-  setup = null;
-  activeId = null;
-  attempt = null;
-  pages = [];
-  conversations.clear();
-  messages.clear();
-  $('workspace').hidden = true;
-  $('login-panel').hidden = false;
-  $('logout').hidden = true;
-  $('identity').textContent = '';
-  $('reply').value = '';
-  renderMessages();
-  $('conversations').replaceChildren();
-  $('pages').replaceChildren();
-}
-
-$('domain').value = location.hostname;
-$('login-form').onsubmit = async (event) => {
-  event.preventDefault();
-  $('login-button').disabled = true;
-  notice('');
-  try {
-    const response = await fetch('/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(25000),
-      body: JSON.stringify({
-        identifier: $('email').value,
-        password: $('password').value,
-        domain_name: location.hostname,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok || !result.success || !result.data?.token) throw new Error(result.message || 'Login failed.');
-    token = result.data.token;
-    sessionStorage.setItem('facebook_saas_jwt', token);
-    sessionStorage.setItem('facebook_saas_name', result.data.data?.name || $('email').value);
-    $('password').value = '';
-    await init();
-  } catch (e) {
-    notice(e.message);
-  } finally {
-    $('login-button').disabled = false;
-  }
-};
-$('logout').onclick = logOut;
 $('integration-tab').onclick = () => showTab('integrations');
 $('inbox-tab').onclick = () => showTab('inbox');
 
@@ -386,12 +334,12 @@ $('reply-form').onsubmit = async (event) => {
 };
 
 async function refresh() {
-  if (polling || !token) return;
+  if (polling || !sessionReady) return;
   polling = true;
   const epoch = generation;
   try {
     const [newPages, result] = await Promise.all([api('/pages'), api('/conversations')]);
-    if (epoch !== generation || !token) return;
+    if (epoch !== generation || !sessionReady) return;
     pages = newPages;
     const validPages = new Set(pages.map((p) => p.id));
     for (const [id, c] of conversations) if (!validPages.has(c.page_connection_id)) conversations.delete(id);
@@ -418,12 +366,10 @@ async function refresh() {
   }
 }
 async function init() {
-  if (!token) return;
+  if (!sessionReady) return;
   setup = await api('/setup');
-  $('login-panel').hidden = true;
   $('workspace').hidden = false;
-  $('logout').hidden = false;
-  $('identity').textContent = sessionStorage.getItem('facebook_saas_name') || 'Signed in';
+  $('identity').textContent = 'Your workspace';
   $('connect').disabled = !setup.ready || !setup.can_manage;
   $('configuration').hidden = setup.ready && setup.privacy_ready;
   $('configuration').textContent = [
@@ -440,43 +386,12 @@ async function init() {
   await refresh();
   history.replaceState(null, '', location.pathname);
 }
-async function reviewLogin(key, publicAccess = false) {
-  // Fragments are not sent in the page request or Referer. Clear the access key
-  // before loading the workspace or navigating through Facebook authorization.
-  history.replaceState(null, '', location.pathname + location.search);
-  logOut();
-  $('login-button').disabled = true;
-  notice('Signing into the review account…', 'success');
-  try {
-    const response = await fetch('/v1/facebook/review-login' + (publicAccess ? '/public' : ''), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      signal: AbortSignal.timeout(25000),
-      body: JSON.stringify(publicAccess ? {} : { key }),
-    });
-    if (publicAccess && response.status === 404) { notice(''); return; }
-    const result = await response.json();
-    if (!response.ok || !result.success || !result.data?.token)
-      throw new Error(result.message || 'Review login failed.');
-    token = result.data.token;
-    sessionStorage.setItem('facebook_saas_jwt', token);
-    sessionStorage.setItem('facebook_saas_name', result.data.data?.name || 'Review account');
-    notice('');
-    await init();
-  } finally {
-    $('login-button').disabled = false;
-  }
-}
-const reviewKey = new URLSearchParams(location.hash.slice(1)).get('review');
-if (reviewKey) reviewLogin(reviewKey).catch((e) => notice(e.message));
-else if (token) init().catch((e) => notice(e.message));
-else reviewLogin(undefined, true).catch((e) => notice(e.message));
+window.metaWorkspace.ready().then(() => { sessionReady = true; return init(); }).catch((e) => notice(e.message));
 // Database-backed polling works across API replicas and catches up after sleep or
 // connection loss. The UI never depends on the WhatsApp socket bridge's room rules.
 setInterval(() => {
-  if (token && setup && !document.hidden) refresh();
+  if (sessionReady && setup && !document.hidden) refresh();
 }, 2000);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && token && setup) refresh();
+  if (!document.hidden && sessionReady && setup) refresh();
 });

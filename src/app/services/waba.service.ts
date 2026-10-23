@@ -62,10 +62,8 @@ class WabaService {
       throw new HTTP400Error({ message: 'A valid Meta WABA ID is required' });
     }
     const clientWabaAccount = await this.upsertWaba(data);
-    const phoneNumbers = await this.syncCompanyPhoneNumbers({
-      user_id: data.user_id, company_id: data.company_id, waba_id: data.waba_id,
-      company_WABAID: clientWabaAccount.id,
-    });
+    const syncResult = await this.syncWaba(data.user_id, data.company_id!, clientWabaAccount.id);
+    const phoneNumbers = syncResult.phone_numbers;
     const webhook = await MetaService.subscribeToWebhooks(data.waba_id);
     const templates = await templateService.syncTemplates(data.user_id, clientWabaAccount.id, data.company_id);
     await activityLogsModel.create({
@@ -76,7 +74,10 @@ class WabaService {
       status: 'SUCCESS', read: false,
     });
     return { clientAccountStatusMessage: 'Client WABA account setup successfully',
-      data: { clientWabaAccount, phoneNumbers, webhook, templates } };
+      data: { clientWabaAccount, phoneNumbers, webhook, templates,
+        phone_number_sync: { total_phone_numbers: syncResult.total_phone_numbers, created: syncResult.created,
+          updated: syncResult.updated, skipped_count: syncResult.skipped_count,
+          skipped_phone_numbers: syncResult.skipped_phone_numbers, remaining_slots: syncResult.remaining_slots } } };
   }
 
   async upsertWaba(data: CreateWabaDto) {
@@ -245,6 +246,7 @@ class WabaService {
         meta_data: phoneDetails,
       });
     } catch (error: any) {
+      if (error.statusCode === 403) throw error;
       throw new HTTP400Error({
         message: 'Failed to verify phone number with Meta',
         details: error.message,

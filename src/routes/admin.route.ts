@@ -23,6 +23,7 @@ import chatBotRoute from './chatbot.route';
 import companyRoute from './company.route';
 import SubscriptionRoute from './subscription.route';
 import supportRoute from './support.route';
+import AutomationFlowRoute from './automationFlow.route';
 import teamInviteRoute from './team.route';
 import ColumnRoute from './column.route';
 import activityRoute from './activity.route';
@@ -50,6 +51,7 @@ AdminRoute.use('/payments', PaymentRoute);
 // Mount all admin routes
 AdminRoute.use('/companies', companyRoute);
 AdminRoute.use('/support', supportRoute);
+AdminRoute.use('/flows', AutomationFlowRoute);
 AdminRoute.use('/subscription', SubscriptionRoute);
 AdminRoute.use('/users', UserRoute);
 AdminRoute.use('/waba', WabaRoute);

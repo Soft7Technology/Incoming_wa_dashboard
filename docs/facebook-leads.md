@@ -1,6 +1,6 @@
 # Facebook Lead Forms setup and App Review
 
-Open `https://YOUR_HOST/v1/facebook/leads` and sign in with an existing company owner account. The workspace connects a Facebook Page, lists its Instant Forms and questions, lets the owner enable selected forms, imports submitted answers, and receives new leads through the signed Page `leadgen` webhook. Leads are stored separately from WhatsApp contacts and shown only to the owning company account.
+Open `https://YOUR_HOST/v1/facebook/leads` directly and connect through Meta; no application login is required. Each visitor receives a separate browser workspace. See [Public Meta workspaces](public-meta-workspaces.md) for the required migration and public API paths. The workspace connects a Facebook Page, lists its Instant Forms and questions, lets the visitor enable selected forms, imports submitted answers, and receives new leads through the signed Page `leadgen` webhook. Leads remain isolated to their owning workspace.
 
 ## Configure and deploy
 
@@ -24,7 +24,7 @@ The connection uses actual Meta authorization and validates the granted permissi
 | `leads_retrieval` | `/{FORM_ID}/leads` and `/{LEAD_ID}` read submitted answers | Enable syncing, import leads, and display the submitted answers |
 | `pages_manage_metadata` | `/{PAGE_ID}/subscribed_apps` subscribes to and verifies `leadgen` | Verified webhook status, followed by a new submission arriving automatically |
 
-1. Log into the deployed workspace with an eligible company owner account.
+1. Open the deployed workspace directly; no application credentials are required.
 2. Click **Connect Facebook Page**, complete the real Facebook authorization and grant the requested access.
 3. Select the test Page and show **Connected · lead webhook verified**.
 4. Click **Choose forms**, select an existing Instant Form, and expand its questions.
@@ -56,7 +56,7 @@ It reads the encrypted token file at `.facebook-test-runtime/facebook-leads-toke
 
 Open [Meta App Dashboard](https://developers.facebook.com/apps/) and select the app. Depending on the dashboard, find the relevant use case's permission settings or **App Review → Permissions and Features**. Request **Advanced Access** for the implemented permissions and any required dependencies. Complete business verification and other requirements shown by Meta before serving external businesses.
 
-Provide the deployed workspace URL, a working dedicated company owner login, step-by-step reviewer instructions and a recording showing the actual permission use. The existing public Messenger review session is restricted to Messenger; it cannot authorize the Lead Forms workspace. Use an ordinary dedicated company owner login for this flow.
+Provide the deployed workspace URL, step-by-step reviewer instructions and a recording showing the actual permission use. The public workspace opens without an application login; reviewers authorize their own eligible Meta assets.
 
 Suggested explanation to adapt to your business:
 

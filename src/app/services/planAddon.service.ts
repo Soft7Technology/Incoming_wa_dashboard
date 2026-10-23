@@ -4,7 +4,7 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { CatalogActor, positiveInt, textField } from './planCatalog.service';
-import { isUnmeteredFeature, snapshotPlanAddons } from '../utils/planFeatures';
+import { isUnmeteredFeature, snapshotPlanAddons, storedAddonLimit } from '../utils/planFeatures';
 
 export function walletPaise(value: unknown): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value));
@@ -85,9 +85,10 @@ class PlanAddonService {
       positiveInt(Number(addon.price_paise), 'saved add-on price');
       const units = Number(addon.units) * quantity;
       const amount = Number(addon.price_paise) * quantity;
-      if (!Number.isSafeInteger(limit.addon_limit ?? 0) || (limit.addon_limit ?? 0) < 0)
+      const existingBonus = storedAddonLimit(limit.addon_limit);
+      if (!Number.isSafeInteger(existingBonus))
         throw new HTTP400Error({ message: 'Invalid existing add-on limit' });
-      const bonus = Number(limit.addon_limit ?? 0) + units;
+      const bonus = existingBonus + units;
       if (
         !Number.isSafeInteger(bonus) ||
         bonus < 0 ||

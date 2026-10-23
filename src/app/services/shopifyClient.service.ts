@@ -1,11 +1,12 @@
 import axios from 'axios';
-import { configuration, fail, shopDomain } from '../utils/shopify';
+import { configuration, fail, shopDomain, shopifyApiVersion } from '../utils/shopify';
 
 export class ShopifyClient {
-  private async request(shop: string, path: string, body: unknown, token?: string) {
+  private async request(shop: string, path: string, body: unknown, token?: string, form = false) {
+    const domain = shopDomain(shop);
     try {
-      const response = await axios.post(`https://${shopDomain(shop)}${path}`, body, {
-        headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Shopify-Access-Token': token } : {}) },
+      const response = await axios.post(`https://${domain}${path}`, body, {
+        headers: { 'Content-Type': form ? 'application/x-www-form-urlencoded' : 'application/json', ...(token ? { 'X-Shopify-Access-Token': token } : {}) },
         timeout: 15000,
         maxRedirects: 0,
         maxContentLength: 2 * 1024 * 1024,
@@ -15,11 +16,17 @@ export class ShopifyClient {
     } catch (error: any) {
       // Axios errors contain credentials and request bodies. Never forward/log them.
       const status = error?.response?.status;
+      if (form && status === 400) fail(403, 'Shopify refused these app credentials. Install the app on a store in the same Shopify organization, or use Connect Shopify with OAuth.');
       if (status === 401) fail(401, 'Shopify authorization expired or was revoked. Reconnect the store.');
       if (status === 403) fail(403, 'Shopify denied access. Check app permissions and customer data approval.');
       if (status === 429) fail(429, 'Shopify API quota exceeded. Wait and try again.');
       fail(502, 'Shopify request failed. Check the store domain and try again.');
     }
+  }
+  async clientCredentials(shop: string, clientId: string, clientSecret: string) {
+    return this.request(shop, '/admin/oauth/access_token', new URLSearchParams({
+      grant_type: 'client_credentials', client_id: clientId, client_secret: clientSecret,
+    }).toString(), undefined, true);
   }
   async exchange(shop: string, code: string) {
     const c = configuration();
@@ -42,7 +49,7 @@ export class ShopifyClient {
   async graphql(shop: string, token: string, query: string, variables: Record<string, unknown> = {}) {
     const data = await this.request(
       shop,
-      `/admin/api/${configuration().apiVersion}/graphql.json`,
+      `/admin/api/${shopifyApiVersion()}/graphql.json`,
       { query, variables },
       token,
     );

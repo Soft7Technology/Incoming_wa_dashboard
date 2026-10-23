@@ -10,7 +10,7 @@ const { spawn } = require('node:child_process');
 const { load, fixture, utils } = require('./facebook-helpers.cjs');
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 
-test('browser logs in, renders incoming text automatically, sends reply and keeps follow-up in same thread', {
+test('public browser renders incoming text automatically, sends reply and keeps follow-up in same thread', {
   skip: (!process.env.FACEBOOK_TEST_DATABASE_URL || !process.env.FACEBOOK_TEST_CHROME) && 'Set FACEBOOK_TEST_DATABASE_URL and FACEBOOK_TEST_CHROME for browser testing.',
   timeout: 60000,
 }, () => fixture(async ({ database, service, leadService, instagramService, meta, connect, inbound, a }) => {
@@ -22,7 +22,7 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
   const deps = { '../app/http/controllers/facebookMessenger.controller': controllerModule,
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) },
     '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
-    './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts') };
+    './facebookLoginTest.route': express.Router() };
   const app = express();
   app.use(express.json({ verify: (req, _res, body) => { req.rawBody = body; } }));
   app.post('/v1/auth/login', (_req, res) => res.json({ success: true, data: { token: 'BROWSER_TEST_JWT', data: { name: 'Test Owner' } } }));
@@ -34,6 +34,11 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
     '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
     '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
   });
+  // Public browser fixture uses the selected test owner; tenant/cookie checks have their own tests.
+  deps['./publicMetaWorkspace.route'] = express.Router();
+  app.post('/v1/facebook/session', (_req, res) => res.json({ success: true, data: { ready: true } }));
+  app.use('/v1/facebook/api/messenger', (req, _res, next) => { Object.assign(req, a); next(); },
+    load('src/routes/facebookMessenger.route.ts', deps).default);
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;
@@ -59,8 +64,7 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
     const waitFor = async expression => { for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await pause(100); } throw new Error('Browser condition did not become true: ' + expression); };
     await call('Runtime.enable'); await call('Page.enable');
     await connect(); await call('Page.navigate', { url: base + '/v1/facebook/page' });
-    await waitFor("Boolean(document.getElementById('login-form')) && typeof api === 'function'");
-    await evaluate("document.getElementById('email').value='owner@example.test';document.getElementById('password').value='test-password';document.getElementById('domain').value='localhost';document.getElementById('login-form').requestSubmit()");
+    await waitFor("!document.getElementById('workspace').hidden && typeof api === 'function'");
     await waitFor("!document.getElementById('workspace').hidden && document.getElementById('pages').innerText.includes('Review Test Page')");
     assert.equal(await evaluate("document.getElementById('connect').disabled"), false);
     assert.equal(await evaluate("document.getElementById('pages').innerText.includes('TEST_PAGE_TOKEN')"), false);
@@ -83,8 +87,7 @@ test('browser logs in, renders incoming text automatically, sends reply and keep
     assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true);
     const screenshot = await call('Page.captureScreenshot', { format: 'png' });
     fs.writeFileSync(path.resolve('.facebook-test-runtime/browser-inbox.png'), Buffer.from(screenshot.data, 'base64'));
-    await evaluate("document.getElementById('logout').click()");
-    assert.equal(await evaluate("document.getElementById('workspace').hidden && !document.getElementById('login-panel').hidden"), true);
+    assert.equal(await evaluate("document.getElementById('login-form') === null && document.getElementById('logout') === null"), true);
   } finally {
     if (socket) socket.close(); chrome.kill(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve));
   }

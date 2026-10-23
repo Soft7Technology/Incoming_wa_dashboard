@@ -1,7 +1,6 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-const base = '/v1/admin/instagram';
-let token = sessionStorage.getItem('facebook_saas_jwt') || '';
+const base = '/v1/facebook/api/instagram';
 let account,
   conversation,
   media,
@@ -38,16 +37,15 @@ async function busy(node, run) {
   }
 }
 async function api(path, method = 'GET', body) {
-  const response = await fetch(base + path, {
+  const response = await window.metaWorkspace.fetch(base + path, {
     method,
     credentials: 'same-origin',
     signal: AbortSignal.timeout(45000),
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const result = await response.json();
   if (!response.ok || !result.success) {
-    if (response.status === 401) logout();
     throw new Error(result.message || 'Instagram operation failed.');
   }
   return result.data;
@@ -63,38 +61,6 @@ function clearAccount() {
   $('publications').replaceChildren();
   clearTimeout(publishingPoll);
 }
-function logout() {
-  clearAccount();
-  token = '';
-  sessionStorage.removeItem('facebook_saas_jwt');
-  $('workspace').hidden = $('logout').hidden = true;
-  $('login-panel').hidden = false;
-  $('accounts').replaceChildren();
-  $('page-select').replaceChildren();
-  $('selection').hidden = true;
-}
-$('logout').onclick = logout;
-$('login-form').onsubmit = (event) => {
-  event.preventDefault();
-  busy($('login-button'), async () => {
-    const response = await fetch('/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(25000),
-      body: JSON.stringify({
-        identifier: $('email').value,
-        password: $('password').value,
-        domain_name: location.hostname,
-      }),
-    });
-    const data = await response.json();
-    $('password').value = '';
-    if (!response.ok || !data.success || !data.data?.token) throw new Error(data.message || 'Login failed.');
-    token = data.data.token;
-    sessionStorage.setItem('facebook_saas_jwt', token);
-    await init();
-  });
-};
 function connect(provider, node) {
   return busy(node, async () => {
     const result = await api('/oauth/start', 'POST', { provider }),
@@ -276,9 +242,8 @@ $('publish-form').onsubmit = (event) => {
       if (!uploadedPublishAsset) {
         const form = new FormData();
         form.append('file', file);
-        const response = await fetch(base + '/accounts/' + current + '/publishing/uploads', {
+        const response = await window.metaWorkspace.fetch(base + '/accounts/' + current + '/publishing/uploads', {
           method: 'POST',
-          headers: { Authorization: 'Bearer ' + token },
           credentials: 'same-origin',
           body: form,
           signal: AbortSignal.timeout(120000),
@@ -565,8 +530,7 @@ async function renderComments() {
 }
 async function init() {
   const setup = await api('/setup');
-  $('workspace').hidden = $('logout').hidden = false;
-  $('login-panel').hidden = true;
+  $('workspace').hidden = false;
   const direct = setup.providers?.find((p) => p.provider === 'instagram');
   const facebook = setup.providers?.find((p) => p.provider === 'facebook');
   $('configuration').textContent = direct?.issue || '';
@@ -577,4 +541,4 @@ async function init() {
   await candidates();
   if (location.hash.startsWith('#oauth=')) history.replaceState(null, '', location.pathname);
 }
-if (token) init().catch((e) => notice(e.message));
+window.metaWorkspace.ready().then(init).catch((e) => notice(e.message));

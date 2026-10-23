@@ -1,6 +1,6 @@
 # Instagram messages, comments and publishing
 
-This integration supports **direct Instagram Login**, without a linked Facebook Page, and the existing **Facebook Login** alternative. A company owner connects an Instagram professional account, reads customer DMs, replies to them, and reads, replies to, hides or unhides comments on its posts. Open `/v1/facebook/instagram` and log in with the application owner account.
+This integration supports **direct Instagram Login**, without a linked Facebook Page, and the existing **Facebook Login** alternative. Open `/v1/facebook/instagram` directly and choose **Connect with Instagram** or **Connect with Facebook**; no application login is required. Each visitor receives a separate browser workspace. See [Public Meta workspaces](public-meta-workspaces.md) for the required migration and public API paths. Visitors can connect their professional account, read and reply to customer DMs, and manage comments on its posts.
 
 ## Direct Instagram Login
 
@@ -47,15 +47,15 @@ An existing Facebook lead-form token does not gain Instagram permissions automat
 
 Build with `npm run build`. Apply `20261015000001_create_instagram.ts` and then `20261015000002_add_instagram_login.ts` and `20261015000003_create_instagram_publications.ts` (or their compiled `.js` equivalents) using the repository's Knex configuration before running the updated API. The first creates `instagram_accounts`, `instagram_oauth_sessions`, `instagram_records` and `instagram_actions`; the second adds provider/app metadata and permits accounts without a Facebook Page. Existing connections default to the Facebook provider. If the database has older tables with incomplete migration history, apply the missing Instagram migrations specifically rather than running all pending migrations blindly. The second migration's rollback refuses to discard existing direct Instagram connections. The third adds granted permissions, temporary upload metadata and publication history.
 
-Restart the application after configuration or compiled-code changes. The public workspace and assets are copied by the existing Facebook asset build step. Protected endpoints live under `/v1/admin/instagram` and use the existing application JWT. This initial Instagram workspace is owner-only; restricted Messenger review sessions and team logins cannot access it.
+Restart the application after configuration or compiled-code changes. The public workspace and assets are copied by the existing Facebook asset build step. Apply `20261023000001_create_public_meta_sessions.ts` for the browser workspace, which uses `/v1/facebook/api/instagram` with its HttpOnly cookie. Existing dashboard clients can continue using `/v1/admin/instagram` with their application JWT and owner permissions.
 
 ## Record the review videos
 
-Use a test professional account and another Instagram account you control. Show the real application and the Instagram account receiving the result. Supply reviewer login instructions for a company owner test account that can access this workspace; the existing restricted Messenger review session cannot access Instagram.
+Use a test professional account and another Instagram account you control. Show the real application and the Instagram account receiving the result. Supply the public workspace URL and instructions for authorizing an eligible Instagram test account. No application login is required.
 
 For **`instagram_manage_messages`**:
 
-1. Start logged into the application. Click **Connect with Facebook**, show consent, choose the linked Page/Instagram account, and return to the connected account card.
+1. Open the public Instagram workspace. Click **Connect with Facebook**, show consent, choose the linked Page/Instagram account, and return to the connected account card.
 2. From the other Instagram account, send a fresh DM to the professional account.
 3. Click **Open account → Refresh inbox**, open the customer conversation and show the received text. The signed webhook also persists incoming messages while the integration is connected.
 4. Type a reply and click **Send reply**. Show the reply arriving in the other account's Instagram inbox. Replies require a customer message within the last 24 hours.
@@ -75,17 +75,17 @@ For **`instagram_basic`**, show account selection, the connected username, the l
 
 Our application uses instagram_business_basic to identify the Instagram professional account authorized by its owner and display that account's username and Instagram account ID in our authenticated dashboard. After Instagram Login and account selection, the Connected Instagram profile section shows the authorized profile, provides a link to view it on Instagram, and lets the owner refresh its username from Instagram. We also retrieve the account's published media so the owner can select their own posts for comment management. This helps owners confirm they connected the correct account and keeps messages, posts and comments associated with that account. The permission is necessary for profile identification and media retrieval. We request it as a dependent permission for both instagram_business_manage_messages and instagram_business_manage_comments, which support our customer inbox and comment management features. Our direct publishing feature also uses this account identity alongside instagram_business_content_publish.
 
-Reviewer testing instructions (replace the application login placeholders in Meta's private submission):
+Reviewer testing instructions:
 
 1. Open `https://YOUR-PUBLIC-HOST/v1/facebook/instagram`.
-2. Enter the existing application test account email `[APPLICATION_TEST_EMAIL]` and password `[APPLICATION_TEST_PASSWORD]`, then click **Log in**. Use the ordinary application login form on this page; the Messenger public review link issues a token restricted to Messenger and cannot open Instagram.
+2. The workspace opens automatically without an application email or password.
 3. Click **Connect with Instagram**. Sign in to your own Instagram professional account on Instagram's authorization screen and grant the requested permissions. No Instagram account credentials are supplied by us.
 4. Back in the application, choose your account under **Choose your Instagram account**, then click **Connect selected account**.
 5. The account opens automatically. Under **Connected Instagram profile**, verify **Username**, **Instagram account ID**, and **Connection**. This is the profile authorized in the previous step. For an already connected account, click **Open account** on its card to view the same section.
 6. Click **Refresh profile** to retrieve the current profile information from Instagram. Click **View profile on Instagram** to compare the displayed username with the authorized account.
 7. Optionally click **Refresh posts** to load the account's own published media. An account with no published posts can still demonstrate profile access.
 
-For the screencast, show the application login, Instagram authorization and return, account selection, and the resulting username/account ID in one continuous flow. Show **Refresh profile** retrieving the account again. Profile access does not require a test DM, comment, or post publication. Do not put application passwords in source documentation or supply Instagram credentials in the review submission.
+For the screencast, show the public workspace opening, Instagram authorization and return, account selection, and the resulting username/account ID in one continuous flow. Show **Refresh profile** retrieving the account again. Profile access does not require a test DM, comment, or post publication. Do not put application passwords in source documentation or supply Instagram credentials in the review submission.
 
 The profile refresh API is `POST /v1/admin/instagram/accounts/:id/profile/sync`. It requires the authenticated company owner, verifies the returned Instagram account ID against the stored connection, and returns only public account metadata. Direct accounts use Instagram's profile endpoint; Facebook-authorized accounts retain their linked-Page lookup.
 
