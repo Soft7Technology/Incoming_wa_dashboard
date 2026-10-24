@@ -39,3 +39,7 @@ backups/
 !/tests/automation-flows.test.cjs
 !/tests/waba-capacity-database.test.cjs
 !/tests/facebook-public-workspace.test.cjs
+!/tests/company-password-reset.test.cjs
+!/tests/start-all.test.cjs
+!/tests/runtime-hardening.test.cjs
+!/tests/database-timeouts.test.cjs

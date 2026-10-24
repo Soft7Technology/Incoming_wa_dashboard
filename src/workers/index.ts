@@ -17,6 +17,8 @@ import ShopifyMessageScheduler from '../app/services/shopifyMessageScheduler.ser
 import WabaOnboardingScheduler from '../app/services/wabaOnboardingScheduler.service';
 import AutomationScheduler from '../app/services/automationRunner.service';
 import { redisConnection } from '../../library/surefy/src/config/redis.config';
+import { startWorkerHealth } from './health';
+import { beginWorkerDrain } from './drain';
 
 ReminderScheduler.start();
 ShopifyMessageScheduler.start();
@@ -37,12 +39,20 @@ console.info('[Workers] Started', {
   workers: workers.map(worker => ({ name: worker.name, concurrency: worker.opts.concurrency })),
 });
 let stopping = false;
+const healthServer = startWorkerHealth(() => !stopping && redisConnection.status === 'ready' &&
+  workers.every(worker => worker.isRunning() && !worker.isPaused()));
+healthServer.on('error', error => {
+  console.error('[Workers] Health server startup failed', { message: error.message });
+  process.exit(1);
+});
 async function shutdown(signal: string) {
   if (stopping) return;
   stopping = true;
+  beginWorkerDrain();
   console.info('[Workers] Draining active jobs', { signal, pid: process.pid });
   try {
     await Promise.all([ReminderScheduler.stop(), ShopifyMessageScheduler.stop(), WabaOnboardingScheduler.stop(), AutomationScheduler.stop(), ...workers.map(worker => worker.close())]);
+    await new Promise<void>(resolve => healthServer.close(() => resolve()));
     await Promise.all([db.destroy(), redisConnection.quit(), closeMediaUploadQueue(), closeContactImportQueue()]);
     console.info('[Workers] Shutdown complete');
     process.exit(0);

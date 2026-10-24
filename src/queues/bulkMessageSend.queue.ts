@@ -6,12 +6,14 @@ import { BulkSendMessageDto } from '@surefy/console/interfaces/message.interface
 export interface BulkMessageSendJobData {
   userId: string;
   messages: BulkSendMessageDto[];
+  nextIndex?: number;
+  result?: { total: number; successful: number; failed: number; errors: any[] };
 }
 
 export const bulkMessageSendQueue = new Queue<BulkMessageSendJobData>('bulk-message-send', {
   connection: redisConfig,
   defaultJobOptions: {
-    attempts: 3,
+    attempts: 1, // A killed sender may already have reached Meta; never replay a whole batch.
     backoff: {
       type: 'exponential',
       delay: 5000, // Start with 5 seconds

@@ -15,6 +15,12 @@ if (!config.connection || (typeof config.connection === 'string' && !config.conn
 }
 const poolMax = Number(process.env.DB_POOL_MAX ?? 15);
 if (!Number.isInteger(poolMax) || poolMax < 1) throw new Error('DB_POOL_MAX must be a positive integer');
+const statementTimeout = Number(process.env.DB_STATEMENT_TIMEOUT_MS ?? 60000);
+const idleTransactionTimeout = Number(process.env.DB_IDLE_TRANSACTION_TIMEOUT_MS ?? 60000);
+for (const [name, value] of Object.entries({ DB_STATEMENT_TIMEOUT_MS: statementTimeout,
+  DB_IDLE_TRANSACTION_TIMEOUT_MS: idleTransactionTimeout })) {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive integer`);
+}
 
 let db: Knex;
 
@@ -28,7 +34,10 @@ if (!(global as any).__knex_db__) {
       acquireTimeoutMillis: 30000,
       idleTimeoutMillis: 30000,
       afterCreate: (conn: any, done: any) => {
-        conn.query("SET timezone='UTC';", (err: any) => {
+        // Apply server-side deadlines so abandoned requests cannot occupy the pool forever.
+        conn.query("SELECT set_config('TimeZone', 'UTC', false), set_config('statement_timeout', $1, false), " +
+          "set_config('idle_in_transaction_session_timeout', $2, false), set_config('application_name', $3, false)",
+        [String(statementTimeout), String(idleTransactionTimeout), process.env.WORKER_MODE === 'true' ? 'soft7-worker' : 'soft7-api'], (err: any) => {
           done(err, conn);
         });
       }

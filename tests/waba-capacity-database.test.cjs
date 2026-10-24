@@ -86,6 +86,38 @@ test('WABA capacity: real PostgreSQL allocation, legacy add-ons, concurrency and
       assert.equal(upgraded.created, 1); assert.equal(upgraded.skipped_count, 0);
     });
 
+    await t.test('add-on upgrades reactivate eligible existing numbers within the shared allowance', async () => {
+      const f = await seed(1);
+      await stored(f.accounts[1]); // Capacity already used by another WABA.
+      const incoming = [phone(), phone(), phone()];
+      for (const value of incoming) await stored(f.accounts[0], value, { active: false, inactive_reason: 'PLAN_LIMIT_EXCEEDED' });
+      const manual = phone(); await stored(f.accounts[0], manual, { active: false, inactive_reason: 'MANUALLY_DISABLED' });
+      const absent = phone(); await stored(f.accounts[0], absent, { active: false, inactive_reason: 'PLAN_UNAVAILABLE' });
+      const inventory = [phone(), ...incoming, manual];
+      const before = await model.syncAccountAndPhones(f.accounts[0], {}, inventory);
+      assert.equal(before.reactivated_count, 0);
+      await db('user_plans').where({ user_id: f.userId }).update({ limits: JSON.stringify({ WabaNumber: { limit: 1, addon_limit: '2', enabled: true } }) });
+      const result = await model.syncAccountAndPhones(f.accounts[0], {}, inventory);
+      assert.equal(result.reactivated_count, 2);
+      assert.equal(result.remaining_slots, 0);
+      assert.equal(result.skipped_count, 1);
+      assert.equal(result.active_count, 2);
+      assert.equal((await db('user_plans').where({ user_id: f.userId }).first()).usage.WabaNumber, 3);
+      assert.equal((await db('phone_numbers').where({ phone_number_id: manual.id }).first()).active, false);
+      assert.equal((await db('phone_numbers').where({ phone_number_id: absent.id }).first()).active, false);
+      assert.equal((await model.syncAccountAndPhones(f.accounts[0], {}, inventory)).reactivated_count, 0);
+    });
+
+    await t.test('concurrent syncs cannot reactivate two WABAs into the same last slot', async () => {
+      const f = await seed(0, 1);
+      const incoming = [phone(), phone()];
+      for (let i = 0; i < 2; i++) await stored(f.accounts[i], incoming[i], { active: false, inactive_reason: 'PLAN_UNAVAILABLE' });
+      const results = await Promise.all(f.accounts.map((account, i) => model.syncAccountAndPhones(account, {}, [incoming[i]])));
+      assert.equal(results.reduce((sum, r) => sum + r.reactivated_count, 0), 1);
+      assert.equal(Number((await db('phone_numbers').where({ user_id: f.userId, active: true }).count('* as n').first()).n), 1);
+      assert.equal((await db('user_plans').where({ user_id: f.userId }).first()).usage.WabaNumber, 1);
+    });
+
     await t.test('two concurrent WABAs cannot claim the same last slot; direct creation also rejects at capacity', async () => {
       const f = await seed(1);
       const results = await Promise.all(f.accounts.map(account => model.syncAccountAndPhones(account, {}, [phone()])));
@@ -109,6 +141,10 @@ test('WABA capacity: real PostgreSQL allocation, legacy add-ons, concurrency and
         assert.equal(result.created, 0); assert.equal(result.phone_numbers.length, 0); assert.equal(result.skipped_count, 2);
         assert.equal(Number((await db('phone_numbers').where({ user_id: f.userId }).count('* as n').first()).n), 0);
         assert.equal(result.skipped_phone_numbers[0].reason, limit === 0 ? 'PLAN_LIMIT_EXCEEDED' : 'PLAN_UNAVAILABLE');
+        const inactive = phone();
+        await stored(f.accounts[0], inactive, { active: false, inactive_reason: 'PLAN_LIMIT_EXCEEDED' });
+        assert.equal((await model.syncAccountAndPhones(f.accounts[0], {}, [inactive])).reactivated_count, 0);
+        assert.equal((await db('phone_numbers').where({ phone_number_id: inactive.id }).first()).active, false);
       }
     });
 

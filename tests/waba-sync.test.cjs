@@ -255,6 +255,69 @@ test('manually inactive numbers stay inactive even when more capacity becomes av
   assert.equal(result.phone_numbers[1].active, true);
 });
 
+test('sync never relabels an unknown inactive reason as plan-disabled on repeated calls', async () => {
+  const f = persistenceFixture({ phones: [savedPhone('1001', { active: false, inactive_reason: null })] });
+  for (let i = 0; i < 2; i++) {
+    const result = await f.model.syncAccountAndPhones(account, {}, [phone('1001')]);
+    assert.equal(result.phone_numbers[0].active, false);
+    assert.equal(result.phone_numbers[0].inactive_reason, null);
+    assert.equal(result.reactivated_count, 0);
+  }
+});
+
+test('sync after an upgrade reactivates plan-disabled numbers before new inventory and is repeatable', async () => {
+  const f = persistenceFixture({ remaining: 0, phones: [
+    savedPhone('1001', { active: true }),
+    savedPhone('1002', { active: false, inactive_reason: 'PLAN_LIMIT_EXCEEDED' }),
+    savedPhone('1003', { active: false, inactive_reason: 'PLAN_UNAVAILABLE' }),
+    savedPhone('1004', { active: false, inactive_reason: 'MANUALLY_DISABLED' }),
+    savedPhone('1005', { active: false, inactive_reason: null }),
+    savedPhone('1006', { active: false, inactive_reason: 'PLAN_LIMIT_EXCEEDED' }),
+  ] });
+  const inventory = ['2000', '1001', '1002', '1003', '1004', '1005'].map(id => phone(id));
+  const initial = await f.model.syncAccountAndPhones(account, {}, inventory);
+  assert.equal(initial.reactivated_count, 0);
+  assert.equal(initial.active_count, 1);
+  f.setRemaining(2);
+  const result = await f.model.syncAccountAndPhones(account, {}, inventory);
+  assert.equal(result.reactivated_count, 2);
+  assert.equal(result.active_count, 3);
+  assert.equal(result.remaining_slots, 0);
+  assert.equal(result.skipped_count, 1, 'new inventory must not take a reactivation slot');
+  for (const id of ['1002', '1003']) {
+    const saved = result.phone_numbers.find(p => p.phone_number_id === id);
+    assert.equal(saved.id, `local-${id}`);
+    assert.equal(saved.active, true);
+    assert.equal(saved.inactive_reason, null);
+  }
+  for (const id of ['1004', '1005', '1006']) {
+    assert.equal(f.state().phones.find(p => p.phone_number_id === id).active, false,
+      'manual/unknown inactive settings and numbers absent from Meta remain untouched');
+  }
+  const repeated = await f.model.syncAccountAndPhones(account, {}, inventory);
+  assert.equal(repeated.reactivated_count, 0);
+  assert.equal(repeated.active_count, 3);
+  assert.equal(repeated.remaining_slots, 0);
+});
+
+test('limited capacity only reactivates as many existing numbers as fit, including across batches', async () => {
+  const phones = Array.from({ length: 202 }, (_, i) => savedPhone(String(1000 + i), {
+    active: false, inactive_reason: 'PLAN_LIMIT_EXCEEDED',
+  }));
+  const f = persistenceFixture({ remaining: 201, phones });
+  const inventory = phones.map(p => phone(p.phone_number_id));
+  const result = await f.model.syncAccountAndPhones(account, {}, inventory);
+  assert.equal(result.reactivated_count, 201);
+  assert.equal(result.active_count, 201);
+  assert.equal(result.inactive_count, 1);
+  assert.equal(result.remaining_slots, 0);
+  assert.equal(result.phone_numbers.at(-1).inactive_reason, 'PLAN_LIMIT_EXCEEDED');
+  const failure = persistenceFixture({ remaining: 201, phones, failBatch: 2 });
+  const before = structuredClone(failure.state());
+  await assert.rejects(failure.model.syncAccountAndPhones(account, {}, inventory), /phone write failed/);
+  assert.deepEqual(failure.state(), before, 'reactivations must roll back with a failed sync');
+});
+
 test('identifier lookups and conflict SQL retain owner/company/WABA scope without merging local UUIDs', async () => {
   const db = require('knex')({ client: 'pg' });
   const statements = [];

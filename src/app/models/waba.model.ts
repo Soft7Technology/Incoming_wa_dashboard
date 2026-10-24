@@ -56,6 +56,11 @@ class WabaModel extends BaseModel {
         throw new HTTP400Error({ message: 'A phone number is already connected to another account or WABA' });
       }
       const byMetaId = new Map(existing.map(phone => [phone.phone_number_id, phone]));
+      const canReactivate = (saved: any) => saved && !saved.deleted_at && saved.active === false &&
+        ['PLAN_LIMIT_EXCEEDED', 'PLAN_UNAVAILABLE'].includes(saved.inactive_reason);
+      // Restore plan-disabled inventory before allocating slots to newly discovered numbers.
+      const allocationOrder = [...phones].sort((a, b) =>
+        Number(Boolean(canReactivate(byMetaId.get(b.id)))) - Number(Boolean(canReactivate(byMetaId.get(a.id)))));
       const now = new Date();
       const [account] = await trx('waba_accounts').where(scope).update({
         name: details.name ?? current.name,
@@ -69,23 +74,26 @@ class WabaModel extends BaseModel {
 
       const phoneNumbers: any[] = [];
       const skipped: Array<{ phone_number_id: string; reason: string }> = [];
-      for (let offset = 0; offset < phones.length; offset += 200) {
-        const rows = phones.slice(offset, offset + 200).flatMap(phone => {
+      let reactivatedCount = 0;
+      for (let offset = 0; offset < allocationOrder.length; offset += 200) {
+        const rows = allocationOrder.slice(offset, offset + 200).flatMap(phone => {
           const saved = byMetaId.get(phone.id);
           const retained = saved && !saved.deleted_at;
           if (!retained && capacity.remaining <= 0) {
             skipped.push({ phone_number_id: phone.id, reason: capacity.inactiveReason });
             return [];
           }
-          const active = retained ? saved.active !== false : capacity.remaining > 0;
-          if (!retained && active) capacity.remaining--;
+          const reactivated = canReactivate(saved) && capacity.remaining > 0;
+          const active = retained ? saved.active !== false || reactivated : capacity.remaining > 0;
+          if ((!retained || reactivated) && active) capacity.remaining--;
+          if (reactivated) reactivatedCount++;
           return [{
             user_id: current.user_id, company_id: current.company_id, waba_id: current.id,
             phone_number_id: phone.id, display_phone_number: phone.display_phone_number,
             verified_name: phone.verified_name ?? saved?.verified_name ?? null,
             quality_rating: phone.quality_rating ?? saved?.quality_rating ?? null,
             code_verification_status: phone.code_verification_status ?? saved?.code_verification_status ?? null,
-            active, inactive_reason: active ? null : (retained && saved.inactive_reason) || capacity.inactiveReason,
+            active, inactive_reason: active ? null : retained ? saved.inactive_reason ?? null : capacity.inactiveReason,
             connection_status: current.connection_status === 'pending' ? 'pending' : phone.status
               ? phone.status === 'CONNECTED' && phone.platform_type !== 'ON_PREMISE' ? 'connected' : 'pending'
               : saved?.connection_status ?? 'legacy',
@@ -114,6 +122,7 @@ class WabaModel extends BaseModel {
         created: phoneNumbers.length - updated, updated,
         skipped_count: skipped.length, skipped_phone_numbers: skipped,
         remaining_slots: Number.isFinite(capacity.remaining) ? capacity.remaining : null,
+        reactivated_count: reactivatedCount,
         active_count: phoneNumbers.filter(phone => phone.active).length,
         inactive_count: phoneNumbers.filter(phone => !phone.active).length };
     });

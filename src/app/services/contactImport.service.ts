@@ -55,8 +55,6 @@ export async function processContactImport(data: ContactImportJobData, updatePro
       options.emailColumn
     );
 
-    console.log(`Contacts Results ${JSON.stringify(parseResult)}`);
-
     console.log(`[Job ${jobId}] Parsed ${parseResult.contacts.length} contacts from file`);
     // Recheck after queue wait/retry, before creating a list or modifying any contacts.
     requireContactImportCapacity(await assessContactImport({ userId, companyId, phoneNumberId: phone_number_id }, parseResult.contacts));
