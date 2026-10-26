@@ -4,11 +4,17 @@ import { AutomationFlowService } from './automationFlow.service';
 
 export class AutomationProvider {
   constructor(private readonly flows: AutomationFlowService) {}
+  async validate(scope: FlowScope, step: any, parameters: Record<string, any>) {
+    if (step.appKey !== 'whatsapp') return;
+    const phone = await this.flows.connectionFor(scope, step.appKey, step.connectionId);
+    await (await import('./automationWhatsApp.service')).default.prepare(scope, phone, step, parameters);
+  }
   async execute(scope: FlowScope, step: any, parameters: Record<string, any>, runId: string) {
     const connection = await this.flows.connectionFor(scope, step.appKey, step.connectionId);
     const ownerScope = { companyId: scope.companyId!, ownerId: scope.userId!, userId: scope.userId! };
     if (step.appKey === 'shopify') return (await import('./shopify.service')).default.automation(ownerScope, connection.id, step.key, parameters);
     if (step.appKey === 'google-sheets') return (await import('./googleSheets.service')).default.automation(ownerScope, connection.id, step.key, parameters);
+    if (step.appKey === 'whatsapp') return (await import('./automationWhatsApp.service')).default.execute(scope, connection, step, parameters, runId);
     if (step.appKey !== 'razorpay') fail(400, 'Unsupported flow integration');
     const credentials = this.flows.credentials(connection);
     const create = step.key === 'createPaymentLink';

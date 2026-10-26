@@ -1,13 +1,13 @@
 import { AutomationFlowService } from './automationFlow.service';
 import { AutomationProvider } from './automationProvider.service';
-import { action, decrypt, encrypt, fail, resolveParameters, shopifyContact, validateParameters } from '../utils/automationFlow';
+import { action, decrypt, encrypt, fail, mappingPaths, queuedStatus, resolveAvailableParameters, resolveParameters, shopifyContact, validateParameters, validateStepMappings } from '../utils/automationFlow';
 
 export class AutomationRunner {
-  constructor(readonly flows = new AutomationFlowService(), private readonly provider: Pick<AutomationProvider, 'execute'> = new AutomationProvider(flows)) {}
+  constructor(readonly flows = new AutomationFlowService(), private readonly provider: Pick<AutomationProvider, 'execute'> & Partial<Pick<AutomationProvider, 'validate'>> = new AutomationProvider(flows)) {}
   async processNext() {
     const database = this.flows.database;
     const run = await database.transaction(async tx => {
-      const row = await tx('automation_runs').where({ status: 'queued' }).orderBy('created_at').orderBy('id').forUpdate().skipLocked().first();
+      const row = await tx('automation_runs').where({ status: queuedStatus() }).orderBy('created_at').orderBy('id').forUpdate().skipLocked().first();
       if (!row) return null;
       const [claimed] = await tx('automation_runs').where({ id: row.id }).update({ status: 'running', started_at: tx.fn.now(), updated_at: tx.fn.now() }).returning('*');
       return claimed;
@@ -15,6 +15,7 @@ export class AutomationRunner {
     if (!run) return false;
     const results: any[] = [];
     let writing = false;
+    let validatingStep: any;
     const persist = (values: Record<string, any> = {}) => database('automation_runs').where({ id: run.id }).update({ results_ciphertext: encrypt(results, `run:${run.id}`), updated_at: database.fn.now(), ...values });
     try {
       const flow = await database('automation_flows').where({ id: run.flow_id }).first();
@@ -26,16 +27,27 @@ export class AutomationRunner {
       if (!event) fail(404, 'Run trigger event is unavailable');
       const payload = decrypt(event.payload_ciphertext, `event:${event.id}`);
       const context: Record<string, any> = { trigger: payload, steps: {}, ...(event.app_key === 'shopify' ? { contact: shopifyContact(payload) } : {}) };
+      // Check every action and all currently available values before the first write.
+      for (const step of run.definition.slice(1)) {
+        validatingStep = step;
+        validateStepMappings(run.definition.slice(0, run.definition.indexOf(step) + 1));
+        const definition = action(step.appKey, step.key);
+        const parameters = validateParameters(definition, resolveAvailableParameters(step.parameters, context), true);
+        await this.flows.connectionFor(scope, step.appKey, step.connectionId);
+        if (!mappingPaths(step.parameters).some(path => path.startsWith('steps.'))) await this.provider.validate?.(scope, step, parameters);
+      }
+      validatingStep = null;
       for (const step of run.definition.slice(1)) {
         await this.flows.actor(scope);
         if (!await database('automation_events').where({ id: event.id }).where('expires_at', '>', new Date()).first('id')) fail(409, 'The trigger event expired or was erased');
         const current = await database('automation_flows').where({ id: flow.id }).first('deleted_at', 'status');
         if (!current || current.deleted_at || (run.kind === 'automatic' && current.status !== 'active')) { await persist({ status: 'cancelled', finished_at: database.fn.now() }); return true; }
+        const result: any = { step_id: step._id, appKey: step.appKey, key: step.key, status: 'running', started_at: new Date().toISOString() };
+        results.push(result); await persist();
         const definition = action(step.appKey, step.key);
         const parameters = validateParameters(definition, resolveParameters(step.parameters, context));
         await this.flows.connectionFor(scope, step.appKey, step.connectionId);
-        const result: any = { step_id: step._id, appKey: step.appKey, key: step.key, status: 'running', started_at: new Date().toISOString() };
-        results.push(result); await persist();
+        await this.provider.validate?.(scope, step, parameters);
         // Persist intent before calling a provider. An interrupted write is never replayed automatically.
         writing = definition.write;
         const output = await this.provider.execute(scope, step, parameters, run.id);
@@ -48,6 +60,7 @@ export class AutomationRunner {
       const status = writing ? 'requires_review' : 'failed';
       // Only application errors have safe messages. Database/provider internals are not exposed.
       const message = error?.isOperational === true ? String(error.message).slice(0, 500) : 'Flow execution failed; check the integration configuration';
+      if (validatingStep) results.push({ step_id: validatingStep._id, appKey: validatingStep.appKey, key: validatingStep.key, status: 'failed', error: message, finished_at: new Date().toISOString() });
       const last = results[results.length - 1];
       if (last?.status === 'running') { last.status = status; last.error = message; last.finished_at = new Date().toISOString(); }
       await persist({ status, error: message, finished_at: database.fn.now() });

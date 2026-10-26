@@ -7,6 +7,7 @@ const scope = (req: JWTAuthRequest) => ({ userId: req.userId, companyId: req.com
 class AutomationFlowController {
   catalog = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Automation apps retrieved', await service.catalog(scope(req))));
   connections = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Flow connections retrieved', await service.connections(scope(req))));
+  templates = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Flow templates retrieved', await service.templates(scope(req), req.params.connectionId)));
   createConnection = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Flow connection saved', await service.createConnection(scope(req), req.body), 201));
   disconnect = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Flow connection disconnected', await service.disconnect(scope(req), req.params.connectionId)));
   create = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Flow created', await service.create(scope(req), req.body), 201));

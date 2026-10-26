@@ -37,9 +37,11 @@ backups/
 !/tests/user-plan-independence.test.cjs
 !/tests/support-live.test.cjs
 !/tests/automation-flows.test.cjs
+!/tests/automation-whatsapp.test.cjs
 !/tests/waba-capacity-database.test.cjs
 !/tests/facebook-public-workspace.test.cjs
 !/tests/company-password-reset.test.cjs
 !/tests/start-all.test.cjs
 !/tests/runtime-hardening.test.cjs
 !/tests/database-timeouts.test.cjs
+!/tests/socket-session.test.cjs

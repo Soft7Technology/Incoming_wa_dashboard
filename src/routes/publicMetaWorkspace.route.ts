@@ -6,6 +6,7 @@ import FacebookMessengerRoute from './facebookMessenger.route';
 import FacebookContentRoute from './facebookContent.route';
 import FacebookLeadsRoute from './facebookLeads.route';
 import InstagramRoute from './instagram.route';
+import FacebookAdsRoute from './facebookAds.route';
 
 const route = Router();
 const cookieName = 'public_meta_workspace';
@@ -59,6 +60,7 @@ route.use('/api/messenger', FacebookMessengerRoute);
 route.use('/api/posts', FacebookContentRoute);
 route.use('/api/leads', FacebookLeadsRoute);
 route.use('/api/instagram', InstagramRoute);
+route.use('/api/ads', FacebookAdsRoute);
 route.use(facebookError);
 
 export default route;

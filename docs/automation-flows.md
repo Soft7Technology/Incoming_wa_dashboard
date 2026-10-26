@@ -20,7 +20,8 @@ Paths below are relative to `/v1/admin/flows`.
 | Method | Path | Description |
 | --- | --- | --- |
 | GET | `/apps` | App catalog, supported triggers/actions, parameter schemas and connection setup paths |
-| GET | `/connections` | Current user's Shopify, Google Sheets and Razorpay connection choices; credentials are excluded |
+| GET | `/connections` | Current user's Shopify, Google Sheets, Razorpay and WhatsApp sender choices; credentials are excluded |
+| GET | `/connections/:connectionId/templates` | Approved WhatsApp templates and required variable fields for the selected sender |
 | POST | `/connections` | Connect Shopify using client ID/secret, or create a user-owned Razorpay connection |
 | DELETE | `/connections/:connectionId` | Disconnect a Razorpay automation connection |
 | POST | `/` | Create a named draft with `steps: []` and a webhook URL; no default nodes |
@@ -313,6 +314,8 @@ These are `appKey` + `key` values saved in action steps, rather than separate HT
 | `google-sheets` | `updateRows` | `spreadsheet_id`, `range`, `values` | Update result |
 | `razorpay` | `createPaymentLink` | `amount_paise`, `description`; optional `customer_name`, `customer_email`, `customer_contact` | Link `id`, `short_url`, status, amount, reference and mode |
 | `razorpay` | `getPaymentLink` | `payment_link_id` | Current provider link state |
+| `whatsapp` | `sendTemplate` | `to`, `template_id`; optional `country_code`, `contact_name`, `contact_email`, `variables` | Message ID, WhatsApp ID, status, recipient, sender, template, language, `contact_id`, `contact_created` |
+| `whatsapp` | `sendText` | `to`, `message`; optional `country_code` | Message ID, WhatsApp ID, status, recipient and sender |
 
 Shopify resource IDs are numeric strings or matching GraphQL IDs. For a numeric JSON trigger ID, use `"gid://shopify/Order/{{trigger.id}}"` as `order_id`. Order reads need `read_orders`; product reads need `read_products`. Add optional `read_products` to `SHOPIFY_SCOPES`, approve it in the Shopify app configuration, and reconnect the store before using product actions. Existing default scopes are preserved.
 
@@ -320,13 +323,72 @@ Google ranges include a tab, such as `'Order Data'!A1:C100`. Reads/updates must 
 
 Razorpay amounts are integer paise, 100–100,000,000, in INR. Link creation disables automatic SMS/email notifications and reminders. Creating a link does not mean a payment succeeded; use a signed payment trigger or fetch its provider state. A deterministic provider reference ties the link to its run/step. Automation Razorpay connections are user-owned and separate from company subscription-checkout gateway configurations.
 
+## Send a dynamic WhatsApp template after Sheets or Razorpay
+
+An action sequence can be **configured trigger -> Google Sheets appendRows -> Razorpay createPaymentLink -> WhatsApp sendTemplate**. Every action waits for the previous action to succeed. Add the WhatsApp action at any position after the trigger, including directly after a Sheets write or a Razorpay payment event.
+
+The dashboard should load the app list from `GET /v1/admin/flows/apps`. The WhatsApp entry contains `sendTemplate`, its parameter schema, and `templates_api`. Its `connection_api` is null: select an existing sender from `/connections` where `appKey` is `whatsapp` and `status` is `connected`. The connection ID is the internal `phone_numbers.id` UUID, not the customer's number or Meta's numeric phone ID. Sender credentials stay on the server.
+
+After selecting a sender, call `GET /v1/admin/flows/connections/:connectionId/templates`. Only approved, non-deleted templates from that sender's WABA are returned. A supported option includes:
+
+```json
+{
+  "id": "<internal-template-UUID>",
+  "name": "payment_request",
+  "language": "en",
+  "supported": true,
+  "required_variables": ["body.1", "body.2"],
+  "variable_fields": [
+    { "key": "body.1", "type": "text" },
+    { "key": "body.2", "type": "text" }
+  ]
+}
+```
+
+Render a mapping input for each returned variable. Disable options with `supported: false` and show their `reason`. Fetch options again when the sender changes and clear the previous template selection and variables. Required keys come from the selected template; do not hardcode a variable count or assume all templates use numbered parameters.
+
+Once the earlier Sheets and Razorpay actions are saved, append this action using `POST /v1/admin/flows/:flowId/steps`. Replace `PAYMENT_STEP_UUID` with the actual `_id` returned for the earlier `createPaymentLink` action, and use the current flow revision:
+
+```json
+{
+  "revision": 5,
+  "type": "action",
+  "appKey": "whatsapp",
+  "key": "sendTemplate",
+  "connectionId": "<selected-WhatsApp-sender-UUID>",
+  "parameters": {
+    "to": "{{contact.phone}}",
+    "contact_name": "{{contact.name}}",
+    "template_id": "<selected-template-UUID>",
+    "variables": {
+      "body.1": "{{contact.name}}",
+      "body.2": "{{steps.PAYMENT_STEP_UUID.short_url}}"
+    }
+  }
+}
+```
+
+This example uses Shopify's derived buyer contact. For a Razorpay `payment_captured` trigger, map the recipient from `{{trigger.payload.payment.entity.contact}}`, and use actual payment fields such as `{{trigger.payload.payment.entity.id}}` and `{{trigger.payload.payment.entity.amount}}` in the selected template's variables. The amount is paise and is not automatically formatted as rupees. A payment receipt can run **Razorpay payment_captured -> Sheets appendRows -> WhatsApp sendTemplate** without creating another payment link.
+
+`sendTemplate` automatically creates a contact before sending when the normalized recipient number is absent from the same owner's company and selected WhatsApp sender. No separate contact action or setting is needed. Map optional `contact_name` and `contact_email` from the trigger or an earlier Sheets/Razorpay output; the name defaults to the international phone number when omitted. Existing contacts are reused without changing their name, email or opt-out preference. New contacts use the normal `whatsApp` source with `attributes.source: "automation"`. The output includes `contact_id` and `contact_created` for later actions.
+
+Preflight checks contact capacity without creating a record. Creation happens only when the template action executes, through the normal contact quota transaction and duplicate-protected model. Concurrent sends to the same recipient reuse the winning contact. A contact quota failure or opted-out recipient stops sending. If sending subsequently fails, the created contact remains in Contacts and is reused on the next intentional send; retrying does not create another contact. This automatic behavior applies to `sendTemplate`.
+
+To use an earlier `getRows` output, map `to` to `{{steps.SHEET_STEP_UUID.values.0.0}}` and a variable to `{{steps.SHEET_STEP_UUID.values.0.1}}`. Indexes start at zero; the mapping selects one row, not every row. Numeric phone cells must be exact positive integers with at most 15 digits. Numeric and boolean template variables are converted to text. Missing or null required values fail the run. `appendRows` returns write metadata, so use the original trigger fields or add `getRows` to retrieve row contents.
+
+Use international recipient numbers such as `+919876543210`. For a local number, set `country_code`, for example `"91"`. No country is assumed. Template variables accept up to 50 entries with at most 1,024 characters per value. Text headers and bodies support numbered and named placeholders (`header.1`, `body.customer_name`). Image/video/document headers require `header.media_url` with a public HTTPS URL. Dynamic URL buttons use `button.INDEX.PLACEHOLDER`, such as `button.0.1`; provide only the suffix that replaces the approved URL placeholder. Full Razorpay short URLs can be mapped into a body parameter. Static URL/phone buttons and quick replies need no extra variable. Unsupported components such as carousels, location headers, Flow buttons and copy-code buttons are identified by the picker.
+
+Activation and test runs check the selected sender, template approval and required mappings. Sending rechecks sender ownership, template approval and opt-out state. Messages use the normal message service and appear in message history. An existing message attempt for the same run/step is never sent again; an attempt without a confirmed WhatsApp ID requires review. Starting a new test run with a new request ID can intentionally send another message. A successful send means WhatsApp accepted the message, not that delivery or reading has completed.
+
+Google Sheets currently supplies actions, so manually adding a row does not itself start a flow. Start with one of the supported Shopify/Razorpay webhook triggers. Capture an event, queue a test run, inspect its step outputs, then activate the flow. The automation worker must be running. Frontend action forms should use this catalog and endpoint; this repository contains the API implementation.
+
 ## Panel contacts and the data picker
 
 The data picker shows fields from a captured trigger or an earlier action. Selecting a field inserts a mapping; it does not create a contact. In the supplied reference screenshot, `cancel_reason` is not a phone and `app_id` is not a customer name. Choose populated customer fields from the actual captured sample.
 
 For paid customers, the intended workflow is **Shopify paid_order → create/update panel contact → optionally appendRows to an existing Google spreadsheet**. `new_order` is appropriate when unpaid orders should also qualify. `createSpreadsheet` creates a new spreadsheet for each run; use `appendRows` to maintain one shared order log.
 
-**Create/update panel contact is a proposed action, not an action currently exposed by `/apps` or implemented in the automation runner.** Do not show it as runnable/configured in the frontend until the backend supports it. Existing contact creation is `POST /v1/admin/contacts`, with fields such as:
+**A standalone create/update panel contact action is not currently exposed by `/apps`.** The existing WhatsApp `sendTemplate` action creates a missing recipient contact automatically as described above. Do not show a separate contact-upsert node as runnable until the backend supports it. Existing standalone contact creation is `POST /v1/admin/contacts`, with fields such as:
 
 ```json
 {
@@ -437,6 +499,10 @@ AUTOMATION_ENCRYPTION_KEY=<32-random-bytes-encoded-as-base64>
 The public URL is an origin without `/v1`; when omitted it defaults to the existing Shopify callback origin, or Google callback origin. Local HTTP is accepted only for localhost/127.0.0.1 development; providers need a reachable public HTTPS endpoint. If the automation key is omitted, an existing valid 64-hex `PAYMENT_GATEWAY_ENCRYPTION_KEY` is used. Keep the chosen encryption key stable; changing it makes saved destinations, secrets, receipts and results unreadable. API and workers must share the key and database.
 
 The existing `npm run start:worker` includes the automation scheduler. Alternatively run `npm run start:automation-worker` for a separate worker deployment. A worker is required for queued actions and retention maintenance. Starting a worker before the migration only reports missing schema; it does not create tables. No queue/worker rollout or remote provider configuration is performed by editing this API code.
+
+When a local API shares a database with a hosted deployment, set `AUTOMATION_QUEUE_NAME=local` on both the local API and local automation worker. A named queue uses an internal `queued:local` status, which the API reports as `queued`; workers claim only their configured queue. Existing workers that claim the default `queued` status cannot take the local jobs. Names accept 1-20 lowercase letters, digits, underscores or hyphens. Leave the setting empty for the existing production queue. No database migration is needed. Changing a queue name does not move already queued jobs, and failed runs are never automatically replayed. Deploy action changes to every worker consuming the corresponding queue.
+
+Before the first provider write, the worker validates every action, connection, mapping path and available trigger/contact value. References must point to earlier actions; previous-action outputs remain unresolved until that action executes. WhatsApp checks with fully available inputs also validate the recipient, opt-out and approved template before earlier writes. Each action is validated again with its actual resolved output values before execution. A failing action is identified in run results even if it failed before contacting its provider. These checks prevent known invalid later steps from appending a Sheet row first; provider failures and values produced by an earlier action can still fail at execution time.
 
 `npm run test:automation` runs mapping/signature/client checks. Full integration requires a fresh disposable loopback PostgreSQL database with `automation_test` in its name:
 

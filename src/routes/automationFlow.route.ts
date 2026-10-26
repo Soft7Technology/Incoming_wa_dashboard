@@ -5,6 +5,7 @@ const route = Router();
 route.use((_req, res, next) => { res.setHeader('Cache-Control', 'no-store'); res.setHeader('Referrer-Policy', 'no-referrer'); next(); });
 route.get('/apps', controller.catalog);
 route.get('/connections', controller.connections);
+route.get('/connections/:connectionId/templates', controller.templates);
 route.post('/connections', controller.createConnection);
 route.delete('/connections/:connectionId', controller.disconnect);
 route.get('/', controller.list);

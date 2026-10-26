@@ -294,7 +294,8 @@ dbTest('Instagram reads real Graph conversations and messages; replies obey the 
   const thread = await ig.messages(a, account.id, c.id); assert.equal(thread.can_reply, true); assert.equal(thread.messages[0].payload.text, 'Question about my order');
   const request = crypto.randomUUID();
   const [first, second] = await Promise.all([ig.action(a, account.id, c.id, 'message', 'Thanks, how can I help?', request), ig.action(a, account.id, c.id, 'message', 'Thanks, how can I help?', request)]);
-  assert.equal(first.status, 'confirmed'); assert.ok(['confirmed', 'pending'].includes(second.status)); assert.equal(posts(), 1);
+  assert.ok([first, second].some(result => result.status === 'confirmed'));
+  assert.ok([first, second].every(result => ['confirmed', 'pending'].includes(result.status))); assert.equal(posts(), 1);
   await assert.rejects(ig.action(a, account.id, c.id, 'message', 'Different text', request), /already used/);
   await ig.receive(webhook('same-event')); await ig.receive(webhook('same-event'));
   assert.equal(Number((await database('instagram_records').where({ account_id: account.id, kind: 'message', remote_id: 'same-event' }).count('* as n').first()).n), 1);
@@ -383,6 +384,7 @@ function controllers(context) {
 async function httpFixture(context, run) {
   const { messenger, instagram } = controllers(context);
   const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': instagram,
+    '../app/http/controllers/facebookAds.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     './facebookLoginTest.route': express.Router(), './facebookReviewLogin.route': express.Router() };
   const app = express(); app.use(express.json({ verify: (req, _res, body) => { req.rawBody = body; } }));

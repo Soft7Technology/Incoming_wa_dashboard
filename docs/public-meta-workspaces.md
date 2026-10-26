@@ -7,6 +7,7 @@ domain, dashboard JWT, review account or shared customer credentials:
 - `/v1/facebook/posts` — Page posts
 - `/v1/facebook/leads` — Lead Forms
 - `/v1/facebook/instagram` — Instagram inbox, comments and publishing
+- `/v1/facebook/ads` — Business portfolios, ad performance and paused campaign creation
 
 Visitors still authorize their own Facebook or Instagram accounts through the
 existing Meta OAuth flow. Connecting an account does not grant access to other
@@ -35,6 +36,7 @@ The browser calls these feature API bases:
 | Page posts | `/v1/facebook/api/posts` |
 | Lead Forms | `/v1/facebook/api/leads` |
 | Instagram | `/v1/facebook/api/instagram` |
+| Business & Ads | `/v1/facebook/api/ads` |
 
 These routes resolve ownership from the cookie and reuse the existing controllers
 and services. Cross-origin browser requests are rejected. The existing

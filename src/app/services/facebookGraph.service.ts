@@ -3,6 +3,8 @@ import crypto from 'crypto';
 import { config, FacebookError, graphFailure } from '../utils/facebook';
 
 export class FacebookGraph {
+  constructor(private readonly versionOverride?: string) {}
+
   async call(
     path: string,
     token: string | null,
@@ -11,9 +13,11 @@ export class FacebookGraph {
     body?: unknown,
   ): Promise<any> {
     const c = config('transport');
+    const version = this.versionOverride || c.version;
+    if (!/^v\d+\.\d+$/.test(version)) throw new FacebookError(503, 'Set an active Facebook API version.');
     try {
       const result = await axios.request({
-        url: `https://graph.facebook.com/${c.version}/${path}`,
+        url: `https://graph.facebook.com/${version}/${path}`,
         method,
         timeout: 15000,
         maxRedirects: 0,

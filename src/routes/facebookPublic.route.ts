@@ -6,6 +6,7 @@ import leads from '../app/http/controllers/facebookLeads.controller';
 import instagram from '../app/http/controllers/instagram.controller';
 import content from '../app/http/controllers/facebookContent.controller';
 import PublicMetaWorkspaceRoute from './publicMetaWorkspace.route';
+import ads from '../app/http/controllers/facebookAds.controller';
 
 const route = Router();
 route.use(controller.noStore);
@@ -17,6 +18,9 @@ route.use((_req, res, next) => {
   next();
 });
 route.get('/page', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/index.html')));
+route.get('/ads', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/ads.html')));
+route.get('/ads.js', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/ads.js')));
+route.get('/ads/oauth/callback', ads.callback);
 route.get('/posts', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/posts.html')));
 route.get('/posts.js', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/posts.js')));
 route.get('/posts/oauth/callback', content.callback);

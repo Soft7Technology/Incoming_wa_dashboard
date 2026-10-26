@@ -43,7 +43,7 @@
             "containers": [
               {
                 "name": "incoming-api",
-                "image": "docker.io/library/incoming-api:main-636a83b-hardened-20261024T083525Z",
+                "image": "docker.io/library/incoming-api:socket-private-20261024T103834Z",
                 "imagePullPolicy": "IfNotPresent",
                 "command": [
                   "node"
@@ -205,7 +205,7 @@
             "containers": [
               {
                 "name": "incoming-worker",
-                "image": "docker.io/library/incoming-api:main-636a83b-hardened-20261024T083525Z",
+                "image": "docker.io/library/incoming-api:socket-private-20261024T103834Z",
                 "imagePullPolicy": "IfNotPresent",
                 "command": [
                   "node"
