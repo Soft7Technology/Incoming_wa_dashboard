@@ -38,6 +38,8 @@ backups/
 !/tests/support-live.test.cjs
 !/tests/automation-flows.test.cjs
 !/tests/automation-whatsapp.test.cjs
+!/tests/helpers/
+!/tests/helpers/*.cjs
 !/tests/waba-capacity-database.test.cjs
 !/tests/facebook-public-workspace.test.cjs
 !/tests/company-password-reset.test.cjs
