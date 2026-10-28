@@ -20,7 +20,7 @@
     "check:shopify:review": "node scripts/shopify-review-check.cjs --strict",
     "shopify:review-account": "node scripts/shopify-review-account.cjs",
     "shopify:privacy": "node dist/src/scripts/shopifyPrivacy.js",
-    "start:shopify-worker": "node dist/src/scripts/shopifyMessageWorker.js"
+    "start:shopify-worker": "node dist/src/scripts/shopifyMessageWorker.js",
     "start": "node dist/src/server.js",
     "start:worker": "cross-env WORKER_MODE=true node dist/src/workers/index.js",
     "dev": "nodemon -r dotenv/config -r tsconfig-paths/register src/server.ts",
