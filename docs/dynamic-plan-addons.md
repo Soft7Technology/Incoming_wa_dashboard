@@ -163,7 +163,7 @@ Apply `20261019000003_platform_pricing.ts` before using these APIs. If older unr
 
 ## Create the requested plan
 
-Plan names are fixed: **Free, Basic, Pro, Enterprise**. Render a select/dropdown rather than a free-text name field. Fetch `GET /v1/admin/subscription/plan-options` with the existing JWT to receive:
+Plan names can be any non-empty string. Use a free-text name field. `GET /v1/admin/subscription/plan-options` with the existing JWT provides optional suggestions:
 
 ```json
 {
@@ -176,14 +176,14 @@ Plan names are fixed: **Free, Basic, Pro, Enterprise**. Render a select/dropdown
       { "label": "Pro", "value": "Pro" },
       { "label": "Enterprise", "value": "Enterprise" }
     ],
-    "custom_names_allowed": false
+    "custom_names_allowed": true
   }
 }
 ```
 
-Submit the selected `value` as `plan_name` in the existing create/update payload. Exact casing is required; custom text, `pro`, `Free Trial`, surrounding whitespace and non-string values return HTTP 400 with `plan_name must be Free, Basic, Pro, or Enterprise`. Name and billing cycle are separate fields; monthly and yearly definitions can share the same fixed name.
+Submit the chosen name as `plan_name` in the existing create/update payload. Custom names such as `Starter`, `Free Trial`, `pro`, and names in other languages are accepted and preserved as supplied. Empty, whitespace-only and non-string names return HTTP 400 with `plan_name must be a non-empty string`. Name and billing cycle are separate fields; monthly and yearly definitions can share the same name.
 
-New registration trials use `plan_name: "Free"`. Existing catalog names and assigned user-plan snapshots are not renamed. When editing an older custom-named plan, display its current name and offer these four choices; omit `plan_name` if leaving that legacy name unchanged, or send a fixed value to explicitly rename it. Partial price/description/duration edits continue to work. Renaming a catalog definition does not rename already assigned snapshots. No database migration is needed for this naming validation.
+New registration trials use `plan_name: "Free"`. When editing a plan, display its current name and allow any custom replacement; omit `plan_name` to leave it unchanged. Partial price/description/duration edits continue to work. Renaming a catalog definition does not rename already assigned snapshots. No database migration is needed for custom names.
 
 `POST /plan`
 
