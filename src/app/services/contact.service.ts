@@ -4,6 +4,7 @@ import planUsageService from './planUsage.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
+import PhoneNumberModel from '../models/phoneNumber.model';
 import ContactTagModel from '../models/contactTag.model';
 import ContactTagRelationModel from '../models/contactTagRelation.model';
 import ContactListModel from '../models/contactList.model';
@@ -290,7 +291,7 @@ class ContactService {
    */
   async updateContact(userId:string,contactId: string, data: any) {
     const contact = await ContactModel.findById(contactId);
-    if (!contact) {
+    if (!contact || contact.deleted_at || contact.user_id !== userId) {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
 
@@ -315,7 +316,37 @@ class ContactService {
       updatePayload.status = data.status;
     }
 
-    const updated = await ContactModel.update(contactId, updatePayload);
+    if (data.is_opted_out !== undefined) {
+      if (typeof data.is_opted_out !== 'boolean') throw new HTTP400Error({ message: 'is_opted_out must be true or false' });
+      updatePayload.is_opted_out = data.is_opted_out;
+    }
+    if (data.phone_number_id !== undefined) {
+      const sender = await PhoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+      if (!sender || sender.user_id !== userId || sender.company_id !== contact.company_id || sender.deleted_at)
+        throw new HTTP400Error({ message: 'Selected phone number ID does not belong to your account' });
+      updatePayload.phone_number_id = sender.id;
+    }
+    if (data.phone_number !== undefined || data.country_code !== undefined) {
+      try {
+        const identity = parseStoredContactPhone(data.phone_number ?? contact.phone_number,
+          data.country_code ?? contact.country_code ?? '');
+        Object.assign(updatePayload, { phone_number: identity.phone_number, country_code: identity.country_code,
+          is_valid: identity.is_valid, invalid_reason: identity.is_valid ? null : 'Invalid phone number' });
+      } catch (error: any) { throw new HTTP400Error({ message: error.message }); }
+    }
+    if (data.phone_number !== undefined || data.country_code !== undefined || data.phone_number_id !== undefined) {
+      const existing = await ContactModel.findOwnedByPhone(userId, updatePayload.phone_number ?? contact.phone_number,
+        updatePayload.phone_number_id ?? contact.phone_number_id, contact.company_id,
+        updatePayload.country_code ?? contact.country_code);
+      if (existing && existing.id !== contactId)
+        throw new HTTP400Error({ message: 'Cannot update contact: this number already exists for the selected sending phone number' });
+    }
+    let updated;
+    try { updated = await ContactModel.update(contactId, updatePayload); }
+    catch (error: any) {
+      if (error.code === '23505') throw new HTTP400Error({ message: 'Cannot update contact: this number already exists for the selected sending phone number' });
+      throw error;
+    }
 
     // Update tags if provided
     if (data.tag_ids !== undefined) {
