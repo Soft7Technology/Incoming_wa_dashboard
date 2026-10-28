@@ -187,6 +187,11 @@ export class GoogleSheetsService {
       purpose: 'Use only with Google Picker to select spreadsheets.',
     };
   }
+  async automation(scope: GoogleScope, connectionId: string, key: string, input: Record<string, any>) {
+    const credentials = await this.token(scope);
+    if (credentials.id !== connectionId) fail(404, 'Google Sheets connection not found in your account');
+    return this.google.automation(key, input, credentials.token);
+  }
   async spreadsheets(scope: GoogleScope, pageToken: unknown) {
     if (pageToken !== undefined && (typeof pageToken !== 'string' || pageToken.length > 2048))
       fail(400, 'Invalid page_token.');

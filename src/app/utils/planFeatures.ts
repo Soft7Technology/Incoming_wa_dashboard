@@ -49,6 +49,12 @@ export const FEATURE_ALIASES: Record<string, string> = {
 export const featureKey = (key: string) =>
   Object.prototype.hasOwnProperty.call(FEATURE_ALIASES, key) ? FEATURE_ALIASES[key] : key;
 
+/** Historical JSON snapshots may contain decimal integer strings; never coerce booleans or fractions. */
+export function storedAddonLimit(value: unknown): number {
+  const parsed = value == null ? 0 : typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
+  return typeof parsed === 'number' && Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : NaN;
+}
+
 /** These resources are available independently of subscription entitlements. */
 export function isUnmeteredFeature(key: string): boolean {
   return ['tag', 'tags', 'message', 'messages', 'column', 'columns',

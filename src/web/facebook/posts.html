@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Facebook Page posts</title>
     <link rel="stylesheet" href="/v1/facebook/style.css" />
+    <script defer src="/v1/facebook/session.js"></script>
     <script defer src="/v1/facebook/posts.js"></script>
   </head>
   <body class="content-workspace">
@@ -12,19 +13,11 @@
       <a class="brand" href="/v1/facebook/posts">Page posts <span class="badge">Facebook</span></a>
       <nav>
         <a href="/v1/facebook/page">Messenger</a> · <a href="/v1/facebook/leads">Lead Forms</a> ·
-        <a href="/v1/facebook/instagram">Instagram</a> <button id="logout" class="quiet" hidden>Log out</button>
+        <a href="/v1/facebook/instagram">Instagram</a>
       </nav>
     </header>
     <main>
-      <section id="login-panel" class="login card">
-        <h1>Log into your application</h1>
-        <p>Use your company owner account to connect a Facebook Page.</p>
-        <form id="login-form">
-          <label>Email<input id="email" type="email" autocomplete="username" required /></label
-          ><label>Password<input id="password" type="password" autocomplete="current-password" required /></label
-          ><button id="login-button">Log in</button>
-        </form>
-      </section>
+      <p class="muted">Connect your Facebook or Instagram account to get started. No application login is required.</p>
       <div id="notice" role="status" aria-live="polite" hidden></div>
       <section id="workspace" hidden>
         <div class="heading">
@@ -116,7 +109,7 @@
           <summary>Meta App Review recording guide</summary>
           <ol>
             <li>
-              Sign in with the supplied application test login. Click Connect Facebook Page, authorize the requested
+              Open this workspace directly. Click Connect Facebook Page, authorize the requested
               permissions, select a Page you manage and connect it.
             </li>
             <li>

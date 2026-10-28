@@ -116,6 +116,8 @@ test('Meta pagination rejects missing/repeated/cyclic cursors and later-page fai
 // Transaction simulation checks rollback and identity preservation; SQL compilation is checked separately below.
 function persistenceFixture({ phones = [], failBatch = 0, race = false, missingAccount = false, remaining = Infinity } = {}) {
   let state = { account: { ...account }, phones: structuredClone(phones) };
+  const initiallyActive = phones.filter(p => !p.deleted_at && p.active !== false).length;
+  let allowance = remaining;
   const batches = [], lookups = [];
   const query = (table, draft) => {
     let filters = [], first = false, operation, values, mergeColumns;
@@ -160,8 +162,8 @@ function persistenceFixture({ phones = [], failBatch = 0, race = false, missingA
   class BaseModel { constructor() { this.db = db; } query() { return db('waba_accounts'); } }
   return { model: load('src/app/models/waba.model.ts', { '@surefy/models/base.model': { BaseModel },
     '../services/planUsage.service': { syncWabaNumbers: (userId, callback) => db.transaction(trx => callback(trx,
-      { remaining, inactiveReason: 'PLAN_LIMIT_EXCEEDED' })) } }),
-    state: () => state, batches, lookups };
+      { remaining: Math.max(0, allowance - (state.phones.filter(p => !p.deleted_at && p.active !== false).length - initiallyActive)), inactiveReason: 'PLAN_LIMIT_EXCEEDED' })) } }),
+    state: () => state, setRemaining: value => { allowance = value; }, batches, lookups };
 }
 const savedPhone = (id, changes = {}) => ({ id: `local-${id}`, phone_number_id: id,
   user_id: account.user_id, company_id: account.company_id, waba_id: account.id,
@@ -218,15 +220,32 @@ test('empty Meta phone list refreshes the account and a deleted account cannot b
   await assert.rejects(missing.model.syncAccountAndPhones(account, {}, []), /not found in your account/);
 });
 
-test('Meta sync saves overflow numbers as inactive and does not reactivate them on repeat sync', async () => {
+test('Meta sync saves only the available slots and reports overflow without creating inactive rows', async () => {
   const f = persistenceFixture({ remaining: 2 });
   const result = await f.model.syncAccountAndPhones(account, {}, [phone('1001'), phone('1002'), phone('1003')]);
-  assert.equal(result.phone_numbers.length, 3); assert.equal(result.active_count, 2); assert.equal(result.inactive_count, 1);
-  const overflow = result.phone_numbers.find(p => p.phone_number_id === '1003');
-  assert.equal(overflow.active, false); assert.equal(overflow.inactive_reason, 'PLAN_LIMIT_EXCEEDED');
+  assert.equal(result.total_phone_numbers, 3); assert.equal(result.created, 2);
+  assert.equal(result.phone_numbers.length, 2); assert.equal(result.active_count, 2); assert.equal(result.inactive_count, 0);
+  assert.equal(result.skipped_count, 1); assert.equal(result.skipped_phone_numbers[0].phone_number_id, '1003');
+  assert.equal(result.skipped_phone_numbers[0].reason, 'PLAN_LIMIT_EXCEEDED'); assert.equal(result.remaining_slots, 0);
   const repeated = await f.model.syncAccountAndPhones(account, {}, [phone('1003'), phone('1002'), phone('1001')]);
-  assert.equal(repeated.phone_numbers.find(p => p.id === overflow.id).active, false);
-  assert.equal(f.state().phones.length, 3);
+  assert.equal(repeated.created, 0); assert.equal(repeated.updated, 2); assert.equal(repeated.skipped_count, 1);
+  assert.equal(f.state().phones.length, 2);
+  f.setRemaining(3);
+  const upgraded = await f.model.syncAccountAndPhones(account, {}, [phone('1001'), phone('1002'), phone('1003')]);
+  assert.equal(upgraded.created, 1); assert.equal(upgraded.skipped_count, 0); assert.equal(f.state().phones.length, 3);
+});
+
+test('no remaining slots refreshes retained rows but never inserts or restores an excess number', async () => {
+  const deleted = savedPhone('1002', { deleted_at: '2026-01-01', active: false });
+  const f = persistenceFixture({ remaining: 0, phones: [savedPhone('1001'), deleted] });
+  const result = await f.model.syncAccountAndPhones(account, {}, [phone('1001'), phone('1002'), phone('1003')]);
+  assert.equal(result.created, 0); assert.equal(result.updated, 1); assert.equal(result.skipped_count, 2);
+  assert.equal(f.state().phones.length, 2); assert.equal(f.state().phones.find(p => p.phone_number_id === '1002').deleted_at, '2026-01-01');
+  assert.equal(f.state().phones.find(p => p.phone_number_id === '1001').verified_name, 'New name');
+  const empty = persistenceFixture({ remaining: 0 });
+  const blocked = await empty.model.syncAccountAndPhones(account, {}, [phone('1001')]);
+  assert.equal(blocked.skipped_count, 1); assert.equal(blocked.phone_numbers.length, 0);
+  assert.equal(empty.batches.length, 0);
 });
 
 test('manually inactive numbers stay inactive even when more capacity becomes available', async () => {

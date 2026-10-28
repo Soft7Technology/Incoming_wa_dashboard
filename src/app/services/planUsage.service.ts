@@ -1,7 +1,7 @@
 import db from '@surefy/database';
 import { Knex } from 'knex';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
-import { featureKey, isUnmeteredFeature, usagePeriodStart } from '../utils/planFeatures';
+import { featureKey, isUnmeteredFeature, storedAddonLimit, usagePeriodStart } from '../utils/planFeatures';
 
 export type PlanFeature = string;
 
@@ -22,7 +22,7 @@ export function checkUsage(plan: any, feature: PlanFeature, count = 1, now = new
     throw new HTTP403Error({ message: `${feature} is not included in this plan` });
   }
   const baseLimit = config?.limit;
-  const bonus = config?.addon_limit ?? 0;
+  const bonus = storedAddonLimit(config?.addon_limit);
   if (!Number.isSafeInteger(bonus) || bonus < 0) throw new HTTP403Error({ message: `Invalid ${feature} add-on limit` });
   const limit = baseLimit === null || baseLimit === undefined ? baseLimit : Number(baseLimit) + bonus;
   const periods = typeof plan.usage_periods === 'string' ? JSON.parse(plan.usage_periods) : { ...plan.usage_periods };
@@ -75,7 +75,7 @@ export async function syncTeamSeats(trx: Knex.Transaction, userId: string) {
 }
 
 class PlanUsageService {
-  /** Meta inventory can always be saved, but only entitled numbers may be active. */
+  /** Serialize inventory allocation against live active usage; callers skip new numbers without capacity. */
   async syncWabaNumbers<T>(userId: string, save: (trx: Knex.Transaction, capacity: {
     remaining: number; inactiveReason: string;
   }) => Promise<T>): Promise<T> {
@@ -151,8 +151,9 @@ class PlanUsageService {
       const config = limits[key];
       // Display over-limit accounts after a downgrade rather than rejecting the summary.
       const checked = checkUsage({ ...plan, usage, limits: { ...limits, [key]: { ...config, enabled: true, limit: null } } }, key, 0);
-      const total = config.enabled === false ? 0 : config.limit === null ? null : Number(config.limit) + Number(config.addon_limit ?? 0);
-      features[key] = { enabled: config.enabled !== false, base_limit: config.limit, addon_limit: config.addon_limit ?? 0,
+      const bonus = storedAddonLimit(config.addon_limit);
+      const total = config.enabled === false ? 0 : config.limit === null ? null : Number(config.limit) + bonus;
+      features[key] = { enabled: config.enabled !== false, base_limit: config.limit, addon_limit: bonus,
         effective_limit: total, used: checked.used, remaining: total === null ? null : Math.max(0, total - checked.used),
         reset_period: config.reset_period ?? 'never' };
     }

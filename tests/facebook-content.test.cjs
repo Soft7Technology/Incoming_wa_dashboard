@@ -146,6 +146,11 @@ async function httpFixture(context, run) {
   const app = express(); app.use(express.json());
   app.post('/v1/auth/login', (_req,res) => res.json({ success: true, data: { token: bearer(a) } }));
   app.use('/v1/admin/facebook-content', auth, load('src/routes/facebookContent.route.ts', deps).default);
+  // Public browser fixture uses the selected test owner; tenant/cookie checks have their own tests.
+  deps['./publicMetaWorkspace.route'] = express.Router();
+  app.post('/v1/facebook/session', (_req, res) => res.json({ success: true, data: { ready: true } }));
+  app.use('/v1/facebook/api/posts', (req, _res, next) => { Object.assign(req, a); next(); },
+    load('src/routes/facebookContent.route.ts', deps).default);
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   const server = app.listen(0,'127.0.0.1'); await new Promise(resolve => server.once('listening',resolve));
   try { await run('http://127.0.0.1:' + server.address().port, bearer); }
@@ -185,7 +190,7 @@ test('Page posts browser reads visitor content and comments and creates, edits a
       const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.text);return r.result.value;};
       const waitFor=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw new Error('Browser condition failed: '+expression+' Notice: '+await evaluate("document.getElementById('notice').textContent"));};
       await call('Runtime.enable');await call('Page.enable');await call('Page.navigate',{url:base+'/v1/facebook/posts'});
-      await waitFor("typeof api==='function'");await evaluate("document.getElementById('email').value='owner@example.test';document.getElementById('password').value='test';document.getElementById('login-form').requestSubmit()");
+      await waitFor("!document.getElementById('workspace').hidden && typeof api==='function'");
       await waitFor("Boolean(document.querySelector('#pages button'))");await evaluate("document.querySelector('#pages button').click()");
       await waitFor("!document.getElementById('page-workspace').hidden");await evaluate("document.getElementById('refresh-feed').click()");
       await waitFor("document.getElementById('posts').innerText.includes('Visitor question')");assert.equal(await evaluate("document.querySelector('#posts img')===null"),true);

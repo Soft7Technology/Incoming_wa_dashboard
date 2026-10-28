@@ -54,6 +54,11 @@ function encryptionKey() {
   if (key.length !== 32) fail(503, 'SHOPIFY_TOKEN_ENCRYPTION_KEY must be 32 random bytes encoded as base64.');
   return key;
 }
+export function shopifyApiVersion() {
+  const version = process.env.SHOPIFY_API_VERSION || '2026-10';
+  if (!/^\d{4}-(01|04|07|10)$/.test(version)) fail(503, 'Invalid SHOPIFY_API_VERSION.');
+  return version;
+}
 export function configuration() {
   const clientId = process.env.SHOPIFY_CLIENT_ID?.trim(),
     clientSecret = process.env.SHOPIFY_CLIENT_SECRET?.trim();
@@ -77,10 +82,9 @@ export function configuration() {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  if (!scopes.length || scopes.some((s) => !['read_orders', 'read_customers'].includes(s)))
-    fail(503, 'This Shopify integration supports read_orders and read_customers scopes.');
-  const apiVersion = process.env.SHOPIFY_API_VERSION || '2026-10';
-  if (!/^\d{4}-(01|04|07|10)$/.test(apiVersion)) fail(503, 'Invalid SHOPIFY_API_VERSION.');
+  if (!scopes.length || scopes.some((s) => !['read_orders', 'read_customers', 'read_products'].includes(s)))
+    fail(503, 'This Shopify integration supports read_orders, read_customers and read_products scopes.');
+  const apiVersion = shopifyApiVersion();
   encryptionKey();
   return {
     clientId: clientId!,

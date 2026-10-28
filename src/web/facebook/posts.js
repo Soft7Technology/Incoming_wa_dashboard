@@ -1,9 +1,8 @@
 'use strict';
 const $ = (id) => document.getElementById(id),
-  base = '/v1/admin/facebook-content';
+  base = '/v1/facebook/api/posts';
 let postsRender = 0;
-let token = sessionStorage.getItem('facebook_saas_jwt') || '',
-  page,
+let page,
   post,
   generation = 0,
   feedCursor,
@@ -39,16 +38,15 @@ function button(text, run, className = 'quiet') {
   return n;
 }
 async function api(path, method = 'GET', body) {
-  const response = await fetch(base + path, {
+  const response = await window.metaWorkspace.fetch(base + path, {
     method,
     credentials: 'same-origin',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(45000),
   });
   const data = await response.json();
   if (!response.ok || !data.success) {
-    if (response.status === 401) logout();
     throw new Error(data.message || 'Facebook Page operation failed.');
   }
   return data.data;
@@ -63,37 +61,6 @@ function clearPage() {
   $('post-filter').value = 'all';
   $('more-feed').hidden = $('more-comments').hidden = true;
 }
-function logout() {
-  clearPage();
-  token = '';
-  sessionStorage.removeItem('facebook_saas_jwt');
-  $('workspace').hidden = $('logout').hidden = true;
-  $('login-panel').hidden = false;
-  $('pages').replaceChildren();
-  $('selection').hidden = true;
-}
-$('logout').onclick = logout;
-$('login-form').onsubmit = (event) => {
-  event.preventDefault();
-  busy($('login-button'), async () => {
-    const response = await fetch('/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        identifier: $('email').value,
-        password: $('password').value,
-        domain_name: location.hostname,
-      }),
-      signal: AbortSignal.timeout(25000),
-    });
-    $('password').value = '';
-    const result = await response.json();
-    if (!response.ok || !result.success || !result.data?.token) throw new Error(result.message || 'Login failed.');
-    token = result.data.token;
-    sessionStorage.setItem('facebook_saas_jwt', token);
-    await init();
-  });
-};
 $('connect').onclick = () =>
   busy($('connect'), async () => {
     const data = await api('/oauth/start', 'POST', {}),
@@ -398,8 +365,7 @@ $('refresh-comments').onclick = () => busy($('refresh-comments'), () => syncComm
 $('more-comments').onclick = () => busy($('more-comments'), () => syncComments(true));
 async function init() {
   const setup = await api('/setup');
-  $('login-panel').hidden = true;
-  $('workspace').hidden = $('logout').hidden = false;
+  $('workspace').hidden = false;
   $('connect').disabled = !setup.ready;
   $('configuration').textContent = setup.issue || '';
   $('configuration').hidden = !setup.issue;
@@ -408,4 +374,4 @@ async function init() {
   await candidates();
   if (location.hash.startsWith('#oauth=')) history.replaceState(null, '', location.pathname);
 }
-if (token) init().catch((e) => notice(e.message));
+window.metaWorkspace.ready().then(init).catch((e) => notice(e.message));

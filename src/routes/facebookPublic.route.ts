@@ -5,6 +5,7 @@ import controller, { facebookError } from '../app/http/controllers/facebookMesse
 import leads from '../app/http/controllers/facebookLeads.controller';
 import instagram from '../app/http/controllers/instagram.controller';
 import content from '../app/http/controllers/facebookContent.controller';
+import PublicMetaWorkspaceRoute from './publicMetaWorkspace.route';
 
 const route = Router();
 route.use(controller.noStore);
@@ -32,6 +33,8 @@ route.get('/leads.js', (_req, res) => res.sendFile(path.resolve(__dirname, '../w
 route.get('/leads/oauth/callback', leads.callback);
 route.get('/app.js', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/app.js')));
 route.get('/style.css', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/style.css')));
+route.get('/session.js', (_req, res) => res.sendFile(path.resolve(__dirname, '../web/facebook/session.js')));
+route.use(PublicMetaWorkspaceRoute);
 route.use('/review-login', FacebookReviewLoginRoute);
 route.get('/oauth/callback', controller.callback);
 route.get('/webhook', controller.verify);

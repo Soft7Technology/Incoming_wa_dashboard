@@ -68,13 +68,18 @@ class WabaModel extends BaseModel {
       }).returning('*');
 
       const phoneNumbers: any[] = [];
+      const skipped: Array<{ phone_number_id: string; reason: string }> = [];
       for (let offset = 0; offset < phones.length; offset += 200) {
-        const rows = phones.slice(offset, offset + 200).map(phone => {
+        const rows = phones.slice(offset, offset + 200).flatMap(phone => {
           const saved = byMetaId.get(phone.id);
           const retained = saved && !saved.deleted_at;
+          if (!retained && capacity.remaining <= 0) {
+            skipped.push({ phone_number_id: phone.id, reason: capacity.inactiveReason });
+            return [];
+          }
           const active = retained ? saved.active !== false : capacity.remaining > 0;
           if (!retained && active) capacity.remaining--;
-          return {
+          return [{
             user_id: current.user_id, company_id: current.company_id, waba_id: current.id,
             phone_number_id: phone.id, display_phone_number: phone.display_phone_number,
             verified_name: phone.verified_name ?? saved?.verified_name ?? null,
@@ -85,8 +90,9 @@ class WabaModel extends BaseModel {
               ? phone.status === 'CONNECTED' && phone.platform_type !== 'ON_PREMISE' ? 'connected' : 'pending'
               : saved?.connection_status ?? 'legacy',
             meta_data: JSON.stringify(phone), updated_at: now, deleted_at: null,
-          };
+          }];
         });
+        if (!rows.length) continue;
         const saved = await trx('phone_numbers').insert(rows).onConflict('phone_number_id').merge([
           'display_phone_number', 'verified_name', 'quality_rating', 'code_verification_status',
           'meta_data', 'updated_at', 'deleted_at',
@@ -103,9 +109,11 @@ class WabaModel extends BaseModel {
         }
         phoneNumbers.push(...saved);
       }
-      const updated = phones.filter(phone => byMetaId.has(phone.id)).length;
+      const updated = phoneNumbers.filter(phone => byMetaId.has(phone.phone_number_id)).length;
       return { waba: account, phone_numbers: phoneNumbers, total_phone_numbers: phones.length,
-        created: phones.length - updated, updated,
+        created: phoneNumbers.length - updated, updated,
+        skipped_count: skipped.length, skipped_phone_numbers: skipped,
+        remaining_slots: Number.isFinite(capacity.remaining) ? capacity.remaining : null,
         active_count: phoneNumbers.filter(phone => phone.active).length,
         inactive_count: phoneNumbers.filter(phone => !phone.active).length };
     });

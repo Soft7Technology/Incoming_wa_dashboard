@@ -128,6 +128,28 @@ test('new plans deny omitted/disabled features and add-ons increase only the pur
   assert.throws(() => usage.checkUsage({ ...plan, limits: { TeamInvite: { limit: 2, enabled: false } } }, 'TeamInvite'), /not included/);
 });
 
+test('saved integer-string add-on capacity is numeric; malformed values never grant capacity', async () => {
+  const f = fixture(), plan = f.state().user_plans[0];
+  plan.limits.WabaNumber = { limit: 3, addon_limit: '2', enabled: true };
+  assert.equal(usage.checkUsage(plan, 'WabaNumber', 5).limit, 5);
+  assert.throws(() => usage.checkUsage(plan, 'WabaNumber', 6), /limit reached/);
+  const summary = (await f.limits.summary(uuid(1))).features.WabaNumber;
+  assert.equal(summary.addon_limit, 2); assert.equal(summary.effective_limit, 5); assert.equal(summary.remaining, 5);
+  for (const value of ['', ' ', '2.5', '-1', 'Infinity', '1e3', true, {}, [], Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => usage.checkUsage({ ...plan, limits: { WabaNumber: { limit: 3, addon_limit: value } } }, 'WabaNumber', 0), /Invalid WabaNumber add-on/);
+  }
+  let slots;
+  await f.limits.syncWabaNumbers(uuid(1), async (_trx, capacity) => { slots = capacity.remaining; });
+  assert.equal(slots, 5);
+});
+
+test('purchasing an add-on normalizes a legacy numeric-string bonus without losing previous units', async () => {
+  const f = fixture();
+  f.state().user_plans[0].limits.TeamInvite.addon_limit = '2';
+  await f.addons.purchase(f.actor, f.body, 'legacy-bonus');
+  assert.equal(JSON.parse(f.state().user_plans[0].limits).TeamInvite.addon_limit, 5);
+});
+
 test('monthly/yearly usage resets on anniversary boundaries, preserving input and capacity counters', () => {
   const plan = { active: true, start_date: '2024-01-31T12:00:00Z', end_date: '2030-01-01',
     limits: { Campaign: { limit: 10, reset_period: 'monthly' }, TeamInvite: { limit: 2, reset_period: 'never' } }, usage: { Campaign: 10, TeamInvite: 2 } };
@@ -294,31 +316,32 @@ test('consuming a reset quota persists its period and cannot reset repeatedly', 
   await assert.rejects(f.limits.run(uuid(1), 'Campaign', async () => 'again'), /limit reached/);
 });
 
-test('concurrent WABA syncs share the last active slot while retaining all imported numbers', async () => {
+test('concurrent WABA allocations share the last slot without inserting overflow', async () => {
   const f = fixture();
   f.state().user_plans[0].limits.WabaNumber = { limit: 1, enabled: true, reset_period: 'never' };
   await Promise.all(['one', 'two'].map(id => f.limits.syncWabaNumbers(uuid(1), async (trx, capacity) => {
+    if (capacity.remaining <= 0) return [];
     return trx('phone_numbers').insert({ id, user_id: uuid(1), active: capacity.remaining > 0 });
   })));
-  assert.equal(f.state().phone_numbers.length, 2);
+  assert.equal(f.state().phone_numbers.length, 1);
   assert.equal(f.state().phone_numbers.filter(phone => phone.active).length, 1);
   assert.equal(f.state().user_plans[0].usage.WabaNumber, 1);
   await assert.rejects(f.limits.run(uuid(1), 'WabaNumber', async () => {}), /limit reached/);
 });
 
-test('WABA sync reconciles a downgrade without deleting inventory; disabled or absent plans still save inactive numbers', async () => {
+test('WABA allocation reconciles a downgrade and prevents new inventory without a usable slot', async () => {
   for (const state of ['downgrade', 'disabled', 'expired', 'absent', 'unlimited']) {
     const f = fixture(), plan = f.state().user_plans[0];
     plan.limits.WabaNumber = { limit: state === 'unlimited' ? null : 2, enabled: state !== 'disabled' };
     if (state === 'expired') plan.end_date = new Date(0);
     if (state === 'absent') f.state().user_plans = [];
     for (let i = 0; i < 3; i++) f.state().phone_numbers.push({ id: uuid(20 + i), user_id: uuid(1), active: true });
-    await f.limits.syncWabaNumbers(uuid(1), (trx, capacity) => trx('phone_numbers').insert({
+    await f.limits.syncWabaNumbers(uuid(1), (trx, capacity) => capacity.remaining <= 0 ? Promise.resolve([]) : trx('phone_numbers').insert({
       id: uuid(24), user_id: uuid(1), active: capacity.remaining > 0,
       inactive_reason: capacity.remaining > 0 ? null : capacity.inactiveReason,
     }));
     const expected = state === 'unlimited' ? 4 : state === 'downgrade' ? 2 : 0;
-    assert.equal(f.state().phone_numbers.length, 4);
+    assert.equal(f.state().phone_numbers.length, state === 'unlimited' ? 4 : 3);
     assert.equal(f.state().phone_numbers.filter(phone => phone.active).length, expected, state);
     if (state !== 'absent') assert.equal(f.state().user_plans[0].usage.WabaNumber, expected);
   }

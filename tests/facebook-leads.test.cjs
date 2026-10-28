@@ -326,10 +326,11 @@ dbTest('real HTTP routes require JWT, bind OAuth cookies, verify raw webhook sig
   const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookLeads.controller': leads,
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) } };
   app.use('/v1/admin/facebook-leads', auth, load('src/routes/facebookLeads.route.ts', deps).default);
-  deps['./facebookLoginTest.route'] = load('src/routes/facebookLoginTest.route.ts');
+  deps['./facebookLoginTest.route'] = express.Router();
   deps['./facebookReviewLogin.route'] = load('src/routes/facebookReviewLogin.route.ts', {
     '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'), '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
   });
+  deps['./publicMetaWorkspace.route'] = express.Router();
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   app.use((error, _req, res, _next) => res.status(error.status || 500).json({ success: false, message: error.message }));
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
@@ -373,7 +374,7 @@ dbTest('real HTTP routes require JWT, bind OAuth cookies, verify raw webhook sig
     response = await post('/v1/facebook/data-deletion', { signed_request: signed }); assert.equal(response.status, 200);
     assert.ok((await response.json()).confirmation_code); assert.equal((await database('facebook_leads')).length, 0);
     response = await fetch(base + '/v1/facebook/leads'); assert.equal(response.status, 200); assert.match(await response.text(), /Meta App Review setup/);
-    response = await fetch(base + '/v1/facebook/leads.js'); assert.equal(response.status, 200); assert.match(await response.text(), /facebook-leads/);
+    response = await fetch(base + '/v1/facebook/leads.js'); assert.equal(response.status, 200); assert.match(await response.text(), /\/v1\/facebook\/api\/leads/);
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
 
@@ -392,10 +393,15 @@ test('Lead Forms browser selects a form, enables syncing, imports leads and rece
     if (req.headers.authorization !== 'Bearer BROWSER_LEADS_TEST') return res.status(401).json({ success: false, message: 'Not logged in' });
     Object.assign(req, a); next();
   }, load('src/routes/facebookLeads.route.ts', deps).default);
-  deps['./facebookLoginTest.route'] = load('src/routes/facebookLoginTest.route.ts');
+  deps['./facebookLoginTest.route'] = express.Router();
   deps['./facebookReviewLogin.route'] = load('src/routes/facebookReviewLogin.route.ts', {
     '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'), '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
   });
+  // Public browser fixture uses the selected test owner; tenant/cookie checks have their own tests.
+  deps['./publicMetaWorkspace.route'] = express.Router();
+  app.post('/v1/facebook/session', (_req, res) => res.json({ success: true, data: { ready: true } }));
+  app.use('/v1/facebook/api/leads', (req, _res, next) => { Object.assign(req, a); next(); },
+    load('src/routes/facebookLeads.route.ts', deps).default);
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   const base = 'http://127.0.0.1:' + server.address().port;
@@ -429,8 +435,7 @@ test('Lead Forms browser selects a form, enables syncing, imports leads and rece
     const waitFor = async expression => { for (let i = 0; i < 120; i++) { if (await evaluate(expression)) return; await pause(100); } throw new Error('Browser condition failed: ' + expression); };
     await call('Runtime.enable'); await call('Page.enable'); await connectLead();
     await call('Page.navigate', { url: base + '/v1/facebook/leads' });
-    await waitFor("Boolean(document.getElementById('login-form')) && typeof api === 'function'");
-    await evaluate("document.getElementById('email').value='owner@example.test'; document.getElementById('password').value='fixture'; document.getElementById('login-form').requestSubmit()");
+    await waitFor("!document.getElementById('workspace').hidden && typeof api === 'function'");
     await waitFor("!document.getElementById('workspace').hidden && document.getElementById('pages').innerText.includes('Live Page Name')");
     await evaluate("document.getElementById('token-connection').open=true; document.getElementById('facebook-token').value='PRIVATE_TEST_FACEBOOK_USER_TOKEN'; document.getElementById('token-form').requestSubmit()");
     await waitFor("!document.getElementById('selection').hidden && document.getElementById('notice').innerText.includes('Token verified')");
@@ -473,7 +478,6 @@ test('Lead Forms browser selects a form, enables syncing, imports leads and rece
     assert.equal(await evaluate("Array.from(document.getElementById('page-select').options).some(o => o.value === '20002' && o.textContent.includes('Another business Page'))"), true);
     assert.equal(await evaluate("document.getElementById('facebook-token').value"), '');
     assert.equal(errors.length, 0, JSON.stringify(errors));
-    await evaluate("document.getElementById('logout').click()");
-    assert.equal(await evaluate("document.getElementById('workspace').hidden && !document.getElementById('login-panel').hidden && document.getElementById('leads').children.length === 0"), true);
+    assert.equal(await evaluate("document.getElementById('login-form') === null && document.getElementById('logout') === null"), true);
   } finally { if (restorePreset) restorePreset(); if (socket) socket.close(); chrome.kill(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 }));

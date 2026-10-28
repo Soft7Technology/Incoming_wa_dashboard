@@ -1,7 +1,7 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
-const apiBase = '/v1/admin/facebook-leads';
-let token = sessionStorage.getItem('facebook_saas_jwt') || '';
+const apiBase = '/v1/facebook/api/leads';
+let sessionReady = false;
 let activePage,
   activeForm,
   formCursor,
@@ -39,60 +39,18 @@ function action(text, fn, className) {
   return node;
 }
 async function api(path, options = {}) {
-  const response = await fetch(apiBase + path, {
+  const response = await window.metaWorkspace.fetch(apiBase + path, {
     ...options,
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin',
     signal: AbortSignal.timeout(30000),
   });
   const result = await response.json();
   if (!response.ok || !result.success) {
-    if (response.status === 401) logOut();
     throw new Error(result.message || 'Request failed.');
   }
   return result.data;
 }
-function logOut() {
-  token = '';
-  generation++;
-  activePage = activeForm = formCursor = leadCursor = null;
-  sessionStorage.removeItem('facebook_saas_jwt');
-  sessionStorage.removeItem('facebook_saas_name');
-  $('workspace').hidden = true;
-  $('login-panel').hidden = false;
-  $('logout').hidden = true;
-  $('facebook-token').value = '';
-  for (const id of ['pages', 'forms', 'leads', 'page-select']) $(id).replaceChildren();
-  for (const id of ['forms-panel', 'leads-panel', 'selection']) $(id).hidden = true;
-}
-$('logout').onclick = logOut;
-$('login-form').onsubmit = async (event) => {
-  event.preventDefault();
-  $('login-button').disabled = true;
-  notice('');
-  try {
-    const response = await fetch('/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(25000),
-      body: JSON.stringify({
-        identifier: $('email').value,
-        password: $('password').value,
-        domain_name: location.hostname,
-      }),
-    });
-    const result = await response.json();
-    if (!response.ok || !result.success || !result.data?.token) throw new Error(result.message || 'Login failed.');
-    token = result.data.token;
-    sessionStorage.setItem('facebook_saas_jwt', token);
-    $('password').value = '';
-    await init();
-  } catch (e) {
-    notice(e.message);
-  } finally {
-    $('login-button').disabled = false;
-  }
-};
 $('connect').onclick = async () => {
   $('connect').disabled = true;
   try {
@@ -374,9 +332,7 @@ $('more-leads').onclick = async () => {
 };
 async function init() {
   setup = await api('/setup');
-  $('login-panel').hidden = true;
   $('workspace').hidden = false;
-  $('logout').hidden = false;
   $('connect').disabled = !setup.ready && !setup.preset_ready;
   $('connect').textContent = setup.preset_ready ? 'Connect ' + setup.preset_page_name : 'Connect Facebook Page';
   $('connect-another').hidden = !setup.preset_ready;
@@ -397,7 +353,7 @@ async function init() {
   history.replaceState(null, '', location.pathname);
 }
 setInterval(async () => {
-  if (!token || !activeForm || document.hidden || refreshing || browsingOlder) return;
+  if (!sessionReady || !activeForm || document.hidden || refreshing || browsingOlder) return;
   refreshing = true;
   try {
     await viewLeads(activeForm);
@@ -407,4 +363,4 @@ setInterval(async () => {
     refreshing = false;
   }
 }, 5000);
-if (token) init().catch((e) => notice(e.message));
+window.metaWorkspace.ready().then(() => { sessionReady = true; return init(); }).catch((e) => notice(e.message));

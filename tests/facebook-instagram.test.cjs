@@ -391,6 +391,11 @@ async function httpFixture(context, run) {
     if (req.headers.authorization !== 'Bearer INSTAGRAM_TEST_JWT') return res.status(401).json({ success: false });
     Object.assign(req, context.a); next();
   }, load('src/routes/instagram.route.ts', deps).default);
+  // Public browser fixture uses the selected test owner; tenant/cookie checks have their own tests.
+  deps['./publicMetaWorkspace.route'] = express.Router();
+  app.post('/v1/facebook/session', (_req, res) => res.json({ success: true, data: { ready: true } }));
+  app.use('/v1/facebook/api/instagram', (req, _res, next) => { Object.assign(req, context.a); next(); },
+    load('src/routes/instagram.route.ts', deps).default);
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   try { await run('http://127.0.0.1:' + server.address().port); }
@@ -447,8 +452,7 @@ test('Instagram browser reads and replies to DMs and moderates comments without 
       const evaluate = async expression => { const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }); if (result.exceptionDetails) throw new Error(result.exceptionDetails.text); return result.result.value; };
       const waitFor = async expression => { for (let i = 0; i < 100; i++) { if (await evaluate(expression)) return; await pause(100); } throw new Error('Browser condition failed: ' + expression + ' Notice: ' + await evaluate("document.getElementById('notice').textContent")); };
       await call('Runtime.enable'); await call('Page.enable'); await call('Page.navigate', { url: base + '/v1/facebook/instagram' });
-      await waitFor("Boolean(document.getElementById('login-form')) && typeof api === 'function'");
-      await evaluate("document.getElementById('email').value='owner@example.test';document.getElementById('password').value='test-password';document.getElementById('login-form').requestSubmit()");
+      await waitFor("!document.getElementById('workspace').hidden && typeof api === 'function'");
       await waitFor("!document.getElementById('workspace').hidden && document.getElementById('accounts').innerText.includes('test_business')");
       await evaluate("document.querySelector('#accounts button').click()");
       await waitFor("!document.getElementById('account-workspace').hidden");
@@ -491,8 +495,7 @@ test('Instagram browser reads and replies to DMs and moderates comments without 
       assert.equal(await evaluate("document.querySelector('#publications a').href"), 'https://www.instagram.com/p/publishing-test/');
       assert.equal(errors.length, 0, JSON.stringify(errors));
       const screenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true }); fs.writeFileSync(path.resolve('.facebook-test-runtime/browser-instagram.png'), Buffer.from(screenshot.data, 'base64'));
-      await evaluate("document.getElementById('logout').click()"); assert.equal(await evaluate("document.getElementById('workspace').hidden"), true);
-      await evaluate("document.getElementById('password').value='test-password';document.getElementById('login-form').requestSubmit()");
+      await call('Page.navigate', { url: base + '/v1/facebook/instagram' });
       await waitFor("!document.getElementById('workspace').hidden && !document.getElementById('connect').disabled");
       assert.equal(await evaluate("document.getElementById('connect').textContent"), 'Connect with Instagram');
       assert.equal(await evaluate("document.getElementById('connect-facebook').disabled"), false);

@@ -221,6 +221,7 @@ function memoryDatabase(initial = {}) {
     return q;
   };
   database.raw = async () => ({ rows: [{ locked: true }] });
+  database.schema = { hasTable: async name => Object.hasOwn(tables, name) };
   database.transaction = (fn) => {
     const result = tail.then(async () => {
       const before = structuredClone(tables);

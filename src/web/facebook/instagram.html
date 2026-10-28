@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Instagram Inbox, Comments &amp; Posts</title>
     <link rel="stylesheet" href="/v1/facebook/style.css" />
+    <script defer src="/v1/facebook/session.js"></script>
     <script defer src="/v1/facebook/instagram.js"></script>
   </head>
   <body>
@@ -15,22 +16,11 @@
       <nav>
         <a href="/v1/facebook/posts">Page posts</a> · <a href="/v1/facebook/page">Messenger</a> ·
         <a href="/v1/facebook/leads">Lead Forms</a>
-        <button id="logout" class="quiet" hidden>Log out</button>
+
       </nav>
     </header>
     <main>
-      <section id="login-panel" class="login card">
-        <h1>Log into your application</h1>
-        <p>
-          Use your application account to connect Instagram. Reviewers can use the application login supplied in the
-          review instructions.
-        </p>
-        <form id="login-form">
-          <label>Email<input id="email" type="email" autocomplete="username" required /></label>
-          <label>Password<input id="password" type="password" autocomplete="current-password" required /></label>
-          <button id="login-button">Log in</button>
-        </form>
-      </section>
+      <p class="muted">Connect your Facebook or Instagram account to get started. No application login is required.</p>
       <div id="notice" role="status" aria-live="polite" hidden></div>
       <section id="workspace" hidden>
         <div class="heading">

@@ -14,10 +14,11 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
     '../../services/instagram.service': { __esModule: true, default: instagramService },
   });
   const publicRoute = load('src/routes/facebookPublic.route.ts', {
+    './publicMetaWorkspace.route': express.Router(),
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) },
     '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookMessenger.controller': controllerModule,
-    './facebookLoginTest.route': load('src/routes/facebookLoginTest.route.ts'),
+    './facebookLoginTest.route': express.Router(),
     './facebookReviewLogin.route': load('src/routes/facebookReviewLogin.route.ts', {
       '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
       '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
@@ -34,6 +35,7 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
   const admin = express.Router(); admin.use(auth); admin.use(protectedRoute);
   const priorWorkerMode = process.env.WORKER_MODE; process.env.WORKER_MODE = 'true';
   const createBaseApp = load('library/surefy/src/server.ts', {
+    './exceptions/CustomError': { CustomError: class extends Error {} },
     './middleware/errorHandler': { errorHandler: (error, _req, res, _next) => res.status(error.status || 500).json({ success: false, message: error.message }) },
     './routes/health.route': express.Router(), './middleware/upload.middleware': { UPLOADS_DIR: 'uploads' },
   }).default;

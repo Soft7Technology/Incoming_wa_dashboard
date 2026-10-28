@@ -1,4 +1,5 @@
 import { Knex } from 'knex';
+import { randomUUID } from 'crypto';
 import db from '@surefy/database';
 import { ShopifyClient } from './shopifyClient.service';
 import { enqueueShopifyMessage } from '../utils/shopifyMessaging';
@@ -60,6 +61,14 @@ const tokenFields = (tokens: any, ctx: string, existingScopes: string[] = []) =>
     scopes: JSON.stringify(scopes),
   };
 };
+const clientTokenFields = (tokens: any, ctx: string) => {
+  const seconds = Number(tokens?.expires_in);
+  if (typeof tokens?.access_token !== 'string' || !tokens.access_token || tokens.access_token.length > 16384 ||
+      !Number.isSafeInteger(seconds) || seconds < 1 || seconds > 86400)
+    fail(502, 'Shopify did not return a valid expiring app access token');
+  return { access_token_ciphertext: encrypt(tokens.access_token, ctx), token_expires_at: new Date(Date.now() + seconds * 1000),
+    refresh_token_ciphertext: null, refresh_expires_at: null };
+};
 
 export class ShopifyService {
   constructor(
@@ -89,6 +98,65 @@ export class ShopifyService {
     if (!record) fail(404, 'Shopify connection not found in your account.');
     return record;
   }
+  private async appCredentials(scope: ShopifyScope, connection: any, database: Knex | Knex.Transaction = this.database) {
+    if (!await database.schema.hasTable('shopify_app_credentials')) return null;
+    const row = await database('shopify_app_credentials').where({ connection_id: connection.id }).first();
+    if (!row) return null;
+    if (row.owner_id !== scope.ownerId || row.company_id !== scope.companyId)
+      fail(503, 'Saved Shopify app credentials do not match this account');
+    return { clientId: row.client_id, clientSecret: decrypt(row.client_secret_ciphertext, `${context(connection)}:client:${row.client_id}`) };
+  }
+  async automationSigningSecret(scope: ShopifyScope, id: unknown) {
+    const connection = await this.owned(scope, id);
+    if (connection.status !== 'connected') fail(409, 'Reconnect this Shopify store first');
+    return (await this.appCredentials(scope, connection))?.clientSecret || configuration().clientSecret;
+  }
+  async connectClientCredentials(scope: ShopifyScope, input: Record<string, unknown>) {
+    owner(scope);
+    if (Object.keys(input).some(key => !['shop', 'name', 'client_id', 'client_secret'].includes(key)))
+      fail(400, 'Use shop, name, client_id and client_secret for a Shopify connection');
+    const shop = shopDomain(input.shop);
+    const field = (value: unknown, name: string, max: number) => {
+      if (typeof value !== 'string' || !value.trim() || value.trim().length > max) fail(400, `${name} is required and must be at most ${max} characters`);
+      return (value as string).trim();
+    };
+    const clientId = field(input.client_id, 'client_id', 255), clientSecret = field(input.client_secret, 'client_secret', 1024);
+    const name = input.name === undefined ? shop : field(input.name, 'name', 120);
+    if (clientSecret.length < 16) fail(400, 'client_secret must contain at least 16 characters');
+    if (!await this.database.schema.hasTable('shopify_app_credentials'))
+      fail(503, 'Shopify client-credential connections are not enabled on this server yet');
+    return this.database.transaction(async trx => {
+      await this.lock(trx, shop);
+      const prior = await trx('shopify_connections').where({ shop_domain: shop }).first();
+      if (prior && (prior.owner_id !== scope.ownerId || prior.company_id !== scope.companyId))
+        fail(409, 'This store is already linked to another account');
+      const previousApp = prior ? await this.appCredentials(scope, prior, trx) : null;
+      if (prior?.status === 'connected' && (!previousApp || previousApp.clientId !== clientId))
+        fail(409, 'This store already uses another Shopify app connection. Use that connection, or disconnect it before changing apps.');
+      const tokens = await this.shopify.clientCredentials(shop, clientId, clientSecret);
+      const base = { company_id: scope.companyId, owner_id: scope.ownerId, shop_domain: shop }, ctx = context(base);
+      const credentials = clientTokenFields(tokens, ctx);
+      const identity = await this.shopify.identity(shop, tokens.access_token);
+      if (identity?.shop?.myshopifyDomain !== shop || typeof identity.shop.id !== 'string')
+        fail(403, 'Shopify returned another store identity; check the app installation');
+      const scopes = identity.currentAppInstallation?.accessScopes;
+      if (!Array.isArray(scopes) || scopes.length > 256 || scopes.some((item: any) => typeof item?.handle !== 'string'))
+        fail(502, 'Shopify did not return the granted app permissions');
+      const record = { ...base, ...credentials, id: prior?.id || randomUUID(), shop_id: identity.shop.id, name,
+        status: 'connected', scopes: JSON.stringify(scopes.map((item: any) => item.handle)),
+        desired_topics: JSON.stringify(prior?.desired_topics || []),
+        delivery_token_ciphertext: prior?.delivery_token_ciphertext || encrypt(random(), ctx),
+        subscription_issue: null, connected_at: new Date(), updated_at: new Date() };
+      const [saved] = await trx('shopify_connections').insert(record).onConflict('shop_domain').merge(record).returning('*');
+      await trx('shopify_app_credentials').insert({ connection_id: saved.id, company_id: scope.companyId,
+        owner_id: scope.ownerId, client_id: clientId,
+        client_secret_ciphertext: encrypt(clientSecret, `${ctx}:client:${clientId}`), updated_at: new Date(),
+      }).onConflict('connection_id').merge(['client_id', 'client_secret_ciphertext', 'updated_at']);
+      return { id: saved.id, _id: saved.id, appKey: 'shopify', name: saved.name, shop_domain: shop, status: 'connected',
+        authentication: 'client_credentials', client_id: clientId, credentials_configured: true,
+        token_expires_at: saved.token_expires_at, scopes: scopes.map((item: any) => item.handle) };
+    });
+  }
   async start(scope: ShopifyScope, body: any) {
     owner(scope);
     const c = configuration(),
@@ -99,6 +167,8 @@ export class ShopifyService {
     const existing = await this.database('shopify_connections').where({ shop_domain: shop }).first();
     if (existing && (existing.company_id !== scope.companyId || existing.owner_id !== scope.ownerId))
       fail(409, 'This store is already linked to another RSVPDesk account.');
+    if (existing?.status === 'connected' && await this.appCredentials(scope, existing))
+      fail(409, 'Disconnect the current app-credential connection before switching to platform OAuth');
     const state = random(),
       browser = random();
     await this.database('shopify_oauth_sessions').where('expires_at', '<', new Date()).delete();
@@ -150,6 +220,8 @@ export class ShopifyService {
       const prior = await trx('shopify_connections').where({ shop_domain: shop }).first();
       if (prior && (prior.company_id !== session.company_id || prior.owner_id !== session.owner_id))
         fail(409, 'This store is already linked to another RSVPDesk account.');
+      if (prior?.status === 'connected' && await this.appCredentials({ companyId: session.company_id, ownerId: session.owner_id, userId: session.owner_id }, prior, trx))
+        fail(409, 'Disconnect the current app-credential connection before switching to platform OAuth');
       const base = { company_id: session.company_id, owner_id: session.owner_id, shop_domain: shop },
         ctx = context(base);
       const tokens = await this.shopify.exchange(shop, q.code),
@@ -231,19 +303,92 @@ export class ShopifyService {
         fail(409, 'Reconnect this Shopify store first.');
       const ctx = context(connection);
       if (new Date(connection.token_expires_at).getTime() <= Date.now() + 60000) {
-        if (!connection.refresh_token_ciphertext || new Date(connection.refresh_expires_at).getTime() <= Date.now())
-          fail(401, 'Shopify refresh authorization expired. Reconnect the store.');
-        const tokens = await this.shopify.refresh(
-          connection.shop_domain,
-          decrypt(connection.refresh_token_ciphertext, ctx),
-        );
-        const values = tokenFields(tokens, ctx, connection.scopes);
+        const app = await this.appCredentials(scope, connection, trx);
+        let values;
+        if (app) values = clientTokenFields(await this.shopify.clientCredentials(connection.shop_domain, app.clientId, app.clientSecret), ctx);
+        else {
+          if (!connection.refresh_token_ciphertext || new Date(connection.refresh_expires_at).getTime() <= Date.now())
+            fail(401, 'Shopify refresh authorization expired. Reconnect the store.');
+          const tokens = await this.shopify.refresh(connection.shop_domain, decrypt(connection.refresh_token_ciphertext, ctx));
+          values = tokenFields(tokens, ctx, connection.scopes);
+        }
         [connection] = await trx('shopify_connections')
           .where({ id: connection.id })
           .update({ ...values, updated_at: new Date() })
           .returning('*');
       }
       return work(trx, connection, decrypt(connection.access_token_ciphertext, ctx));
+    });
+  }
+  /** Manage app-owned subscriptions for one separate automation flow. */
+  async automationWebhook(scope: ShopifyScope, id: unknown, flowId: string, topic: string, uri: string,
+    mode: 'ensure' | 'inspect' | 'remove' = 'ensure') {
+    owner(scope); identifier(flowId);
+    const requiredScope = topic === 'customers/create' ? 'read_customers' : 'read_orders';
+    if (!['orders/create', 'orders/updated', 'orders/paid', 'customers/create', 'carts/update'].includes(topic))
+      fail(400, 'Unsupported Shopify automation webhook topic');
+    let destination: URL, allowed: URL;
+    try { destination = new URL(uri); allowed = new URL(process.env.AUTOMATION_PUBLIC_BASE_URL || new URL(process.env.SHOPIFY_REDIRECT_URI || '').origin); }
+    catch { return fail(503, 'Configure the public automation API URL'); }
+    const prefix = `/v1/webhook/flows/${flowId}/`;
+    if (destination.protocol !== 'https:' || destination.origin !== allowed.origin || destination.username ||
+        destination.password || destination.search || destination.hash ||
+        !new RegExp(`^${prefix}[A-Za-z0-9_-]{43}$`).test(destination.pathname))
+      fail(400, 'Automatic Shopify webhooks require the generated public HTTPS flow URL');
+    // Catch inside withToken so a provider error does not roll back an already rotated refresh token.
+    const outcome = await this.withToken(scope, id, async (_tx, connection, token) => {
+      try {
+        if (mode !== 'remove' && !connection.scopes.includes(requiredScope))
+          fail(403, `Reconnect Shopify with ${requiredScope} permission`);
+        const remote = await this.shopify.subscriptions(connection.shop_domain, token);
+        const owned = remote.filter(subscription => {
+          try { const url = new URL(subscription.uri); return url.pathname.startsWith(prefix); } catch { return false; }
+        });
+        const topicKey = topic.toUpperCase().replace('/', '_');
+        const matches = owned.filter(subscription => subscription.uri === uri && subscription.topic === topicKey);
+        if (mode === 'remove') {
+          for (const subscription of owned) await this.shopify.unsubscribe(connection.shop_domain, token, subscription.id);
+          return { value: { subscribed: false, removed: owned.length, topic, webhookPath: uri } };
+        }
+        if (mode === 'inspect') return { value: { subscribed: matches.length > 0, topic, webhookPath: uri,
+          subscription_id: matches[0]?.id || null, matching_subscriptions: matches.length } };
+        const subscription = matches[0] || await this.shopify.subscribe(connection.shop_domain, token, topicKey, uri);
+        if (subscription.uri !== uri || subscription.topic !== topicKey || typeof subscription.id !== 'string')
+          fail(502, 'Shopify returned an unexpected webhook subscription');
+        // Reconcile this flow only, including obsolete tunnel URLs/tokens and duplicate subscriptions.
+        for (const previous of owned) if (previous.id !== subscription.id)
+          await this.shopify.unsubscribe(connection.shop_domain, token, previous.id);
+        return { value: { subscribed: true, topic, webhookPath: uri, subscription_id: subscription.id,
+          reused: matches.length > 0 } };
+      } catch (error) { return { error }; }
+    });
+    if ('error' in outcome) throw outcome.error;
+    return outcome.value;
+  }
+
+  /** Fixed read-only operations for the separate automation flow builder. */
+  async automation(scope: ShopifyScope, id: unknown, key: string, input: Record<string, any>) {
+    return this.withToken(scope, id, async (_tx, connection, token) => {
+      const product = ['getProduct', 'listProducts'].includes(key);
+      if (!['getOrder', 'listOrders', 'getProduct', 'listProducts'].includes(key)) fail(400, 'Unsupported Shopify flow action');
+      if (!connection.scopes.includes(product ? 'read_products' : 'read_orders')) fail(403, `Reconnect Shopify with ${product ? 'read_products' : 'read_orders'} permission`);
+      const fields = product
+        ? 'id title handle status priceRangeV2 { minVariantPrice { amount currencyCode } maxVariantPrice { amount currencyCode } }'
+        : 'id name createdAt displayFinancialStatus displayFulfillmentStatus currentTotalPriceSet { shopMoney { amount currencyCode } }';
+      const single = key.startsWith('get'), resource = product ? 'product' : 'order';
+      if (single) {
+        const supplied = input[product ? 'product_id' : 'order_id'];
+        if (typeof supplied !== 'string') fail(400, 'Use a Shopify GraphQL ID or numeric ID string');
+        const type = product ? 'Product' : 'Order';
+        const gid = /^\d+$/.test(supplied) ? `gid://shopify/${type}/${supplied}` : supplied;
+        if (!new RegExp(`^gid://shopify/${type}/[0-9]+$`).test(gid)) fail(400, 'Invalid Shopify resource ID');
+        const result = await this.shopify.graphql(connection.shop_domain, token, `query($id: ID!) { ${resource}(id: $id) { ${fields} } }`, { id: gid });
+        return result[resource] || fail(404, 'Shopify resource not found');
+      }
+      const result = await this.shopify.graphql(connection.shop_domain, token,
+        `query($first: Int!, $after: String, $query: String) { ${resource}s(first: $first, after: $after, query: $query) { nodes { ${fields} } pageInfo { hasNextPage endCursor } } }`,
+        { first: input.limit || 20, after: input.after || null, query: input.query || null });
+      return result[`${resource}s`];
     });
   }
   /** Safe operator diagnostic: normal credential refresh, but no customer query or subscription changes. */
@@ -299,6 +444,8 @@ export class ShopifyService {
   }
   async sync(scope: ShopifyScope, id: unknown) {
     owner(scope);
+    const connected = await this.owned(scope, id);
+    if (await this.appCredentials(scope, connected)) fail(400, 'Register this app connection through the automation flow webhook/subscribe API');
     try {
       await this.withToken(scope, id, async (trx, connection, token) => {
         const desired = [...connection.desired_topics, ...lifecycle],
@@ -353,7 +500,8 @@ export class ShopifyService {
     const connection = await this.owned(scope, id);
     if (connection.status === 'connected') {
       await this.withToken(scope, id, async (trx, c, token) => {
-        const uri = `${configuration().origin}/v1/integrations/shopify/webhook/${c.id}/${decrypt(c.delivery_token_ciphertext, context(c))}`;
+        const app = await this.appCredentials(scope, c, trx);
+        const uri = app ? null : `${configuration().origin}/v1/integrations/shopify/webhook/${c.id}/${decrypt(c.delivery_token_ciphertext, context(c))}`;
         const remote = await this.shopify.subscriptions(c.shop_domain, token);
         const saved = await trx('shopify_subscriptions').where({ connection_id: c.id }).select('shopify_id', 'uri');
         for (const s of remote.filter(
@@ -379,6 +527,7 @@ export class ShopifyService {
           payload_ciphertext: null,
           finished_at: new Date(),
         });
+        if (app) await trx('shopify_app_credentials').where({ connection_id: c.id, ...where(scope) }).delete();
       });
     }
     return { disconnected: true };
@@ -685,6 +834,9 @@ export class ShopifyService {
                   subject_hashes: '[]',
                   status: 'redacted',
                 });
+                // Automation receipts and their dependent run results share the same subject hashes.
+                if (trx.schema?.hasTable && await trx.schema.hasTable('automation_events'))
+                  await matching(trx('automation_events').where({ app_key: 'shopify', connection_id: connection.id }), request.subject_hashes).delete();
                 await trx('shopify_privacy_requests')
                   .where({ id: request.id })
                   .update({ status: 'completed', payload_ciphertext: null, subject_hashes: '[]', completed_at: now });
@@ -862,6 +1014,8 @@ export class ShopifyService {
       )
         return { accepted: true, duplicate: true };
       if (topic === 'shop/redact') {
+        if (trx.schema?.hasTable && await trx.schema.hasTable('automation_events'))
+          await trx('automation_events').where({ app_key: 'shopify', connection_id: connection.id }).delete();
         await trx('shopify_oauth_sessions').where({ shop_domain: shop }).delete();
         await trx('shopify_connections').where({ id: connection.id }).delete();
         return { accepted: true, redacted: true };
