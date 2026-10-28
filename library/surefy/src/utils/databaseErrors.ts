@@ -7,6 +7,9 @@ export function getDatabaseFailure(error: unknown): DatabaseFailure | undefined 
   for (let depth = 0; candidate && depth < 8 && !seen.has(candidate); depth++) {
     seen.add(candidate);
     const code = String(candidate.code || '');
+    if (['57014', '55P03', '25P03'].includes(code)) {
+      return { code, message: 'Database operation exceeded its allowed time. Please try again later.' };
+    }
     if (['42P01', '42703', '3F000'].includes(code)) {
       return { code, message: 'Required database schema is unavailable. Verify the database connection and migrations.' };
     }

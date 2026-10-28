@@ -1,0 +1,348 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "incoming-api",
+        "namespace": "default"
+      },
+      "spec": {
+        "replicas": 2,
+        "revisionHistoryLimit": 5,
+        "progressDeadlineSeconds": 360,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxSurge": 1,
+            "maxUnavailable": 0
+          }
+        },
+        "selector": {
+          "matchLabels": {
+            "app": "incoming-api"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "incoming-api",
+              "app.kubernetes.io/part-of": "incoming-backend"
+            },
+            "annotations": {
+              "soft7.in/runtime-hardening": "20261024T083525Z"
+            }
+          },
+          "spec": {
+            "nodeSelector": {
+              "kubernetes.io/hostname": "gqozk59ufa"
+            },
+            "terminationGracePeriodSeconds": 30,
+            "containers": [
+              {
+                "name": "incoming-api",
+                "image": "docker.io/library/incoming-api:main-636a83b-hardened-20261024T083525Z",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "node"
+                ],
+                "args": [
+                  "dist/src/server.js"
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 8000
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "secretRef": {
+                      "name": "soft7-app-env"
+                    }
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                  },
+                  {
+                    "name": "PORT",
+                    "value": "8000"
+                  },
+                  {
+                    "name": "REDIS_HOST",
+                    "value": "172.20.0.2"
+                  },
+                  {
+                    "name": "DB_IDLE_TRANSACTION_TIMEOUT_MS",
+                    "value": "60000"
+                  },
+                  {
+                    "name": "WORKER_MODE",
+                    "value": "false"
+                  },
+                  {
+                    "name": "DB_POOL_MAX",
+                    "value": "12"
+                  },
+                  {
+                    "name": "DB_STATEMENT_TIMEOUT_MS",
+                    "value": "30000"
+                  },
+                  {
+                    "name": "NODE_OPTIONS",
+                    "value": "--max-old-space-size=512"
+                  },
+                  {
+                    "name": "API_MAX_IN_FLIGHT",
+                    "value": "32"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "250m",
+                    "memory": "256Mi",
+                    "ephemeral-storage": "100Mi"
+                  },
+                  "limits": {
+                    "cpu": "1",
+                    "memory": "1Gi",
+                    "ephemeral-storage": "1Gi"
+                  }
+                },
+                "startupProbe": {
+                  "tcpSocket": null,
+                  "httpGet": {
+                    "path": "/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 5,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 36
+                },
+                "livenessProbe": {
+                  "tcpSocket": null,
+                  "httpGet": {
+                    "path": "/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/health",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 2
+                },
+                "volumeMounts": [
+                  {
+                    "name": "incoming-api-uploads",
+                    "mountPath": "/usr/app/uploads"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "incoming-api-uploads",
+                "hostPath": {
+                  "path": "/home/aakanksha/.local/share/soft7/uploads",
+                  "type": "Directory"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "incoming-worker",
+        "namespace": "default"
+      },
+      "spec": {
+        "replicas": 1,
+        "revisionHistoryLimit": 5,
+        "progressDeadlineSeconds": 360,
+        "strategy": {
+          "type": "RollingUpdate",
+          "rollingUpdate": {
+            "maxSurge": 0,
+            "maxUnavailable": 1
+          }
+        },
+        "selector": {
+          "matchLabels": {
+            "app": "incoming-worker"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "incoming-worker",
+              "app.kubernetes.io/part-of": "incoming-backend"
+            },
+            "annotations": {
+              "soft7.in/runtime-hardening": "20261024T083525Z"
+            }
+          },
+          "spec": {
+            "nodeSelector": {
+              "kubernetes.io/hostname": "gqozk59ufa"
+            },
+            "terminationGracePeriodSeconds": 180,
+            "containers": [
+              {
+                "name": "incoming-worker",
+                "image": "docker.io/library/incoming-api:main-636a83b-hardened-20261024T083525Z",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "node"
+                ],
+                "args": [
+                  "dist/src/workers/index.js"
+                ],
+                "ports": [
+                  {
+                    "name": "worker-health",
+                    "containerPort": 8002
+                  }
+                ],
+                "envFrom": [
+                  {
+                    "secretRef": {
+                      "name": "soft7-app-env"
+                    }
+                  }
+                ],
+                "env": [
+                  {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                  },
+                  {
+                    "name": "PORT",
+                    "value": "8000"
+                  },
+                  {
+                    "name": "REDIS_HOST",
+                    "value": "172.20.0.2"
+                  },
+                  {
+                    "name": "DB_IDLE_TRANSACTION_TIMEOUT_MS",
+                    "value": "60000"
+                  },
+                  {
+                    "name": "WORKER_MODE",
+                    "value": "true"
+                  },
+                  {
+                    "name": "DB_POOL_MAX",
+                    "value": "20"
+                  },
+                  {
+                    "name": "DB_STATEMENT_TIMEOUT_MS",
+                    "value": "60000"
+                  },
+                  {
+                    "name": "NODE_OPTIONS",
+                    "value": "--max-old-space-size=1024"
+                  },
+                  {
+                    "name": "WORKER_HEALTH_PORT",
+                    "value": "8002"
+                  },
+                  {
+                    "name": "CAMPAIGN_MESSAGE_CONCURRENCY",
+                    "value": "4"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "500m",
+                    "memory": "512Mi",
+                    "ephemeral-storage": "100Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi",
+                    "ephemeral-storage": "2Gi"
+                  }
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/live",
+                    "port": "worker-health"
+                  },
+                  "periodSeconds": 5,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 36
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/live",
+                    "port": "worker-health"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 3
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/ready",
+                    "port": "worker-health"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 3,
+                  "failureThreshold": 2
+                },
+                "volumeMounts": [
+                  {
+                    "name": "incoming-api-uploads",
+                    "mountPath": "/usr/app/uploads"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "incoming-api-uploads",
+                "hostPath": {
+                  "path": "/home/aakanksha/.local/share/soft7/uploads",
+                  "type": "Directory"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "policy/v1",
+      "kind": "PodDisruptionBudget",
+      "metadata": {
+        "name": "incoming-api",
+        "namespace": "default"
+      },
+      "spec": {
+        "minAvailable": 1,
+        "selector": {
+          "matchLabels": {
+            "app": "incoming-api"
+          }
+        }
+      }
+    }
+  ]
+}

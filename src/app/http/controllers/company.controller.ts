@@ -16,6 +16,7 @@ import activityLogsModel from '../../models/activityLogs.model';
 import userTeamModel from '../../models/team.model';
 import userModel from '../../models/user.model';
 import companyDomainModel from '../../models/companyDomain.model';
+import { assertStrongPassword } from '../../utils/passwordPolicy';
 
 
 class CompanyController {
@@ -372,7 +373,7 @@ class CompanyController {
     return successResponse(req, res, 'Company updated successfully', company);
   }
 
-  async resetUserPassword(req: JWTAuthRequest, res: Response) {
+  resetUserPassword = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const { id } = req.params;
     const { password } = req.body;
 
@@ -380,13 +381,10 @@ class CompanyController {
       throw new HTTP400Error({ message: 'Password is required' });
     }
 
-    if (password.length < 6) {
-      throw new HTTP400Error({ message: 'Password must be at least 6 characters long' });
-    }
-
     if (req.userRole !== 'superadmin' && req.userRole !== 'admin') {
       throw new HTTP403Error({ message: 'Unauthorized to reset user password' });
     }
+    assertStrongPassword(password);
 
     const resetResult = await CompanyService.resetUserPassword(id, password);
 
@@ -416,7 +414,7 @@ class CompanyController {
     });
 
     return successResponse(req, res, 'User password reset successfully', resetResult);
-  }
+  });
 
   async suspendUser(req: AuthRequest, res: Response) {
     const { id } = req.params;

@@ -28,6 +28,7 @@ The response follows the standard success envelope, with this `data`:
   "total_phone_numbers": 1,
   "created": 0,
   "updated": 1,
+  "reactivated_count": 0,
   "skipped_count": 0,
   "skipped_phone_numbers": [],
   "remaining_slots": 0
@@ -40,7 +41,9 @@ Database changes use a single transaction with bounded phone batches. A fetch fa
 
 Only new numbers fitting the remaining slots are saved. Other fetched numbers appear in `skipped_phone_numbers` with `phone_number_id` and reason `PLAN_LIMIT_EXCEEDED` (or `PLAN_UNAVAILABLE` without usable entitlement); no inactive overflow row is inserted. `total_phone_numbers` counts fetched Meta numbers, `created` and `updated` count saved rows, and `skipped_count` counts unsaved numbers. `remaining_slots` is the capacity after this sync, or null for unlimited. With one remaining slot and two new Meta numbers, one is saved and the second is skipped. A zero-slot sync can still refresh existing rows. Increasing capacity and syncing again imports previously skipped numbers.
 
-Existing numbers, including inactive numbers or those absent from Meta, are retained; sync does not delete numbers or conversation history or automatically activate disabled numbers. Soft-deleted rows remain deleted if there is no slot to restore them. An empty Meta list returns zero synced numbers while still refreshing the account details. Direct single-number creation returns 403 when no slot is available.
+After a plan upgrade or add-on purchase, sync reactivates saved, non-deleted numbers returned by Meta with `active: false` and `inactive_reason: PLAN_LIMIT_EXCEEDED` or `PLAN_UNAVAILABLE`, up to the remaining allowance. These numbers receive slots before new inventory, become `active: true`, and have `inactive_reason` cleared. `reactivated_count` counts these transitions; reactivated rows also count as `updated`. Repeating sync does not consume extra slots. For example, a base allowance of one plus two purchased add-on slots allows three active numbers across the owner's WABAs.
+
+Manually disabled numbers and inactive rows with an unknown reason remain inactive. Existing numbers absent from Meta are retained without activation; sync does not delete numbers or conversation history. Soft-deleted rows remain deleted if there is no slot to restore them. An empty Meta list returns zero synced numbers while still refreshing the account details. Direct single-number creation returns 403 when no slot is available.
 
 The existing `POST /v1/admin/waba/:wabaId/sync-phone-numbers` route continues to take the local WABA UUID. It now uses the same sync logic and returns all refreshed phone rows, including updated existing numbers, in its existing array response.
 

@@ -32,6 +32,19 @@ export interface ImportPreviewOptions {
 }
 
 class XLSXParserService {
+  private readWorkbook(filePath: string) {
+    // Bound expanded worksheet allocation as well as the existing upload byte limit.
+    const maxRows = 100000;
+    const workbook = XLSX.readFile(filePath, { codepage: 65001, sheets: 0, sheetRows: maxRows + 2 });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const reference = sheet?.['!fullref'] || sheet?.['!ref'];
+    if (reference) {
+      const range = XLSX.utils.decode_range(reference);
+      if (range.e.r > maxRows) throw new Error(`Import files support at most ${maxRows} data rows. Split this file into smaller files.`);
+      if (range.e.c >= 200) throw new Error('Import files support at most 200 columns. Remove unused columns.');
+    }
+    return workbook;
+  }
   /**
    * Parse XLSX file and extract contacts
    * @param filePath Path to XLSX file
@@ -49,7 +62,7 @@ class XLSXParserService {
   ): Promise<ParseResult> {
     try {
       // Read file
-      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
+      const workbook = this.readWorkbook(filePath);
       const sheetName = workbook.SheetNames[0]; // Use first sheet
       const worksheet = workbook.Sheets[sheetName];
 
@@ -175,7 +188,7 @@ class XLSXParserService {
   async getFilePreview(filePath: string, rows: number = 5): Promise<any> {
     try {
       console.log(`Generating preview for file: ${filePath}`);
-      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
+      const workbook = this.readWorkbook(filePath);
       const sheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
 
@@ -205,7 +218,7 @@ class XLSXParserService {
         return { valid: false, errors };
       }
 
-      const workbook = XLSX.readFile(filePath, { codepage: 65001 });
+      const workbook = this.readWorkbook(filePath);
 
       if (workbook.SheetNames.length === 0) {
         errors.push('No sheets found in XLSX file');

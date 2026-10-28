@@ -3,6 +3,7 @@ import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
 import { campaignCapacity, createCapacitySampler } from '../campaignCapacity';
+import { isWorkerDraining } from '../../workers/drain';
 import { waitForCampaignPermit, getCampaignSenderCooldown, getCampaignPairCooldown } from '../campaignPacing';
 import { acquireCampaignUserSlot, refreshCampaignUserSlot, releaseCampaignUserSlot } from '../campaignUserSlots';
 import { isConnectionAcquireError } from '../campaignDatabaseError';
@@ -49,6 +50,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     await job.moveToDelayed(Date.now() + delay, token);
     throw new DelayedError();
   };
+  if (isWorkerDraining()) return defer(1000);
   if (!await redis.set(lockKey, lockOwner, 'PX', 120000, 'NX')) return defer(1000);
   let lockLost = false;
   let slotUserId: string | undefined;
@@ -96,6 +98,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     }
     campaign.phone_number_id = phone.phone_number_id;
     while (true) {
+    if (isWorkerDraining()) { releaseSlot = true; return await defer(1000); }
     if (phone.active === false) throw new Error('Campaign cannot run: the selected WABA number is inactive.');
     const batchStartedAt = Date.now();
     const senderCooldown = await getCampaignSenderCooldown(campaign.phone_number_id);
@@ -135,6 +138,7 @@ export async function processCampaignExecution(job: Job<CampaignExecutionJobData
     const results: PromiseSettledResult<void>[] = [];
     phase = 'sending recipients';
     for (let offset = 0; offset < pending.length; offset += campaignCapacity.messageConcurrency) {
+      if (isWorkerDraining()) { releaseSlot = true; return await defer(1000); }
       const currentCampaign = await CampaignModel.findById(campaignId);
       if (currentCampaign?.status !== 'running') {
         releaseSlot = true;

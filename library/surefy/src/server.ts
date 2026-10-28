@@ -11,6 +11,8 @@ import { errorHandler } from './middleware/errorHandler';
 import { CustomError } from './exceptions/CustomError';
 import HealthRoute from './routes/health.route';
 import { UPLOADS_DIR } from './middleware/upload.middleware';
+import { protectAsyncRoutes } from './utils/asyncRouter';
+import { requestCapacity } from './middleware/requestCapacity';
 
 interface RouteConfig {
   basePath: string;
@@ -23,6 +25,7 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
 } = {}): Application => {
   const app: Application = express();
   const PORT = process.env.PORT || 5000;
+  app.use(requestCapacity());
 
   // Middleware
   app.use(helmet({
@@ -87,10 +90,13 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   }
 
   // Health check route
+  // Liveness must stay independent of PostgreSQL/Redis availability.
+  app.get('/live', (_req, res) => res.json({ success: true }));
   app.use('/health', HealthRoute);
 
   // Register custom routes
   routes.forEach(({ basePath, route }) => {
+    protectAsyncRoutes(route);
     app.use(basePath, route);
   });
 

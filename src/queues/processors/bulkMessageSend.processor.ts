@@ -1,4 +1,5 @@
-import { Job } from 'bullmq';
+import { Job, DelayedError } from 'bullmq';
+import { isWorkerDraining } from '../../workers/drain';
 import { createDatabaseAwareWorker } from '../databaseAwareWorker';
 import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import redisConfig from '@surefy/config/redis.config';
@@ -15,8 +16,15 @@ if (!Number.isInteger(MAX_PARALLEL_SENDS) || MAX_PARALLEL_SENDS < 1 || MAX_PARAL
   throw new Error('BULK_MESSAGE_CONCURRENCY must be an integer from 1 to 10');
 }
 
-async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
+async function processBulkMessageSend(job: Job<BulkMessageSendJobData>, token?: string) {
+  job.discard(); // Also protect jobs queued before the no-replay policy.
   const { userId, messages } = job.data;
+  const nextIndex = job.data.nextIndex ?? 0;
+  if (!Number.isSafeInteger(nextIndex) || nextIndex < 0 || nextIndex > messages.length) throw new Error('Invalid bulk-send checkpoint');
+  const yieldForShutdown = async () => {
+    await job.moveToDelayed(Date.now() + 1000, token);
+    throw new DelayedError();
+  };
 
   console.log(`Starting bulk message send for company ${userId}, total messages: ${messages.length}`);
   let sendsStarted = false;
@@ -28,7 +36,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
       throw new Error('User not found');
     }
 
-    const results = {
+    const results = job.data.result || {
       total: messages.length,
       successful: 0,
       failed: 0,
@@ -36,7 +44,8 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
     };
 
     // Process messages in batches
-    for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    for (let i = nextIndex; i < messages.length; i += BATCH_SIZE) {
+      if (isWorkerDraining()) return await yieldForShutdown();
       const batch = messages.slice(i, i + BATCH_SIZE);
 
       console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}, messages ${i + 1} to ${Math.min(i + BATCH_SIZE, messages.length)}`);
@@ -101,6 +110,9 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
         }
       });
 
+      // Persist completed recipients before yielding; only untouched recipients resume.
+      results.errors = results.errors.slice(0, 100);
+      await job.updateData({ ...job.data, nextIndex: i + batch.length, result: results });
       // Update progress
       const progress = Math.round(((i + batch.length) / messages.length) * 100);
       await job.updateProgress(progress);
@@ -109,6 +121,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 
       // Delay between batches to avoid rate limiting (except for the last batch)
       if (i + BATCH_SIZE < messages.length) {
+        if (isWorkerDraining()) return await yieldForShutdown();
         await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
       }
     }
@@ -117,6 +130,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>) {
 
     return results;
   } catch (error: any) {
+    if (error instanceof DelayedError) throw error;
     // A batch may already contain accepted sends. Never replay it automatically.
     if (sendsStarted && getDatabaseFailure(error)) job.discard();
     reportBackgroundError('Worker bulk-message-send', error, { userId });
@@ -129,13 +143,14 @@ console.log('📦 Initializing Bulk Message Send Worker...');
 
 export const bulkMessageSendWorker = createDatabaseAwareWorker<BulkMessageSendJobData>(
   'bulk-message-send',
-  async (job) => {
+  async (job, token) => {
     console.log(`🔄 Processing bulk message send job ${job.id}...`);
-    return await processBulkMessageSend(job);
+    return await processBulkMessageSend(job, token);
   },
   {
     connection: redisConfig,
     concurrency: 1, // Keep bulk sends from starving campaign jobs sharing this DB pool
+    maxStalledCount: 0,
     limiter: {
       max: 10, // Max 10 jobs
       duration: 1000, // per second
