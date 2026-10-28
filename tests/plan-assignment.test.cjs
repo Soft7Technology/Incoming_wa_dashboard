@@ -66,6 +66,7 @@ function fixture({ existing, failTable, balance = 500, recipientBalance = 20, co
     return result;
   } };
   const service = load('src/app/services/planAssignment.service.ts', name => {
+    if (name === 'node:util') return require('node:util');
     if (name === '@surefy/database') return db;
     if (name.includes('activityContext')) return { markActivityRecorded() {} };
     if (name.includes('subscriptionDuration')) return duration;
@@ -109,7 +110,7 @@ test('assignment links the new user plan and transfers only the platform fee wit
   const result = await f.service.updateUser('u', { assigned_plan: 'p', name: 'Updated' }, actor);
   const state = f.state();
   assert.equal(result.user.assigned_plan, result.plan.id);
-  assert.equal(result.plan.subscription_id, 'p');
+  assert.equal(Object.hasOwn(result.plan, 'subscription_id'), false);
   assert.equal(result.plan.company_id, 'c');
   assert.equal(result.user.plan_name, 'Pro');
   assert.equal(result.user.duration_days, result.plan.duration_days);
@@ -121,6 +122,22 @@ test('assignment links the new user plan and transfers only the platform fee wit
   assert.ok(f.locks.includes('users') && f.locks.includes('companies') && f.locks.includes('user_plans'));
   await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, actor), /already assigned/);
   assert.equal(f.state().credit_transactions.length, 2);
+});
+
+test('duplicate assignment compares saved benefits without a catalog ID and ignores purchased extra capacity', async () => {
+  const f = fixture();
+  f.state().subscription_plans[0].features = { Contact: { limit_value: 100 } };
+  const first = await f.service.updateUser('u', { assigned_plan: 'p' }, actor);
+  const limits = JSON.parse(first.plan.limits); limits.Contact.addon_limit = 3000;
+  f.state().user_plans[0].limits = JSON.stringify(limits);
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, actor), /already assigned/);
+  assert.equal(f.state().companies[0].credit_balance, 400);
+  // Same name and price can offer new benefits; do not confuse this with a duplicate.
+  f.state().subscription_plans[0].features.Contact.limit_value = 200;
+  const replacement = await f.service.updateUser('u', { assigned_plan: 'p' }, actor);
+  assert.notEqual(replacement.plan.id, first.plan.id);
+  assert.equal(JSON.parse(replacement.plan.limits).Contact.limit, 200);
+  assert.equal(Object.hasOwn(replacement.plan, 'subscription_id'), false);
 });
 test('late failure rolls back wallet debit, history, user changes, and new plan', async () => {
   const f = fixture({ failTable: 'activity_logs' });
@@ -136,7 +153,7 @@ test('insufficient funds and unauthorized requests leave all state unchanged', a
   assert.deepEqual(f.state(), before);
 });
 test('expired same-plan renewal succeeds and retains historical dates', async () => {
-  const existing = { id: 'old', user_id: 'u', active: true, subscription_id: 'p', billing_cycle: 'Monthly', end_date: '2020-01-01' };
+  const existing = { id: 'old', user_id: 'u', active: true, billing_cycle: 'Monthly', end_date: '2020-01-01' };
   const f = fixture({ existing });
   await f.service.updateUser('u', { assigned_plan: 'p' }, actor);
   assert.equal(f.state().user_plans[0].active, false);
@@ -164,7 +181,7 @@ test('manual assignment cannot reset an expired trial or grant tampered Free pla
   await assert.rejects(f.service.updateUser('u', { assigned_plan: 'f' }, actor), /another free trial/);
 });
 test('an active paid plan cannot be replaced by a Free plan and cross-company plans are rejected', async () => {
-  const f = fixture({ existing: { id: 'old', user_id: 'u', active: true, subscription_id: 'old-p', billing_cycle: 'Monthly', end_date: '2099-01-01' } });
+  const f = fixture({ existing: { id: 'old', user_id: 'u', active: true, billing_cycle: 'Monthly', end_date: '2099-01-01' } });
   await assert.rejects(f.service.updateUser('u', { assigned_plan: 'f' }, actor), /Cancel the active paid plan/);
   const other = fixture({ company: 'other' });
   await assert.rejects(other.service.updateUser('u', { assigned_plan: 'p' }, { userRole: 'superadmin' }), /another company/);

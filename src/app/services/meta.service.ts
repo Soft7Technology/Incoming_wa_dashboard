@@ -37,18 +37,6 @@ class MetaService {
       }
       return request;
     });
-    this.client.interceptors?.response.use(response => response, error => {
-      // Downstream legacy handlers must not receive Axios config/headers or Meta messages
-      // that could echo an access token. Keep only safe error classification fields.
-      const safe = Object.assign(new Error('Meta request could not be completed.'), {
-        response: error.response ? { status: error.response.status, data: { error: {
-          code: Number(error.response.data?.error?.code) || undefined,
-          error_subcode: Number(error.response.data?.error?.error_subcode) || undefined,
-          message: 'Meta rejected this operation. Check account authorization and configuration.',
-        } } } : undefined,
-      });
-      return Promise.reject(safe);
-    });
   }
 
   /**

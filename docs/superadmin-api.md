@@ -285,7 +285,7 @@ Other distinct operations remain at their existing endpoints: `/v1/auth/create-a
 
 ## Assigned plan in user lists
 
-`GET /v1/super-admin/companies/:companyId/users` and `GET /v1/super-admin/users` include `assigned_plan` and `plan_details` for each user. `plan_details` contains the assigned user_plans snapshot: id, user_id, company_id, subscription_id, plan_name, price, billing_cycle, status, active, start_date, end_date, duration_days, limits and usage. This is the user's purchased/assigned plan, not the current catalogue price. Expired or cancelled assignments remain visible with their actual status. Missing, unassigned or mismatched-owner plans return null. Existing search and pagination are unchanged.
+`GET /v1/super-admin/companies/:companyId/users` and `GET /v1/super-admin/users` include `assigned_plan` and `plan_details` for each user. `plan_details` contains the assigned user_plans snapshot: id, user_id, company_id, plan_name, price, billing_cycle, status, active, start_date, end_date, duration_days, limits and usage. The snapshot is independent of the subscription catalog and remains available after the catalog plan is deleted. `subscription_id` is no longer a user-plan field. Expired or cancelled assignments remain visible with their actual status. Missing, unassigned or mismatched-owner plans return null. Existing search and pagination are unchanged.
 
 ## Superadmin user plan management
 
@@ -305,7 +305,7 @@ Assignment body:
 { "subscription_id": "CATALOGUE_PLAN_UUID", "reason": "Approved plan assignment" }
 ```
 
-Pass the target user's `company_id` to `/available-plans`; a valid company UUID is required. Missing, invalid or unknown query parameters are rejected; nonexistent or deleted companies return 404. The existing user-specific route is also supported. Both routes return active `subscription_plans` catalogue records for assignment. Select `subscription_id` from the available-plans response. The response contains `plan.id`, the new user plan UUID; this is also saved to `users.assigned_plan`. Catalogue IDs and user plan IDs refer to different tables. Assignment retains existing duration, usage snapshot, wallet commission and replacement rules: Monthly costs 100 wallet credits in platform fees, Yearly costs 1000, Free costs zero. Assignment and its audit commit together. User account status is preserved.
+Pass the target user's `company_id` to `/available-plans`; a valid company UUID is required. Missing, invalid or unknown query parameters are rejected; nonexistent or deleted companies return 404. The existing user-specific route is also supported. Both routes return active `subscription_plans` catalogue records for assignment. Send the selected catalogue record's `id` as `subscription_id` in the assignment request. This selects the source only; the resulting user-plan snapshot does not store `subscription_id`. The response contains `plan.id`, the new user plan UUID; this is also saved to `users.assigned_plan`. Assignment retains existing duration, usage snapshot, wallet commission and replacement rules: Monthly costs 100 wallet credits in platform fees, Yearly costs 1000, Free costs zero. Assignment and its audit commit together. User account status is preserved.
 
 Status body:
 

@@ -3,7 +3,7 @@ import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 
-const planColumns = ['id', 'user_id', 'company_id', 'subscription_id', 'plan_name', 'price',
+const planColumns = ['id', 'user_id', 'company_id', 'plan_name', 'price',
   'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage', 'created_at'];
 
 class SuperAdminUserPlanModel extends BaseModel {

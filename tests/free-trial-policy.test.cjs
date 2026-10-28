@@ -96,6 +96,7 @@ test('registration creates an active snapshot, links assigned_plan, starts the c
     assert.equal(result.active, true); assert.equal(result.trial_days, days ?? 10);
     assert.equal(result.plan_name, 'Free'); assert.equal(plan.plan_name, 'Free');
     assert.equal(plan.active, true); assert.equal(plan.status, 'COMPLETED'); assert.equal(plan.entitlement_version, 2);
+    assert.equal(Object.hasOwn(plan, 'subscription_id'), false);
     assert.equal(f.state().users[0].assigned_plan, plan.id);
     assert.equal(plan.end_date - plan.start_date, (days ?? 10) * 86400000);
     assert.deepEqual(Object.fromEntries(Object.entries(JSON.parse(plan.limits)).map(([key, value]) => [key, value.limit])), expected);

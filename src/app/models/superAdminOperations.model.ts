@@ -99,7 +99,6 @@ class SuperAdminOperationsModel extends BaseModel {
           'id',
           'company_id',
           'user_id',
-          'subscription_id',
           'plan_name',
           'price',
           'billing_cycle',
@@ -119,7 +118,7 @@ class SuperAdminOperationsModel extends BaseModel {
       active_plans: {
         table: 'user_plans',
         columns: [
-          'id', 'company_id', 'user_id', 'subscription_id', 'plan_name', 'price',
+          'id', 'company_id', 'user_id', 'plan_name', 'price',
           'billing_cycle', 'active', 'status', 'start_date', 'end_date',
           'duration_days', 'limits', 'usage', 'created_at',
         ],
