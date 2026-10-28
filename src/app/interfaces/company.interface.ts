@@ -17,6 +17,7 @@ export interface Company {
 }
 
 export interface CreateCompanyDto {
+  trial_days?: 3 | 7 | 10;
   name: string;
   email: string;
   domain?:string;

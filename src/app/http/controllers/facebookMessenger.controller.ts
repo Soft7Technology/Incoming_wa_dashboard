@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import service, { FacebookScope } from '../../services/facebookMessenger.service';
+import leads from '../../services/facebookLeads.service';
+import instagram from '../../services/instagram.service';
 import {
   config,
   FacebookError,
@@ -138,26 +140,40 @@ class FacebookMessengerController {
   });
   receive = facebookHandler(async (req, res) => {
     const secret = process.env.FACEBOOK_APP_SECRET;
-    if (!secret) throw new FacebookError(503, 'Facebook webhook is not configured.');
+    const instagramSecret = process.env.INSTAGRAM_APP_SECRET;
+    if (!secret && !instagramSecret) throw new FacebookError(503, 'Meta webhook is not configured.');
     const raw = (req as Request & { rawBody?: Buffer }).rawBody;
-    if (!raw || !verifySignature(raw, req.headers['x-hub-signature-256'], secret))
+    const signature = req.headers['x-hub-signature-256'];
+    const facebookSigned = Boolean(raw && secret && verifySignature(raw, signature, secret));
+    const instagramSigned = Boolean(raw && instagramSecret && verifySignature(raw, signature, instagramSecret));
+    if (!facebookSigned && !(instagramSigned && req.body?.object === 'instagram'))
       throw new FacebookError(403, 'Invalid Facebook webhook signature.');
     // Acknowledge only after persistence. Failure returns 5xx so Meta can redeliver.
-    await service.receive(req.body);
+    if (facebookSigned) {
+      await service.receive(req.body);
+      await leads.receive(req.body);
+      await instagram.receive(req.body, 'facebook');
+    }
+    // Retried events and existing Meta callback settings can still use this
+    // shared URL. Route direct Instagram events only after verifying its secret.
+    if (instagramSigned && req.body?.object === 'instagram') await instagram.receive(req.body, 'instagram');
     res.status(200).type('text/plain').send('EVENT_RECEIVED');
   });
   deauthorize = facebookHandler(async (req, res) => {
     if (!process.env.FACEBOOK_APP_SECRET) throw new FacebookError(503, 'Facebook is not configured.');
-    await service.revoke(signedUser(req.body?.signed_request, process.env.FACEBOOK_APP_SECRET), false);
+    const user = signedUser(req.body?.signed_request, process.env.FACEBOOK_APP_SECRET);
+    await instagram.revoke(user, false);
+    await leads.revoke(user, false);
+    await service.revoke(user, false);
     ok(res, { deauthorized: true });
   });
   deletion = facebookHandler(async (req, res) => {
     if (!process.env.FACEBOOK_APP_SECRET) throw new FacebookError(503, 'Facebook is not configured.');
     const { base } = publicOrigin();
-    const confirmation = await service.revoke(
-      signedUser(req.body?.signed_request, process.env.FACEBOOK_APP_SECRET),
-      true,
-    );
+    const user = signedUser(req.body?.signed_request, process.env.FACEBOOK_APP_SECRET);
+    await instagram.revoke(user, true);
+    await leads.revoke(user, true);
+    const confirmation = await service.revoke(user, true);
     res.json({ url: `${base}/v1/facebook/data-deletion/status/${confirmation}`, confirmation_code: confirmation });
   });
   deletionStatus = facebookHandler(async (req, res) => {
@@ -165,7 +181,7 @@ class FacebookMessengerController {
     res
       .type('html')
       .send(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Facebook data deletion</title><h1>Facebook data deletion completed</h1><p>Connected Page credentials, conversations and messages linked to this Facebook authorization were deleted from the active application database.</p><p>Completed: ${escape(new Date(data.completed_at).toISOString())}</p></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Facebook data deletion</title><h1>Facebook data deletion completed</h1><p>Connected Page credentials, conversations, messages, lead forms, submitted leads, Page posts integration data, and Instagram accounts, messages, posts and comments linked to this Facebook authorization were deleted from the active application database.</p><p>Completed: ${escape(new Date(data.completed_at).toISOString())}</p></html>`,
       );
   });
   privacy = facebookHandler(async (_req, res) => {
@@ -179,7 +195,7 @@ class FacebookMessengerController {
     res
       .type('html')
       .send(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Messenger integration privacy notice</title><main><h1>Messenger integration privacy notice</h1><p>${escape(controller)} operates this customer support integration. Contact: ${escape(email)}.</p><p>When a business connects a Page, we store its Page ID and name, the authorizing Facebook user ID and an encrypted Page access token. For customer-initiated conversations we store Page-scoped customer identifiers, message content, timestamps and delivery/read events. We use this information to display support conversations to authorized business agents and send their replies through Meta.</p><p>Data is shared with Meta to provide Messenger replies and with the business operating the connected Page. Access is limited to the owning account and its authorized team. Tokens are stored encrypted and are never displayed in the dashboard.</p><p>Disconnect removes stored credentials and stops receiving new messages. Conversation history is retained until the business deletes the integration. Deauthorizing in Facebook removes credentials; a verified Facebook data-deletion request removes all stored Pages and conversations linked to the requesting authorization. Businesses can also choose Delete stored integration in Settings. Contact us to request customer-message deletion; identify the Page and conversation without sending passwords or tokens.</p><p>This notice covers this Messenger integration. The business's own privacy notice and the SaaS's broader privacy policy also apply. The deployment operator is responsible for describing hosting providers, backup retention and any additional processing in its main policy.</p><p><a href="/v1/facebook/data-deletion">Data deletion instructions</a></p></main></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Facebook integrations privacy notice</title><main><h1>Facebook integrations privacy notice</h1><p>${escape(controller)} operates this customer support integration. Contact: ${escape(email)}.</p><p>When a business connects a Page, we store its Page ID and name, the authorizing Facebook user ID and an encrypted Page access token. For customer-initiated conversations we store Page-scoped customer identifiers, message content, timestamps and delivery/read events. We use this information to display support conversations to authorized business agents and send their replies through Meta.</p><p>For Facebook Lead Forms, we also store the selected Page, form identifiers and questions, the authorizing Facebook user ID, encrypted Page credentials, and submitted lead answers such as names, emails and phone numbers. The company owner selects which forms to sync. We retrieve existing submissions and new submissions notified by Meta webhooks, and display them to the owning account. We do not create advertising campaigns or automatically contact these leads.</p><p>For Facebook Page posts, the owner authorizes a managed Page. We store its identifier and name, authorizing Facebook user and app identifiers, encrypted Page credentials, imported feed posts and customer comments with available author details and timestamps, and publishing action results. We use this data to display community content and publish, edit or delete the owner's app-created Page posts only following their explicit actions. Disconnect clears this feature's credentials; deleting the stored integration erases its local content and history. Posts already published on Facebook remain until the owner explicitly deletes them.</p><p>For Instagram, the owner connects a professional account directly through Instagram Login or through an optional linked Facebook Page. We store its account identifier and username, login provider and app identifier, authorizing Instagram or Facebook user identifier, encrypted credentials, customer conversation identifiers and message text/timestamps, and imported posts and comments. Linked Page details are stored only for Facebook connections. We use this data to display customer messages, send manual replies within the 24-hour customer messaging window, and publish comment replies or hide/unhide comments on the connected account's own posts. Signed webhooks update incoming messages and comments. With publishing permission, owners upload JPEG photos or MP4 Reels or provide a media URL, write a caption, prepare the media and explicitly publish to their connected Instagram account. We store captions, publication status and published media identifiers. Uploaded files are shared with Meta through unpredictable links that expire after 24 hours; expired and orphaned files older than 48 hours are removed during subsequent upload activity. Deleting the integration immediately invalidates its upload links.</p><p>Data is shared with Meta to provide Messenger and Instagram replies, comment moderation and post publishing and with the business operating the connected Page. Access is limited to the owning account and its authorized team. Tokens are stored encrypted and are never displayed in the dashboard.</p><p>Disconnect removes stored credentials and stops processing new events for that integration. Shared Page subscriptions may remain for other connected features. Conversation history is retained until the business deletes the integration. Deauthorizing in Facebook or Instagram removes credentials for that login provider; a verified data-deletion request removes the stored integration data linked to the requesting authorization. Businesses can also choose Delete stored integration in Settings. Contact us to request customer-message deletion; identify the Page and conversation without sending passwords or tokens.</p><p>This notice covers the Messenger, Lead Forms and Instagram integrations. The business's own privacy notice and the SaaS's broader privacy policy also apply. The deployment operator is responsible for describing hosting providers, backup retention and any additional processing in its main policy.</p><p><a href="/v1/facebook/data-deletion">Data deletion instructions</a></p></main></html>`,
       );
   });
   deletionInstructions = facebookHandler(async (_req, res) => {
@@ -188,7 +204,7 @@ class FacebookMessengerController {
     res
       .type('html')
       .send(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Facebook data deletion instructions</title><h1>Delete Facebook integration data</h1><p>Log into this application and open Settings → Integrations → Facebook Messenger. Choose Delete stored integration on the Page card. This disconnects the Page and deletes its stored credentials, conversations and messages from the active database.</p><p>You can also remove the app in Facebook Business Integrations and request deletion through Facebook. We verify Facebook's signed request, delete data linked to that authorization and return a confirmation URL.</p><p>For customer-message deletion or assistance contact ${escape(email)} with the Page and conversation details. Do not send passwords or tokens. Ask the operator about its backup retention policy.</p></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Facebook data deletion instructions</title><h1>Delete Facebook integration data</h1><p>Log into this application and open Settings → Integrations → Facebook Messenger. Choose Delete stored integration on the Page card. This disconnects the Page and deletes its stored credentials, conversations and messages from the active database.</p><p>For Facebook Lead Forms, open the Lead Forms workspace at /v1/facebook/leads and choose Delete stored integration on the Page card to erase its forms and submitted leads. Disconnect stops lead syncing and removes credentials while retaining stored leads.</p><p>For Page posts, open /v1/facebook/posts and choose Delete stored integration to erase its saved connection, imported posts/comments and local publishing history. This does not remove posts from Facebook. To delete an app-created Facebook post, open its Page and explicitly choose Delete post.</p><p>For Instagram, open /v1/facebook/instagram and choose Delete stored integration to erase its account, messages, posts, comments, publication records and upload links. Temporary files are cleaned during subsequent upload activity. Disconnect removes credentials while retaining history.</p><p>You can also remove the app through Facebook Business Integrations or Instagram Apps and Websites and request deletion through the corresponding platform. We verify its signed request, delete data linked to that authorization and return a confirmation URL.</p><p>For customer-message or lead-data deletion or assistance contact ${escape(email)} with the Page and conversation details. Do not send passwords or tokens. Ask the operator about its backup retention policy.</p></html>`,
       );
   });
 }

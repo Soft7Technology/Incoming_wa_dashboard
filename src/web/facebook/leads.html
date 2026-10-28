@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Facebook Lead Forms</title>
+    <link rel="stylesheet" href="/v1/facebook/style.css" />
+    <script defer src="/v1/facebook/leads.js"></script>
+  </head>
+  <body class="leads-workspace">
+    <header>
+      <a href="/v1/facebook/leads" class="brand">Lead Forms <span class="badge">Facebook</span></a>
+      <div>
+        <a href="/v1/facebook/instagram">Instagram</a> · <a href="/v1/facebook/page">Messenger</a>
+        <button id="logout" class="quiet" hidden>Log out</button>
+      </div>
+    </header>
+    <main>
+      <section id="login-panel" class="login card">
+        <p class="eyebrow">Facebook Lead Forms</p>
+        <h1>Log into your application</h1>
+        <p class="muted">Use your company owner account to manage forms and leads.</p>
+        <form id="login-form">
+          <label>Email<input id="email" type="email" autocomplete="username" required /></label>
+          <label>Password<input id="password" type="password" autocomplete="current-password" required /></label>
+          <button id="login-button">Log in</button>
+        </form>
+      </section>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="workspace" hidden>
+        <p class="eyebrow">Settings / Integrations / Facebook Lead Forms</p>
+        <div class="heading">
+          <div>
+            <h1>Facebook Lead Forms</h1>
+            <p class="muted">Choose the forms you want to sync and view their submitted leads here.</p>
+          </div>
+          <div>
+            <button id="connect">Connect Facebook Page</button>
+            <button id="connect-another" class="quiet" hidden>Connect another Page</button>
+          </div>
+        </div>
+        <div id="configuration" class="callout" hidden></div>
+        <details id="token-connection" class="card">
+          <summary>Connect with an existing Facebook token</summary>
+          <p>
+            For testing with a token generated in your Meta App Dashboard. We validate its permissions, then let you
+            select the Page. The token is cleared from this field when you submit.
+          </p>
+          <form id="token-form">
+            <label
+              >Facebook user access token<input
+                id="facebook-token"
+                type="password"
+                autocomplete="off"
+                spellcheck="false"
+                maxlength="8192"
+                required
+            /></label>
+            <button id="token-button">Validate token and choose Page</button>
+          </form>
+        </details>
+        <section id="selection" class="card" hidden>
+          <h2>1. Choose your Page</h2>
+          <label>Facebook Page<select id="page-select"></select></label>
+          <button id="select-page">Connect selected Page</button>
+        </section>
+        <h2>Connected Pages</h2>
+        <div id="pages" class="page-grid"></div>
+        <section id="forms-panel" class="card" hidden>
+          <h2 id="forms-title">2. Choose a form to sync</h2>
+          <p class="muted">
+            Enable syncing, then import existing submissions. New submissions arrive automatically while the Page is
+            connected.
+          </p>
+          <details>
+            <summary>Create a test form in Meta</summary>
+            <ol>
+              <li>
+                Open
+                <a href="https://business.facebook.com/latest/home" target="_blank" rel="noopener"
+                  >Meta Business Suite</a
+                >
+                and switch to the same Page you connected here.
+              </li>
+              <li>
+                Open All tools → Instant Forms → Create form. Add name, email and phone questions and your business
+                privacy policy, then publish the form.
+              </li>
+              <li>
+                Reload forms here, enable syncing for the published form, and open
+                <a href="https://developers.facebook.com/tools/lead-ads-testing/" target="_blank" rel="noopener"
+                  >Meta Lead Ads Testing Tool</a
+                >
+                to submit a test lead.
+              </li>
+            </ol>
+            <p>
+              In Meta App Dashboard, the Capture &amp; manage ad leads use case is the relevant setup for retrieving
+              leads. An advertising sandbox account is for testing ads; choose your actual test Page when creating an
+              Instant Form.
+            </p>
+          </details>
+          <button id="reload-forms" class="quiet">Reload forms</button>
+          <div id="forms" class="page-grid"></div>
+          <button id="more-forms" class="quiet" hidden>Load more forms</button>
+        </section>
+        <section id="leads-panel" class="card" hidden>
+          <div class="heading">
+            <h2 id="leads-title">3. Submitted leads</h2>
+            <button id="refresh-leads" class="quiet">Refresh</button>
+          </div>
+          <div id="leads" aria-live="polite"></div>
+          <button id="more-leads" class="quiet" hidden>Load older leads</button>
+          <small id="last-refresh"></small>
+        </section>
+        <details class="card">
+          <summary>Meta App Review setup</summary>
+          <p>
+            Request Advanced Access in your
+            <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener">Meta App Dashboard</a>. Open
+            this app's Capture &amp; manage ad leads use case or App Review / Permissions and Features, depending on
+            your dashboard.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Permission</th>
+                <th>What to demonstrate</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>pages_show_list</td>
+                <td>Authorize Facebook and choose a Page from the returned list.</td>
+              </tr>
+              <tr>
+                <td>pages_read_engagement</td>
+                <td>Connect the Page and display its name retrieved from Meta.</td>
+              </tr>
+              <tr>
+                <td>pages_manage_ads</td>
+                <td>Open the Page's existing Instant Forms and view their questions.</td>
+              </tr>
+              <tr>
+                <td>leads_retrieval</td>
+                <td>Enable a form, sync it, and display submitted lead answers.</td>
+              </tr>
+              <tr>
+                <td>pages_manage_metadata</td>
+                <td>Show the verified webhook status, submit a test lead, and show it appearing automatically.</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            Record the actual Facebook authorization and a real test form submission. Give reviewers a working company
+            login and clear steps. Check any additional permission dependencies shown by Meta. This workspace cannot
+            grant or approve permissions.
+          </p>
+          <p>
+            <a href="https://developers.facebook.com/tools/lead-ads-testing/" target="_blank" rel="noopener"
+              >Open Meta Lead Ads Testing Tool</a
+            >
+          </p>
+        </details>
+      </section>
+      <footer>
+        <a href="/v1/facebook/privacy" target="_blank" rel="noopener">Privacy notice</a> ·
+        <a href="/v1/facebook/data-deletion" target="_blank" rel="noopener">Data deletion</a>
+      </footer>
+    </main>
+  </body>
+</html>

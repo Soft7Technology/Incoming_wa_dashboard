@@ -1,7 +1,9 @@
 import { Knex } from 'knex';
 import { BaseModel } from '@surefy/models/base.model';
-import { subscriptionPlans } from '../interfaces/subscription.interface';
-import subscriptionModel from './subscription.model';
+import { freeTrialFeatures, newTrialDays } from '../utils/freeTrialPolicy';
+import { snapshotFeatures } from '../utils/planFeatures';
+import { calculatePlanPeriod } from '../utils/subscriptionDuration';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 
 class SubscriptionModel extends BaseModel {
   constructor() {
@@ -76,32 +78,39 @@ class SubscriptionModel extends BaseModel {
     return this.query().where({ id: planId, active: true }).first();
   }
 
-  async createFreePlan(userId: string, companyId: string, trx?: Knex.Transaction) {
-    let data: subscriptionPlans = {} as subscriptionPlans;
-    data.plan_name = 'Free Trial';
-    data.price = 0;
-    data.billing_cycle = 'Free';
-    data.active = false;
-    data.features = {
-      Campaign: {
-        limit_type: 'Campaign',
-        limit_value: null,
-      },
-      Contact: {
-        limit_type: 'Contact',
-        limit_value: null,
-      },
-      Chatbot: {
-        limit_type: 'Chatbot',
-        limit_value: null,
-      },
+  async createFreePlan(userId: string, companyId: string, trx?: Knex.Transaction, trialDays?: unknown) {
+    const days = newTrialDays(trialDays);
+    const create = async (transaction: Knex.Transaction) => {
+      const user = await transaction('users').where({ id: userId, company_id: companyId }).whereNull('deleted_at').forUpdate().first();
+      if (!user || !['admin', 'company'].includes(user.role)) throw new HTTP400Error({ message: 'A company administrator is required for the registration trial' });
+      const prior = await transaction('user_plans').where({ user_id: userId, billing_cycle: 'Free' }).first();
+      const active = await transaction('user_plans').where({ user_id: userId, active: true }).first();
+      if (prior || active) throw new HTTP400Error({ message: 'User already has a subscription or has used a free trial' });
+      const features = freeTrialFeatures();
+      const definition = await this.create({
+        plan_name: 'Free Trial', price: 0, billing_cycle: 'Free', trial_days: days,
+        description: 'Free trial with fixed platform limits', active: true, features,
+        user_id: userId, company_id: companyId,
+      }, transaction);
+      const now = new Date();
+      const { endDate, durationDays } = calculatePlanPeriod({ billing_cycle: 'Free', trial_days: days }, now);
+      const { limits, usage } = snapshotFeatures(features);
+      const [plan] = await transaction('user_plans').insert({
+        user_id: userId, company_id: companyId, subscription_id: definition.id,
+        plan_name: definition.plan_name, price: 0, billing_cycle: 'Free',
+        active: true, status: 'COMPLETED', start_date: now, end_date: endDate,
+        duration_days: durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage),
+        entitlement_version: 2,
+      }).returning('*');
+      await transaction('users').where({ id: userId }).update({ assigned_plan: plan.id });
+      await transaction('activity_logs').insert({
+        user_id: userId, company_id: companyId, action: 'ACTIVATE', entity_type: 'SUBSCRIPTION',
+        entity_id: plan.id, read: false, status: 'SUCCESS', description: `Activated ${days}-day registration trial`,
+        new_data: JSON.stringify({ subscription_id: definition.id, user_plan_id: plan.id, trial_days: days, limits }),
+      });
+      return { ...definition, user_plan: plan };
     };
-    const newUserPlan = await subscriptionModel.create({
-      ...data,
-      user_id: userId,
-      company_id: companyId,
-    }, trx);
-    return newUserPlan;
+    return trx ? create(trx) : this.db.transaction(create);
   }
 
   async findPlans(id: string, active: boolean): Promise<any> {

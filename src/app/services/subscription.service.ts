@@ -13,6 +13,28 @@ import userPlansModel from '../models/userPlans.model';
 import userModel from '../models/user.model';
 import companyModel from '../models/company.model';
 import creditTransactionModel from '../models/creditTransaction.model';
+import planCatalog from './planCatalog.service';
+import { CatalogActor } from './planCatalog.service';
+import HTTP403Error from '@surefy/exceptions/HTTP403Error';
+import { fixedTrialFeatures, newTrialDays } from '../utils/freeTrialPolicy';
+
+function planAccess(plan: any, actor?: CatalogActor) {
+  if (actor && (actor.userRole !== 'superadmin' &&
+      (!['admin', 'company'].includes(actor.userRole || '') || !actor.companyId || actor.companyId !== plan.company_id))) {
+    throw new HTTP403Error({ message: 'Only an administrator of this plan company can change the plan' });
+  }
+}
+
+function validatePlanFields(data: Partial<subscriptionPlans>) {
+  if (data.plan_name !== undefined && (typeof data.plan_name !== 'string' || !data.plan_name.trim() || data.plan_name.length > 100)) throw new HTTP400Error({ message: 'plan_name must contain 1 to 100 characters' });
+  if (data.price !== undefined && (typeof data.price !== 'number' || !Number.isFinite(data.price) || data.price < 0 || data.price > 1000000 || Math.abs(data.price * 100 - Math.round(data.price * 100)) > 0.000001)) throw new HTTP400Error({ message: 'price must be a non-negative amount with at most two decimal places' });
+  if (data.active !== undefined && typeof data.active !== 'boolean') throw new HTTP400Error({ message: 'active must be boolean' });
+  if (data.description !== undefined && typeof data.description !== 'string') throw new HTTP400Error({ message: 'description must be a string' });
+  if (data.marketing_features !== undefined && (!Array.isArray(data.marketing_features) ||
+      data.marketing_features.length > 100 || data.marketing_features.some(value => typeof value !== 'string' || !value.trim() || value.trim().length > 250))) {
+    throw new HTTP400Error({ message: 'marketing_features must be an array of up to 100 non-empty strings, each at most 250 characters' });
+  }
+}
 
 class subscriptionService {
   /**
@@ -95,7 +117,13 @@ class subscriptionService {
       // const balanceAfter = balanceBefore + data.amount;
 
   async createSubscriptionPlan(userId: string, companyId: string | undefined, userRole: string, data: subscriptionPlans) {
-    data = { ...data, trial_days: resolveTrialDays(data.billing_cycle, data.trial_days) };
+    validatePlanFields(data);
+    if (data.plan_name === undefined || data.price === undefined || data.active === undefined || data.description === undefined) throw new HTTP400Error({ message: 'plan_name, price, active and description are required' });
+    if (data.billing_cycle === 'Free' && data.price !== 0) throw new HTTP400Error({ message: 'Free plans must have zero price' });
+    if (!['admin', 'company', 'superadmin'].includes(userRole)) throw new HTTP400Error({ message: 'Only company administrators can create plans' });
+    data = { ...data, trial_days: data.billing_cycle === 'Free' ? newTrialDays(data.trial_days) : resolveTrialDays(data.billing_cycle, data.trial_days),
+      features: data.billing_cycle === 'Free' ? fixedTrialFeatures(data.features) : await planCatalog.validateFeatures(data.features, data.billing_cycle),
+      marketing_features: (data.marketing_features ?? []).map(value => value.trim()) };
     console.log('Creating subscription plan with data:', data, 'role:', userRole);
 
     console.log("Subscription Price",data.price)
@@ -162,16 +190,22 @@ class subscriptionService {
     return await subscriptionModel.findSubscriptionsPlans(userId, companyId, active, user.role, filters);
   }
 
-  async updateSubscriptionPlan(id: string, data: Partial<subscriptionPlans>) {
+  async updateSubscriptionPlan(id: string, data: Partial<subscriptionPlans>, actor?: CatalogActor) {
     const existing = await subscriptionModel.findById(id);
     if (!existing) throw new HTTP404Error({ message: 'Subscription Plan not found' });
+    planAccess(existing, actor);
+    validatePlanFields(data);
     const billingCycle = data.billing_cycle ?? existing.billing_cycle;
+    if (billingCycle === 'Free' && Number(data.price ?? existing.price) !== 0) throw new HTTP400Error({ message: 'Free plans must have zero price' });
     const trialDays = resolveTrialDays(
       billingCycle,
       data.trial_days !== undefined
         ? data.trial_days
         : billingCycle === 'Free' ? existing.trial_days ?? undefined : undefined,
     );
+    if (existing.billing_cycle === 'Free' && data.billing_cycle !== undefined && data.billing_cycle !== 'Free') {
+      throw new HTTP403Error({ message: 'A Free trial plan cannot be converted to a paid plan; create a separate paid plan' });
+    }
     const updatedSubscriptionPlan = await subscriptionModel.update(id, {
       plan_name: data.plan_name,
       price: data.price,
@@ -179,7 +213,11 @@ class subscriptionService {
       trial_days: trialDays,
       description: data.description,
       active: data.active,
-      features: JSON.stringify(data.features), // important
+      // BaseModel.update passes arrays to pg as SQL arrays; serialize this JSONB field explicitly.
+      marketing_features: data.marketing_features === undefined ? undefined : JSON.stringify(data.marketing_features.map(value => value.trim())),
+      features: billingCycle === 'Free' ? fixedTrialFeatures(data.features) : data.features !== undefined ? await planCatalog.validateFeatures(data.features, billingCycle)
+        : data.billing_cycle !== undefined && existing.features !== undefined
+          ? await planCatalog.validateFeatures(typeof existing.features === 'string' ? JSON.parse(existing.features) : existing.features, billingCycle) : undefined,
     });
     return updatedSubscriptionPlan;
   }
@@ -245,11 +283,13 @@ class subscriptionService {
 
   async assignedPlanToUser(userId: string, planId: string) {}
 
-  async deleteSubscriptionPlan(id: string) {
+  async deleteSubscriptionPlan(id: string, actor?: CatalogActor) {
     const subcription = await subscriptionModel.findById(id);
     if (!subcription) {
       throw new HTTP500Error({ message: 'Subscription Plan not found' });
     }
+    planAccess(subcription, actor);
+    if (subcription.billing_cycle === 'Free') throw new HTTP403Error({ message: 'Free trial plans cannot be deleted; their platform limits are fixed' });
     await subscriptionModel.delete(id);
     return;
   }

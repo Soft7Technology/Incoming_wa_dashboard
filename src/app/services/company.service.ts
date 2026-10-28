@@ -1,4 +1,5 @@
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
+import { newTrialDays } from '../utils/freeTrialPolicy';
 import planAssignmentService from './planAssignment.service';
 import db from '@surefy/database';
 import CompanyRepository from '@surefy/console/repository/company.repository';
@@ -30,6 +31,7 @@ class CompanyService {
     if (!data.user) {
       throw new HTTP400Error({ message: 'Initial user is required' });
     }
+    const trialDays = newTrialDays(data.trial_days);
     return db.transaction(async (trx) => {
       // Check if email already exists
 
@@ -40,7 +42,7 @@ class CompanyService {
 
       // Extract user data before creating company
       const userData = data.user;
-      const { user, ...companyData } = data;
+      const { user, trial_days, ...companyData } = data;
 
       // Create company (without user field)
       const company = await CompanyRepository.create(companyData, trx);
@@ -61,7 +63,8 @@ class CompanyService {
         }, trx);
       }
 
-      const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id, trx);
+      const freePlan = await subscriptionModel.createFreePlan(createdUser.id, company.id, trx, trialDays);
+      createdUser = { ...createdUser, assigned_plan: freePlan.user_plan.id };
 
       // Return company with key and user (only returned once during onboarding)
       return {

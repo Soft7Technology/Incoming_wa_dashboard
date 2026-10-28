@@ -25,7 +25,7 @@ class CompanyController {
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
 
-    const { name, email, phone, domain, status, business_id, webhook_url, meta_config, settings, credit_balance } = req.body;
+    const { name, email, phone, domain, status, business_id, webhook_url, meta_config, settings, credit_balance, trial_days } = req.body;
     const user = typeof req.body.user === 'string' ? JSON.parse(req.body.user) : req.body.user;
 
     const file: Express.Multer.File | undefined = req.file
@@ -60,6 +60,7 @@ class CompanyController {
       meta_config,
       settings,
       credit_balance,
+      trial_days: req.is('multipart/form-data') && ['3', '7', '10'].includes(trial_days) ? Number(trial_days) as 3 | 7 | 10 : trial_days,
       user,
       logo
     });

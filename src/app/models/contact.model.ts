@@ -39,21 +39,17 @@ class ContactModel extends BaseModel {
       .where('contacts.company_id', companyId)
       .where('contacts.is_opted_out', false);
 
-    if (selection.filters.list_ids?.length) {
-      query.whereIn('contacts.id', builder => {
-        builder.select('contact_id').from('contact_list_relations')
-          .whereIn('list_id', selection.filters.list_ids!);
-      });
-    }
     return query.select('contacts.*')
       .orderBy(`contacts.${selection.sortBy}`, selection.sortOrder)
       .orderBy('contacts.id', 'asc');
   }
 
-  async findCampaignPhoneCandidates(userId: string, companyId: string, numbers: string[]) {
+  async findCampaignPhoneCandidates(userId: string, companyId: string, numbers: string[], phoneNumberId?: string) {
     if (!numbers.length) return [];
     const suffixes = [...new Set(numbers.map(value => String(value).replace(/[^0-9]/g, '').replace(/^00/, '')))];
-    return this.query().where({ user_id: userId, company_id: companyId }).whereNull('deleted_at')
+    const query = this.query().where({ user_id: userId, company_id: companyId }).whereNull('deleted_at');
+    if (phoneNumberId) query.where('phone_number_id', phoneNumberId);
+    return query.select('id', 'phone_number', 'country_code', 'phone_number_id')
       .andWhere(builder => {
         for (const digits of suffixes) {
           // Match local digits against saved international numbers, and vice versa.
@@ -73,7 +69,7 @@ class ContactModel extends BaseModel {
   async create(data: any, trx?: Knex.Transaction): Promise<any> {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
     if (data.phone_number_id) {
-      const phone = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id);
+      const phone = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id, trx);
       if (!phone || phone.user_id !== data.user_id || phone.company_id !== data.company_id) {
         throw new HTTP400Error({ message: 'Phone number does not belong to this account' });
       }
@@ -97,9 +93,9 @@ class ContactModel extends BaseModel {
     return trx ? insert(trx) : this.db.transaction(insert);
   }
 
-  async update(id: any, data: any) {
+  async update(id: any, data: any, currentContact?: any) {
     if (data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
-    const existing = await this.findById(id);
+    const existing = currentContact?.id === id ? currentContact : await this.findById(id);
     return super.update(id, { ...data, ...parseImportedPhone(
       data.phone_number ?? (data.country_code && !existing.country_code ? existing.phone_number.replace(/^\+/, '') : existing.phone_number), data.country_code ?? existing.country_code ?? '',
     ) });
@@ -336,6 +332,13 @@ class ContactModel extends BaseModel {
 
     // Ignore deleted contacts
     query.whereNull("deleted_at");
+
+    // Keep list membership in PostgreSQL rather than fetching every relation into Node.
+    if (filters.list_ids?.length) {
+      query.whereIn('contacts.id', builder => {
+        builder.select('contact_id').from('contact_list_relations').whereIn('list_id', filters.list_ids);
+      });
+    }
 
     if (filters.status !== undefined) {
       if (typeof filters.status !== 'string' ||

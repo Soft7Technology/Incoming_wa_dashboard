@@ -1,0 +1,301 @@
+{
+  "info": {
+    "name": "Google Sheets Campaigns API",
+    "description": "Owner JWT required. Configure Google OAuth and run the migration first. See docs/google-sheets.md. OAuth start must be initiated from the dashboard browser with credentials: include; a Postman cookie is not shared with your browser. Select a spreadsheet through Google Picker before accessing it. Campaign examples create drafts. Change campaign_request_id only when intentionally creating a new campaign; keep it unchanged on retries. Do not run Disconnect during an import workflow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app",
+      "type": "string"
+    },
+    {
+      "key": "jwt",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "spreadsheet_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sheet_id",
+      "value": "0",
+      "type": "string"
+    },
+    {
+      "key": "phone_number_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "template_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "snapshot_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "import_job_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "campaign_request_id",
+      "value": "sheets-demo-001",
+      "type": "string"
+    },
+    {
+      "key": "campaign_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/setup"
+      }
+    },
+    {
+      "name": "Connect Google (initiate from dashboard browser)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/google-sheets/oauth/start",
+        "body": {
+          "mode": "raw",
+          "raw": "{}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Connection status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/connection"
+      }
+    },
+    {
+      "name": "Picker token",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/picker-token"
+      }
+    },
+    {
+      "name": "Authorized spreadsheets",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/spreadsheets"
+      }
+    },
+    {
+      "name": "Spreadsheet tabs",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/spreadsheets/{{spreadsheet_id}}/tabs"
+      }
+    },
+    {
+      "name": "Headers and sample rows",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/spreadsheets/{{spreadsheet_id}}/tabs/{{sheet_id}}/preview"
+      }
+    },
+    {
+      "name": "Validate and save sheet preview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/google-sheets/preview",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"spreadsheet_id\": \"{{spreadsheet_id}}\",\n  \"sheet_id\": 0,\n  \"phone_number_id\": \"{{phone_number_id}}\",\n  \"country_code\": \"91\",\n  \"mapping\": {\n    \"phone\": \"Mobile\",\n    \"name\": \"Guest Name\",\n    \"email\": \"Email\"\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const data = pm.response.json().data;",
+              "  if (data) {",
+              "    if (data.snapshot_id) pm.collectionVariables.set('snapshot_id', data.snapshot_id);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Import history",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/snapshots"
+      }
+    },
+    {
+      "name": "Import saved preview",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/google-sheets/snapshots/{{snapshot_id}}/import",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"list_name\": \"Google Sheet guests\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const data = pm.response.json().data;",
+              "  if (data) {",
+              "    if (data.import_job_id) pm.collectionVariables.set('import_job_id', data.import_job_id);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Import progress",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/snapshots/{{snapshot_id}}/import"
+      }
+    },
+    {
+      "name": "Create campaign draft",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/google-sheets/campaigns",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"request_id\": \"{{campaign_request_id}}\",\n  \"snapshot_id\": \"{{snapshot_id}}\",\n  \"campaign\": {\n    \"name\": \"Google Sheet invitations\",\n    \"template_id\": \"{{template_id}}\",\n    \"parameter_mapping\": {\n      \"1\": {\n        \"field\": \"name\"\n      },\n      \"2\": {\n        \"field\": \"attributes.Event\",\n        \"fallbackValue\": \"our event\"\n      }\n    }\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "  const data = pm.response.json().data;",
+              "  if (data) {",
+              "    if (data.campaign) pm.collectionVariables.set('campaign_id', data.campaign.id);",
+              "  }",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create multiple campaign drafts",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/google-sheets/campaigns/bulk",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"campaigns\": [\n    {\n      \"request_id\": \"{{campaign_request_id}}-bulk-1\",\n      \"snapshot_id\": \"{{snapshot_id}}\",\n      \"campaign\": {\n        \"name\": \"First sheet campaign\",\n        \"template_id\": \"{{template_id}}\"\n      }\n    },\n    {\n      \"request_id\": \"{{campaign_request_id}}-bulk-2\",\n      \"snapshot_id\": \"{{snapshot_id}}\",\n      \"campaign\": {\n        \"name\": \"Second sheet campaign\",\n        \"template_id\": \"{{template_id}}\"\n      }\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Disconnect Google (revokes grant)",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/google-sheets/connection"
+      }
+    }
+  ]
+}

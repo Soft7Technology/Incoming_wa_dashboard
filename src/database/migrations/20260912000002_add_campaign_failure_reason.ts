@@ -1,6 +1,7 @@
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
+  if (await knex.schema.hasColumn('campaigns', 'failure_reason')) return;
   await knex.schema.alterTable('campaigns', table => {
     table.text('failure_reason');
   });

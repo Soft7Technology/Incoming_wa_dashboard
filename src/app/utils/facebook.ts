@@ -11,19 +11,26 @@ export class FacebookError extends Error {
 }
 
 export const permissions = ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'];
+export const leadPermissions = [
+  'pages_show_list',
+  'pages_read_engagement',
+  'pages_manage_ads',
+  'leads_retrieval',
+  'pages_manage_metadata',
+];
 export const subscriptions = ['messages', 'message_echoes', 'message_deliveries', 'message_reads'];
 export const hash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 export const random = () => crypto.randomBytes(32).toString('base64url');
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export function publicOrigin() {
-  if (!process.env.FACEBOOK_PUBLIC_URL) throw new FacebookError(503, 'FACEBOOK_PUBLIC_URL is required.');
-  const base = process.env.FACEBOOK_PUBLIC_URL.replace(/\/$/, '');
+export function publicOrigin(value = process.env.FACEBOOK_PUBLIC_URL, setting = 'FACEBOOK_PUBLIC_URL') {
+  if (!value) throw new FacebookError(503, `${setting} is required.`);
+  const base = value.replace(/\/$/, '');
   let url: URL;
   try {
     url = new URL(base);
   } catch {
-    throw new FacebookError(503, 'FACEBOOK_PUBLIC_URL must be a valid HTTPS origin.');
+    throw new FacebookError(503, `${setting} must be a valid HTTPS origin.`);
   }
   if (
     (url.protocol !== 'https:' &&
@@ -36,13 +43,13 @@ export function publicOrigin() {
   ) {
     throw new FacebookError(
       503,
-      'FACEBOOK_PUBLIC_URL must be an HTTPS origin (localhost HTTP is allowed in development).',
+      `${setting} must be an HTTPS origin (localhost HTTP is allowed in development).`,
     );
   }
   return { base, secure: url.protocol === 'https:' };
 }
 
-export function config() {
+export function config(feature: 'messenger' | 'leads' | 'transport' = 'messenger') {
   const required = [
     'FACEBOOK_APP_ID',
     'FACEBOOK_APP_SECRET',
@@ -52,7 +59,8 @@ export function config() {
     'FACEBOOK_WEBHOOK_VERIFY_TOKEN',
     'JWT_SECRET',
   ];
-  if (process.env.FACEBOOK_LOGIN_MODE !== 'classic') required.push('FACEBOOK_LOGIN_CONFIG_ID');
+  if (feature !== 'transport' && process.env.FACEBOOK_LOGIN_MODE !== 'classic')
+    required.push(feature === 'leads' ? 'FACEBOOK_LEADS_LOGIN_CONFIG_ID' : 'FACEBOOK_LOGIN_CONFIG_ID');
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length)
     throw new FacebookError(503, `Facebook configuration missing: ${missing.join(', ')}`, 'CONFIGURATION_REQUIRED');
@@ -144,7 +152,7 @@ export function graphFailure(code: number): FacebookError {
   if ([10, 200, 299].includes(code))
     return new FacebookError(
       403,
-      'Facebook denied permission. Grant the required permissions and verify your Page messaging task and app access level.',
+      'Facebook denied permission. Grant the required permissions and verify Page access, Leads Access (for lead forms), and the app access level.',
       'PERMISSION_DENIED',
     );
   if ([4, 17, 32, 613].includes(code))

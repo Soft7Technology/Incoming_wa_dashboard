@@ -1,0 +1,22 @@
+import { Router } from 'express';
+import controller from '../app/http/controllers/facebookLeads.controller';
+import messenger, { facebookError } from '../app/http/controllers/facebookMessenger.controller';
+
+const route = Router();
+route.use(messenger.noStore);
+route.get('/setup', controller.setup);
+route.post('/oauth/start', controller.start);
+route.post('/token', controller.importToken);
+route.post('/preset/connect', controller.connectPreset);
+route.post('/preset/pages', controller.choosePresetPages);
+route.get('/oauth/pages', controller.candidates);
+route.get('/pages', controller.pages);
+route.post('/pages', controller.connect);
+route.get('/pages/:id/forms', controller.forms);
+route.post('/pages/:id/disconnect', controller.disconnect);
+route.delete('/pages/:id', controller.erase);
+route.patch('/forms/:id', controller.enable);
+route.post('/forms/:id/sync', controller.sync);
+route.get('/forms/:id/leads', controller.leads);
+route.use(facebookError);
+export default route;

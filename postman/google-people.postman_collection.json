@@ -1,0 +1,207 @@
+{
+  "info": {
+    "name": "Google People - Contacts",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Authorize in the browser app first. All contact requests use the dashboard owner JWT. Google Contacts and Sheets permissions are separate."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{jwt}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8001"
+    },
+    {
+      "key": "jwt",
+      "value": ""
+    },
+    {
+      "key": "googleClientId",
+      "value": ""
+    },
+    {
+      "key": "googleClientSecret",
+      "value": ""
+    },
+    {
+      "key": "googlePersonId",
+      "value": "c123"
+    },
+    {
+      "key": "googleContactSourceEtag",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Setup",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/admin/google-people/setup"
+      }
+    },
+    {
+      "name": "Save account OAuth app (disconnects current Contacts authorization)",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/google-people/oauth-app",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_id\": \"{{googleClientId}}\",\n  \"client_secret\": \"{{googleClientSecret}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "Connection status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/admin/google-people/connection"
+      }
+    },
+    {
+      "name": "List contacts",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/admin/google-people/contacts?page_size=50"
+      }
+    },
+    {
+      "name": "Create contact",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/google-people/contacts",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"names\": [\n    {\n      \"givenName\": \"Asha\",\n      \"familyName\": \"Test\"\n    }\n  ],\n  \"emailAddresses\": [\n    {\n      \"value\": \"asha@example.com\",\n      \"type\": \"work\"\n    }\n  ],\n  \"phoneNumbers\": [\n    {\n      \"value\": \"+14155552671\",\n      \"type\": \"mobile\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.success && body.data?.resourceName) {",
+              "  pm.collectionVariables.set(\"googlePersonId\", body.data.resourceName.replace(/^people\\//, \"\"));",
+              "  const source = body.data.metadata?.sources?.find(s => s.type === \"CONTACT\");",
+              "  if (source?.etag) pm.collectionVariables.set(\"googleContactSourceEtag\", source.etag);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Read contact and refresh version",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{baseUrl}}/v1/admin/google-people/contacts/{{googlePersonId}}"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.success && body.data?.resourceName) {",
+              "  pm.collectionVariables.set(\"googlePersonId\", body.data.resourceName.replace(/^people\\//, \"\"));",
+              "  const source = body.data.metadata?.sources?.find(s => s.type === \"CONTACT\");",
+              "  if (source?.etag) pm.collectionVariables.set(\"googleContactSourceEtag\", source.etag);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Update phone (preserves omitted fields)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/v1/admin/google-people/contacts/{{googlePersonId}}",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"source_etag\": \"{{googleContactSourceEtag}}\",\n  \"phoneNumbers\": [\n    {\n      \"value\": \"+14155552672\",\n      \"type\": \"mobile\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (body.success && body.data?.resourceName) {",
+              "  pm.collectionVariables.set(\"googlePersonId\", body.data.resourceName.replace(/^people\\//, \"\"));",
+              "  const source = body.data.metadata?.sources?.find(s => s.type === \"CONTACT\");",
+              "  if (source?.etag) pm.collectionVariables.set(\"googleContactSourceEtag\", source.etag);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Disconnect local People connection",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/v1/admin/google-people/connection"
+      }
+    },
+    {
+      "name": "Remove account OAuth credentials",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": "{{baseUrl}}/v1/admin/google-people/oauth-app"
+      }
+    }
+  ]
+}

@@ -51,7 +51,6 @@ class AuthController {
 
     const { data }: any = result
 
-    console.log("data", data)
 
     await activityLogsModel.create({
       user_id: data?.id,
@@ -125,8 +124,7 @@ class AuthController {
    * Onboard new company
    */
   onboard = tryCatchAsync(async (req: Request, res: Response) => {
-    const { name, email, phone, user } = req.body;
-    console.log('Onboarding company with data:', { name, email, phone, user});
+    const { name, email, phone, user, trial_days } = req.body;
 
     if (!name || !email) {
       throw new HTTP400Error({ message: 'Name and email are required' });
@@ -143,6 +141,7 @@ class AuthController {
       email,
       phone,
       user,
+      trial_days,
     });
 
     // if(result){
@@ -218,7 +217,7 @@ class AuthController {
    * Create admin/superadmin user (superadmin only)
    */
   createAdmin = tryCatchAsync(async (req: JWTRequest, res: Response) => {
-    const { name, email, phone, password, role, company_id } = req.body;
+    const { name, email, phone, password, role, company_id, trial_days } = req.body;
 
     if (!name || !password || !role) {
       throw new HTTP400Error({ message: 'Name, password, and role are required' });
@@ -240,6 +239,7 @@ class AuthController {
         password,
         role,
         company_id,
+        trial_days,
       },
       req.userId!,
       req.userRole!,
@@ -270,10 +270,6 @@ class AuthController {
 
     if ( !new_password) {
       throw new HTTP400Error({ message: 'Current password and new password are required' });
-    }
-
-    if (new_password.length < 6) {
-      throw new HTTP400Error({ message: 'New password must be at least 6 characters long' });
     }
 
     const userId = '5a66df74-92d4-4bcd-814b-13d6318d4116'

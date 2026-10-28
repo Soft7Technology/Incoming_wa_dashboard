@@ -4,7 +4,18 @@
   "description": "Console API is a surefy meta services microservice for WhatsApp Business API management",
   "main": "index.js",
   "scripts": {
+    "facebook:login": "node scripts/facebook-login-test.cjs",
+    "facebook:leads:check": "node scripts/facebook-leads-check.cjs",
     "build": "rimraf dist && tsc && tsc-alias && node scripts/copy-facebook-assets.cjs",
+    "test:facebook": "node --test tests/facebook-*.test.cjs",
+    "test:google-sheets": "node --test tests/google-sheets*.test.cjs",
+    "test:google-people": "node --test tests/google-people*.test.cjs",
+    "test:shopify": "node --test tests/shopify*.test.cjs",
+    "check:shopify": "node scripts/shopify-readiness.cjs",
+    "check:shopify:review": "node scripts/shopify-review-check.cjs --strict",
+    "shopify:review-account": "node scripts/shopify-review-account.cjs",
+    "shopify:privacy": "node dist/src/scripts/shopifyPrivacy.js",
+    "start:shopify-worker": "node dist/src/scripts/shopifyMessageWorker.js"
     "start": "node dist/src/server.js",
     "start:worker": "cross-env WORKER_MODE=true node dist/src/workers/index.js",
     "dev": "nodemon -r dotenv/config -r tsconfig-paths/register src/server.ts",

@@ -18,6 +18,7 @@ tmp/
 temp/
 logs/
 .cache/
+backups/
 *.tsbuildinfo
 
 # Local scratch files (kept on disk when untracked).

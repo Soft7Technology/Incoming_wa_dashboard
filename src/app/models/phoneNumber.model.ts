@@ -1,9 +1,16 @@
 import { BaseModel } from '@surefy/models/base.model';
 import { validate as uuidValidate } from 'uuid';
+import { Knex } from 'knex';
+import planUsage from '../services/planUsage.service';
 
 class PhoneNumberModel extends BaseModel {
   constructor() {
     super('phone_numbers');
+  }
+
+  async create(data: any, trx?: Knex.Transaction) {
+    if (trx) return super.create(data, trx);
+    return planUsage.run(data.user_id, 'WabaNumber', transaction => super.create(data, transaction));
   }
 
   async findByCompanyId(companyId: string) {
@@ -19,10 +26,10 @@ class PhoneNumberModel extends BaseModel {
       .select('phone_numbers.*', 'wa.waba_id');
   }
 
-  async findByPhoneNumberId(phoneNumberId: any) {
+  async findByPhoneNumberId(phoneNumberId: any, trx?: Knex.Transaction) {
     if (!phoneNumberId) return null;
     const isUuid = typeof phoneNumberId === 'string' && uuidValidate(phoneNumberId);
-    return this.query()
+    return (trx ? trx(this.tableName) : this.query())
       .where((qb) => {
         qb.where('phone_number_id', phoneNumberId);
         if (isUuid) {
@@ -31,6 +38,18 @@ class PhoneNumberModel extends BaseModel {
       })
       .andWhere({ deleted_at: null })
       .first();
+  }
+
+  async findOwnedByIdentifiers(userId: string, companyId: string, identifiers: string[]) {
+    if (!identifiers.length) return [];
+    const ids = [...new Set(identifiers)];
+    const uuidIds = ids.filter(uuidValidate);
+    return this.query().select('id', 'phone_number_id')
+      .where({ user_id: userId, company_id: companyId }).whereNull('deleted_at')
+      .andWhere(query => {
+        query.whereIn('phone_number_id', ids);
+        if (uuidIds.length) query.orWhereIn('id', uuidIds);
+      });
   }
 
   async findByPhoneId(phoneNumberId: string) {

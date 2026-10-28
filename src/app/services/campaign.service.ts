@@ -12,6 +12,7 @@ import MessageService from './message.service';
 import MetaService from './meta.service';
 import ContactModel from '../models/contact.model';
 import ContactTagModel from '../models/contactTag.model';
+import ContactListModel from '../models/contactList.model';
 import PhoneNumberModel from '../models/phoneNumber.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
@@ -22,6 +23,7 @@ import campaignModel from '../models/campaign.model';
 import { v4 as uuidv4 } from "uuid";
 import { uploadImage } from '@surefy/config/firebase.config';
 import db from '@surefy/database';
+import type { Knex } from 'knex';
 import phoneNumberModel from '../models/phoneNumber.model';
 
 
@@ -60,16 +62,28 @@ class CampaignService {
   /**
    * Create a new campaign
    */
-  async createCampaign(userId: string, companyId: string, data: CreateCampaignData, preview = false): Promise<any> {
+  async createCampaign(userId: string, companyId: string, data: CreateCampaignData, preview = false,
+    onCreated?: (campaign: any, trx: Knex.Transaction) => Promise<void>): Promise<any> {
     if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
-    if (!preview) this.resolveTemplateVariables({}, data.parameter_mapping ?? {});
     try { validateCampaignPhoneInputs(data.contact_filters, data.country_code); }
-    catch (error: any) { throw new HTTP400Error({ message: error.message }); }
+    catch (error: any) { throw new HTTP400Error({ message: error.message, details: error.details }); }
+    if (!preview) this.resolveTemplateVariables({}, data.parameter_mapping ?? {});
     // Verify template exists
     const template = preview ? undefined : await TemplateModel.findById(data.template_id);
     const phoneNumberId = await phoneNumberModel.findByPhoneNumberId(data.phone_number_id)
     if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
       throw new HTTP404Error({ message: 'Campaign cannot be created: the selected sending phone number is not connected to your user account.' });
+    }
+    if (data.contact_filters?.list_ids) {
+      const listIds = [...new Set(data.contact_filters.list_ids)];
+      const lists = await ContactListModel.findSelectedForPhone(userId, companyId, phoneNumberId.id, listIds);
+      if (lists.length !== listIds.length) {
+        throw new HTTP400Error({
+          message: 'Select contact lists that belong to your account and the selected sending phone number.',
+          details: { code: 'CAMPAIGN_CONTACT_LIST_NOT_AVAILABLE', field: 'contact_filters.list_ids',
+            required_action: 'SELECT_CONTACT_LIST' },
+        });
+      }
     }
     console.log('Template',template)
     if (!preview && !template) {
@@ -114,12 +128,13 @@ class CampaignService {
     let previewNewContacts: any[] = [];
     if (filters.contactNumber && filters.contactNumber.length > 0) {
       // Infer only from the supplied international number; never default to the sender's country.
-      const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber);
+      const savedContacts = await ContactModel.findCampaignPhoneCandidates(userId, companyId, filters.contactNumber, phoneNumberId.id);
+      const senderContacts = savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id);
       const matchedNumbers = new Set<string>();
       const normalizedPhones = new Map<string, string | null>();
       for (const value of filters.contactNumber) {
         try {
-          const resolvedPhone = resolveOptionalCampaignPhone(value, savedContacts.filter((contact: any) => contact.phone_number_id === phoneNumberId.id),
+          const resolvedPhone = resolveOptionalCampaignPhone(value, senderContacts,
             data.country_code === undefined ? undefined : String(data.country_code));
           const parsed = { ...resolvedPhone, phone_number: campaignRecipientNumber(resolvedPhone.phone_number, resolvedPhone.country_code) };
           if (parsed.contact) {
@@ -174,7 +189,7 @@ class CampaignService {
     }
 
     // Get contacts based on filters
-    const matchingContacts = await ContactService.getContactsByFilters(userId, companyId, filters);
+    const matchingContacts = await ContactService.getContactsByFilters(userId, companyId, filters, phoneNumberId.id);
     const contacts = [...matchingContacts, ...previewNewContacts].filter(contact => contact.phone_number_id === phoneNumberId.id);
     const excludedNumbers = await contactOptOut.excluded(companyId, userId, phoneNumberId.id);
     const requestedNumbers = canonicalRecipientNumbers ? new Set(canonicalRecipientNumbers) : undefined;
@@ -272,6 +287,8 @@ class CampaignService {
       }));
 
       await CampaignMessageModel.bulkCreate(campaignMessages, trx);
+      // Integration request receipts commit with the campaign, before anything can be sent.
+      if (onCreated) await onCreated(createdCampaign, trx);
       return createdCampaign;
     });
 
