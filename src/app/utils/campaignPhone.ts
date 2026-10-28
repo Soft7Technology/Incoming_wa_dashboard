@@ -2,54 +2,47 @@ import { parseImportedPhone, parseWhatsAppPhone, parseStoredContactPhone } from 
 import { validate as isUUID } from 'uuid';
 
 interface SavedPhone { id: string; phone_number: string; country_code?: string | null }
+type ResolvedPhone = { phone_number: string; country_code: string; contact?: SavedPhone };
 
-export const MAX_CAMPAIGN_DIRECT_NUMBERS = 150;
-
-export class CampaignDirectNumberLimitError extends Error {
-  readonly details: {
-    code: string;
-    field: string;
-    limit: number;
-    received: number;
-    required_action: string;
-  };
-
-  constructor(received: number) {
-    super(`You can add up to ${MAX_CAMPAIGN_DIRECT_NUMBERS} phone numbers directly to a campaign. ` +
-      `You provided ${received}. For more than ${MAX_CAMPAIGN_DIRECT_NUMBERS} numbers, select a contact list using contact_filters.list_ids.`);
-    this.name = 'CampaignDirectNumberLimitError';
-    this.details = {
-      code: 'CAMPAIGN_CONTACT_NUMBER_LIMIT_EXCEEDED',
-      field: 'contact_filters.contactNumber',
-      limit: MAX_CAMPAIGN_DIRECT_NUMBERS,
-      received,
-      required_action: 'SELECT_CONTACT_LIST',
-    };
-  }
-}
-
-/** Saved contact metadata supplies the country for national numbers; no global default. */
-export function resolveCampaignPhone(value: string, contacts: SavedPhone[], options: { countryCode?: string; allowBareInternational?: boolean } = {}) {
-  const raw = String(value).trim();
-  if (!/^[+\d\s().-]+$/.test(raw)) throw new Error('Invalid recipient phone number');
-  const digits = raw.replace(/[^0-9]/g, '');
-  const explicit = raw.startsWith('+') || raw.startsWith('00');
-  const requested = explicit || options.countryCode ? parseImportedPhone(raw, options.countryCode || '') : undefined;
-  const matches = new Map<string, { phone_number: string; country_code: string; contact?: SavedPhone }>();
+/** Parse each saved contact once, then resolve a whole audience with map lookups. */
+function createCampaignPhoneResolver(contacts: SavedPhone[], options: { countryCode?: string; allowBareInternational?: boolean }) {
+  const international = new Map<string, ResolvedPhone>();
+  const aliases = new Map<string, Map<string, ResolvedPhone>>();
   for (const contact of contacts) {
     try {
       const parsed = parseImportedPhone(contact.phone_number, String(contact.country_code || ''));
       const national = parsed.phone_number;
       const full = parsed.country_code + national;
-      if (requested ? requested.country_code === parsed.country_code && requested.phone_number === parsed.phone_number :
-        digits === full || digits === national || digits === `0${national}`) {
-        matches.set(full, { ...parsed, contact });
+      const resolved = { ...parsed, contact };
+      international.set(full, resolved);
+      for (const key of new Set([full, national, `0${national}`])) {
+        let matches = aliases.get(key);
+        if (!matches) { matches = new Map(); aliases.set(key, matches); }
+        matches.set(full, resolved);
       }
     } catch { /* Malformed legacy contacts cannot supply a reliable country code. */ }
   }
-  if (matches.size > 1) throw new Error('Multiple contacts match this local number; include + and the country calling code');
-  if (matches.size === 1) return [...matches.values()][0];
-  return { ...(requested || (options.allowBareInternational ? parseWhatsAppPhone(raw) : parseImportedPhone(raw))), contact: undefined };
+  return (value: string): ResolvedPhone => {
+    const raw = String(value).trim();
+    if (!/^[+\d\s().-]+$/.test(raw)) throw new Error('Invalid recipient phone number');
+    const digits = raw.replace(/[^0-9]/g, '');
+    const explicit = raw.startsWith('+') || raw.startsWith('00');
+    const requested = explicit || options.countryCode ? parseImportedPhone(raw, options.countryCode || '') : undefined;
+    if (requested) {
+      const match = international.get(requested.country_code + requested.phone_number);
+      if (match) return match;
+    } else {
+      const matches = aliases.get(digits);
+      if (matches && matches.size > 1) throw new Error('Multiple contacts match this local number; include + and the country calling code');
+      if (matches?.size === 1) return matches.values().next().value!;
+    }
+    return { ...(requested || (options.allowBareInternational ? parseWhatsAppPhone(raw) : parseImportedPhone(raw))), contact: undefined };
+  };
+}
+
+/** Saved contact metadata supplies the country for national numbers; no global default. */
+export function resolveCampaignPhone(value: string, contacts: SavedPhone[], options: { countryCode?: string; allowBareInternational?: boolean } = {}) {
+  return createCampaignPhoneResolver(contacts, options)(value);
 }
 
 /** Validate HTTP inputs before any campaign/contact writes. Country inference remains in the resolver. */
@@ -68,10 +61,6 @@ export function validateCampaignPhoneInputs(filters: any, countryCode?: unknown)
   if (!Array.isArray(filters.contactNumber) || !filters.contactNumber.length) {
     throw new Error('contact_filters.contactNumber must be a non-empty array of phone numbers');
   }
-  // Bound the submitted entries before phone resolution, deduplication, or database work.
-  if (filters.contactNumber.length > MAX_CAMPAIGN_DIRECT_NUMBERS) {
-    throw new CampaignDirectNumberLimitError(filters.contactNumber.length);
-  }
   filters.contactNumber.forEach((value: unknown, index: number) => {
     if ((typeof value !== 'string' && typeof value !== 'number') ||
         (typeof value === 'number' && (!Number.isSafeInteger(value) || value <= 0)) ||
@@ -87,10 +76,18 @@ export function campaignRecipientNumber(value: string, countryCode?: string | nu
 }
 
 export function resolveOptionalCampaignPhone(value: string, contacts: SavedPhone[], countryCode?: string) {
-  try {
-    return resolveCampaignPhone(value, contacts, { countryCode, allowBareInternational: true });
-  } catch (error) {
-    if (error instanceof Error && error.message.startsWith('Multiple contacts')) throw error;
-    return { ...parseStoredContactPhone(value, countryCode || ''), contact: undefined };
-  }
+  return createOptionalCampaignPhoneResolver(contacts, countryCode)(value);
+}
+
+/** Reuse this resolver for all submitted numbers in a single campaign request. */
+export function createOptionalCampaignPhoneResolver(contacts: SavedPhone[], countryCode?: string) {
+  const resolve = createCampaignPhoneResolver(contacts, { countryCode, allowBareInternational: true });
+  return (value: string) => {
+    try {
+      return resolve(value);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('Multiple contacts')) throw error;
+      return { ...parseStoredContactPhone(value, countryCode || ''), contact: undefined };
+    }
+  };
 }
