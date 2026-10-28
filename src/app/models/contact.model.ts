@@ -279,10 +279,15 @@ class ContactModel extends BaseModel {
       .orderBy('contacts.id', 'asc');
   }
 
-  /** Shared by filtering and ordering so both use the same latest message. */
+  /** Shared by filtering and ordering so both use the same inbox read state. */
   private latestMessageReadStateSql() {
     return `(
-      SELECT (m.inbox_read_at IS NOT NULL OR COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL)
+      SELECT
+        CASE
+          WHEN COUNT(m.id) = 0 THEN NULL
+          WHEN COALESCE(SUM(CASE WHEN m.direction = 'inbound' AND (m.status != 'deleted' OR m.status IS NULL) AND m.inbox_read_at IS NULL THEN 1 ELSE 0 END), 0) > 0 THEN FALSE
+          ELSE TRUE
+        END
       FROM messages m
       WHERE m.user_id = contacts.user_id
         AND m.company_id = contacts.company_id
@@ -297,10 +302,12 @@ class ContactModel extends BaseModel {
             THEN regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
             WHEN COALESCE(btrim(contacts.country_code), '') <> ''
             THEN regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
-            ELSE NULL
+            ELSE regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
           END
-      ORDER BY m.created_at DESC NULLS LAST, m.id DESC
-      LIMIT 1
+        AND (
+          m.direction = 'inbound'
+          OR (m.direction = 'outbound' AND m.campaign_id IS NULL AND (m.type != 'template' OR m.type IS NULL))
+        )
     )`;
   }
 

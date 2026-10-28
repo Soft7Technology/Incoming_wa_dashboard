@@ -178,9 +178,7 @@ class ContactService {
       // Inbox counts cover incoming messages only; outgoing read receipts are separate.
       contact.read_count = Number(summary?.read_count ?? 0);
       contact.unread_count = Number(summary?.unread_count ?? 0);
-      contact.read_status = lastMessage
-        ? (lastMessage.inbox_read_at != null || lastMessage.status === 'read' || lastMessage.read_at != null ? 'read' : 'unread')
-        : null;
+      contact.read_status = contact.unread_count > 0 ? 'unread' : (lastMessage ? 'read' : null);
       const timestamp = lastMessage?.updated_at ?? null;
       contact.last_message = lastMessage ? { ...lastMessage, timestamp } : null;
       // Expose the same activity timestamp inside and outside the message object.
@@ -221,6 +219,7 @@ class ContactService {
     const [summary] = await MessageModel.findLatestForContacts([contact]);
     contact.read_count = Number(summary?.read_count ?? 0);
     contact.unread_count = Number(summary?.unread_count ?? 0);
+    contact.read_status = contact.unread_count > 0 ? 'unread' : (summary?.last_message ? 'read' : null);
 
     return contact;
   }

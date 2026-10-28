@@ -88,8 +88,8 @@ class MessageModel extends BaseModel {
       ) latest ON TRUE
       LEFT JOIN LATERAL (
         SELECT
-          COUNT(*) FILTER (WHERE m.inbox_read_at IS NOT NULL OR m.status = 'read' OR m.read_at IS NOT NULL) AS read_count,
-          COUNT(*) FILTER (WHERE m.inbox_read_at IS NULL AND m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL) AS unread_count
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NOT NULL) AS read_count,
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NULL) AS unread_count
         FROM messages m
         WHERE m.user_id = c.user_id
           AND m.company_id = c.company_id
