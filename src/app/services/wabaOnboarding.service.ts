@@ -1,9 +1,10 @@
 import crypto from 'crypto';
+import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { validate as uuid } from 'uuid';
 import repository from '../models/wabaOnboarding.model';
 import { WabaGraph } from './wabaGraph.service';
 import wabaService from './waba.service';
-import { digest, metaId, openToken, sealToken, safeOnboardingError, wabaConfig, WabaScope, WabaOnboardingError } from '../utils/wabaOnboarding';
+import { digest, metaId, openToken, sealToken, safeOnboardingError, WabaScope, WabaOnboardingError } from '../utils/wabaOnboarding';
 
 const publicPhones = (phones: any[]) => phones.map(phone => ({ id: phone.id, phone_number_id: phone.phone_number_id,
   display_phone_number: phone.display_phone_number, verified_name: phone.verified_name, quality_rating: phone.quality_rating,
@@ -18,44 +19,16 @@ export class WabaOnboardingService {
   private scope(scope: WabaScope) {
     if (!scope.userId || !scope.companyId) throw new WabaOnboardingError('WABA_ACCOUNT_CONTEXT_REQUIRED', 'Authenticated user and company context are required.', false, 403);
   }
-  async begin(scope: WabaScope, body: any, key?: string) {
-    this.scope(scope);
-    const wabaId = metaId(body?.waba_id, 'waba_id'), phoneId = metaId(body?.phone_number_id, 'phone_number_id');
-    if (typeof body?.code !== 'string' || !body.code.trim() || body.code.length > 8192) throw new WabaOnboardingError('META_CODE_INVALID', 'Submit the authorization code immediately after Embedded Signup. Existing connections can use the sync endpoint.');
-    if (body.state != null && (typeof body.state !== 'string' || !/^[a-f0-9]{64}$/.test(body.state))) throw new WabaOnboardingError('SIGNUP_STATE_INVALID', 'Use the state issued by the onboarding state endpoint, or null for the existing frontend.', false, 403);
-    if (key !== undefined && (typeof key !== 'string' || !key.trim() || key.length > 100)) throw new WabaOnboardingError('INVALID_SIGNUP_INPUT', 'Idempotency-Key must contain 1 to 100 characters.');
-    const mode = body.setup_mode ?? 'auto';
-    if (!['auto', 'waba_only'].includes(mode) || mode === 'waba_only' && phoneId) throw new WabaOnboardingError('INVALID_SIGNUP_INPUT', 'setup_mode must be auto or waba_only; WABA-only setup cannot select a phone.');
-    // Configuration/encryption validation is local; exchange follows only one short reservation transaction.
-    wabaConfig();
-    const reserved = await this.repo.reserve(scope, { codeHash: digest(body.code), wabaId, phoneId, state: body.state ?? null, key: key || null, mode });
-    if (!reserved.created) return this.result(reserved.row);
-    let row = reserved.row;
-    let exchangedSuccessfully = false;
-    try {
-      const exchanged = await this.graphFactory().exchange(body.code);
-      exchangedSuccessfully = true;
-      // No discovery, registration, subscription, queue call or other network work before this commit.
-      row = await this.repo.saveToken(row.id, sealToken(exchanged.token, scope, row.id), exchanged.expiresIn);
-    } catch (error) {
-      const safe = exchangedSuccessfully ? new WabaOnboardingError('WABA_AUTHORIZATION_SAVE_UNCONFIRMED',
-        'Meta exchanged the code, but saving the authorization was not confirmed. Check this onboarding status; if no authorization was saved, complete Embedded Signup again.', false, 503) : safeOnboardingError(error);
-      await this.repo.exchangeFailed(row.id, safe).catch(() => undefined);
-      throw new WabaOnboardingError(safe.code, safe.message, false, safe.statusCode);
-    }
-    return this.result(row);
-  }
-  async state(scope: WabaScope) { this.scope(scope); return { state: await this.repo.createState(scope), expires_in_seconds: 600 }; }
   async status(scope: WabaScope, id: string) {
     this.scope(scope);
-    if (!uuid(id)) throw new WabaOnboardingError('INVALID_SIGNUP_INPUT', 'onboardingId must be a UUID.');
+    if (!uuid(id)) throw new HTTP400Error({ message: 'onboardingId must be a UUID.' });
     const row = await this.repo.find(scope, id);
     if (!row) throw new WabaOnboardingError('WABA_ONBOARDING_NOT_FOUND', 'Onboarding not found in your account.', false, 404);
     return this.result(row);
   }
   async retry(scope: WabaScope, id: string, body: any) {
     this.scope(scope);
-    if (!uuid(id)) throw new WabaOnboardingError('INVALID_SIGNUP_INPUT', 'onboardingId must be a UUID.');
+    if (!uuid(id)) throw new HTTP400Error({ message: 'onboardingId must be a UUID.' });
     await this.repo.select(scope, id, metaId(body?.waba_id, 'waba_id'), metaId(body?.phone_number_id, 'phone_number_id'));
     return this.result(await this.repo.retry(scope, id));
   }

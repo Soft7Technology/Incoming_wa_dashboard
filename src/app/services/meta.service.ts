@@ -398,7 +398,7 @@ class MetaService {
       console.error('Meta API Error - Failed to subscribe to webhooks', error.response?.data || error.message);
 
       throw new HTTP500Error({
-        message: 'Failed to fetch phone number details from Meta API',
+        message: 'Failed to subscribe WABA to Meta webhooks',
         details: error.response?.data || error.message,
       });
     }

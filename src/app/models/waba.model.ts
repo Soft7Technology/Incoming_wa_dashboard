@@ -25,6 +25,14 @@ class WabaModel extends BaseModel {
     return this.query().where({ waba_id: wabaId }).first();
   }
 
+  async upsertOwnedAccount(data: any) {
+    const [account] = await this.query().insert({ ...data, meta_data: JSON.stringify(data.meta_data) })
+      .onConflict('waba_id').merge(['name', 'currency', 'timezone', 'message_template_namespace', 'meta_data', 'deleted_at', 'updated_at'])
+      .where({ 'waba_accounts.user_id': data.user_id, 'waba_accounts.company_id': data.company_id }).returning('*');
+    if (!account) throw new HTTP400Error({ message: 'WABA is already connected to another account' });
+    return account;
+  }
+
   async findOwnedForSync(wabaId: string, userId: string, companyId: string) {
     const column = /^\d+$/.test(wabaId) ? 'waba_id' : 'id';
     return this.query().where({ [column]: wabaId, user_id: userId, company_id: companyId })

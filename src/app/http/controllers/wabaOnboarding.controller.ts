@@ -22,8 +22,6 @@ function reply(res: Response, result: any, statusRead = false) {
     message: result.data.status === 'pending' ? 'WhatsApp setup is pending' : 'WhatsApp setup requires a selection or action', data: result.data });
 }
 export default {
-  onboard: handle(async (req, res) => reply(res, await service.begin(scope(req), req.body, req.get('Idempotency-Key')))),
-  state: handle(async (req, res) => res.status(200).json({ success: true, data: await service.state(scope(req)) })),
   status: handle(async (req, res) => reply(res, await service.status(scope(req), req.params.onboardingId), true)),
   retry: handle(async (req, res) => reply(res, await service.retry(scope(req), req.params.onboardingId, req.body))),
 };
