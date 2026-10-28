@@ -1,6 +1,7 @@
 import MessageModel from '../models/message.model';
 import { parseStoredContactPhone, parseContactPhoneUpdate } from '../utils/importPhone';
 import planUsageService from './planUsage.service';
+import { assessContactImport, requireContactImportCapacity, ImportAccountScope } from './contactImportLimit.service';
 import { resolveImportColumn } from '../utils/importColumn';
 import { normalizeCountryCodes } from '../utils/countryCode';
 import ContactModel from '../models/contact.model';
@@ -18,7 +19,7 @@ import * as path from 'path';
 import { filter } from 'lodash';
 import db from '@surefy/database';
 import { parseContactCustomFields } from '../utils/contactCustomFields';
-import { reportBackgroundError } from '@surefy/utils/databaseErrors';
+import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import { contactImportStatus } from '../utils/contactImportStatus';
 import { contactListImportSummary } from '../utils/contactImportSummary';
 import { validate as isUUID } from 'uuid';
@@ -361,6 +362,10 @@ class ContactService {
       throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Invalid import column' });
     }
 
+    const parsed = await XLSXParserService.parseContactsFromFile(filePath, country_code,
+      options.phoneColumn, options.nameColumn, options.emailColumn);
+    requireContactImportCapacity(await assessContactImport({ userId, companyId, phoneNumberId: phone_number_id }, parsed.contacts));
+
     // Create import job record in database
     const importJob = await ImportJobModel.create({
       user_id: userId,
@@ -550,10 +555,12 @@ class ContactService {
   /**
    * Get file preview before import
    */
-  async getXLSXPreview(filePath: string, options: ImportPreviewOptions = {}) {
+  async getXLSXPreview(filePath: string, options: ImportPreviewOptions = {}, scope?: ImportAccountScope) {
     try {
-      return await XLSXParserService.getValidatedPreview(filePath, options);
+      return await XLSXParserService.getValidatedPreview(filePath, options,
+        scope ? parsed => assessContactImport(scope, parsed.contacts) : undefined);
     } catch (error) {
+      if ((error as { statusCode?: number }).statusCode || getDatabaseFailure(error)) throw error;
       throw new HTTP400Error({ message: error instanceof Error ? error.message : 'Unable to preview import file' });
     }
   }

@@ -53,6 +53,8 @@ interface CreateCampaignData {
   send_immediately?: boolean;   // frontend sends this flag
 }
 
+import { assertActivePhone } from '../utils/activePhone';
+
 class CampaignService {
   async previewRecipients(userId: string, companyId: string,
     data: Pick<CreateCampaignData, 'phone_number_id' | 'contact_filters' | 'country_code'>) {
@@ -74,6 +76,7 @@ class CampaignService {
     if (!phoneNumberId || phoneNumberId.user_id !== userId || phoneNumberId.company_id !== companyId) {
       throw new HTTP404Error({ message: 'Campaign cannot be created: the selected sending phone number is not connected to your user account.' });
     }
+    if (!preview) assertActivePhone(phoneNumberId);
     if (data.contact_filters?.list_ids) {
       const listIds = [...new Set(data.contact_filters.list_ids)];
       const lists = await ContactListModel.findSelectedForPhone(userId, companyId, phoneNumberId.id, listIds);
@@ -183,7 +186,7 @@ class CampaignService {
             previewNewContacts = newContacts.map(contact => ({ ...contact, id: null }));
           }
         } else {
-          await ContactModel.bulkCreate(newContacts);
+          await planUsageService.run(userId, 'Contact', trx => ContactModel.bulkCreate(newContacts, trx), newContacts.length);
         }
       }
     }

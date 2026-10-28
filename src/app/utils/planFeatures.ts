@@ -8,8 +8,40 @@ export interface FeatureLimit {
   reset_period?: ResetPeriod;
 }
 
+export interface PlanAddonSelection { addon_id: string; enabled: boolean }
+
+/** SQL/JSON null is reserved for historical unrestricted catalogs; API omission uses []. */
+export function snapshotPlanAddons(input: unknown): PlanAddonSelection[] | null {
+  if (typeof input === 'string') {
+    try { input = JSON.parse(input); } catch { throw new HTTP400Error({ message: 'Invalid saved plan add-ons' }); }
+  }
+  if (input == null) return null;
+  if (!Array.isArray(input) || input.length > 100) throw new HTTP400Error({ message: 'addons must be an array of at most 100 selections' });
+  const seen = new Set<string>();
+  return input.map(value => {
+    if (!value || typeof value !== 'object' || Array.isArray(value) ||
+        Object.keys(value).some(key => !['addon_id', 'enabled'].includes(key)) ||
+        typeof value.addon_id !== 'string' || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value.addon_id) ||
+        typeof value.enabled !== 'boolean' || seen.has(value.addon_id.toLowerCase())) throw new HTTP400Error({
+      message: 'Each add-on needs a unique addon_id UUID and boolean enabled; prices and units come from the superadmin catalog',
+    });
+    seen.add(value.addon_id.toLowerCase());
+    return { addon_id: value.addon_id.toLowerCase(), enabled: value.enabled };
+  });
+}
+
 // Keep the keys already used by resource services; labels can change independently.
 export const FEATURE_ALIASES: Record<string, string> = {
+  contacts: 'Contact',
+  campaigns: 'Campaign',
+  chatbot: 'Chatbot',
+  chatbots: 'Chatbot',
+  team_invites: 'TeamInvite',
+  team_members: 'TeamInvite',
+  ai_assistant: 'AiAssistant',
+  ai_assistants: 'AiAssistant',
+  waba_number: 'WabaNumber',
+  waba_numbers: 'WabaNumber',
   TeamMembers: 'TeamInvite',
   WABANumber: 'WabaNumber',
   AIAssistant: 'AiAssistant',

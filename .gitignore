@@ -11,6 +11,7 @@ coverage/
 .idea/
 docker-compose.yml
 deploy.yml
+tests
 
 # Runtime data belongs on persistent storage, never in a source checkout.
 uploads/

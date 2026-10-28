@@ -222,8 +222,8 @@ class ContactModel extends BaseModel {
       .increment('failed_count', 1);
   }
 
-  async bulkCreate(contacts: any[]) {
-    return this.query().insert(contacts.map(contact => ({
+  async bulkCreate(contacts: any[], trx?: Knex.Transaction) {
+    return (trx ? trx(this.tableName) : this.query()).insert(contacts.map(contact => ({
       ...contact, source: contact.source ?? 'manually', ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
     }))).returning('*');
   }

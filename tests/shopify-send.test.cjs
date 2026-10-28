@@ -26,7 +26,7 @@ function moduleWithMocks(file, deps, logs = []) {
         warn: (...v) => logs.push(v),
         error: (...v) => logs.push(v),
       },
-      require: (id) => deps[id] || {},
+      require: (id) => id.endsWith('/activePhone') ? require('./helpers/active-phone.cjs') : deps[id] || {},
     },
   );
   return exports.default;

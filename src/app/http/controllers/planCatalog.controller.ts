@@ -8,11 +8,15 @@ import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import db from '@surefy/database';
 import { ALLOWED_TRIAL_DAYS, DEFAULT_TRIAL_DAYS, freeTrialFeatures } from '../../utils/freeTrialPolicy';
+import { subscriptionPlanOptions } from '../../utils/subscriptionPlanNames';
+import companyAddons from '../../services/companyAddon.service';
 
 const actor = (req: JWTAuthRequest) => ({ userId: req.userId, companyId: req.companyId, userRole: req.userRole });
 export default {
+  planOptions: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
+    successResponse(req, res, 'Subscription plan options', subscriptionPlanOptions())),
   trialPolicy: tryCatchAsync(async (req: JWTAuthRequest, res: Response) => successResponse(req, res, 'Fixed free trial policy', {
-    billing_cycle: 'Free', price: 0, default_trial_days: DEFAULT_TRIAL_DAYS,
+    plan_name: 'Free', billing_cycle: 'Free', price: 0, default_trial_days: DEFAULT_TRIAL_DAYS,
     allowed_trial_days: ALLOWED_TRIAL_DAYS, features_locked: true, features: freeTrialFeatures(),
   })),
   features: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
@@ -22,13 +26,17 @@ export default {
     successResponse(req, res, 'Feature created', await catalog.createFeature(actor(req), req.body)),
   ),
   addons: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
-    successResponse(req, res, 'Available add-ons', await catalog.addons()),
+    successResponse(req, res, 'Available add-ons', await catalog.planAddons(actor(req), req.query.plan_id === undefined ? undefined : String(req.query.plan_id), req.query.include_inactive === 'true')),
   ),
   createAddon: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
-    successResponse(req, res, 'Add-on created', await catalog.createAddon(actor(req), req.body)),
+    successResponse(req, res, 'Add-on created', req.userRole === 'superadmin'
+      ? await catalog.createAddon(actor(req), req.body) : await companyAddons.create(actor(req), req.body)),
   ),
+  updateCompanyAddon: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
+    successResponse(req, res, 'Company add-on updated', await companyAddons.update(actor(req), req.params.id, req.body))),
   disableAddon: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
-    successResponse(req, res, 'Add-on disabled', await catalog.disableAddon(actor(req), req.params.id)),
+    successResponse(req, res, 'Add-on disabled', req.userRole === 'superadmin'
+      ? await catalog.disableAddon(actor(req), req.params.id) : await companyAddons.update(actor(req), req.params.id, { active: false })),
   ),
   purchase: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
     successResponse(

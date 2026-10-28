@@ -15,6 +15,7 @@ class HTTPError extends Error { constructor(data) { super(data.message); } }
 const duration = load('src/app/utils/subscriptionDuration.ts', () => HTTPError);
 const featureUtils = load('src/app/utils/planFeatures.ts', () => HTTPError);
 const trialPolicy = load('src/app/utils/freeTrialPolicy.ts', name => name.includes('planFeatures') ? featureUtils : name.includes('subscriptionDuration') ? duration : HTTPError);
+const planNames = load('src/app/utils/subscriptionPlanNames.ts', () => HTTPError);
 test('Free duration supports 3, 7 and 10 days and defaults legacy plans to 3', () => {
   for (const days of [3, 7, 10]) {
     assert.equal(duration.getPlanDurationDays({ billing_cycle: 'Free', trial_days: days }), days);
@@ -38,11 +39,12 @@ test('plan edits preserve duration, accept duration-only updates, and reject con
   const service = load('src/app/services/subscription.service.ts', name => {
     if (name.includes('subscriptionDuration')) return duration;
     if (name.includes('freeTrialPolicy')) return trialPolicy;
+    if (name.includes('subscriptionPlanNames')) return planNames;
     if (name.includes('subscription.model')) return model;
     if (name.includes('exceptions/')) return HTTPError;
     return {};
   }).default;
-  assert.equal((await service.updateSubscriptionPlan('plan', { plan_name: 'Renamed' })).trial_days, 7);
+  assert.equal((await service.updateSubscriptionPlan('plan', { plan_name: 'Free' })).trial_days, 7);
   assert.equal((await service.updateSubscriptionPlan('plan', { trial_days: 10 })).trial_days, 10);
   await assert.rejects(service.updateSubscriptionPlan('plan', { billing_cycle: 'Monthly' }), /cannot be converted/);
   await assert.rejects(service.updateSubscriptionPlan('plan', { trial_days: 5 }), /must be 3, 7, or 10/);

@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript');
-class HttpError extends Error { constructor({ message }) { super(message); } }
+class HttpError extends Error { constructor({ message, details }) { super(message); this.details = details; this.statusCode = 403; } }
 function load(file, deps = {}) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -34,13 +34,20 @@ function fixture() {
   };
   let failTable, tail = Promise.resolve();
   function connection(draft) {
-    return table => {
+    const trx = table => {
       const filters = []; let operation, payload, first = false, counting = false;
       const q = {
-        where(values) { filters.push(row => Object.entries(values).every(([k, v]) => row[k] === v)); return q; },
+        where(values) {
+          if (typeof values === 'function') {
+            const any = [], group = { whereNull(key) { any.push(row => row[key] == null); return group; },
+              orWhere(value) { any.push(row => Object.entries(value).every(([k, v]) => row[k] === v)); return group; } };
+            values(group); filters.push(row => any.some(matches => matches(row)));
+          } else filters.push(row => Object.entries(values).every(([k, v]) => row[k] === v));
+          return q;
+        },
         whereNull(key) { filters.push(row => row[key] == null); return q; },
         whereIn(key, values) { filters.push(row => values.includes(row[key])); return q; },
-        orderBy() { return q; }, forUpdate() { return q; }, forShare() { return q; },
+        orderBy() { return q; }, select() { return q; }, forUpdate() { return q; }, forShare() { return q; },
         first() { first = true; return q; }, count() { counting = true; return q; },
         update(value) { operation = 'update'; payload = value; return q; },
         insert(value) { operation = 'insert'; payload = value; return q; }, returning() { return q; },
@@ -48,13 +55,19 @@ function fixture() {
           if (operation && table === failTable) throw Error('Injected database failure');
           let rows = draft[table].filter(row => filters.every(f => f(row)));
           if (operation === 'insert') { rows = (Array.isArray(payload) ? payload : [payload]).map(row => ({ id: uuid(100 + draft[table].length), ...row })); draft[table].push(...rows); }
-          if (operation === 'update') rows.forEach(row => Object.assign(row, payload));
+          if (operation === 'update') rows.forEach(row => {
+            const values = { ...payload };
+            if (values.usage?.wabaCount !== undefined) values.usage = { ...(typeof row.usage === 'string' ? JSON.parse(row.usage) : row.usage), WabaNumber: values.usage.wabaCount };
+            Object.assign(row, values);
+          });
           if (counting) rows = [{ total: rows.length }];
           return first ? rows[0] : rows;
         }).then(resolve, reject); },
       };
       return q;
     };
+    trx.raw = (_sql, [count]) => ({ wabaCount: count });
+    return trx;
   }
   const db = table => connection(state)(table);
   db.transaction = callback => {
@@ -103,6 +116,59 @@ test('catalog makes usage follow billing and prevents capacity resets', async ()
   await assert.rejects(f.catalog.validateFeatures({ TeamInvite: { limit_value: 2, reset_period: 'monthly' } }, 'Monthly'), /capacity/);
   await assert.rejects(f.catalog.validateFeatures({ FutureFeature: { limit_value: 1 } }), /register it first/);
   await assert.rejects(f.catalog.createAddon(f.actor, {}), /Only superadmin/);
+});
+
+test('plan add-on selections reject client prices, duplicate IDs and malformed toggles', () => {
+  for (const input of [{}, [null], [{ addon_id: uuid(6), enabled: 'true' }],
+    [{ addon_id: uuid(6), enabled: true, price_paise: 1 }], [{ addon_id: uuid(6), enabled: true, units: 999 }],
+    [{ addon_id: uuid(6), enabled: true }, { addon_id: uuid(6).toUpperCase(), enabled: false }]]) {
+    assert.throws(() => utils.snapshotPlanAddons(input));
+  }
+  assert.equal(utils.snapshotPlanAddons(null), null);
+  assert.equal(utils.snapshotPlanAddons([]).length, 0);
+});
+
+test('plan validation enables only available finite paid features and preserves disabled selections', async () => {
+  const f = fixture(), selection = [{ addon_id: uuid(6), enabled: true }], finite = { TeamInvite: { limit_value: 2 } };
+  assert.equal((await f.catalog.validatePlanAddons(selection, finite, 'Monthly'))[0].enabled, true);
+  for (const [features, cycle] of [[finite, 'Free'], [{}, 'Monthly'],
+    [{ TeamInvite: { limit_value: null } }, 'Monthly'], [{ TeamInvite: { limit_value: 2, enabled: false } }, 'Monthly']]) {
+    await assert.rejects(f.catalog.validatePlanAddons(selection, features, cycle), /Cannot enable/);
+  }
+  await assert.rejects(f.catalog.validatePlanAddons([{ addon_id: uuid(99), enabled: false }], finite, 'Monthly'), /does not exist/);
+  for (const input of [null, '[]', {}]) await assert.rejects(f.catalog.validatePlanAddons(input, finite, 'Monthly'), /array/);
+  f.state().plan_addons[0].active = false;
+  await assert.rejects(f.catalog.validatePlanAddons(selection, finite, 'Monthly'), /Cannot enable/);
+  assert.equal((await f.catalog.validatePlanAddons([{ addon_id: uuid(6), enabled: false }], {}, 'Free'))[0].enabled, false);
+  assert.equal(f.state().companies[0].credit_balance, '1000.00'); assert.equal(f.state().user_plan_addons.length, 0);
+});
+
+test('plan add-on display returns stored switches and rejects foreign company plans', async () => {
+  const f = fixture();
+  f.state().subscription_plans = [{ id: uuid(40), company_id: uuid(3), billing_cycle: 'Monthly',
+    features: { TeamInvite: { limit_value: 2 } }, addons: [{ addon_id: uuid(6), enabled: true }] },
+    { id: uuid(41), company_id: uuid(99), billing_cycle: 'Monthly', features: {}, addons: [] }];
+  assert.equal((await f.catalog.planAddons(f.actor))[0].enabled, false);
+  assert.equal((await f.catalog.planAddons(f.actor, uuid(40)))[0].enabled, true);
+  await assert.rejects(f.catalog.planAddons(f.actor, uuid(41)), /not found in your company/);
+  f.state().subscription_plans[0].addons = [];
+  assert.equal((await f.catalog.planAddons(f.actor, uuid(40)))[0].enabled, false);
+  await assert.rejects(f.catalog.planAddons(f.actor, 'not-a-uuid'), /UUID/);
+});
+
+test('disabled or unselected assigned add-ons cannot debit wallets; enabled selections can be purchased', async () => {
+  for (const addons of [[], [{ addon_id: uuid(6), enabled: false }], [{ addon_id: uuid(99), enabled: true }]]) {
+    const f = fixture(); f.state().user_plans[0].addons = addons;
+    await assert.rejects(f.addons.purchase(f.actor, f.body, 'blocked'), /not enabled/);
+    assert.equal(f.state().companies[0].credit_balance, '1000.00'); assert.equal(f.state().user_plan_addons.length, 0);
+    assert.equal(f.state().credit_transactions.length, 0);
+  }
+  const f = fixture(); f.state().user_plans[0].addons = JSON.stringify([{ addon_id: uuid(6), enabled: true }]);
+  const purchase = await f.addons.purchase(f.actor, f.body, 'enabled'); assert.equal(purchase.units, 3);
+  f.state().user_plans[0].addons = [];
+  assert.equal((await f.addons.purchase(f.actor, f.body, 'enabled')).id, purchase.id, 'Retry keeps the historical receipt');
+  await assert.rejects(f.addons.purchase(f.actor, f.body, 'new-purchase'), /not enabled/);
+  assert.equal(f.state().user_plan_addons.length, 1);
 });
 
 test('wallet purchase increases 2 seats to 5, transfers money with matching ledger and expires with plan', async () => {
@@ -175,12 +241,12 @@ test('stored capacity survives renewal counters and excludes deleted contacts an
   for (const [key, table, softDelete] of [['Contact', 'contacts', true], ['WabaNumber', 'phone_numbers', true], ['Chatbot', 'chat_bot', false], ['AiAssistant', 'ai_assistants', false]]) {
     const f = fixture();
     f.state().user_plans[0].limits[key] = { limit: 1, enabled: true, reset_period: 'never' };
-    f.state()[table].push({ user_id: uuid(1) });
+    f.state()[table].push({ user_id: uuid(1), ...(key === 'WabaNumber' ? { active: true } : {}) });
     let called = false;
     await assert.rejects(f.limits.run(uuid(1), key, async () => { called = true; }), /limit reached/);
     assert.equal(called, false);
     if (softDelete) f.state()[table][0].deleted_at = new Date(); else f.state()[table].pop();
-    await f.limits.run(uuid(1), key, trx => trx(table).insert({ user_id: uuid(1) }));
+    await f.limits.run(uuid(1), key, trx => trx(table).insert({ user_id: uuid(1), ...(key === 'WabaNumber' ? { active: true } : {}) }));
     assert.equal(JSON.parse(f.state().user_plans[0].usage)[key], 1);
   }
 });
@@ -194,6 +260,44 @@ test('consuming a reset quota persists its period and cannot reset repeatedly', 
   assert.equal(JSON.parse(f.state().user_plans[0].usage).Campaign, 1);
   assert.ok(JSON.parse(f.state().user_plans[0].usage_periods).Campaign);
   await assert.rejects(f.limits.run(uuid(1), 'Campaign', async () => 'again'), /limit reached/);
+});
+
+test('concurrent WABA syncs share the last active slot while retaining all imported numbers', async () => {
+  const f = fixture();
+  f.state().user_plans[0].limits.WabaNumber = { limit: 1, enabled: true, reset_period: 'never' };
+  await Promise.all(['one', 'two'].map(id => f.limits.syncWabaNumbers(uuid(1), async (trx, capacity) => {
+    return trx('phone_numbers').insert({ id, user_id: uuid(1), active: capacity.remaining > 0 });
+  })));
+  assert.equal(f.state().phone_numbers.length, 2);
+  assert.equal(f.state().phone_numbers.filter(phone => phone.active).length, 1);
+  assert.equal(f.state().user_plans[0].usage.WabaNumber, 1);
+  await assert.rejects(f.limits.run(uuid(1), 'WabaNumber', async () => {}), /limit reached/);
+});
+
+test('WABA sync reconciles a downgrade without deleting inventory; disabled or absent plans still save inactive numbers', async () => {
+  for (const state of ['downgrade', 'disabled', 'expired', 'absent', 'unlimited']) {
+    const f = fixture(), plan = f.state().user_plans[0];
+    plan.limits.WabaNumber = { limit: state === 'unlimited' ? null : 2, enabled: state !== 'disabled' };
+    if (state === 'expired') plan.end_date = new Date(0);
+    if (state === 'absent') f.state().user_plans = [];
+    for (let i = 0; i < 3; i++) f.state().phone_numbers.push({ id: uuid(20 + i), user_id: uuid(1), active: true });
+    await f.limits.syncWabaNumbers(uuid(1), (trx, capacity) => trx('phone_numbers').insert({
+      id: uuid(24), user_id: uuid(1), active: capacity.remaining > 0,
+      inactive_reason: capacity.remaining > 0 ? null : capacity.inactiveReason,
+    }));
+    const expected = state === 'unlimited' ? 4 : state === 'downgrade' ? 2 : 0;
+    assert.equal(f.state().phone_numbers.length, 4);
+    assert.equal(f.state().phone_numbers.filter(phone => phone.active).length, expected, state);
+    if (state !== 'absent') assert.equal(f.state().user_plans[0].usage.WabaNumber, expected);
+  }
+});
+
+test('a failed sync rolls back any downgrade deactivation as well as new inventory', async () => {
+  const f = fixture(); f.state().user_plans[0].limits.WabaNumber = { limit: 0 };
+  f.state().phone_numbers.push({ id: uuid(20), user_id: uuid(1), active: true });
+  const before = structuredClone(f.state());
+  await assert.rejects(f.limits.syncWabaNumbers(uuid(1), async () => { throw Error('Meta inventory write failed'); }), /inventory write failed/);
+  assert.deepEqual(f.state(), before);
 });
 
 test('downgraded accounts can read their over-capacity usage and refresh without adding resources', async () => {

@@ -5,7 +5,7 @@ import edges from '../../models/chatBotEdge.model';
 
 export async function getRuntimeBot(phoneNumberId: string, chatbotId?: string, text?: string, defaultOnly = false): Promise<any> {
   const phone = await phones.findByPhoneNumberId(phoneNumberId);
-  if (!phone) {
+  if (!phone || phone.active === false || phone.connection_status && !['legacy', 'connected'].includes(phone.connection_status)) {
     console.warn('[Chatbot Routing] Receiving phone not found', { phoneNumberId });
     return null;
   }

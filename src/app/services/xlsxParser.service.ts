@@ -151,7 +151,8 @@ class XLSXParserService {
   }
 
   /** Validate the entire file with the worker's parser while retaining the raw sample. */
-  async getValidatedPreview(filePath: string, options: ImportPreviewOptions = {}) {
+  async getValidatedPreview(filePath: string, options: ImportPreviewOptions = {},
+    assess?: (parsed: ParseResult) => Promise<Record<string, any>>) {
     for (const key of ['phone_column', 'name_column', 'email_column', 'country_code'] as const) {
       if (options[key] !== undefined && typeof options[key] !== 'string') {
         throw new Error(`${key} must be a string`);
@@ -167,6 +168,7 @@ class XLSXParserService {
       needs_country: parsed.contacts.filter(contact => !contact.country_code),
       normalized_preview: parsed.contacts.slice(0, 5),
       errors: parsed.errors,
+      ...(assess ? { subscription: await assess(parsed) } : {}),
     };
   }
 

@@ -3,10 +3,20 @@ import { Router } from 'express';
 import { jwtAuthMiddleware } from '@surefy/middleware/jwtAuth.middleware';
 import controller from '../app/http/controllers/superAdmin.controller';
 import userPlans from '../app/http/controllers/superAdminUserPlan.controller';
+import pricing from '../app/http/controllers/platformPricing.controller';
+import catalog from '../app/http/controllers/planCatalog.controller';
 
 const SuperAdminRoute = Router();
 // Every route checks the actor's live database role. API keys cannot enter this group.
 SuperAdminRoute.use(jwtAuthMiddleware, controller.authorize);
+SuperAdminRoute.get('/billing/platform-fees', pricing.get);
+SuperAdminRoute.put('/billing/platform-fees', pricing.update);
+SuperAdminRoute.get('/billing/features', catalog.features);
+SuperAdminRoute.post('/billing/features', catalog.createFeature);
+SuperAdminRoute.get('/billing/addons', pricing.allAddons);
+SuperAdminRoute.post('/billing/addons', catalog.createAddon);
+SuperAdminRoute.patch('/billing/addons/:id', pricing.updateAddon);
+SuperAdminRoute.delete('/billing/addons/:id', catalog.disableAddon);
 SuperAdminRoute.get('/available-plans', userPlans.availableForCompany);
 SuperAdminRoute.get('/overview', controller.overview);
 SuperAdminRoute.get('/companies', controller.companies);

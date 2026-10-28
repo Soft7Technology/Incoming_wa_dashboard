@@ -10,7 +10,11 @@ class PhoneNumberModel extends BaseModel {
 
   async create(data: any, trx?: Knex.Transaction) {
     if (trx) return super.create(data, trx);
-    return planUsage.run(data.user_id, 'WabaNumber', transaction => super.create(data, transaction));
+    return planUsage.syncWabaNumbers(data.user_id, (transaction, capacity) => {
+      const active = data.active !== false && data.status !== 'inactive' && capacity.remaining > 0;
+      return super.create({ ...data, active, inactive_reason: active ? null :
+        data.active === false || data.status === 'inactive' ? 'MANUALLY_DISABLED' : capacity.inactiveReason }, transaction);
+    });
   }
 
   async findByCompanyId(companyId: string) {
@@ -44,7 +48,7 @@ class PhoneNumberModel extends BaseModel {
     if (!identifiers.length) return [];
     const ids = [...new Set(identifiers)];
     const uuidIds = ids.filter(uuidValidate);
-    return this.query().select('id', 'phone_number_id')
+    return this.query().select('id', 'phone_number_id', 'active', 'connection_status')
       .where({ user_id: userId, company_id: companyId }).whereNull('deleted_at')
       .andWhere(query => {
         query.whereIn('phone_number_id', ids);

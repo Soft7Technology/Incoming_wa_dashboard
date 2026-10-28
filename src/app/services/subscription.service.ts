@@ -17,6 +17,7 @@ import planCatalog from './planCatalog.service';
 import { CatalogActor } from './planCatalog.service';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import { fixedTrialFeatures, newTrialDays } from '../utils/freeTrialPolicy';
+import { validateSubscriptionPlanName } from '../utils/subscriptionPlanNames';
 
 function planAccess(plan: any, actor?: CatalogActor) {
   if (actor && (actor.userRole !== 'superadmin' &&
@@ -26,7 +27,7 @@ function planAccess(plan: any, actor?: CatalogActor) {
 }
 
 function validatePlanFields(data: Partial<subscriptionPlans>) {
-  if (data.plan_name !== undefined && (typeof data.plan_name !== 'string' || !data.plan_name.trim() || data.plan_name.length > 100)) throw new HTTP400Error({ message: 'plan_name must contain 1 to 100 characters' });
+  if (data.plan_name !== undefined) validateSubscriptionPlanName(data.plan_name);
   if (data.price !== undefined && (typeof data.price !== 'number' || !Number.isFinite(data.price) || data.price < 0 || data.price > 1000000 || Math.abs(data.price * 100 - Math.round(data.price * 100)) > 0.000001)) throw new HTTP400Error({ message: 'price must be a non-negative amount with at most two decimal places' });
   if (data.active !== undefined && typeof data.active !== 'boolean') throw new HTTP400Error({ message: 'active must be boolean' });
   if (data.description !== undefined && typeof data.description !== 'string') throw new HTTP400Error({ message: 'description must be a string' });
@@ -124,6 +125,7 @@ class subscriptionService {
     data = { ...data, trial_days: data.billing_cycle === 'Free' ? newTrialDays(data.trial_days) : resolveTrialDays(data.billing_cycle, data.trial_days),
       features: data.billing_cycle === 'Free' ? fixedTrialFeatures(data.features) : await planCatalog.validateFeatures(data.features, data.billing_cycle),
       marketing_features: (data.marketing_features ?? []).map(value => value.trim()) };
+    data.addons = await planCatalog.validatePlanAddons(data.addons, data.features, data.billing_cycle, userRole === 'superadmin' ? undefined : companyId);
     console.log('Creating subscription plan with data:', data, 'role:', userRole);
 
     console.log("Subscription Price",data.price)
@@ -206,6 +208,12 @@ class subscriptionService {
     if (existing.billing_cycle === 'Free' && data.billing_cycle !== undefined && data.billing_cycle !== 'Free') {
       throw new HTTP403Error({ message: 'A Free trial plan cannot be converted to a paid plan; create a separate paid plan' });
     }
+    const features = billingCycle === 'Free' ? fixedTrialFeatures(data.features) : data.features !== undefined
+      ? await planCatalog.validateFeatures(data.features, billingCycle) : data.billing_cycle !== undefined && existing.features !== undefined
+        ? await planCatalog.validateFeatures(typeof existing.features === 'string' ? JSON.parse(existing.features) : existing.features, billingCycle) : undefined;
+    const selected = data.addons !== undefined ? data.addons : typeof existing.addons === 'string' ? JSON.parse(existing.addons) : existing.addons;
+    const addons = data.addons !== undefined || (features !== undefined && selected != null)
+      ? await planCatalog.validatePlanAddons(selected, features ?? existing.features, billingCycle, existing.company_id) : undefined;
     const updatedSubscriptionPlan = await subscriptionModel.update(id, {
       plan_name: data.plan_name,
       price: data.price,
@@ -215,9 +223,8 @@ class subscriptionService {
       active: data.active,
       // BaseModel.update passes arrays to pg as SQL arrays; serialize this JSONB field explicitly.
       marketing_features: data.marketing_features === undefined ? undefined : JSON.stringify(data.marketing_features.map(value => value.trim())),
-      features: billingCycle === 'Free' ? fixedTrialFeatures(data.features) : data.features !== undefined ? await planCatalog.validateFeatures(data.features, billingCycle)
-        : data.billing_cycle !== undefined && existing.features !== undefined
-          ? await planCatalog.validateFeatures(typeof existing.features === 'string' ? JSON.parse(existing.features) : existing.features, billingCycle) : undefined,
+      features,
+      addons: addons === undefined ? undefined : JSON.stringify(addons),
     });
     return updatedSubscriptionPlan;
   }

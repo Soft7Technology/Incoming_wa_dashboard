@@ -2,17 +2,21 @@ import { Router } from 'express';
 import SubscriptionController from '@surefy/console/http/controllers/subscription.controller';
 import subscriptionController from '@surefy/console/http/controllers/subscription.controller';
 import planCatalog from '../app/http/controllers/planCatalog.controller';
+import pricing from '../app/http/controllers/platformPricing.controller';
 
 // companyRoute.post('/user/:planId/activate-plan', CompanyController.subscribePlan);
 // companyRoute.get('/user/plan/:userId', companyController.getUserPlan)
 
 const SubscriptionRoute = Router();
+SubscriptionRoute.get('/plan-options', planCatalog.planOptions);
+SubscriptionRoute.get('/charges', pricing.charges);
 SubscriptionRoute.get('/trial-policy', planCatalog.trialPolicy);
 
 SubscriptionRoute.get('/features', planCatalog.features);
 SubscriptionRoute.post('/features', planCatalog.createFeature);
 SubscriptionRoute.get('/addons', planCatalog.addons);
 SubscriptionRoute.post('/addons', planCatalog.createAddon);
+SubscriptionRoute.patch('/addons/:id', planCatalog.updateCompanyAddon);
 SubscriptionRoute.delete('/addons/:id', planCatalog.disableAddon);
 SubscriptionRoute.post('/addon-purchases', planCatalog.purchase);
 SubscriptionRoute.get('/entitlements', planCatalog.entitlements);

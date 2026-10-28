@@ -2,7 +2,8 @@ import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { calculatePlanPeriod } from '../utils/subscriptionDuration';
 import { countTeamSeats } from './planUsage.service';
-import { snapshotFeatures } from '../utils/planFeatures';
+import { snapshotFeatures, snapshotPlanAddons } from '../utils/planFeatures';
+import platformPricing, { quotedPlatformFee } from './platformPricing.service';
 
 export function subscriptionPricePaise(price: unknown): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(price));
@@ -31,7 +32,8 @@ class PaymentPlanService {
     const balance = typeof rawBalance === 'number' ||
       (typeof rawBalance === 'string' && /^\d+(?:\.\d+)?$/.test(rawBalance.trim()))
       ? Number(rawBalance) : NaN;
-    const requiredBalance = plan.billing_cycle === 'Yearly' ? 1000 : 100;
+    const feePaise = await platformPricing.feeFor(plan.billing_cycle, trx);
+    const requiredBalance = feePaise / 100;
     if (!Number.isFinite(balance) || balance < requiredBalance) {
       throw new HTTP400Error({
         message: `Insufficient or invalid company credit balance. ${plan.billing_cycle} subscription orders require at least INR ${requiredBalance}.`,
@@ -43,6 +45,7 @@ class PaymentPlanService {
     const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features;
     if (!features || typeof features !== 'object' || Array.isArray(features)) throw new HTTP400Error({ message: 'Invalid plan features' });
     const { limits, usage } = snapshotFeatures(features);
+    const addons = snapshotPlanAddons(plan.addons);
     const now = new Date();
     const period = calculatePlanPeriod(plan, now);
     // Snapshot the purchased price/limits. Later catalogue edits must not change this purchase.
@@ -50,7 +53,9 @@ class PaymentPlanService {
       user_id: userId, company_id: companyId, subscription_id: plan.id,
       plan_name: plan.plan_name, price: plan.price, billing_cycle: plan.billing_cycle,
       active: false, status: 'pending', start_date: now, end_date: period.endDate,
+      addons: addons === null ? null : JSON.stringify(addons),
       duration_days: period.durationDays, limits: JSON.stringify(limits), usage: JSON.stringify(usage), entitlement_version: 2,
+      platform_fee_paise: feePaise,
     }).returning('*');
     return { userPlanId: pending.id, amount };
   }
@@ -61,15 +66,16 @@ class PaymentPlanService {
     if (!pending || subscriptionPricePaise(pending.price) !== order.amount_paise) {
       throw new HTTP400Error({ message: 'Purchased plan does not match the paid order' });
     }
-    const fee = pending.billing_cycle === 'Monthly' ? 100 : pending.billing_cycle === 'Yearly' ? 1000 : 0;
-    if (!fee) throw new HTTP400Error({ message: 'Unsupported paid subscription billing cycle' });
-    const recipient = await trx('users').where({ role: 'superadmin' }).whereNull('deleted_at').orderBy('id').first();
-    if (!recipient) throw new HTTP400Error({ message: 'Platform fee recipient is not configured' });
+    const feePaise = quotedPlatformFee(pending);
+    const fee = feePaise / 100;
+    const recipient = fee > 0
+      ? await trx('users').where({ role: 'superadmin' }).whereNull('deleted_at').orderBy('id').first() : null;
+    if (fee > 0 && !recipient) throw new HTTP400Error({ message: 'Platform fee recipient is not configured' });
     // Match manual assignment: lock user wallets in stable order before plan/company rows.
-    const users = await trx('users').whereIn('id', [pending.user_id, recipient.id]).orderBy('id').forUpdate();
+    const users = await trx('users').whereIn('id', recipient ? [pending.user_id, recipient.id] : [pending.user_id]).orderBy('id').forUpdate();
     const user = users.find(row => row.id === pending.user_id && row.company_id === order.company_id && !row.deleted_at);
-    const platform = users.find(row => row.id === recipient.id && row.role === 'superadmin' && !row.deleted_at);
-    if (!platform) throw new HTTP400Error({ message: 'Platform fee recipient is unavailable' });
+    const platform = users.find(row => row.id === recipient?.id && row.role === 'superadmin' && !row.deleted_at);
+    if (fee > 0 && !platform) throw new HTTP400Error({ message: 'Platform fee recipient is unavailable' });
     if (!user) throw new HTTP400Error({ message: 'Purchased plan recipient is unavailable' });
     const active = await trx('user_plans').where({ user_id: user.id, active: true }).forUpdate();
     if (active.length > 1) throw new HTTP400Error({ message: 'Multiple active plans require reconciliation' });
@@ -84,22 +90,24 @@ class PaymentPlanService {
     const parseBalance = (value: unknown) => typeof value === 'number' ||
       (typeof value === 'string' && /^\d+(?:\.\d+)?$/.test(value.trim())) ? Number(value) : NaN;
     const before = parseBalance(company?.credit_balance);
-    const recipientBefore = parseBalance(platform.credit_balance ?? 0);
+    const recipientBefore = parseBalance(platform?.credit_balance ?? 0);
     if (!Number.isFinite(before) || before < fee || !Number.isFinite(recipientBefore) || recipientBefore < 0) {
       throw new HTTP400Error({ message: `Cannot activate paid plan: company/platform wallet balance is invalid or insufficient. Required INR ${fee}. Top up and verify the same order again; do not pay again.` });
     }
     const after = Math.round((before - fee) * 100) / 100;
     const recipientAfter = Math.round((recipientBefore + fee) * 100) / 100;
-    await trx('companies').where({ id: order.company_id }).update({ credit_balance: after });
-    await trx('users').where({ id: platform.id }).update({ credit_balance: recipientAfter });
-    await trx('credit_transactions').insert([
-      { company_id: order.company_id, user_id: user.id, type: 'debit', amount: -fee,
-        balance_before: before, balance_after: after, created_by: order.user_id,
-        reference_type: 'subscription_commission', description: `Platform fee for ${pending.plan_name}; payment order ${order.id}` },
-      { company_id: platform.company_id, user_id: platform.id, type: 'credit', amount: fee,
-        balance_before: recipientBefore, balance_after: recipientAfter, created_by: order.user_id,
-        reference_type: 'subscription_commission', description: `Platform fee from company ${order.company_id}; payment order ${order.id}` },
-    ]);
+    if (fee > 0) {
+      await trx('companies').where({ id: order.company_id }).update({ credit_balance: after });
+      await trx('users').where({ id: platform!.id }).update({ credit_balance: recipientAfter });
+      await trx('credit_transactions').insert([
+        { company_id: order.company_id, user_id: user.id, type: 'debit', amount: -fee,
+          balance_before: before, balance_after: after, created_by: order.user_id,
+          reference_type: 'subscription_commission', description: `Platform fee for ${pending.plan_name}; payment order ${order.id}` },
+        { company_id: platform!.company_id, user_id: platform!.id, type: 'credit', amount: fee,
+          balance_before: recipientBefore, balance_after: recipientAfter, created_by: order.user_id,
+          reference_type: 'subscription_commission', description: `Platform fee from company ${order.company_id}; payment order ${order.id}` },
+      ]);
+    }
     if (active[0]) await trx('user_plans').where({ id: active[0].id }).update({
       active: false, status: new Date(active[0].end_date) > now ? 'CANCELLED' : 'EXPIRED',
     });
