@@ -702,6 +702,16 @@ export class FacebookMessengerService {
       });
     }
     await this.database('facebook_content_oauth').where({ facebook_user_id: facebookUserId }).delete();
+    // Ads credentials are user tokens. Remove them, their pending login flows,
+    // and local campaign action records for signed revocation/deletion requests.
+    const adsConnections = await this.database('facebook_ads_connections').where({ facebook_user_id: facebookUserId });
+    for (const connection of adsConnections) {
+      await this.database.transaction(async trx => {
+        await trx.raw('SELECT pg_advisory_xact_lock(hashtext(?))', [`facebook-ads:${connection.company_id}:${connection.owner_id}`]);
+        await trx('facebook_ads_oauth').where({ company_id: connection.company_id, owner_id: connection.owner_id }).delete();
+        await trx('facebook_ads_connections').where({ id: connection.id, facebook_user_id: facebookUserId }).delete();
+      });
+    }
     if (!erase) return null;
     const confirmation = random();
     await this.database('facebook_deletion_requests').insert({

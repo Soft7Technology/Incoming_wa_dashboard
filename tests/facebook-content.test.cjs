@@ -137,6 +137,7 @@ async function httpFixture(context, run) {
     '../../utils/facebook': utils, './facebookMessenger.controller': messenger,
   });
   const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookContent.controller': controller,
+    '../app/http/controllers/facebookAds.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback','verify','receive','deauthorize','deletion','publishingMedia'].map(key => [key, (_req,res) => res.sendStatus(400)])) },
     './facebookLoginTest.route': express.Router(), './facebookReviewLogin.route': express.Router() };

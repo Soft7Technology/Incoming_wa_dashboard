@@ -27,6 +27,7 @@ const phoneLibrary = require('libphonenumber-js');
 const utils = load('src/app/utils/automationFlow.ts', { ...errors, 'libphonenumber-js': {
   parsePhoneNumberFromString: (value, options) => phoneLibrary.parsePhoneNumberFromString(value, { ...options }),
 } });
+const automationTemplates = load('src/app/utils/automationTemplate.ts', { './automationFlow': utils });
 const signingSecret = 'isolated-webhook-signing-secret-1234';
 const key = Buffer.alloc(32, 8).toString('base64');
 const es = value => ({ __esModule: true, default: value });
@@ -186,7 +187,7 @@ test('separate automation flows: PostgreSQL, authenticated HTTP, signed receipts
       subscribe: async (_shop, _token, topic, uri) => { subscriptionCalls.create++; const row = { id: 'gid://shopify/WebhookSubscription/' + crypto.randomUUID(), topic, uri }; subscriptions.push(row); return row; },
       unsubscribe: async (_shop, _token, id) => { subscriptionCalls.remove++; const index = subscriptions.findIndex(s => s.id === id); if (index >= 0) subscriptions.splice(index, 1); },
     });
-    const { AutomationFlowService } = load('src/app/services/automationFlow.service.ts', { '@surefy/database': db, '../utils/automationFlow': utils, '../utils/shopify': shopifyUtils });
+    const { AutomationFlowService } = load('src/app/services/automationFlow.service.ts', { '@surefy/database': db, '../utils/automationFlow': utils, '../utils/automationTemplate': automationTemplates, '../utils/shopify': shopifyUtils });
     const service = new AutomationFlowService(db, webhookProvider);
     const helpers = { tryCatchAsync: fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next), successResponse: (_req, res, message, data, status = 200) => res.status(status).json({ success: true, message, data }) };
     const controller = load('src/app/http/controllers/automationFlow.controller.ts', { '@surefy/utils/Controller': helpers, '../../services/automationFlow.service': es(service) });
@@ -228,7 +229,7 @@ test('separate automation flows: PostgreSQL, authenticated HTTP, signed receipts
       assert.equal((await api('member', '', { name: 'Impersonation' })).status, 403);
       assert.equal((await api('peer', '/' + flow.id)).status, 404);
       assert.equal((await api('outsider', '/' + flow.id)).status, 404);
-      assert.equal((await api('owner', '/apps')).data.length, 3);
+      assert.equal((await api('owner', '/apps')).data.length, 4);
       assert.equal(JSON.stringify(await api('owner', '/connections')).includes('private-shopify-token'), false);
     });
 

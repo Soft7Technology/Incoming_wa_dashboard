@@ -5,11 +5,12 @@
   "main": "index.js",
   "scripts": {
     "test:support": "node --test tests/support-live.test.cjs",
-    "test:automation": "node --test tests/automation-flows.test.cjs",
+    "test:automation": "node --test tests/automation-*.test.cjs",
     "start:automation-worker": "node dist/src/scripts/automationWorker.js",
     "dev:automation-worker": "node -r dotenv/config -r ts-node/register/transpile-only -r tsconfig-paths/register src/scripts/automationWorker.ts",
     "facebook:login": "node scripts/facebook-login-test.cjs",
     "facebook:leads:check": "node scripts/facebook-leads-check.cjs",
+    "facebook:ads:review": "node scripts/facebook-ads-review.cjs",
     "build": "rimraf dist && tsc && tsc-alias && node scripts/copy-facebook-assets.cjs",
     "test:facebook": "node --test tests/facebook-*.test.cjs",
     "test:google-sheets": "node --test tests/google-sheets*.test.cjs",

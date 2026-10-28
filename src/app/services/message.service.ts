@@ -230,7 +230,7 @@ class MessageService {
       };
     }
 
-    if ((data.campaign_id || data.shopify_job_id) && await contactOptOut.isBlocked(phoneNumber, metaPayload.to)) {
+    if ((data.campaign_id || data.shopify_job_id || resolved?.source === 'automation') && await contactOptOut.isBlocked(phoneNumber, metaPayload.to)) {
       const error: any = new Error('Contact opted out of campaign messages');
       error.code = 'CONTACT_OPTED_OUT';
       throw error;
@@ -753,8 +753,10 @@ class MessageService {
 
       await publishSocketEvent('new_message', {
         id: message.id,
-        contactId: message.user_id,
+        contactId: contact.id,
         userId: String(phoneNumber.user_id),
+        companyId: String(phoneNumber.company_id),
+        phoneNumberId: String(phoneNumber.id),
         text: extractedText,
         direction: 'incoming',
         sentBy: 'customer',

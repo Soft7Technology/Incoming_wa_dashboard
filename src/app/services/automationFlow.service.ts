@@ -2,8 +2,9 @@ import { randomUUID } from 'crypto';
 import { Knex } from 'knex';
 import db from '@surefy/database';
 import { subjectHashes } from '../utils/shopify';
-import { FlowScope, action, actions, decrypt, encrypt, fail, hash, object, publicOrigin, randomToken, shopifyContact, text, triggers, uuid, validateParameters, verifySignature } from '../utils/automationFlow';
+import { FlowScope, action, actions, decrypt, encrypt, fail, hash, object, publicOrigin, queuedStatus, randomToken, resolveAvailableParameters, shopifyContact, text, triggers, uuid, validateParameters, validateStepMappings, verifySignature } from '../utils/automationFlow';
 import type { ShopifyService } from './shopify.service';
+import { automationTemplateFields } from '../utils/automationTemplate';
 
 type Connection = Knex | Knex.Transaction;
 const where = (scope: FlowScope) => ({ user_id: scope.userId!, company_id: scope.companyId! });
@@ -51,7 +52,7 @@ export class AutomationFlowService {
       if (!['trigger', 'action'].includes(value.type) || (value.type === 'trigger' && index !== 0)) fail(400, 'A trigger must be the first and only trigger; all other steps must be actions');
       const appKey = value.appKey ?? null, key = value.key ?? null, parameters = value.parameters === undefined ? {} : object(value.parameters);
       if (Buffer.byteLength(JSON.stringify(parameters)) > 128 * 1024) fail(413, 'Step parameters exceed 128 KB');
-      if (appKey !== null && !['shopify', 'razorpay', 'google-sheets'].includes(appKey)) fail(400, 'Unsupported integration appKey');
+      if (appKey !== null && !['shopify', 'razorpay', 'google-sheets', 'whatsapp'].includes(appKey)) fail(400, 'Unsupported integration appKey');
       if (key !== null && typeof key !== 'string') fail(400, 'key must be a string or null');
       const connectionId = value.connectionId == null ? null : uuid(value.connectionId, 'connectionId');
       let definition: any, complete = !!(appKey && key && connectionId);
@@ -73,7 +74,7 @@ export class AutomationFlowService {
   }
   async catalog(scope: FlowScope) {
     await this.actor(scope);
-    return ['shopify', 'google-sheets', 'razorpay'].map(appKey => ({ appKey, triggers: triggers.filter(t => t.appKey === appKey), actions: actions.filter(a => a.appKey === appKey), connection_api: appKey === 'shopify' ? '/v1/admin/shopify/oauth/start' : appKey === 'google-sheets' ? '/v1/admin/google-sheets/oauth/start' : '/v1/admin/flows/connections', ...(appKey === 'shopify' ? { credential_connection_api: '/v1/admin/flows/connections' } : {}), automatic_webhook_setup: appKey === 'shopify' }));
+    return ['shopify', 'google-sheets', 'razorpay', 'whatsapp'].map(appKey => ({ appKey, ...(appKey === 'whatsapp' ? { name: 'WhatsApp', templates_api: '/v1/admin/flows/connections/:connectionId/templates' } : {}), triggers: triggers.filter(t => t.appKey === appKey), actions: actions.filter(a => a.appKey === appKey), connection_api: appKey === 'whatsapp' ? null : appKey === 'shopify' ? '/v1/admin/shopify/oauth/start' : appKey === 'google-sheets' ? '/v1/admin/google-sheets/oauth/start' : '/v1/admin/flows/connections', ...(appKey === 'shopify' ? { credential_connection_api: '/v1/admin/flows/connections' } : {}), automatic_webhook_setup: appKey === 'shopify' }));
   }
   async create(scope: FlowScope, input: unknown) {
     const body = object(input); await this.actor(scope);
@@ -137,6 +138,13 @@ export class AutomationFlowService {
     });
   }
   async connectionFor(scope: FlowScope, appKey: string, id: string, database: Connection = this.database) {
+    if (appKey === 'whatsapp') {
+      // The sender number is the connection: an active, non-deleted number owned by this account.
+      if (!await database.schema.hasTable('phone_numbers')) fail(409, 'Set up a WhatsApp number first');
+      const phone = await database('phone_numbers').where({ id: uuid(id, 'connectionId'), company_id: scope.companyId, user_id: scope.userId, status: 'active' }).whereNull('deleted_at').first();
+      if (!phone) fail(404, 'Select an active WhatsApp number from your account');
+      return phone;
+    }
     const table = appKey === 'shopify' ? 'shopify_connections' : appKey === 'google-sheets' ? 'google_sheet_connections' : 'automation_connections';
     if (!await database.schema.hasTable(table)) fail(409, `Set up the ${appKey} integration first`);
     const row = await database(table).where({ id: uuid(id, 'connectionId'), company_id: scope.companyId, [appKey === 'razorpay' ? 'user_id' : 'owner_id']: scope.userId }).first();
@@ -156,7 +164,30 @@ export class AutomationFlowService {
         ...(appKey === 'shopify' ? { authentication: app ? 'client_credentials' : 'oauth', ...(app ? { client_id: app.client_id, credentials_configured: true } : {}) } : {}),
       }; }));
     }
+    const phones = !await this.database.schema.hasTable('phone_numbers') ? [] : await this.database('phone_numbers').where({ company_id: scope.companyId, user_id: scope.userId }).whereNull('deleted_at')
+      .select('id', 'display_phone_number', 'verified_name', 'status', 'waba_id', 'created_at');
+    items.push(...phones.map(row => ({
+      id: row.id, _id: row.id, appKey: 'whatsapp', waba_id: row.waba_id, display_phone_number: row.display_phone_number, created_at: row.created_at,
+      name: [row.verified_name, row.display_phone_number].filter(Boolean).join(' · ') || 'WhatsApp number',
+      status: row.status === 'active' ? 'connected' : row.status || 'inactive',
+    })));
     return items;
+  }
+  async templates(scope: FlowScope, connectionId: string) {
+    await this.actor(scope);
+    const phone = await this.connectionFor(scope, 'whatsapp', connectionId);
+    const rows = await this.database('templates').where({ company_id: scope.companyId, waba_id: phone.waba_id, status: 'APPROVED' })
+      .whereNull('deleted_at').select('id', 'name', 'language', 'category', 'components').orderBy('name').orderBy('id');
+    return rows.map(template => {
+      const item = { ...template, _id: template.id };
+      try {
+        const fields = automationTemplateFields(template);
+        return { ...item, supported: true, required_variables: fields.map(field => field.key), variable_fields: fields };
+      } catch (error: any) {
+        if (error?.isOperational !== true) throw error;
+        return { ...item, supported: false, reason: error.message };
+      }
+    });
   }
   async createConnection(scope: FlowScope, input: unknown) {
     await this.actor(scope); const body = object(input);
@@ -164,7 +195,7 @@ export class AutomationFlowService {
       const { appKey: _appKey, ...credentials } = body;
       return (await this.shopifyProvider()).connectClientCredentials({ companyId: scope.companyId!, ownerId: scope.userId!, userId: scope.userId! }, credentials);
     }
-    if (body.appKey !== 'razorpay') fail(400, 'Use appKey shopify or razorpay; Google Sheets uses its OAuth connection API');
+    if (body.appKey !== 'razorpay') fail(400, 'Use appKey shopify or razorpay; Google Sheets uses OAuth and WhatsApp uses an existing sending number');
     if (!['test', 'live'].includes(body.mode)) fail(400, 'mode must be test or live');
     const keyId = text(body.key_id, 'key_id', 255), keySecret = text(body.key_secret, 'key_secret', 1024);
     if (!keyId.startsWith(`rzp_${body.mode}_`)) fail(400, 'Razorpay key_id must match the selected mode');
@@ -240,10 +271,20 @@ export class AutomationFlowService {
   async validateReady(scope: FlowScope, flow: any, database: Connection = this.database) {
     if (flow.steps[0]?.type !== 'trigger') fail(400, 'Add and configure a trigger before running this flow');
     if (flow.steps.length < 2) fail(400, 'Add at least one action');
+    validateStepMappings(flow.steps);
     for (const [index, step] of flow.steps.entries()) {
       if (step.status !== 'complete') fail(400, `Complete step ${index + 1} before running this flow`);
-      await this.connectionFor(scope, step.appKey, step.connectionId, database);
+      const connection = await this.connectionFor(scope, step.appKey, step.connectionId, database);
       if (index) validateParameters(action(step.appKey, step.key), step.parameters, true);
+      if (index && step.appKey === 'whatsapp' && step.key === 'sendTemplate' && !/\{\{/.test(step.parameters.template_id)) {
+        const template = await database('templates').where({ id: uuid(step.parameters.template_id, 'template_id'), company_id: scope.companyId, waba_id: connection.waba_id, status: 'APPROVED' }).whereNull('deleted_at').first();
+        if (!template) fail(400, 'Select an approved template that belongs to this WhatsApp number');
+        const fields = automationTemplateFields(template), variables = step.parameters.variables ?? {};
+        if (typeof variables !== 'string') {
+          for (const field of fields) if (!Object.prototype.hasOwnProperty.call(variables, field.key) || !String(variables[field.key]).trim()) fail(400, `Provide variables["${field.key}"] before running this flow`);
+          if (Object.keys(variables).some(key => !fields.some(field => field.key === key))) fail(400, 'Unknown template variable');
+        }
+      }
     }
   }
   async status(scope: FlowScope, id: unknown, input: unknown) {
@@ -261,12 +302,12 @@ export class AutomationFlowService {
     return this.database.transaction(async tx => {
       const flow = await this.owned(scope, id, tx, true);
       await tx('automation_flows').where({ id: flow.id }).update({ deleted_at: tx.fn.now(), status: 'inactive', updated_at: tx.fn.now() });
-      await tx('automation_runs').where({ flow_id: flow.id, status: 'queued' }).update({ status: 'cancelled', finished_at: tx.fn.now() });
+      await tx('automation_runs').where({ flow_id: flow.id }).whereIn('status', ['queued', queuedStatus()]).update({ status: 'cancelled', finished_at: tx.fn.now() });
       return { id: flow.id, deleted: true };
     });
   }
   private async queueRun(flow: any, eventId: string, requestId: string, kind: string, tx: Connection) {
-    const [row] = await tx('automation_runs').insert({ id: randomUUID(), flow_id: flow.id, event_id: eventId, request_id: requestId, kind, revision: flow.revision, definition: JSON.stringify(flow.steps) }).onConflict(['flow_id', 'request_id']).ignore().returning('*');
+    const [row] = await tx('automation_runs').insert({ id: randomUUID(), flow_id: flow.id, event_id: eventId, request_id: requestId, kind, revision: flow.revision, status: queuedStatus(), definition: JSON.stringify(flow.steps) }).onConflict(['flow_id', 'request_id']).ignore().returning('*');
     if (row) return this.publicRun(row);
     const existing = await tx('automation_runs').where({ flow_id: flow.id, request_id: requestId }).first();
     if (existing.event_id !== eventId || existing.kind !== kind) fail(409, 'request_id is already used for a different run');
@@ -316,15 +357,18 @@ export class AutomationFlowService {
     return query.select('id', 'flow_id', 'topic', 'source_event_id', 'received_at').orderBy('received_at', 'desc').orderBy('id').limit(50);
   }
   publicRun(row: any, detail = false) {
-    return { id: row.id, flow_id: row.flow_id, event_id: row.event_id, request_id: row.request_id, kind: row.kind, revision: row.revision, status: row.status, error: row.error, created_at: row.created_at, started_at: row.started_at, finished_at: row.finished_at, ...(detail ? { steps: row.results_ciphertext ? decrypt(row.results_ciphertext, `run:${row.id}`) : [] } : {}) };
+    return { id: row.id, flow_id: row.flow_id, event_id: row.event_id, request_id: row.request_id, kind: row.kind, revision: row.revision, status: String(row.status).startsWith('queued:') ? 'queued' : row.status, error: row.error, created_at: row.created_at, started_at: row.started_at, finished_at: row.finished_at, ...(detail ? { steps: row.results_ciphertext ? decrypt(row.results_ciphertext, `run:${row.id}`) : [] } : {}) };
   }
   async testRun(scope: FlowScope, id: unknown, input: unknown) {
     const body = object(input), eventId = uuid(body.event_id, 'event_id'), requestId = uuid(body.request_id, 'request_id');
     return this.database.transaction(async tx => {
       const flow = await this.owned(scope, id, tx, true); await this.validateReady(scope, flow, tx);
-      const event = await tx('automation_events').where({ id: eventId, flow_id: flow.id }).where('expires_at', '>', new Date()).first('id', 'topic');
+      const event = await tx('automation_events').where({ id: eventId, flow_id: flow.id }).where('expires_at', '>', new Date()).first('id', 'topic', 'app_key', 'payload_ciphertext');
       if (!event) fail(404, 'Choose a captured event from this flow');
       if (event.topic !== triggers.find(t => t.appKey === flow.steps[0].appKey && t.key === flow.steps[0].key)?.topic) fail(400, 'Capture an event for the currently selected trigger before testing');
+      const payload = decrypt(event.payload_ciphertext, `event:${event.id}`);
+      const context = { trigger: payload, steps: {}, ...(event.app_key === 'shopify' ? { contact: shopifyContact(payload) } : {}) };
+      for (const step of flow.steps.slice(1)) validateParameters(action(step.appKey, step.key), resolveAvailableParameters(step.parameters, context), true);
       return this.queueRun(flow, eventId, requestId, 'manual', tx);
     });
   }

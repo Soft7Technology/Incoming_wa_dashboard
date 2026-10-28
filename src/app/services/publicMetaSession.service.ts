@@ -40,7 +40,7 @@ export class PublicMetaSessionService {
         email: `${companyId}@meta-workspace.invalid`, status: 'active',
         settings: { public_meta_workspace: true } });
       await trx('users').insert({ id: ownerId, company_id: companyId, name: 'Meta workspace visitor',
-        email: null, password: '!public-meta-workspace', role: 'company', status: 'active',
+        email: null, password: '!public-meta-workspace', role: 'user', status: 'active',
         settings: { public_meta_workspace: true } });
       await trx('public_meta_sessions').insert({ token_hash: hash(token), company_id: companyId,
         owner_id: ownerId, expires_at: expires });

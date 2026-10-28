@@ -14,7 +14,7 @@ function publicRoute(sessions, featureRoute) {
   return load('src/routes/publicMetaWorkspace.route.ts', {
     '../app/services/publicMetaSession.service': { __esModule: true, default: sessions, publicMetaSessionLifetime: 2592000000 },
     '../app/http/controllers/facebookMessenger.controller': controller,
-    ...Object.fromEntries(['facebookMessenger', 'facebookContent', 'facebookLeads', 'instagram']
+    ...Object.fromEntries(['facebookMessenger', 'facebookContent', 'facebookLeads', 'instagram', 'facebookAds']
       .map(name => ['./' + name + '.route', { __esModule: true, default: featureRoute }])),
   }).default;
 }
@@ -61,7 +61,7 @@ test('public visitors get separate cookie scopes and cannot override ownership o
     const ownerA = await read('messenger', aCookie), ownerB = await read('messenger', bCookie);
     assert.notEqual(ownerA.companyId, ownerB.companyId);
     assert.notEqual(ownerA.companyId, 'attacker-choice');
-    for (const feature of ['posts', 'leads', 'instagram']) assert.deepEqual(await read(feature, aCookie), ownerA);
+    for (const feature of ['posts', 'leads', 'instagram', 'ads']) assert.deepEqual(await read(feature, aCookie), ownerA);
     const resumed = await start({ Cookie: aCookie });
     assert.equal(resumed.headers.get('set-cookie').split(';')[0], aCookie);
     assert.equal(sessions.size, 2);
@@ -131,6 +131,9 @@ test('real database creates credential-free owners, hashes session cookies, resu
 }, () => fixture(async ({ database, meta }) => {
   await database.schema.alterTable('companies', t => { t.string('name'); t.string('email'); t.jsonb('settings'); });
   await database.schema.alterTable('users', t => { t.string('name'); t.string('password'); t.jsonb('settings'); });
+  // Match the deployed role enum for new browser workspace owners. Existing
+  // fixture accounts are excluded from validation by NOT VALID.
+  await database.raw("ALTER TABLE users ADD CONSTRAINT supported_workspace_roles CHECK (role IN ('user', 'admin', 'superadmin', 'member', 'viewer')) NOT VALID");
   await load('src/database/migrations/20261023000001_create_public_meta_sessions.ts').up(database);
   const { PublicMetaSessionService } = load('src/app/services/publicMetaSession.service.ts', { '@surefy/database': database });
   const service = new PublicMetaSessionService(database);

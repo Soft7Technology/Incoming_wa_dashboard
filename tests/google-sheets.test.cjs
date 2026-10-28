@@ -684,6 +684,8 @@ test('base middleware restricts credentialed Google CORS without changing other 
   routes.get('/other', (_req, res) => res.sendStatus(200));
   routes.post('/facebook/webhook', (req, res) => res.json({ raw: req.rawBody.toString('hex') }));
   const createApp = load('library/surefy/src/server.ts', {
+    './utils/asyncRouter': require('../library/surefy/src/utils/asyncRouter'),
+    './middleware/requestCapacity': require('../library/surefy/src/middleware/requestCapacity'),
     './exceptions/CustomError': { CustomError },
     './middleware/errorHandler': { errorHandler: (e, _req, res, _next) => res.status(500).send('error') },
     './routes/health.route': express.Router(),

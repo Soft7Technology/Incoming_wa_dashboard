@@ -323,7 +323,8 @@ dbTest('real HTTP routes require JWT, bind OAuth cookies, verify raw webhook sig
   const auth = load('library/surefy/src/middleware/jwtAuth.middleware.ts', {
     '../utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'), '../database': database, '../exceptions/HTTP401Error': Unauthorized,
   }).jwtAuthMiddleware;
-  const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookLeads.controller': leads,
+  const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookAds.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
+    '../app/http/controllers/facebookLeads.controller': leads,
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) } };
   app.use('/v1/admin/facebook-leads', auth, load('src/routes/facebookLeads.route.ts', deps).default);
   deps['./facebookLoginTest.route'] = express.Router();
@@ -385,7 +386,8 @@ test('Lead Forms browser selects a form, enables syncing, imports leads and rece
   const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
   const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
   const { messenger, leads } = controllers(service, leadService);
-  const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookLeads.controller': leads,
+  const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookAds.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
+    '../app/http/controllers/facebookLeads.controller': leads,
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) } };
   const app = express(); app.use(express.json({ verify: (req, _res, body) => { req.rawBody = body; } }));
   app.post('/v1/auth/login', (_req, res) => res.json({ success: true, data: { token: 'BROWSER_LEADS_TEST', data: { name: 'Test Owner' } } }));

@@ -96,6 +96,7 @@ async function fixture(run) {
     await instagramLoginMigration.up(database);
     await instagramPublishingMigration.up(database);
     await contentMigration.up(database);
+    await load('src/database/migrations/20261025000001_create_facebook_ads.ts').up(database);
     const companyA = crypto.randomUUID(), companyB = crypto.randomUUID();
     const ownerA = crypto.randomUUID(), ownerB = crypto.randomUUID(), otherOwner = crypto.randomUUID(), memberId = crypto.randomUUID();
     await database('companies').insert([{ id: companyA, status: 'active' }, { id: companyB, status: 'active' }]);

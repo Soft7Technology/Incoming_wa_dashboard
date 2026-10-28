@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Business &amp; Ads</title>
+    <link rel="stylesheet" href="/v1/facebook/style.css" />
+    <script defer src="/v1/facebook/session.js"></script>
+    <script defer src="/v1/facebook/ads.js"></script>
+  </head>
+  <body>
+    <header>
+      <a href="/v1/facebook/ads" class="brand">Business &amp; Ads <span class="badge">Facebook</span></a>
+      <nav><a href="/v1/facebook/leads">Lead Forms</a> · <a href="/v1/facebook/page">Messenger</a></nav>
+    </header>
+    <main>
+      <div id="notice" role="status" aria-live="polite" hidden></div>
+      <section id="workspace" hidden>
+        <div class="heading">
+          <div><p class="eyebrow">Business / Advertising</p><h1>Business &amp; Ads</h1>
+            <p class="muted">View business ad accounts, track performance, and prepare a paused campaign.</p></div>
+          <div><button id="connect">Connect Facebook</button> <button id="disconnect" class="quiet" hidden>Disconnect &amp; delete stored connection</button></div>
+        </div>
+        <div id="configuration" class="callout" hidden></div>
+        <section class="card">
+          <h2>1. Connect your business</h2>
+          <p>Authorize access to your business portfolios and ad accounts through Facebook. No application login is required.</p>
+          <p id="connection-status" class="muted">Facebook is not connected.</p>
+          <p class="muted">Permissions: business_management, ads_read, ads_management. Facebook also requires pages_show_list and pages_read_engagement as dependencies.</p>
+        </section>
+        <section id="selection" class="card" hidden>
+          <h2>2. Select a business and ad account</h2>
+          <button id="reload-businesses" class="quiet">Refresh businesses</button>
+          <label>Business portfolio<select id="business"></select></label>
+          <label>Ad account<select id="account"></select></label>
+          <p id="asset-status" class="muted"></p>
+        </section>
+        <section id="reporting" class="card" hidden>
+          <h2>3. Ad performance</h2>
+          <label>Reporting period<select id="period"><option value="last_7d">Last 7 days</option><option value="last_30d" selected>Last 30 days</option><option value="last_90d">Last 90 days</option></select></label>
+          <button id="refresh" class="quiet">Refresh performance &amp; campaigns</button>
+          <p id="report-status" class="muted"></p>
+          <div id="metrics" class="page-grid"></div>
+          <h2>Campaigns</h2><div id="campaigns" class="page-grid"></div>
+        </section>
+        <section id="creation" class="card" hidden>
+          <h2>4. Create a paused campaign</h2>
+          <p>Create a traffic campaign in the selected ad account. It remains paused and has no ad sets, ads, or budget. It cannot deliver or spend in this state.</p>
+          <form id="campaign-form">
+            <label>Campaign name<input id="campaign-name" maxlength="200" placeholder="My traffic campaign" required /></label>
+            <label><input id="confirm-create" type="checkbox" required /> Create this paused campaign in the selected Meta ad account.</label>
+            <button id="create">Create paused campaign</button>
+          </form>
+          <p id="create-status" role="status" aria-live="polite"></p>
+        </section>
+      </section>
+      <footer><p><a href="/v1/facebook/privacy">Privacy notice</a> · <a href="/v1/facebook/data-deletion">Data deletion</a></p></footer>
+    </main>
+  </body>
+</html>
