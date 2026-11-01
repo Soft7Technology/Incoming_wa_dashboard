@@ -39,12 +39,12 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
     if (req.url.startsWith('/v1/admin/google-sheets') || req.url.startsWith('/v1/integrations/google/') ||
       req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/') ||
       req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/') ||
-      /^\/v1\/admin\/(?:facebook-(?:leads|messenger|content|ads)|instagram)(?:[/?]|$)/.test(req.url)) {
+      /^\/v1\/admin\/(?:facebook(?:-(?:leads|messenger|content|ads))?|instagram)(?:[/?]|$)/.test(req.url)) {
       let origin: string | false = false;
       try {
         const shopifyRequest = req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/');
         const peopleRequest = req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/');
-        const facebookLeadsRequest = /^\/v1\/admin\/(?:facebook-(?:leads|messenger|content|ads)|instagram)(?:[/?]|$)/.test(req.url);
+        const facebookLeadsRequest = /^\/v1\/admin\/(?:facebook(?:-(?:leads|messenger|content|ads))?|instagram)(?:[/?]|$)/.test(req.url);
         const configured = new URL((facebookLeadsRequest ? process.env.FACEBOOK_FRONTEND_URL : shopifyRequest ? process.env.SHOPIFY_FRONTEND_URL :
           peopleRequest ? process.env.GOOGLE_PEOPLE_FRONTEND_URL || process.env.GOOGLE_FRONTEND_URL : process.env.GOOGLE_FRONTEND_URL) || '');
         if (!configured.username && !configured.password && (configured.protocol === 'https:' ||

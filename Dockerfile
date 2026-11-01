@@ -8,7 +8,7 @@ COPY library ./library
 COPY src ./src
 COPY swagger.json ./swagger.json
 COPY nodemon.json ./nodemon.json
-COPY scripts/copy-facebook-assets.cjs ./scripts/copy-facebook-assets.cjs
+COPY scripts/copy-web-assets.cjs ./scripts/copy-web-assets.cjs
 RUN pnpm run build
 
 FROM base AS development
