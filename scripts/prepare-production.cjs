@@ -33,9 +33,6 @@ function validate() {
   if (pkg.scripts.knex !== 'knex --knexfile dist/library/surefy/src/config/knex.config.js') {
     problems.push('Production migrations must use the compiled Knex configuration.');
   }
-  if (/FacebookLoginTestRoute|['"]\/login-test['"]/.test(git('show', ':src/routes/facebookPublic.route.ts'))) {
-    problems.push('The development Facebook login test route is still mounted.');
-  }
   if (!git('show', ':.gitignore').includes('# BEGIN MAIN-ONLY FILES')) {
     problems.push('Main-only ignore rules are missing. Run prepare:production on main.');
   }
@@ -58,8 +55,7 @@ function prepare() {
   }
   // Parse before removing anything; unresolved package/route conflicts need manual resolution.
   const pkg = JSON.parse(read('package.json'));
-  const route = read('src/routes/facebookPublic.route.ts');
-  for (const file of ['src/routes/facebookPublic.route.ts', '.gitignore', 'docs/company-payments.md', 'docs/superadmin-api.md']) {
+  for (const file of ['.gitignore', 'docs/company-payments.md', 'docs/superadmin-api.md']) {
     if (fs.existsSync(path.join(root, file)) && /^(?:<<<<<<<|=======|>>>>>>>)/m.test(read(file))) {
       throw new Error(`Resolve the ${file} merge conflict first.`);
     }
@@ -72,9 +68,6 @@ function prepare() {
   }
   pkg.scripts.knex = 'knex --knexfile dist/library/surefy/src/config/knex.config.js';
   write('package.json', JSON.stringify(pkg, null, 2) + '\n');
-  write('src/routes/facebookPublic.route.ts', route
-    .replace(/^import FacebookLoginTestRoute[^\n]*\r?\n/m, '')
-    .replace(/^route\.use\('\/login-test', FacebookLoginTestRoute\);\r?\n/m, ''));
   const ignored = read('.gitignore').replace(/\n?# BEGIN MAIN-ONLY FILES[\s\S]*?# END MAIN-ONLY FILES\r?\n?/g, '').trimEnd();
   write('.gitignore', ignored + '\n\n# BEGIN MAIN-ONLY FILES\n'
     + policy.devOnly.map(entry => '/' + entry).join('\n')
@@ -92,7 +85,7 @@ function prepare() {
       .replace(/\]\(subscription-checkout\.html\)/g, '](https://github.com/Soft7Technology/Incoming_wa_dashboard/blob/dev/docs/subscription-checkout.html)');
     write(file, content);
   }
-  git('add', '--', 'package.json', '.gitignore', 'src/routes/facebookPublic.route.ts',
+  git('add', '--', 'package.json', '.gitignore',
     ...exampleDocs.filter(file => fs.existsSync(path.join(root, file))));
   validate();
   console.info(`Prepared main: removed ${removing.length} files. Review staged changes, build, then commit.`);

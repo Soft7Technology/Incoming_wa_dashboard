@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import MessageController from '@surefy/console/http/controllers/message.controller';
 import { wabaAccountUpdate } from '../app/http/middleware/wabaAccountUpdate';
+import creditTopups from '../app/http/controllers/creditTopup.controller';
 
 const WebhookPublicRoute = Router();
+WebhookPublicRoute.post('/razorpay/credits', creditTopups.webhook);
+WebhookPublicRoute.get('/razorpay/credits/reference-qr', creditTopups.referenceQr);
 
 // Meta Webhook Endpoints (no auth - verified by Meta token)
 WebhookPublicRoute.get('/meta', MessageController.verifyWebhook);

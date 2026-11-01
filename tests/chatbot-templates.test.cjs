@@ -13,17 +13,55 @@ function load(file, deps = {}) {
 }
 class HttpError extends Error { constructor({ message }) { super(message); } }
 const errors = Object.fromEntries(['HTTP400Error', 'HTTP403Error', 'HTTP404Error'].map(key => [`@surefy/exceptions/${key}`, HttpError]));
-const catalog = load('src/app/utils/chatbotTemplates.ts');
+const additional = load('src/app/utils/chatbotIndustryTemplates.ts');
+const catalog = load('src/app/utils/chatbotTemplates.ts', { './chatbotIndustryTemplates': additional });
+const catalogModel = { categories: async () => catalog.chatbotTemplateCategories(), list: async (category, search) => catalog.listChatbotTemplates(category).filter(t => !search || t.name.toLowerCase().includes(search.toLowerCase())), detail: async id => catalog.buildChatbotTemplate(id) };
 const messages = load('src/app/utils/chatbotMessage.ts');
 const featureUtils = load('src/app/utils/planFeatures.ts', errors);
 const choices = load('src/app/services/chatbot/interactiveChoice.ts');
 const input = { name: 'My editable chatbot', customizations: { business_name: 'Acme "Business"', support_contact: 'support@example.invalid' } };
 const actor = { userId: 'member', ownerId: 'owner', companyId: 'company' };
+
+test('frozen database seed matches the connected library graphs', () => {
+  const seed = load('src/database/data/chatbotTemplateLibrary.v1.ts').default;
+  assert.equal(seed.length, 21);
+  for (const template of seed) {
+    assert.equal(JSON.stringify(template), JSON.stringify(catalog.buildChatbotTemplate(template.id)));
+    assert.equal(new Set(template.edges.map(edge => edge.id)).size, template.edges.length);
+    for (const question of template.nodes.filter(node => node.data.key === '@whatsapp/ask-question')) {
+      assert.ok(question.data.attributes.variable);
+      assert.equal(template.edges.filter(edge => edge.source === question.id).length, 1);
+    }
+  }
+});
+
+test('demo walks every template branch without creating bots or consuming quota', async () => {
+  const f = fixture();
+  for (const template of await f.api.list()) {
+    const start = await f.api.demo(template.id, {});
+    assert.equal(start.node_id, 'menu'); assert.equal(start.persisted, false);
+    for (const choice of start.choices) {
+      let step = await f.api.demo(template.id, { node_id: 'menu', choice_id: choice.id });
+      let count = 0;
+      while (!step.completed) {
+        assert.equal(step.awaiting_answer, true);
+        step = await f.api.demo(template.id, { node_id: step.node_id, answer: 'Sample answer' });
+        assert.ok(++count < 10);
+      }
+      assert.ok(step.message.text.body.includes('our demo team'));
+    }
+  }
+  for (const input of [{ choice_id: 'choice_team' }, { node_id: 'missing' }, { node_id: 'menu', choice_id: 'missing' },
+    { node_id: 'menu', answer: 'wrong' }, { node_id: 'team_name', answer: '' }, { node_id: 'team_name', answer: 'x'.repeat(2001) }, { user_id: 'foreign' }])
+    await assert.rejects(f.api.demo('it-services-support', input));
+  assert.equal(f.state().chat_bot.length, 0);
+  assert.deepEqual(f.state().user_plans[0].usage, {});
+});
 function fixture(limit = 2) {
   let state = { users: [{ id: 'owner', company_id: 'company' }],
     user_plans: [{ id: 'plan', user_id: 'owner', active: true, start_date: '2020-01-01', end_date: '2099-01-01',
       entitlement_version: 2, limits: { Chatbot: { limit, enabled: true } }, usage: {}, usage_periods: {} }],
-    chat_bot: [], chat_bot_node: [], chat_bot_edge: [], activity_logs: [], chatbot_triggers: [] };
+    chat_bot: [], chat_bot_node: [], chat_bot_edge: [], activity_logs: [], chatbot_triggers: [], chatbot_template_installs: [] };
   let tail = Promise.resolve(), failedTable;
   const connection = draft => table => {
     const filters = []; let op, payload, first = false, count = false;
@@ -49,20 +87,20 @@ function fixture(limit = 2) {
   } };
   const quota = load('src/app/services/planUsage.service.ts', { ...errors, '@surefy/database': db, '../utils/planFeatures': featureUtils }).default;
   const api = load('src/app/services/chatbotTemplate.service.ts', { ...errors, uuid: { v4: crypto.randomUUID },
-    './planUsage.service': quota, '../utils/chatbotTemplates': catalog, '../utils/chatbotMessage': messages,
+    './planUsage.service': quota, '../models/chatbotTemplate.model': catalogModel, '../utils/chatbotMessage': messages,
     '../utils/activityContext': { markActivityRecorded() {} } }).default;
   return { api, state: () => state, fail(table) { failedTable = table; } };
 }
 
-test('nine industry templates expose previews with valid connected existing message nodes', () => {
-  const f = fixture(), list = f.api.list();
-  assert.equal(list.length, 9); assert.equal(f.api.categories().length, 9);
-  assert.equal(f.api.list('travel').length, 1);
-  assert.throws(() => f.api.list('unknown'), /Unknown/);
-  assert.throws(() => f.api.detail('unknown'), /not found/);
+test('all industry templates expose previews with valid connected existing message nodes', async () => {
+  const f = fixture(), list = await f.api.list();
+  assert.equal(list.length, 21); assert.equal((await f.api.categories()).length, 11);
+  assert.equal((await f.api.list('travel')).length, 1);
+  await assert.rejects(f.api.list('unknown'), /Unknown/);
+  await assert.rejects(f.api.detail('unknown'), /not found/);
   for (const item of list) {
     assert.equal(item.nodes, undefined); assert.equal(item.meta_approved, false);
-    const graph = f.api.detail(item.id), ids = new Set(graph.nodes.map(node => node.id));
+    const graph = await f.api.detail(item.id), ids = new Set(graph.nodes.map(node => node.id));
     assert.equal(ids.size, graph.nodes.length);
     assert.equal(graph.nodes.filter(node => node.type === 'trigger').length, 1);
     for (const node of graph.nodes) messages.validateChatbotMessage(node.data);
@@ -77,7 +115,7 @@ test('nine industry templates expose previews with valid connected existing mess
       assert.ok(edge); assert.equal(graph.nodes.find(node => node.id === edge.target).data.key, '@whatsapp/ask-question');
     }
     graph.nodes[0].data.attributes.keywords.push('tenant-edit');
-    assert.equal(f.api.detail(item.id).nodes[0].data.attributes.keywords.includes('tenant-edit'), false);
+    assert.equal((await f.api.detail(item.id)).nodes[0].data.attributes.keywords.includes('tenant-edit'), false);
   }
 });
 
@@ -92,6 +130,7 @@ test('use creates an owned editable draft, remaps graph IDs, fills customization
   assert.equal(/\{\{business_name\}\}|\{\{support_contact\}\}/.test(payload), false);
   for (const edge of first.edges) assert.ok(first.nodes.some(node => node.id === edge.source) && first.nodes.some(node => node.id === edge.target));
   assert.equal(JSON.parse(f.state().user_plans[0].usage).Chatbot, 1);
+  assert.equal(f.state().chatbot_template_installs[0].template_id, 'real-estate-starter');
   assert.equal(f.state().activity_logs[0].user_id, 'member');
   const second = await f.api.use(actor, 'real-estate-starter', input);
   assert.notEqual(first.id, second.id);
@@ -108,7 +147,7 @@ test('concurrent copies cannot exceed the last available chatbot slot', async ()
 });
 
 test('copy errors roll back the bot, graph, audit and quota; foreign owners and client identities are rejected', async () => {
-  for (const table of ['chat_bot_node', 'chat_bot_edge', 'activity_logs']) {
+  for (const table of ['chat_bot_node', 'chat_bot_edge', 'activity_logs', 'chatbot_template_installs']) {
     const f = fixture(), before = structuredClone(f.state()); f.fail(table);
     await assert.rejects(f.api.use(actor, 'travel-starter', input), /injected/);
     assert.deepEqual(f.state(), before);
@@ -123,9 +162,9 @@ test('copy errors roll back the bot, graph, audit and quota; foreign owners and 
   assert.deepEqual(f.state(), before);
 });
 
-test('all nine copies run every menu branch and collect answers through the current menu and execution engine', async () => {
-  const f = fixture(20);
-  for (const item of f.api.list()) {
+test('all copies run every menu branch and collect answers through the current menu and execution engine', async () => {
+  const f = fixture(30);
+  for (const item of await f.api.list()) {
     const bot = await f.api.use(actor, item.id, input);
     const builder = load('src/app/utils.ts', { './utils/chatbotMessage': messages, nodemailer: { createTransport: () => ({}) } }).buildResponse;
     const rows = bot.nodes.find(node => node.data.key === '@whatsapp/send-list-message').data.attributes.message.interactive.action.sections[0].rows;
@@ -196,9 +235,12 @@ test('template endpoints precede chatbot-ID routes and create returns an unpubli
   const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}/v1/admin/chatbot/templates`;
-    assert.equal((await (await fetch(base + '/categories')).json()).data.length, 9);
+    assert.equal((await (await fetch(base + '/categories')).json()).data.length, 11);
     assert.equal((await (await fetch(base + '?category=health-care')).json()).data[0].id, 'health-care-starter');
     assert.ok((await (await fetch(base + '/travel-starter')).json()).data.nodes.length > 0);
+    assert.equal((await (await fetch(base + '?category=it-services&search=support')).json()).data.length, 1);
+    const demo = await fetch(base + '/finance-loan-enquiry/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    assert.equal(demo.status, 200); assert.equal((await demo.json()).data.simulated, true);
     const response = await fetch(base + '/travel-starter/use', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) });
     assert.equal(response.status, 201); assert.equal((await response.json()).data.published, false);
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
@@ -216,8 +258,10 @@ test('PostgreSQL template copy uses the existing schema and persists a private g
         await trx.schema.createSchema(schema); await trx.raw('SET LOCAL search_path TO ??', [schema]);
         // Clone actual production-shaped columns/defaults instead of inventing a test schema.
         // Foreign keys are not copied by LIKE, so all fixtures stay inside this isolated schema.
-        for (const table of ['users', 'user_plans', 'chat_bot', 'chat_bot_node', 'chat_bot_edge', 'activity_logs', 'chatbot_triggers'])
+        for (const table of ['users', 'user_plans', 'chat_bot', 'chat_bot_node', 'chat_bot_edge', 'activity_logs', 'chatbot_triggers', 'chatbot_template_installs', 'chatbot_template_categories', 'chatbot_templates'])
           await trx.raw('CREATE TABLE ?? (LIKE ?? INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', [`${schema}.${table}`, `public.${table}`]);
+        for (const table of ['chatbot_template_categories', 'chatbot_templates'])
+          await trx.raw('INSERT INTO ?? SELECT * FROM ??', [`${schema}.${table}`, `public.${table}`]);
         const ownerId = crypto.randomUUID(), companyId = crypto.randomUUID();
         await trx('users').insert({ id: ownerId, company_id: companyId, name: 'Rollback-only template owner',
           email: `template-${ownerId}@example.invalid`, password: 'not-a-real-login', status: 'active', role: 'user' });
@@ -227,8 +271,17 @@ test('PostgreSQL template copy uses the existing schema and persists a private g
           limits: JSON.stringify({ Chatbot: { limit: 2, enabled: true } }), usage: '{}', usage_periods: '{}' });
         const testDb = { transaction: callback => trx.transaction(callback) };
         const quota = load('src/app/services/planUsage.service.ts', { ...errors, '@surefy/database': testDb, '../utils/planFeatures': featureUtils }).default;
+        const model = load('src/app/models/chatbotTemplate.model.ts', { '@surefy/database': trx }).default;
+        assert.equal((await model.categories()).length, 11);
+        assert.equal((await model.list('finance-banking')).length, 3);
+        assert.equal((await model.list(undefined, '%')).length, 0);
+        assert.equal(await model.detail('missing-template'), undefined);
+        assert.equal((await model.detail('it-services-support')).nodes.length, catalog.buildChatbotTemplate('it-services-support').nodes.length);
+        await trx('chatbot_templates').where({ id: 'it-services-support' }).update({ available: false });
+        assert.equal(await model.detail('it-services-support'), undefined);
+        assert.equal((await model.list('it-services')).length, 2);
         const api = load('src/app/services/chatbotTemplate.service.ts', { ...errors, uuid: { v4: crypto.randomUUID },
-          './planUsage.service': quota, '../utils/chatbotTemplates': catalog, '../utils/chatbotMessage': messages,
+          './planUsage.service': quota, '../models/chatbotTemplate.model': model, '../utils/chatbotMessage': messages,
           '../utils/activityContext': { markActivityRecorded() {} } }).default;
         const copied = await api.use({ userId: ownerId, companyId }, 'education-starter', input);
         const bot = await trx('chat_bot').where({ id: copied.id }).first();
@@ -244,6 +297,7 @@ test('PostgreSQL template copy uses the existing schema and persists a private g
         assert.equal((await trx('user_plans').where({ user_id: ownerId }).first()).usage.Chatbot, 1);
         assert.equal(Number((await trx('chatbot_triggers').count('* as total').first()).total), 0);
         assert.equal((await trx('activity_logs').first()).new_data.template_id, 'education-starter');
+        assert.equal((await trx('chatbot_template_installs').first()).template_id, 'education-starter');
         await assert.rejects(api.use({ userId: ownerId, companyId: crypto.randomUUID() }, 'education-starter', input), /authenticated company/);
         throw marker;
       }), error => error === marker);

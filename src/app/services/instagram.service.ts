@@ -7,7 +7,7 @@ import directGraph, {
   directInstagramPermissions,
   directInstagramLoginScopes,
 } from './instagramGraph.service';
-import { FacebookMessengerService, FacebookScope } from './facebookMessenger.service';
+import { requireSocialOwner, SocialScope } from './socialAccess.service';
 import { config, decrypt, encrypt, FacebookError, hash, random, uuidPattern } from '../utils/facebook';
 
 export const instagramPermissions = [
@@ -32,7 +32,7 @@ const numeric = (v: unknown): v is string => typeof v === 'string' && /^\d{1,80}
 const fail = (message: string, status = 400): never => {
   throw new FacebookError(status, message);
 };
-const scoped = (db: Knex, s: FacebookScope) =>
+const scoped = (db: Knex, s: SocialScope) =>
   db('instagram_accounts').where({ company_id: s.companyId, owner_id: s.ownerId });
 const date = (v: unknown) => {
   const n = typeof v === 'number' ? v : Date.parse(String(v));
@@ -59,12 +59,12 @@ export class InstagramService {
     private direct: InstagramGraph = directGraph,
   ) {}
 
-  async access(s: FacebookScope) {
+  async access(s: SocialScope) {
     if (s.reviewPageId) fail('Use your company owner login for Instagram.', 403);
-    await new FacebookMessengerService(this.database, this.meta).access(s, 'manage');
+    await requireSocialOwner(s, this.database);
   }
 
-  async start(s: FacebookScope, provider?: string) {
+  async start(s: SocialScope, provider?: string) {
     await this.access(s);
     const c = instagramConfig(provider),
       state = random(),
@@ -213,7 +213,7 @@ export class InstagramService {
     }
   }
 
-  async session(s: FacebookScope, browser?: string) {
+  async session(s: SocialScope, browser?: string) {
     await this.access(s);
     if (!browser) return null;
     return this.database('instagram_oauth_sessions')
@@ -222,7 +222,7 @@ export class InstagramService {
       .first();
   }
 
-  async candidates(s: FacebookScope, browser?: string) {
+  async candidates(s: SocialScope, browser?: string) {
     const session = await this.session(s, browser);
     const pages = session?.status === 'ready' ? JSON.parse(decrypt(session.candidates_ciphertext)).pages : [];
     return {
@@ -239,7 +239,7 @@ export class InstagramService {
     };
   }
 
-  async connect(s: FacebookScope, browser: string | undefined, pageId: unknown) {
+  async connect(s: SocialScope, browser: string | undefined, pageId: unknown) {
     const session = await this.session(s, browser);
     if (!numeric(pageId) || session?.status !== 'ready') fail('Choose a Page from a fresh Instagram connection.');
     return this.database.transaction(async (trx) => {
@@ -319,7 +319,7 @@ export class InstagramService {
     });
   }
 
-  private async connectDirect(trx: Knex.Transaction, s: FacebookScope, session: any, data: any, candidate: any) {
+  private async connectDirect(trx: Knex.Transaction, s: SocialScope, session: any, data: any, candidate: any) {
     const c = instagramConfig('instagram');
     if (session.provider_app_id !== c.appId) fail('The Instagram app changed. Connect again.', 409);
     const profile = await this.direct.profile(candidate.access_token);
@@ -385,7 +385,7 @@ export class InstagramService {
     return account.auth_provider === 'instagram' ? this.direct : this.meta;
   }
 
-  async accounts(s: FacebookScope) {
+  async accounts(s: SocialScope) {
     await this.access(s);
     await scoped(this.database, s)
       .where({ status: 'connected' })
@@ -393,7 +393,7 @@ export class InstagramService {
       .update({ status: 'reconnect_required' });
     return scoped(this.database, s).select(publicFields).orderBy('username');
   }
-  async account(s: FacebookScope, id: string, connected = true) {
+  async account(s: SocialScope, id: string, connected = true) {
     await this.access(s);
     if (!uuidPattern.test(id)) fail('Invalid account ID.');
     const account = await scoped(this.database, s).where({ id }).first();
@@ -432,7 +432,7 @@ export class InstagramService {
     }
     return account;
   }
-  async syncProfile(s: FacebookScope, id: string) {
+  async syncProfile(s: SocialScope, id: string) {
     const authorized = await this.account(s, id);
     return this.database.transaction(async (trx) => {
       const current = await scoped(trx, s).where({ id }).forUpdate().first();
@@ -499,7 +499,7 @@ export class InstagramService {
     if (!record) fail('Resource not found in this Instagram account.', 404);
     return record;
   }
-  async list(s: FacebookScope, id: string, kind: 'conversation' | 'media' | 'message' | 'comment', parent?: string) {
+  async list(s: SocialScope, id: string, kind: 'conversation' | 'media' | 'message' | 'comment', parent?: string) {
     const a = await this.account(s, id, false);
     const query = this.database('instagram_records').where({ account_id: a.id, kind });
     if (parent) query.where({ parent_id: parent });
@@ -507,7 +507,7 @@ export class InstagramService {
   }
 
   async sync(
-    s: FacebookScope,
+    s: SocialScope,
     id: string,
     kind: 'conversation' | 'media' | 'message' | 'comment',
     parentId?: string,
@@ -586,7 +586,7 @@ export class InstagramService {
     return { next_cursor: next || null };
   }
 
-  async messages(s: FacebookScope, id: string, conversation: string) {
+  async messages(s: SocialScope, id: string, conversation: string) {
     const a = await this.account(s, id, false),
       row = await this.record(a, conversation, 'conversation');
     const messages = await this.list(s, id, 'message', row.remote_id);
@@ -607,14 +607,14 @@ export class InstagramService {
     };
   }
 
-  async comments(s: FacebookScope, id: string, media: string) {
+  async comments(s: SocialScope, id: string, media: string) {
     const a = await this.account(s, id, false),
       row = await this.record(a, media, 'media');
     return this.list(s, id, 'comment', row.remote_id);
   }
 
   async action(
-    s: FacebookScope,
+    s: SocialScope,
     id: string,
     targetId: string,
     type: 'message' | 'reply' | 'hide',
@@ -765,7 +765,7 @@ export class InstagramService {
     }
   }
 
-  async disconnect(s: FacebookScope, id: string, erase = false) {
+  async disconnect(s: SocialScope, id: string, erase = false) {
     await this.account(s, id, false);
     await this.database.transaction(async (trx) => {
       const row = await scoped(trx, s).where({ id }).forUpdate().first();
@@ -809,6 +809,12 @@ export class InstagramService {
       }
       return null;
     });
+  }
+
+  async deletionStatus(confirmation: string) {
+    return this.database('facebook_deletion_requests')
+      .where({ confirmation_hash: hash(confirmation), status: 'completed' })
+      .first('completed_at');
   }
 }
 export default new InstagramService();

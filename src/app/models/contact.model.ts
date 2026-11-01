@@ -256,33 +256,17 @@ class ContactModel extends BaseModel {
 
   /** Sort before pagination so the latest conversation can appear on the first page. */
   orderByLastMessage(query: Knex.QueryBuilder, direction: 'asc' | 'desc') {
-    return query.select('contacts.*').joinRaw(`LEFT JOIN LATERAL (
-      SELECT m.updated_at AS last_message_at
-      FROM messages m
-      WHERE m.company_id = contacts.company_id
-        AND m.user_id = contacts.user_id
-        AND m.phone_number_id = contacts.phone_number_id
-        AND CASE WHEN m.direction = 'inbound'
-          THEN regexp_replace(m.from_phone, '[^0-9]', '', 'g')
-          ELSE regexp_replace(m.to_phone, '[^0-9]', '', 'g') END =
-          CASE
-            WHEN contacts.phone_number LIKE '00%'
-            THEN substring(regexp_replace(contacts.phone_number, '[^0-9]', '', 'g') FROM 3)
-            WHEN contacts.phone_number LIKE '+%' OR COALESCE(contacts.country_code, '') = ''
-            THEN regexp_replace(contacts.phone_number, '[^0-9]', '', 'g')
-            ELSE regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
-          END
-      ORDER BY m.created_at DESC NULLS LAST, m.id DESC LIMIT 1
-    ) AS contact_activity ON true`)
-      .select('contact_activity.last_message_at')
-      .orderBy('contact_activity.last_message_at', direction, 'last')
+    // Sort by the expression directly: contacts.* can already contain
+    // last_message_at, so selecting another column with that alias is ambiguous.
+    return query.select('contacts.*')
+      .orderByRaw(`${this.latestMessageSql('m.created_at')} ${direction === 'asc' ? 'asc' : 'desc'} nulls last`)
       .orderBy('contacts.id', 'asc');
   }
 
-  /** Shared by filtering and ordering so both use the same latest message. */
-  private latestMessageReadStateSql() {
+  /** The preview uses the latest message; inbox state considers incoming messages only. */
+  private latestMessageSql(selection: string, inboxState = false) {
     return `(
-      SELECT (m.inbox_read_at IS NOT NULL OR COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL)
+      SELECT ${selection}
       FROM messages m
       WHERE m.user_id = contacts.user_id
         AND m.company_id = contacts.company_id
@@ -299,9 +283,16 @@ class ContactModel extends BaseModel {
             THEN regexp_replace(contacts.country_code || contacts.phone_number, '[^0-9]', '', 'g')
             ELSE NULL
           END
-      ORDER BY m.created_at DESC NULLS LAST, m.id DESC
+        ${inboxState ? "AND m.direction = 'inbound' AND m.status IS DISTINCT FROM 'deleted'" : ''}
+      ORDER BY ${inboxState ? '(m.inbox_read_at IS NULL) DESC, ' : ''}m.created_at DESC NULLS LAST, m.id DESC
       LIMIT 1
     )`;
+  }
+
+  private latestMessageReadStateSql() {
+    // Prefer any unread incoming message, even if a newer reply has already been
+    // viewed. NULL means the contact has never sent a non-deleted message.
+    return this.latestMessageSql('(m.inbox_read_at IS NOT NULL)', true);
   }
 
   orderByReadStatus(query: Knex.QueryBuilder) {
@@ -361,7 +352,7 @@ class ContactModel extends BaseModel {
     }
 
     if (filters.read_status === 'all') {
-      // The combined inbox includes only contacts with a latest message.
+      // The combined inbox includes only contacts who have messaged the business.
       query.whereRaw(`${this.latestMessageReadStateSql()} IS NOT NULL`);
     } else if (filters.read_status === 'read' || filters.read_status === 'unread') {
       query.whereRaw(`${this.latestMessageReadStateSql()} = ?`, [filters.read_status === 'read']);

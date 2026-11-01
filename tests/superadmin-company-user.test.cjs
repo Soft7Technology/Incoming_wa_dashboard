@@ -15,6 +15,8 @@ function load(file, dependencies) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
   }).outputText, { exports, Date, require(name) {
+    if (name === '../utils/platformOrganization') return load('src/app/utils/platformOrganization.ts', {});
+    if (name === '../utils/creditLedger') return load('src/app/utils/creditLedger.ts', {});
     assert.ok(name in dependencies, name);
     return dependencies[name];
   } });
@@ -255,6 +257,7 @@ test('all seven GET paths require JWT and superadmin authorization, pass URL IDs
     '@surefy/utils/Controller': helpers, '../../services/superAdminOperations.service': {},
   });
   const route = load('src/routes/superAdmin.route.ts', {
+    '../app/http/controllers/platformWallet.controller': { balance: (_req, res) => res.end(), transactions: (_req, res) => res.end() },
     '../app/http/controllers/platformPricing.controller':Object.fromEntries(['get','update','allAddons','updateAddon'].map(key=>[key,(_req,res)=>res.end()])),
     '../app/http/controllers/planCatalog.controller':Object.fromEntries(['features','createFeature','createAddon','disableAddon'].map(key=>[key,(_req,res)=>res.end()])),
     express, '../app/http/controllers/superAdmin.controller': controller,

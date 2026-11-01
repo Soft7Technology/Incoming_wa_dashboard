@@ -4,6 +4,8 @@ import { CompanyFields, SuperAdminFilters, CompanyCollection, CreditInput, Compa
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import subscriptionModel from './subscription.model';
+import { companyWallet } from '../utils/creditLedger';
+import { companyReadScope } from '../utils/platformOrganization';
 
 const companyColumns = [
   'id',
@@ -195,19 +197,27 @@ class SuperAdminModel extends BaseModel {
     if (companyId) await this.company(companyId);
     const query = this.db('users').where({ id }).whereNull('deleted_at');
     if (companyId) query.where({ company_id: companyId });
-    const user = await query.first(userColumns);
+    let user = await query.first(userColumns);
+    if (!user && companyId) {
+      const platformUser = await this.db('users').where({ id, role: 'superadmin' }).whereNull('deleted_at').first(userColumns);
+      if (platformUser && (await companyReadScope(this.db, platformUser)).includes(companyId)) user = platformUser;
+    }
     if (!user) throw new HTTP404Error({ message: 'User not found' });
     return user;
   }
 
   async userDetails(id: string, companyId?: string) {
     const user = await this.user(id, companyId);
-    const scope = { user_id: user.id, company_id: user.company_id };
+    const scope = { user_id: user.id };
+    const companies = companyId ? [companyId] : user.role === 'superadmin'
+      ? await companyReadScope(this.db, user) : [user.company_id];
+    const applyScope = (query: Knex.QueryBuilder) => companies.length === 1
+      ? query.where({ ...scope, company_id: companies[0] }) : query.where(scope).whereIn('company_id', companies);
     const [campaigns, contacts, plan] = await Promise.all([
-      this.db('campaigns').where(scope).whereNull('deleted_at')
+      applyScope(this.db('campaigns')).whereNull('deleted_at')
         .select('status').count('* as count').groupBy('status'),
-      this.db('contacts').where(scope).whereNull('deleted_at').count('* as count').first(),
-      user.assigned_plan ? this.db('user_plans').where({ id: user.assigned_plan, ...scope })
+      applyScope(this.db('contacts')).whereNull('deleted_at').count('* as count').first(),
+      user.assigned_plan ? applyScope(this.db('user_plans').where({ id: user.assigned_plan }))
         .first('id', 'user_id', 'company_id', 'plan_name', 'price',
           'billing_cycle', 'status', 'active', 'start_date', 'end_date', 'duration_days', 'limits', 'usage') : null,
     ]);
@@ -215,8 +225,8 @@ class SuperAdminModel extends BaseModel {
       user: { ...user, plan_details: plan ?? null },
       stats: {
         contacts_count: Number(contacts?.count || 0),
-        campaigns_count: campaigns.reduce((total, row) => total + Number(row.count), 0),
-        campaigns_by_status: campaigns.map(row => ({ status: row.status, count: Number(row.count) })),
+        campaigns_count: campaigns.reduce((total: number, row: any) => total + Number(row.count), 0),
+        campaigns_by_status: campaigns.map((row: any) => ({ status: row.status, count: Number(row.count) })),
       },
     };
   }
@@ -302,6 +312,7 @@ class SuperAdminModel extends BaseModel {
     };
     const d = definitions[resource];
     const query = this.db(d.table);
+    if (resource === 'credits') companyWallet(query, this.db);
     if (d.soft) query.whereNull('deleted_at');
     if (resource === 'messages') query.whereNot('status', 'deleted');
     if (f.user_id && resource === 'users') query.where('id', f.user_id);

@@ -19,6 +19,7 @@ interface RouteConfig {
   route: Router;
 }
 
+
 const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   onListening?: () => void;
   onShutdown?: () => void;
@@ -31,21 +32,23 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   app.use(helmet({
     contentSecurityPolicy: false, // Allow Swagger UI to load
   }));
-  
+
   app.use(cors<express.Request>((req, done) => {
-    // Google OAuth sets a browser-binding cookie on the API origin. Only the
+    // OAuth integrations set a browser-binding cookie on the API origin. Only the
     // configured dashboard origin may use credentialed cross-origin requests.
     if (req.url.startsWith('/v1/admin/google-sheets') || req.url.startsWith('/v1/integrations/google/') ||
-        req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/') ||
-        req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/')) {
+      req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/') ||
+      req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/') ||
+      /^\/v1\/admin\/(?:facebook-(?:leads|messenger|content|ads)|instagram)(?:[/?]|$)/.test(req.url)) {
       let origin: string | false = false;
       try {
         const shopifyRequest = req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/');
         const peopleRequest = req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/');
-        const configured = new URL((shopifyRequest ? process.env.SHOPIFY_FRONTEND_URL :
+        const facebookLeadsRequest = /^\/v1\/admin\/(?:facebook-(?:leads|messenger|content|ads)|instagram)(?:[/?]|$)/.test(req.url);
+        const configured = new URL((facebookLeadsRequest ? process.env.FACEBOOK_FRONTEND_URL : shopifyRequest ? process.env.SHOPIFY_FRONTEND_URL :
           peopleRequest ? process.env.GOOGLE_PEOPLE_FRONTEND_URL || process.env.GOOGLE_FRONTEND_URL : process.env.GOOGLE_FRONTEND_URL) || '');
         if (!configured.username && !configured.password && (configured.protocol === 'https:' ||
-            (configured.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(configured.hostname)))) origin = configured.origin;
+          (configured.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(configured.hostname)))) origin = configured.origin;
       } catch { /* Same-origin and server-to-server usage need no CORS header. */ }
       return done(null, { origin, credentials: true });
     }
@@ -54,17 +57,33 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   // Contact filters accept multiple country codes in repeated query parameters.
   app.use(hpp({ whitelist: ['country_code'] }));
   app.use(compression());
-  app.use(express.json({ limit: '10mb', verify: (req, _res, buffer) => {
-    // Signature validation must use the exact bytes received, before JSON parsing.
-    if (['/v1/facebook/webhook', '/v1/facebook/instagram/webhook', '/v1/webhooks/meta'].includes(req.url?.split('?')[0] || '') ||
+  app.use(express.json({
+    limit: '10mb', verify: (req, _res, buffer) => {
+      // Signature validation must use the exact bytes received, before JSON parsing.
+      const creditWebhook = /^\/v1\/webhooks\/razorpay\/credits\/?$/.test(req.url?.split('?')[0] || '');
+
+      const isFacebookWebhook =
+        /^\/v1\/facebook\/(?:leads|messaging)\/webhook\/?$/.test(
+          req.url?.split('?')[0] || '',
+        );
+
+      if (isFacebookWebhook) {
+        (req as express.Request & { rawBody?: Buffer }).rawBody =
+          Buffer.from(buffer);
+      }
+
+
+      if (creditWebhook && buffer.length > 1024 * 1024) throw new CustomError('Razorpay webhook exceeds 1 MB', 413);
+      if (creditWebhook || ['/v1/facebook/webhook', '/v1/facebook/instagram/webhook', '/v1/webhooks/meta'].includes(req.url?.split('?')[0] || '') ||
         /^\/v1\/integrations\/shopify\/webhook(?:\/|$)/.test(req.url?.split('?')[0] || '') ||
         /^\/v1\/webhook\/flows\//.test(req.url?.split('?')[0] || '')) {
-      if (req.url?.startsWith('/v1/webhook/flows/') && buffer.length > 1024 * 1024) {
-        throw new CustomError('Automation webhook exceeds 1 MB', 413);
+        if (req.url?.startsWith('/v1/webhook/flows/') && buffer.length > 1024 * 1024) {
+          throw new CustomError('Automation webhook exceeds 1 MB', 413);
+        }
+        (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
       }
-      (req as express.Request & { rawBody?: Buffer }).rawBody = Buffer.from(buffer);
     }
-  } }));
+  }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(morgan('dev', { skip: req => req.originalUrl.startsWith('/v1/admin/waba/onboard') || req.originalUrl.startsWith('/v1/facebook/') || req.originalUrl.startsWith('/v1/integrations/google/') || req.originalUrl.startsWith('/v1/integrations/shopify/') || req.originalUrl.startsWith('/v1/integrations/google-people/') || req.originalUrl.startsWith('/v1/admin/google-people') || req.originalUrl.startsWith('/v1/webhook/flows/') }));
   // app.use(express.json());

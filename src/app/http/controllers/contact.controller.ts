@@ -12,6 +12,7 @@ import userPlansModel from '../../models/userPlans.model';
 import activityLogsModel from '../../models/activityLogs.model';
 import userTeamModel from '../../models/team.model';
 import db from '@surefy/database';
+import { companyReadScope } from '../../utils/platformOrganization';
 
 class ContactController {
   /** Apply existing tags to a batch of contacts in the authenticated account. */
@@ -127,7 +128,10 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId as string | undefined, req.companyId);
+    const companyScope = req.userRole === 'superadmin' && effectiveUserId === req.userId
+      ? await companyReadScope(db, { id: req.userId!, role: req.userRole, company_id: req.companyId })
+      : req.companyId;
+    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId as string | undefined, companyScope);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   }
 
@@ -163,7 +167,10 @@ class ContactController {
       onlyAssignedToUserId: isTeamMember ? req.userId : undefined
     };
 
-    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId, req.companyId);
+    const companyScope = req.userRole === 'superadmin' && effectiveUserId === req.userId
+      ? await companyReadScope(db, { id: req.userId!, role: req.userRole, company_id: req.companyId })
+      : req.companyId;
+    const contacts = await ContactService.getContacts(effectiveUserId, filters, phoneNumberId, companyScope);
     return successResponse(req, res, 'Contacts retrieved successfully', contacts);
   });
 
@@ -574,11 +581,14 @@ class ContactController {
     if (req.params.userId !== ownerId && req.params.userId !== req.userId) {
       throw new HTTP400Error({ message: 'Cannot fetch another account contacts' });
     }
+    const companyScope = req.userRole === 'superadmin' && ownerId === req.userId
+      ? await companyReadScope(db, { id: req.userId!, role: req.userRole, company_id: req.companyId })
+      : req.companyId;
     const result = await ContactService.getContacts(ownerId, {
       page: req.query.page,
       limit: req.query.limit,
       onlyAssignedToUserId: req.userId !== ownerId ? req.userId : undefined,
-    }, undefined, req.companyId);
+    }, undefined, companyScope);
     return successResponse(req, res, 'User contacts retrieved successfully', result);
   });
 

@@ -1,3 +1,4 @@
+import { frontendCallback } from '../../utils/facebook';
 import { Request } from 'express';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import service, { instagramConfig, instagramPermissions } from '../../services/instagram.service';
@@ -5,7 +6,7 @@ import { FacebookError, publicOrigin, signedUser, verifySignature } from '../../
 import { directInstagramLoginScopes } from '../../services/instagramGraph.service';
 import publishing from '../../services/instagramPublishing.service';
 import { receivePublishingMedia } from '../../utils/instagramPublishingMedia';
-import { facebookHandler } from './facebookMessenger.controller';
+import { metaHandler } from './metaHttp.controller';
 
 const scope = (req: JWTAuthRequest) => ({
   companyId: req.companyId!,
@@ -22,7 +23,7 @@ const browser = (req: Request) => {
   return value && /^[A-Za-z0-9_-]{43}$/.test(value) ? value : undefined;
 };
 class InstagramController {
-  setup = facebookHandler(async (req, res) => {
+  setup = metaHandler(async (req, res) => {
     await service.access(scope(req));
     const providers = ['instagram', 'facebook'].map((provider) => {
       try {
@@ -54,7 +55,7 @@ class InstagramController {
       },
     });
   });
-  start = facebookHandler(async (req, res) => {
+  start = metaHandler(async (req, res) => {
     const provider = req.body?.provider;
     if (provider !== undefined && provider !== 'instagram' && provider !== 'facebook')
       throw new FacebookError(400, 'Choose Instagram or Facebook login.');
@@ -68,20 +69,20 @@ class InstagramController {
     });
     res.json({ success: true, data: { authorization_url: result.url } });
   });
-  callback = facebookHandler(async (req, res) => {
+  callback = metaHandler(async (req, res) => {
     const status = await service.callback(req.query.state, browser(req), req.query.code, Boolean(req.query.error));
-    res.redirect(303, `/v1/facebook/instagram#oauth=${status}`);
+    res.redirect(303, frontendCallback('instagram', status));
   });
-  candidates = facebookHandler(async (req, res) =>
+  candidates = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.candidates(scope(req), browser(req)) }),
   );
-  connect = facebookHandler(async (req, res) =>
+  connect = metaHandler(async (req, res) =>
     res.json({
       success: true,
       data: await service.connect(scope(req), browser(req), req.body?.instagram_id || req.body?.page_id),
     }),
   );
-  verify = facebookHandler(async (req, res) => {
+  verify = metaHandler(async (req, res) => {
     const expected = process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN || process.env.FACEBOOK_WEBHOOK_VERIFY_TOKEN;
     if (!expected) throw new FacebookError(503, 'Instagram webhook verification is not configured.');
     if (
@@ -92,7 +93,7 @@ class InstagramController {
       throw new FacebookError(403, 'Instagram webhook verification failed.');
     res.type('text/plain').send(req.query['hub.challenge']);
   });
-  receive = facebookHandler(async (req, res) => {
+  receive = metaHandler(async (req, res) => {
     const secret = process.env.INSTAGRAM_APP_SECRET;
     if (!secret) throw new FacebookError(503, 'Instagram webhook signing is not configured.');
     const raw = (req as Request & { rawBody?: Buffer }).rawBody;
@@ -101,12 +102,12 @@ class InstagramController {
     await service.receive(req.body, 'instagram');
     res.type('text/plain').send('EVENT_RECEIVED');
   });
-  deauthorize = facebookHandler(async (req, res) => {
+  deauthorize = metaHandler(async (req, res) => {
     if (!process.env.INSTAGRAM_APP_SECRET) throw new FacebookError(503, 'Instagram is not configured.');
     await service.revoke(signedUser(req.body?.signed_request, process.env.INSTAGRAM_APP_SECRET), false, 'instagram');
     res.json({ success: true, data: { deauthorized: true } });
   });
-  deletion = facebookHandler(async (req, res) => {
+  deletion = metaHandler(async (req, res) => {
     if (!process.env.INSTAGRAM_APP_SECRET) throw new FacebookError(503, 'Instagram is not configured.');
     const user = signedUser(req.body?.signed_request, process.env.INSTAGRAM_APP_SECRET);
     const confirmation = await service.revoke(user, true, 'instagram');
@@ -116,26 +117,37 @@ class InstagramController {
     );
     res.json({ url: `${base}/v1/facebook/data-deletion/status/${confirmation}`, confirmation_code: confirmation });
   });
-  accounts = facebookHandler(async (req, res) => res.json({ success: true, data: await service.accounts(scope(req)) }));
-  syncProfile = facebookHandler(async (req, res) =>
+  deletionStatus = metaHandler(async (req, res) => {
+    const confirmation = req.params.confirmation;
+    if (!/^[A-Za-z0-9_-]{43}$/.test(confirmation)) throw new FacebookError(404, 'Deletion confirmation was not found.');
+    const request = await service.deletionStatus(confirmation);
+    if (!request) throw new FacebookError(404, 'Deletion confirmation was not found.');
+    res
+      .type('html')
+      .send(
+        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Instagram data deletion</title><h1>Instagram data deletion completed</h1><p>Completed: ${new Date(request.completed_at).toISOString()}</p></html>`,
+      );
+  });
+  accounts = metaHandler(async (req, res) => res.json({ success: true, data: await service.accounts(scope(req)) }));
+  syncProfile = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.syncProfile(scope(req), req.params.id) }),
   );
-  publishingSettings = facebookHandler(async (req, res) =>
+  publishingSettings = metaHandler(async (req, res) =>
     res.json({ success: true, data: await publishing.settings(scope(req), req.params.id) }),
   );
-  publications = facebookHandler(async (req, res) =>
+  publications = metaHandler(async (req, res) =>
     res.json({ success: true, data: await publishing.list(scope(req), req.params.id) }),
   );
-  preparePost = facebookHandler(async (req, res) =>
+  preparePost = metaHandler(async (req, res) =>
     res.json({ success: true, data: await publishing.create(scope(req), req.params.id, req.body) }),
   );
-  publicationStatus = facebookHandler(async (req, res) =>
+  publicationStatus = metaHandler(async (req, res) =>
     res.json({ success: true, data: await publishing.refresh(scope(req), req.params.id, req.params.publication) }),
   );
-  publishPost = facebookHandler(async (req, res) =>
+  publishPost = metaHandler(async (req, res) =>
     res.json({ success: true, data: await publishing.publish(scope(req), req.params.id, req.params.publication) }),
   );
-  uploadPublishingMedia = facebookHandler(async (req, res) => {
+  uploadPublishingMedia = metaHandler(async (req, res) => {
     await publishing.authorize(scope(req), req.params.id);
     await new Promise<void>((resolve, reject) =>
       receivePublishingMedia(req, res, (error: any) => {
@@ -152,7 +164,7 @@ class InstagramController {
     );
     res.json({ success: true, data: await publishing.saveAsset(scope(req), req.params.id, req.file) });
   });
-  publishingMedia = facebookHandler(async (req, res) => {
+  publishingMedia = metaHandler(async (req, res) => {
     const asset = await publishing.publicAsset(req.params.token);
     res.type(asset.type).set('X-Content-Type-Options', 'nosniff').set('Cache-Control', 'no-store');
     await new Promise<void>((resolve, reject) =>
@@ -162,24 +174,24 @@ class InstagramController {
     );
   });
   list = (kind: 'conversation' | 'media') =>
-    facebookHandler(async (req, res) =>
+    metaHandler(async (req, res) =>
       res.json({ success: true, data: await service.list(scope(req), req.params.id, kind) }),
     );
   sync = (kind: 'conversation' | 'media' | 'message' | 'comment') =>
-    facebookHandler(async (req, res) =>
+    metaHandler(async (req, res) =>
       res.json({
         success: true,
         data: await service.sync(scope(req), req.params.id, kind, req.params.child, req.body?.after),
       }),
     );
-  messages = facebookHandler(async (req, res) =>
+  messages = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.messages(scope(req), req.params.id, req.params.child) }),
   );
-  comments = facebookHandler(async (req, res) =>
+  comments = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.comments(scope(req), req.params.id, req.params.child) }),
   );
   action = (type: 'message' | 'reply' | 'hide') =>
-    facebookHandler(async (req, res) =>
+    metaHandler(async (req, res) =>
       res.json({
         success: true,
         data: await service.action(
@@ -192,10 +204,10 @@ class InstagramController {
         ),
       }),
     );
-  disconnect = facebookHandler(async (req, res) =>
+  disconnect = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.disconnect(scope(req), req.params.id) }),
   );
-  erase = facebookHandler(async (req, res) =>
+  erase = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.disconnect(scope(req), req.params.id, true) }),
   );
 }

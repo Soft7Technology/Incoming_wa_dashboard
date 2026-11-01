@@ -7,15 +7,6 @@ const { load, fixture, utils, leadMigration } = require('./facebook-helpers.cjs'
 
 const dbTest = (name, run) => test(name, { skip: !process.env.FACEBOOK_TEST_DATABASE_URL && 'Set FACEBOOK_TEST_DATABASE_URL to isolated local PostgreSQL.' }, () => leadFixture(run));
 
-function presetFor(scope) {
-  const values = { FACEBOOK_LEADS_PRESET_COMPANY_ID: scope.companyId, FACEBOOK_LEADS_PRESET_OWNER_ID: scope.ownerId,
-    FACEBOOK_LEADS_PRESET_PAGE_ID: '20001', FACEBOOK_LEADS_PRESET_PAGE_NAME: 'Live Page Name',
-    FACEBOOK_LEADS_PRESET_TOKEN_CIPHERTEXT: utils.encrypt('PRIVATE_TEST_FACEBOOK_USER_TOKEN') };
-  const previous = Object.fromEntries(Object.keys(values).map(key => [key, process.env[key]]));
-  Object.assign(process.env, values);
-  return () => { for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; } };
-}
-
 async function leadFixture(run) {
   await fixture(async (context) => {
     const { meta, leadService, a } = context;
@@ -127,21 +118,6 @@ dbTest('token import works without a Login configuration, checks grants and neve
   } finally { process.env.FACEBOOK_LEADS_LOGIN_CONFIG_ID = '10003'; }
 });
 
-dbTest('saved token connects only its bound owner and Page without requesting credentials or retaining selection tokens', async ({ leadService, a, b, other, member, database }) => {
-  const restore = presetFor(a);
-  try {
-    assert.equal(leadService.presetAvailable(a), true);
-    for (const scope of [b, other, member]) {
-      assert.equal(leadService.presetAvailable(scope), false);
-      await assert.rejects(leadService.connectPreset(scope));
-    }
-    const page = await leadService.connectPreset(a);
-    assert.equal(page.status, 'connected'); assert.equal(page.page_id, '20001'); assert.equal(page.token_ciphertext, undefined);
-    assert.equal((await database('facebook_lead_oauth_sessions')).length, 0);
-    assert.equal((await leadService.connectPreset(a)).id, page.id);
-  } finally { restore(); }
-});
-
 dbTest('lead connection detects revoked Messenger grants and subscribes only to permitted lead fields', async ({ leadService, service, connect, connectLead, a, meta, fields, database }) => {
   meta.grants = [...utils.permissions]; await connect();
   meta.grants = [...utils.leadPermissions];
@@ -151,25 +127,6 @@ dbTest('lead connection detects revoked Messenger grants and subscribes only to 
   const messenger = await database('facebook_pages').first();
   assert.equal(messenger.status, 'reconnect_required'); assert.match(messenger.error, /pages_messaging/);
   assert.equal((await service.pages(a))[0].status, 'reconnect_required');
-});
-
-dbTest('saved token Page selection lists all granted Pages and connects another Page within the owner scope', async ({ leadService, a, b, other, member, meta, database }) => {
-  const restore = presetFor(a);
-  try {
-    meta.candidates.push({ id: '20002', name: 'Another business Page', access_token: 'PRIVATE_OTHER_PAGE_TOKEN', tasks: ['ADVERTISE'] });
-    const original = meta.call.bind(meta);
-    meta.call = async (...args) => args[0] === '20002' ? { id: '20002', name: 'Another business Page' } : original(...args);
-    for (const scope of [b, other, member]) await assert.rejects(leadService.choosePresetPages(scope));
-    const imported = await leadService.choosePresetPages(a);
-    const candidates = await leadService.candidates(a, imported.browser);
-    assert.deepEqual(Array.from(candidates.pages, p => p.page_id), ['20001', '20002']);
-    assert.equal(JSON.stringify(candidates).includes('PRIVATE_'), false);
-    assert.equal((await leadService.candidates(b, imported.browser)).pages.length, 0);
-    const connected = await leadService.connect(a, imported.browser, '20002');
-    assert.equal(connected.page_id, '20002'); assert.equal(connected.status, 'connected');
-    assert.equal((await leadService.connectPreset(a)).page_id, '20001');
-    assert.equal((await database('facebook_lead_pages')).length, 2);
-  } finally { restore(); }
 });
 
 dbTest('lead connection preserves a working Messenger subscription when no token grants both features', async ({ connect, connectLead, meta, fields, database }) => {
@@ -328,9 +285,7 @@ dbTest('real HTTP routes require JWT, bind OAuth cookies, verify raw webhook sig
     '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) } };
   app.use('/v1/admin/facebook-leads', auth, load('src/routes/facebookLeads.route.ts', deps).default);
   deps['./facebookLoginTest.route'] = express.Router();
-  deps['./facebookReviewLogin.route'] = load('src/routes/facebookReviewLogin.route.ts', {
-    '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'), '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
-  });
+  deps['./facebookReviewLogin.route'] = express.Router();
   deps['./publicMetaWorkspace.route'] = express.Router();
   app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
   app.use((error, _req, res, _next) => res.status(error.status || 500).json({ success: false, message: error.message }));
@@ -340,27 +295,13 @@ dbTest('real HTTP routes require JWT, bind OAuth cookies, verify raw webhook sig
   const post = (path, body, headers = {}) => fetch(base + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) });
   try {
     assert.equal((await fetch(base + '/v1/admin/facebook-leads/pages')).status, 401);
-    assert.equal((await post('/v1/admin/facebook-leads/preset/pages', {})).status, 401);
-    const restore = presetFor(a);
-    try {
-      const selection = await post('/v1/admin/facebook-leads/preset/pages', {}, bearer(a));
-      assert.equal(selection.status, 200);
-      assert.match(selection.headers.get('set-cookie'), /fb_lead_browser=.*HttpOnly.*Secure.*SameSite=Lax/);
-      assert.equal((await selection.text()).includes('PRIVATE_'), false);
-      assert.equal((await post('/v1/admin/facebook-leads/preset/pages', {}, bearer(b))).status, 403);
-    } finally { restore(); }
-    const privateToken = 'PRIVATE_TEST_FACEBOOK_USER_TOKEN';
-    let importResponse = await post('/v1/admin/facebook-leads/token', { access_token: privateToken });
-    assert.equal(importResponse.status, 401);
-    importResponse = await post('/v1/admin/facebook-leads/token', { access_token: privateToken }, bearer(a));
-    assert.equal(importResponse.status, 200);
-    assert.match(importResponse.headers.get('set-cookie'), /^fb_lead_browser=/);
-    assert.equal((await importResponse.text()).includes(privateToken), false);
+    assert.equal((await post('/v1/admin/facebook-leads/preset/pages', {}, bearer(a))).status, 404);
+    assert.equal((await post('/v1/admin/facebook-leads/token', {}, bearer(a))).status, 404);
     let response = await post('/v1/admin/facebook-leads/oauth/start', {}, bearer(a));
     const cookie = response.headers.get('set-cookie').split(';')[0], login = (await response.json()).data;
     assert.match(cookie, /^fb_lead_browser=/); const state = new URL(login.authorization_url).searchParams.get('state');
     response = await fetch(base + '/v1/facebook/leads/oauth/callback?state=' + state + '&code=test', { headers: { Cookie: cookie }, redirect: 'manual' });
-    assert.equal(response.status, 303); assert.equal(response.headers.get('location'), '/v1/facebook/leads#oauth=ready');
+    assert.equal(response.status, 303); assert.equal(response.headers.get('location'), utils.frontendCallback('leads', 'ready'));
     response = await post('/v1/admin/facebook-leads/pages', { page_id: '20001' }, { ...bearer(a), Cookie: cookie });
     assert.equal(response.status, 200); assert.equal((await response.json()).data.status, 'connected');
     const { form } = await ready();
@@ -378,108 +319,3 @@ dbTest('real HTTP routes require JWT, bind OAuth cookies, verify raw webhook sig
     response = await fetch(base + '/v1/facebook/leads.js'); assert.equal(response.status, 200); assert.match(await response.text(), /\/v1\/facebook\/api\/leads/);
   } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
 });
-
-test('Lead Forms browser selects a form, enables syncing, imports leads and receives a new lead automatically', {
-  skip: (!process.env.FACEBOOK_TEST_DATABASE_URL || !process.env.FACEBOOK_TEST_CHROME) && 'Set local database and Chrome executable for browser testing.',
-  timeout: 60000,
-}, () => leadFixture(async ({ service, leadService, a, connectLead, webhook, database, meta }) => {
-  const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
-  const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
-  const { messenger, leads } = controllers(service, leadService);
-  const deps = { '../app/http/controllers/facebookMessenger.controller': messenger, '../app/http/controllers/facebookAds.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
-    '../app/http/controllers/facebookLeads.controller': leads,
-    '../app/http/controllers/facebookContent.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } }, '../app/http/controllers/instagram.controller': { __esModule: true, default: Object.fromEntries(['callback', 'verify', 'receive', 'deauthorize', 'deletion', 'publishingMedia'].map(key => [key, (_req, res) => res.sendStatus(400)])) } };
-  const app = express(); app.use(express.json({ verify: (req, _res, body) => { req.rawBody = body; } }));
-  app.post('/v1/auth/login', (_req, res) => res.json({ success: true, data: { token: 'BROWSER_LEADS_TEST', data: { name: 'Test Owner' } } }));
-  app.use('/v1/admin/facebook-leads', (req, res, next) => {
-    if (req.headers.authorization !== 'Bearer BROWSER_LEADS_TEST') return res.status(401).json({ success: false, message: 'Not logged in' });
-    Object.assign(req, a); next();
-  }, load('src/routes/facebookLeads.route.ts', deps).default);
-  deps['./facebookLoginTest.route'] = express.Router();
-  deps['./facebookReviewLogin.route'] = load('src/routes/facebookReviewLogin.route.ts', {
-    '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'), '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
-  });
-  // Public browser fixture uses the selected test owner; tenant/cookie checks have their own tests.
-  deps['./publicMetaWorkspace.route'] = express.Router();
-  app.post('/v1/facebook/session', (_req, res) => res.json({ success: true, data: { ready: true } }));
-  app.use('/v1/facebook/api/leads', (req, _res, next) => { Object.assign(req, a); next(); },
-    load('src/routes/facebookLeads.route.ts', deps).default);
-  app.use('/v1/facebook', load('src/routes/facebookPublic.route.ts', deps).default);
-  const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve));
-  const base = 'http://127.0.0.1:' + server.address().port;
-  const profile = path.resolve('.facebook-test-runtime/leads-chrome-' + crypto.randomUUID()); fs.mkdirSync(profile, { recursive: true });
-  const chrome = spawn(process.env.FACEBOOK_TEST_CHROME, ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' });
-  let socket, restorePreset, failed = new Error('Chrome did not start'); chrome.on('error', error => { failed = error; });
-  try {
-    const portFile = path.join(profile, 'DevToolsActivePort');
-    for (let i = 0; i < 100 && !fs.existsSync(portFile); i++) { if (chrome.exitCode !== null) throw failed; await pause(100); }
-    if (!fs.existsSync(portFile)) throw failed;
-    const port = fs.readFileSync(portFile, 'utf8').split('\n')[0];
-    const target = (await (await fetch('http://127.0.0.1:' + port + '/json/list')).json()).find(t => t.type === 'page');
-    socket = new WebSocket(target.webSocketDebuggerUrl);
-    await new Promise((resolve, reject) => { socket.addEventListener('open', resolve, { once: true }); socket.addEventListener('error', reject, { once: true }); });
-    let sequence = 0; const pending = new Map(), errors = [];
-    socket.addEventListener('message', event => {
-      const message = JSON.parse(event.data);
-      if (message.method === 'Runtime.exceptionThrown') errors.push(message.params.exceptionDetails);
-      const callback = pending.get(message.id);
-      if (callback) { pending.delete(message.id); clearTimeout(callback.timeout); message.error ? callback.reject(new Error(message.error.message)) : callback.resolve(message.result); }
-    });
-    const call = (method, params = {}) => new Promise((resolve, reject) => {
-      const id = ++sequence, timeout = setTimeout(() => { pending.delete(id); reject(new Error('Chrome timed out: ' + method)); }, 5000);
-      pending.set(id, { resolve, reject, timeout }); socket.send(JSON.stringify({ id, method, params }));
-    });
-    const evaluate = async expression => {
-      const result = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-      if (result.exceptionDetails) throw new Error(result.exceptionDetails.text);
-      return result.result.value;
-    };
-    const waitFor = async expression => { for (let i = 0; i < 120; i++) { if (await evaluate(expression)) return; await pause(100); } throw new Error('Browser condition failed: ' + expression); };
-    await call('Runtime.enable'); await call('Page.enable'); await connectLead();
-    await call('Page.navigate', { url: base + '/v1/facebook/leads' });
-    await waitFor("!document.getElementById('workspace').hidden && typeof api === 'function'");
-    await waitFor("!document.getElementById('workspace').hidden && document.getElementById('pages').innerText.includes('Live Page Name')");
-    await evaluate("document.getElementById('token-connection').open=true; document.getElementById('facebook-token').value='PRIVATE_TEST_FACEBOOK_USER_TOKEN'; document.getElementById('token-form').requestSubmit()");
-    await waitFor("!document.getElementById('selection').hidden && document.getElementById('notice').innerText.includes('Token verified')");
-    assert.equal(await evaluate("document.getElementById('facebook-token').value"), '');
-    assert.equal(await evaluate("Object.values(sessionStorage).some(value=>value.includes('PRIVATE_TEST_FACEBOOK_USER_TOKEN'))"), false);
-    await evaluate("document.getElementById('select-page').click()");
-    await waitFor("document.getElementById('forms').innerText.includes('Request a quote')");
-    await evaluate("Array.from(document.querySelectorAll('#pages button')).find(b=>b.textContent==='Choose forms').click()");
-    await waitFor("document.getElementById('forms').innerText.includes('Request a quote')");
-    await evaluate("document.querySelector('#forms summary').click()");
-    assert.equal(await evaluate("document.getElementById('forms').innerText.includes('Email address')"), true);
-    await evaluate("Array.from(document.querySelectorAll('#forms button')).find(b=>b.textContent==='Enable syncing').click()");
-    await waitFor("document.getElementById('forms').innerText.includes('Automatic syncing enabled')");
-    await evaluate("Array.from(document.querySelectorAll('#forms button')).find(b=>b.textContent==='Sync existing leads').click()");
-    await waitFor("document.getElementById('notice').innerText.includes('Sync complete') && document.getElementById('leads').innerText.includes('Ada Example')");
-    assert.equal((await database('facebook_leads')).length, 2);
-    assert.equal(await evaluate("document.getElementById('leads').innerText.includes('ada@example.test') && document.getElementById('leads').innerText.includes('+919876543210')"), true);
-    const body = JSON.stringify(webhook('60009'));
-    const response = await fetch(base + '/v1/facebook/webhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Hub-Signature-256': 'sha256=' + crypto.createHmac('sha256', process.env.FACEBOOK_APP_SECRET).update(body).digest('hex') }, body });
-    assert.equal(response.status, 200); await waitFor("document.getElementById('leads').innerText.includes('60009')");
-    assert.equal(await evaluate("document.body.innerText.includes('TEST_PAGE_TOKEN')"), false);
-    await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
-    assert.equal(await evaluate('document.documentElement.scrollWidth <= window.innerWidth'), true);
-    const screenshot = await call('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
-    fs.writeFileSync(path.resolve('.facebook-test-runtime/browser-leads.png'), Buffer.from(screenshot.data, 'base64'));
-    assert.equal(errors.length, 0, JSON.stringify(errors));
-    restorePreset = presetFor(a);
-    await call('Page.navigate', { url: base + '/v1/facebook/leads' });
-    await waitFor("!document.getElementById('workspace').hidden && !document.getElementById('token-connection').hidden && document.getElementById('forms').innerText.includes('Request a quote')");
-    assert.equal(await evaluate("document.getElementById('connect').textContent"), 'Connect Live Page Name');
-    assert.equal(await evaluate("document.getElementById('configuration').hidden"), true);
-    await evaluate("document.getElementById('connect').click()");
-    await waitFor("document.getElementById('notice').innerText.includes('saved Facebook token')");
-    await waitFor("!document.getElementById('leads-panel').hidden && document.getElementById('leads').innerText.includes('Ada Example')");
-    assert.equal((await database('facebook_lead_pages')).length, 1);
-    meta.candidates.push({ id: '20002', name: 'Another business Page', access_token: 'PRIVATE_OTHER_PAGE_TOKEN', tasks: ['ADVERTISE'] });
-    assert.equal(await evaluate("document.getElementById('connect-another').hidden"), false);
-    await evaluate("document.getElementById('connect-another').click()");
-    await waitFor("!document.getElementById('selection').hidden && document.getElementById('page-select').options.length === 2");
-    assert.equal(await evaluate("Array.from(document.getElementById('page-select').options).some(o => o.value === '20002' && o.textContent.includes('Another business Page'))"), true);
-    assert.equal(await evaluate("document.getElementById('facebook-token').value"), '');
-    assert.equal(errors.length, 0, JSON.stringify(errors));
-    assert.equal(await evaluate("document.getElementById('login-form') === null && document.getElementById('logout') === null"), true);
-  } finally { if (restorePreset) restorePreset(); if (socket) socket.close(); chrome.kill(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
-}));

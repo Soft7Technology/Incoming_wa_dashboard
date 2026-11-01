@@ -5,10 +5,13 @@ import controller from '../app/http/controllers/superAdmin.controller';
 import userPlans from '../app/http/controllers/superAdminUserPlan.controller';
 import pricing from '../app/http/controllers/platformPricing.controller';
 import catalog from '../app/http/controllers/planCatalog.controller';
+import wallet from '../app/http/controllers/platformWallet.controller';
 
 const SuperAdminRoute = Router();
 // Every route checks the actor's live database role. API keys cannot enter this group.
 SuperAdminRoute.use(jwtAuthMiddleware, controller.authorize);
+SuperAdminRoute.get('/wallet', wallet.balance);
+SuperAdminRoute.get('/wallet/transactions', wallet.transactions);
 SuperAdminRoute.get('/billing/platform-fees', pricing.get);
 SuperAdminRoute.put('/billing/platform-fees', pricing.update);
 SuperAdminRoute.get('/billing/features', catalog.features);

@@ -3,6 +3,7 @@ import { Knex } from 'knex';
 import { ReportResource, OperationsFilters } from '../interfaces/superAdminOperations.interface';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { companyWallet, PLATFORM_FEE_TYPES } from '../utils/creditLedger';
 
 class SuperAdminOperationsModel extends BaseModel {
   constructor() {
@@ -25,7 +26,8 @@ class SuperAdminOperationsModel extends BaseModel {
       'paid_at',
     );
     const fees = this.scope(
-      this.db('credit_transactions').where({ reference_type: 'subscription_commission', type: 'debit' }),
+      companyWallet(this.db('credit_transactions'), this.db)
+        .where({ type: 'debit' }).whereIn('reference_type', PLATFORM_FEE_TYPES),
       f,
     );
     if (!byCompany) {

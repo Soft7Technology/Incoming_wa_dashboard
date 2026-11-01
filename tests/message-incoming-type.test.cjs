@@ -26,7 +26,7 @@ function fixture() {
     '@surefy/console/models/phoneNumber.model': { findByPhoneNumberId: async () => business },
     '../models/contact.model': { findOrCreateIncoming: async () => ({ id: 'contact', name: 'Customer' }) },
     '@surefy/console/models/message.model': { findByWamid: async () => undefined, createIncoming: async data => {
-      const row = { ...data, id: `message-${rows.length}` };
+      const row = { ...data, id: `message-${rows.length}`, created_at: '2026-10-29T10:00:00.000Z' };
       rows.push(row);
       return row;
     } },
@@ -61,6 +61,14 @@ test('unsupported messages retain the complete Meta payload and errors in the re
   assert.equal(saved.phone_number_id, 'business');
   assert.equal(saved.from_phone, payload.from);
   assert.equal(h.events[0].event, 'new_message');
+  const event = h.events[0].data;
+  assert.equal(event.id, saved.id);
+  assert.equal(event.wamid, saved.wamid);
+  assert.equal(event.contactId, 'contact');
+  assert.equal(event.phoneNumberId, 'business');
+  assert.equal(event.metaPhoneNumberId, 'meta-business');
+  assert.equal(event.createdAt, saved.created_at);
+  assert.equal(event.inboxRead, false);
 });
 
 test('unknown and missing inbound types are saved as unsupported without losing their original payloads', async () => {

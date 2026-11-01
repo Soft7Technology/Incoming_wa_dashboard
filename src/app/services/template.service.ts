@@ -5,7 +5,7 @@ import MetaService from './meta.service';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import phoneNumberModel from '../models/phoneNumber.model';
-import { validateTemplatePayload } from '../utils/templateValidation';
+import { validateTemplatePayload, metaTemplateComponents } from '../utils/templateValidation';
 import { validate as isUUID } from 'uuid';
 
 class TemplateService {
@@ -47,7 +47,8 @@ class TemplateService {
     const waba = await this.resolveWaba(data.waba_id, { companyId: data.company_id, userId: data.user_id });
     const existing = await TemplateModel.findByNameAndLanguage(data.company_id, data.name, data.language, waba.id);
     if (existing) throw new HTTP400Error({ message: 'This template name and language already exist in the WABA' });
-    const { name, language, category, components, parameter_format, message_send_ttl_seconds } = data;
+    const { name, language, category, parameter_format, message_send_ttl_seconds } = data;
+    const components = metaTemplateComponents(data.components);
     const result = await MetaService.createTemplate(waba.waba_id, {
       name, language, category, components, parameter_format, message_send_ttl_seconds,
     });
@@ -87,6 +88,7 @@ class TemplateService {
       throw new HTTP400Error({ message: 'The category of an approved template cannot be changed' });
     }
     const payload = { ...data };
+    if (payload.components) payload.components = metaTemplateComponents(payload.components);
     if (current.status === 'APPROVED') delete payload.category;
     if (!Object.keys(payload).length) throw new HTTP400Error({ message: 'No template changes supplied' });
     await MetaService.updateTemplate(template.template_id, payload);

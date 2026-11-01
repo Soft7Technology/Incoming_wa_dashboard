@@ -88,8 +88,8 @@ class MessageModel extends BaseModel {
       ) latest ON TRUE
       LEFT JOIN LATERAL (
         SELECT
-          COUNT(*) FILTER (WHERE m.inbox_read_at IS NOT NULL OR m.status = 'read' OR m.read_at IS NOT NULL) AS read_count,
-          COUNT(*) FILTER (WHERE m.inbox_read_at IS NULL AND m.status IS DISTINCT FROM 'read' AND m.read_at IS NULL) AS unread_count
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NOT NULL) AS read_count,
+          COUNT(*) FILTER (WHERE m.inbox_read_at IS NULL) AS unread_count
         FROM messages m
         WHERE m.user_id = c.user_id
           AND m.company_id = c.company_id
@@ -363,6 +363,7 @@ class MessageModel extends BaseModel {
     }
     return this.query().where({
       user_id: message.user_id, company_id: message.company_id, phone_number_id: message.phone_number_id,
+      direction: 'inbound',
     }).whereRaw(`CASE WHEN direction = 'inbound'
       THEN regexp_replace(from_phone, '[^0-9]', '', 'g')
       ELSE regexp_replace(to_phone, '[^0-9]', '', 'g') END = ?`, [recipient])
@@ -371,6 +372,7 @@ class MessageModel extends BaseModel {
       .whereRaw(`(COALESCE(created_at, '0001-01-01'), id) <=
         (SELECT COALESCE(created_at, '0001-01-01'), id FROM messages WHERE id = ?)`, [message.id])
       .whereNull('inbox_read_at')
+      .whereRaw("status IS DISTINCT FROM 'deleted'")
       .update({ inbox_read_at: new Date() }).returning('id');
   }
 

@@ -1,5 +1,6 @@
 import { BaseModel } from '@surefy/models/base.model';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import { platformFees } from '../utils/creditLedger';
 
 class userPlansModel extends BaseModel {
   constructor() {
@@ -56,7 +57,7 @@ class userPlansModel extends BaseModel {
     };
 
     // ✅ STATS QUERY
-    const stats = await this.db('user_plans as up')
+    const stats = await this.db
       .select(
         applyCompanyFilter(this.db('user_plans').count('*')).as('total_subscriptions'),
 
@@ -68,7 +69,9 @@ class userPlansModel extends BaseModel {
           'expired_subscriptions',
         ),
 
-        applyCompanyFilter(this.db('user_plans').sum('price as total_revenue').andWhere('active', true)).as(
+        (isSuperAdmin
+          ? platformFees(this.db('credit_transactions'), this.db).sum('amount as total_revenue')
+          : applyCompanyFilter(this.db('user_plans').sum('price as total_revenue').andWhere('active', true))).as(
           'total_revenue',
         ),
 
@@ -119,6 +122,7 @@ class userPlansModel extends BaseModel {
     return {
       stats: {
         total_revenue: Number(stats?.total_revenue || 0),
+        revenue_basis: isSuperAdmin ? 'recorded_platform_fees' : 'active_subscription_catalog_value',
         total_subscriptions: Number(stats?.total_subscriptions || 0),
         active_subscriptions: Number(stats?.active_subscriptions || 0),
         inactive_subscriptions: Number(stats?.inactive_subscriptions || 0),

@@ -2,8 +2,10 @@ import { Router } from 'express';
 import { requireRole } from '@surefy/middleware/jwtAuth.middleware';
 import CreditController from '@surefy/console/http/controllers/credit.controller';
 import creditController from '@surefy/console/http/controllers/credit.controller';
+import CreditTopupRoute from './creditTopup.route';
 
 const CreditRoute = Router();
+CreditRoute.use('/topups', CreditTopupRoute);
 
 // All credit endpoints require JWT authentication (applied at route group level)
 CreditRoute.get('/balance', CreditController.getCompanyBalance);

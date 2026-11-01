@@ -1,8 +1,17 @@
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
-import { CreateTemplateDto, UpdateTemplateDto } from '../interfaces/template.interface';
+import { CreateTemplateDto, UpdateTemplateDto, TemplateComponent } from '../interfaces/template.interface';
 
 function requireValue(condition: unknown, message: string): asserts condition {
   if (!condition) throw new HTTP400Error({ message });
+}
+
+/** Filename is a document-send parameter, not a template-definition header field. */
+export function metaTemplateComponents(components: TemplateComponent[]) {
+  return components.map(component => {
+    if (component.type !== 'HEADER') return { ...component };
+    const { filename: _filename, ...header } = component;
+    return header;
+  });
 }
 
 /** Validate request structure locally; Meta remains authoritative for policy and specialized templates. */
@@ -59,9 +68,9 @@ export function validateTemplatePayload(data: CreateTemplateDto | UpdateTemplate
         if (component.type === 'FOOTER') requireValue(variables.length === 0, 'Footer text cannot contain variables');
       }
       if (component.type === 'HEADER' && ['IMAGE', 'VIDEO', 'DOCUMENT'].includes(component.format || '')) {
-        requireValue(Array.isArray(component.example?.header_handle) && component.example.header_handle.length > 0 &&
-          component.example.header_handle.every((handle: unknown) => typeof handle === 'string' && handle.length > 0),
-          'Media header requires example.header_handle from Meta resumable upload');
+        requireValue(Array.isArray(component.example?.header_handle) && component.example.header_handle.length === 1 &&
+          component.example.header_handle.every((handle: unknown) => typeof handle === 'string' && handle.length > 0 && !/\s/.test(handle)),
+          'Media header requires exactly one complete Meta resumable-upload handle in example.header_handle, without spaces or newlines. Upload the sample again and use one returned h value.');
       }
       if (component.buttons !== undefined) requireValue(Array.isArray(component.buttons) && component.buttons.length > 0, 'buttons must be a nonempty array');
     }

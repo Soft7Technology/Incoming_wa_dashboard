@@ -20,7 +20,7 @@ function fixture() {
   const db = knex({ client: 'pg' });
   const queries = [];
   class BaseModel {
-    constructor(table) { this.table = table; }
+    constructor(table) { this.table = table; this.db = db; }
     query() { return db(this.table); }
   }
   const model = load('src/app/models/contact.model.ts', {
@@ -33,6 +33,7 @@ function fixture() {
     queries.push(query);
     return /count\(/.test(query.sql) ? { count: '51' } : contacts;
   } });
+  const messages = { findLatestForContacts: async () => [] };
   const service = load('src/app/services/contact.service.ts', {
     '../models/contact.model': model,
     '../models/phoneNumber.model': { findByPhoneNumberId: async () => ({
@@ -40,14 +41,14 @@ function fixture() {
     }) },
     '../models/contactTagRelation.model': { getContactsWithTags: async () => [] },
     '../models/contactListRelation.model': { getContactIdsByLists: async () => ['contact'] },
-    '../models/message.model': { findLatestForContacts: async () => [] },
+    '../models/message.model': messages,
     '@surefy/exceptions/HTTP400Error': HttpError,
     '@surefy/exceptions/HTTP404Error': HttpError,
   });
-  return { db, model, service, queries, BaseModel };
+  return { db, model, service, queries, BaseModel, messages };
 }
 
-test('read and unread select the latest message in either direction with full account and phone scope', async () => {
+test('read and unread use unviewed incoming messages with full account and phone scope', async () => {
   const { db, model } = fixture();
   try {
     for (const read_status of ['read', 'unread']) {
@@ -56,13 +57,14 @@ test('read and unread select the latest message in either direction with full ac
       for (const fragment of [
         'm.user_id = contacts.user_id', 'm.company_id = contacts.company_id',
         'm.phone_number_id = contacts.phone_number_id', "CASE WHEN m.direction = 'inbound'",
-        "COALESCE(m.status = 'read', false) OR m.read_at IS NOT NULL",
+        '(m.inbox_read_at IS NOT NULL)', "AND m.direction = 'inbound' AND m.status IS DISTINCT FROM 'deleted'",
         "regexp_replace(m.from_phone, '[^0-9]', '', 'g')", 'contacts.country_code || contacts.phone_number',
         "btrim(contacts.phone_number) LIKE '+%'", "btrim(contacts.phone_number) LIKE '00%'", 'ELSE NULL',
         '"contacts"."user_id" = ?', '"phone_number_id" = ?', '"deleted_at" is null', 'assigned_to @>',
       ]) assert.ok(sql.includes(fragment), fragment);
       assert.ok(sql.includes('m.to_phone') && !sql.includes('RIGHT('));
-      assert.match(sql, /ORDER BY m.created_at DESC NULLS LAST, m.id DESC/);
+      assert.match(sql, /ORDER BY \(m.inbox_read_at IS NULL\) DESC, m.created_at DESC NULLS LAST, m.id DESC/);
+      assert.ok(!sql.includes('m.read_at') && !sql.includes("m.status = 'read'"));
       assert.deepEqual(bindings, ['sender', 'owner', 'member', read_status === 'read']);
     }
     const defaultSql = model.findWithFilters('owner', {}, 'sender').toSQL();
@@ -145,7 +147,9 @@ test('contact stage status filters totals and rows on both global and sender-spe
           assert.equal(query.bindings.includes('sender'), Boolean(sender));
         }
         assert.match(queries[0].sql, /^select count\(\*\)/);
-        assert.match(queries[1].sql, /"created_at" desc, "contacts"\."id" asc limit \? offset \?/);
+        assert.match(queries[1].sql, read_status === undefined
+          ? /"created_at" desc, "contacts"\."id" asc limit \? offset \?/
+          : /LIMIT 1\s+\) desc nulls last, "contacts"\."id" asc limit \? offset \?/);
         assert.deepEqual(queries[1].bindings.slice(-2), [10, 10]);
       }
     }
@@ -307,7 +311,7 @@ test('conversation indexes avoid scanning message history for every contact with
     } finally { memory.close(); await db.destroy(); }
   });
 
-test('all excludes missing conversations from totals and sorts unread first before pagination', async () => {
+test('all excludes missing conversations and respects explicit contact sorts without unread priority', async () => {
   const { db, service, queries } = fixture();
   try {
     await service.getContacts('owner', { page: 2, limit: 50, read_status: 'all', sortBy: 'name', sortOrder: 'desc' },
@@ -317,10 +321,110 @@ test('all excludes missing conversations from totals and sorts unread first befo
     for (const query of queries) assert.match(query.sql, /LIMIT 1\s+\) IS NOT NULL/);
     assert.match(count.sql, /^select count\(\*\) as "count"/);
     assert.ok(!count.sql.includes('ASC NULLS LAST'));
-    assert.match(page.sql, /LIMIT 1\s+\) ASC NULLS LAST, "name" desc, "contacts"\."id" asc limit \? offset \?/);
+    assert.ok(!page.sql.includes('ASC NULLS LAST'));
+    assert.match(page.sql, /order by "name" desc, "contacts"\."id" asc limit \? offset \?/);
     assert.deepEqual(page.bindings.slice(-2), [50, 50]);
   } finally { await db.destroy(); }
 });
+
+test('inbox pages and displayed times follow latest messages, not contact dates or receipt updates',
+  { skip: !DatabaseSync }, async () => {
+    const { db, service, messages } = fixture();
+    const memory = new DatabaseSync(':memory:');
+    memory.function('btrim', value => value == null ? null : value.trim());
+    memory.function('regexp_replace', (value, pattern, replacement, flags) =>
+      value == null ? null : value.replace(new RegExp(pattern, flags), replacement));
+    memory.exec(`CREATE TABLE contacts (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      phone_number TEXT, country_code TEXT, created_at TEXT, deleted_at TEXT);
+      CREATE TABLE messages (id TEXT, user_id TEXT, company_id TEXT, phone_number_id TEXT,
+      direction TEXT, from_phone TEXT, to_phone TEXT, status TEXT, read_at TEXT, inbox_read_at TEXT,
+      created_at TEXT, updated_at TEXT);`);
+    const ids = result => result.contacts.map(contact => contact.id);
+    const latest = memory.prepare(`SELECT * FROM messages WHERE user_id = ? AND company_id = ?
+      AND phone_number_id = ? AND (CASE WHEN direction = 'inbound' THEN from_phone ELSE to_phone END) = ?
+      ORDER BY created_at DESC, id DESC LIMIT 1`);
+    messages.findLatestForContacts = async contacts => contacts.map(contact => ({
+      contact_id: contact.id,
+      last_message: latest.get(contact.user_id, contact.company_id, contact.phone_number_id,
+        contact.country_code + contact.phone_number) ?? null,
+      ...memory.prepare(`SELECT COUNT(*) FILTER (WHERE inbox_read_at IS NOT NULL) AS read_count,
+        COUNT(*) FILTER (WHERE inbox_read_at IS NULL) AS unread_count FROM messages
+        WHERE user_id = ? AND company_id = ? AND phone_number_id = ? AND from_phone = ?
+        AND direction = 'inbound' AND status IS DISTINCT FROM 'deleted'`)
+        .get(contact.user_id, contact.company_id, contact.phone_number_id, contact.country_code + contact.phone_number),
+    }));
+    db.client.runner = builder => ({ run: async () => {
+      const query = builder.toSQL();
+      const statement = memory.prepare(query.sql);
+      const bindings = query.bindings.map(value => typeof value === 'boolean' ? Number(value) : value);
+      return query.method === 'first' ? statement.get(...bindings) : statement.all(...bindings);
+    } });
+    try {
+      const contact = memory.prepare('INSERT INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, NULL)');
+      const message = memory.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)');
+      for (let i = 1; i <= 12; i++) {
+        const id = String(i).padStart(2, '0');
+        const phone = `90000000${id}`;
+        contact.run(id, 'owner', 'company', 'sender', phone, '91', `2026-09-${String(20 - i).padStart(2, '0')}`);
+        const direction = i % 2 ? 'inbound' : 'outbound';
+        // The two newest conversations tie; contact ID provides stable pagination.
+        const at = `2026-10-${String(Math.min(i, 11)).padStart(2, '0')}T10:00:00.000Z`;
+        message.run(`message-${id}`, 'owner', 'company', 'sender', direction,
+          direction === 'inbound' ? '91' + phone : 'business',
+          direction === 'outbound' ? '91' + phone : 'business',
+          i % 2 ? 'received' : 'read', at, '2026-11-01T00:00:00.000Z');
+        if (i % 2 === 0) {
+          message.run(`incoming-${id}`, 'owner', 'company', 'sender', 'inbound', '91' + phone,
+            'business', 'received', '2026-09-01', '2026-09-01');
+          memory.prepare('UPDATE messages SET inbox_read_at = ? WHERE id = ?')
+            .run('2026-09-02', `incoming-${id}`);
+        }
+      }
+      contact.run('empty', 'owner', 'company', 'sender', '9000000099', '91', '2026-12-01');
+      // Newer messages in another account or sender must not move this contact.
+      for (const [id, owner, company, sender] of [
+        ['foreign-owner', 'other', 'company', 'sender'],
+        ['foreign-company', 'owner', 'other', 'sender'],
+        ['foreign-sender', 'owner', 'company', 'other'],
+      ]) message.run(id, owner, company, sender, 'inbound', '919000000001', 'business',
+        'received', '2026-12-01', '2026-12-01');
+      // A receipt for an older message must not replace the latest preview.
+      message.run('old-message', 'owner', 'company', 'sender', 'inbound', '919000000012', 'business',
+        'received', '2026-09-01', '2027-01-01');
+      memory.exec("UPDATE messages SET inbox_read_at = '2026-09-02' WHERE id = 'old-message'");
+      // Production schemas can already have this column. It must neither collide
+      // with a computed alias nor take precedence over the actual message time.
+      memory.exec('ALTER TABLE contacts ADD COLUMN last_message_at TEXT');
+      memory.exec('UPDATE contacts SET last_message_at = created_at');
+      const get = filters => service.getContacts('owner', filters, 'sender', 'company');
+      const filters = { page: 1, limit: 10, sortBy: 'created_at', sortOrder: 'desc', read_status: 'all' };
+      const expected = ['11', '12', '10', '09', '08', '07', '06', '05', '04', '03', '02', '01'];
+      const first = await get(filters);
+      const second = await get({ ...filters, page: 2 });
+      assert.deepEqual([...ids(first), ...ids(second)], expected);
+      assert.deepEqual({ ...second.pagination }, { total: 12, page: 2, limit: 10, total_pages: 2 });
+      for (const row of [...first.contacts, ...second.contacts]) {
+        assert.equal(row.last_message.id, `message-${row.id}`);
+        assert.equal(row.last_message_at, row.last_message.created_at);
+        assert.equal(row.last_message.timestamp, row.last_message_at);
+        assert.notEqual(row.last_message_at, row.last_message.updated_at);
+        assert.equal(row.read_status, Number(row.id) % 2 ? 'unread' : 'read');
+      }
+      memory.exec("UPDATE messages SET inbox_read_at = '2027-02-01', updated_at = '2027-02-01' WHERE id = 'message-01'");
+      assert.deepEqual(ids(await get({ ...filters, unpaginated: true })), expected);
+      for (const sortBy of [undefined, 'last_message', 'last_message_at']) {
+        assert.deepEqual(ids(await get({ ...filters, sortBy, unpaginated: true })), expected);
+      }
+      assert.deepEqual(ids(await get({ ...filters, read_status: 'read', unpaginated: true })),
+        ['12', '10', '08', '06', '04', '02', '01']);
+      assert.deepEqual(ids(await get({ ...filters, read_status: 'unread', unpaginated: true })),
+        ['11', '09', '07', '05', '03']);
+      assert.deepEqual(ids(await get({ sortBy: 'last_message_at', sortOrder: 'asc', unpaginated: true })),
+        ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12', 'empty']);
+      assert.equal((await get({ sortBy: 'last_message_at', unpaginated: true })).contacts.at(-1).last_message_at, null);
+      assert.equal(ids(await get({}))[0], 'empty', 'ordinary contact lists retain creation-time sorting');
+    } finally { memory.close(); await db.destroy(); }
+  });
 
 test('contact URL handlers forward read_status, status and assignees while retaining team account scope', async () => {
   const calls = [];
@@ -446,7 +550,7 @@ test('assignee membership filters full datasets before counting and paging witho
     } finally { memory.close(); await db.destroy(); }
   });
 
-test('latest message controls membership and marking it read moves the contact between tabs', { skip: !DatabaseSync }, async () => {
+test('any unviewed incoming message controls membership independently of outgoing receipts', { skip: !DatabaseSync }, async () => {
   const { db, model, BaseModel } = fixture();
   const memory = new DatabaseSync(':memory:');
   // Run the generated SQL locally with the PostgreSQL string functions it uses.
@@ -464,6 +568,7 @@ test('latest message controls membership and marking it read moves the contact b
     ['outbound-read', '00919372597460', '91'], ['outbound-unread', '+919372597461', '91'],
     ['no-history', '+919372597462', '91'], ['timestamp-read', '+919372597463', '91'],
     ['null-status', '+919372597464', '91'], ['other-country', '9372597459', '1'],
+    ['all-read', '+919372597465', '91'], ['deleted-only', '+919372597466', '91'],
   ]) contact.run(id, 'owner', 'company', 'sender', phone, code);
   const message = memory.prepare('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)');
   const addMessage = (id, recipient, status, at, direction = 'inbound', readAt = null, scope = {}) =>
@@ -479,6 +584,17 @@ test('latest message controls membership and marking it read moves the contact b
   addMessage('07', '919372597461', 'delivered', '2026-10-02', 'outbound');
   addMessage('08', '919372597463', 'delivered', '2026-10-02', 'outbound', '2026-10-03');
   addMessage('09', '919372597464', null, '2026-10-02');
+  addMessage('viewed', '919372597465', 'received', '2026-10-01');
+  addMessage('deleted', '919372597466', 'deleted', '2026-10-02');
+  memory.exec("UPDATE messages SET inbox_read_at = '2026-10-03' WHERE id IN ('02', 'viewed')");
+  // A campaign to 200 recipients creates no inbox conversations or unread badges,
+  // regardless of delivery status or customer read receipts.
+  for (let i = 0; i < 200; i++) {
+    const recipient = `91900000${String(i).padStart(4, '0')}`;
+    contact.run(`campaign-${i}`, 'owner', 'company', 'sender', `+${recipient}`, '91');
+    addMessage(`campaign-message-${i}`, recipient, ['sent', 'delivered', 'read'][i % 3],
+      '2026-10-03', 'outbound', i % 3 === 2 ? '2026-10-04' : null);
+  }
   for (const [index, scope] of [{ user: 'other' }, { company: 'other' }, { sender: 'other' }].entries()) {
     addMessage(`foreign-${index}`, '919372597459', 'read', '2026-10-04', 'inbound', null, scope);
   }
@@ -492,15 +608,15 @@ test('latest message controls membership and marking it read moves the contact b
   const ids = async read_status => (await model.findWithFilters('owner', { read_status }, 'sender')
     .where('contacts.company_id', 'company').orderBy('contacts.id')).map(row => row.id);
   try {
-    assert.deepEqual(await ids('read'), ['latest-read', 'outbound-read', 'timestamp-read']);
-    assert.deepEqual(await ids('unread'), ['latest-unread', 'null-status', 'outbound-unread']);
-    assert.equal((await ids('all')).length, 6);
-    const combined = () => model.orderByReadStatus(model.findWithFilters('owner', { read_status: 'all' }, 'sender')
-      .where('contacts.company_id', 'company')).orderBy('contacts.id');
+    assert.deepEqual(await ids('read'), ['all-read']);
+    assert.deepEqual(await ids('unread'), ['latest-read', 'latest-unread', 'null-status', 'outbound-unread']);
+    assert.equal((await ids('all')).length, 5);
+    const combined = () => model.orderByLastMessage(model.findWithFilters('owner', { read_status: 'all' }, 'sender')
+      .where('contacts.company_id', 'company'), 'desc');
     assert.deepEqual((await combined().limit(3).offset(0)).map(row => row.id),
-      ['latest-unread', 'null-status', 'outbound-unread']);
+      ['latest-read', 'latest-unread', 'null-status']);
     assert.deepEqual((await combined().limit(3).offset(3)).map(row => row.id),
-      ['latest-read', 'outbound-read', 'timestamp-read']);
+      ['outbound-unread', 'all-read']);
     const messageModel = load('src/app/models/message.model.ts', { '@surefy/models/base.model': { BaseModel } });
     const receipts = [];
     const messageService = load('src/app/services/message.service.ts', {
@@ -525,18 +641,19 @@ test('latest message controls membership and marking it read moves the contact b
     assert.ok(saved.inbox_read_at);
     assert.ok((await ids('read')).includes('latest-unread'));
     assert.ok(!(await ids('unread')).includes('latest-unread'));
-    assert.deepEqual((await combined().limit(2)).map(row => row.id), ['null-status', 'outbound-unread']);
+    assert.deepEqual((await combined().limit(2)).map(row => row.id), ['latest-read', 'latest-unread']);
     // A new customer message makes the conversation unread again.
     addMessage('10', '919372597459', 'received', '2026-10-05');
     assert.ok((await ids('unread')).includes('latest-unread'));
     // Viewing an outbound message moves the chat without changing customer receipts.
     const receiptCount = receipts.length;
     const result = await mark('07');
-    assert.equal(result.updated_count, 2);
+    assert.equal(result.updated_count, 1);
     assert.equal(result.read_receipt_sent, false);
     assert.equal(receipts.length, receiptCount);
     assert.ok((await ids('read')).includes('outbound-unread'));
     assert.equal(memory.prepare("SELECT status FROM messages WHERE id = '07'").get().status, 'delivered');
+    assert.equal(memory.prepare("SELECT inbox_read_at FROM messages WHERE id = '07'").get().inbox_read_at, null);
     // Idempotent calls and later delivery updates must not undo the saved view.
     assert.equal((await mark('07')).updated_count, 0);
     memory.exec("UPDATE messages SET status = 'delivered' WHERE id = '07'");
@@ -560,8 +677,8 @@ test('latest message controls membership and marking it read moves the contact b
     const databaseId = 'dcdb7ace-3431-415b-a9b1-5f986225bda0';
     addMessage(databaseId, '919372597461', 'failed', '2026-10-06', 'outbound');
     memory.prepare('UPDATE messages SET wamid = ? WHERE id = ?').run('wamid.failed', databaseId);
-    assert.ok((await ids('unread')).includes('outbound-unread'));
-    await mark(databaseId);
+    assert.ok((await ids('read')).includes('outbound-unread'));
+    assert.equal((await mark(databaseId)).updated_count, 0);
     assert.ok((await ids('read')).includes('outbound-unread'));
     assert.equal(memory.prepare('SELECT status FROM messages WHERE id = ?').get(databaseId).status, 'failed');
     assert.equal(receipts.length, receiptCount);

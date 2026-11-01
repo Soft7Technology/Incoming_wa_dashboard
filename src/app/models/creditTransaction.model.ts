@@ -1,4 +1,6 @@
 import { BaseModel } from '@surefy/models/base.model';
+import { companyWallet, platformFees } from '../utils/creditLedger';
+import { Knex } from 'knex';
 
 class CreditTransactionModel extends BaseModel {
   constructor() {
@@ -6,20 +8,42 @@ class CreditTransactionModel extends BaseModel {
   }
 
   async findByCompanyId(companyId: string, limit: number = 100) {
-    return this.query()
+    return companyWallet(this.query(), this.db)
       .where({ company_id: companyId })
       .orderBy('created_at', 'desc')
       .limit(limit);
   }
 
 
-  async getCompanyTransaction(companyId: string, filters: any) {
+  async getCompanyTransaction(companyId: string, filters: any, platformUserId?: string) {
+    if (platformUserId) return this.getPlatformTransactions(platformUserId, filters);
+    return this.paginate(companyWallet(this.query(), this.db).where({ company_id: companyId }), filters);
+  }
+
+  /** Platform wallet ownership is the authenticated user, regardless of company links. */
+  async getPlatformTransactions(userId: string, filters: any = {}) {
+    const query = platformFees(this.query(), this.db).where('user_id', userId);
+    if (filters.reference_type) query.where('reference_type', filters.reference_type);
+    if (filters.from) query.where('created_at', '>=', filters.from);
+    if (filters.to) query.where('created_at', '<', filters.to);
+    return this.paginate(query, filters);
+  }
+
+  async getPlatformFeeTotal(userId: string) {
+    const result = await platformFees(this.query(), this.db).where('user_id', userId)
+      .sum('amount as total').first();
+    return Number(result?.total || 0);
+  }
+
+  async getLatestPlatformTransaction(userId: string) {
+    return platformFees(this.query(), this.db).where('user_id', userId)
+      .orderBy('created_at', 'desc').orderBy('id', 'desc').first();
+  }
+
+  private async paginate(query: Knex.QueryBuilder, filters: any = {}) {
     const page = parseInt(filters?.page) || 1;
     const limit = parseInt(filters?.limit) || 10;
     const offset = (page - 1) * limit;
-
-    let query = this.query()
-      .where({ company_id: companyId });
 
     // Apply type filter only when type is not "all"
     if (filters?.type && filters.type.toLowerCase() !== 'all') {
@@ -37,6 +61,7 @@ class CreditTransactionModel extends BaseModel {
     // Get paginated data
     const data = await query
       .orderBy('created_at', 'desc')
+      .orderBy('id', 'desc')
       .limit(limit)
       .offset(offset);
 
@@ -54,18 +79,17 @@ class CreditTransactionModel extends BaseModel {
   }
 
   async getTotalCredits(companyId: string): Promise<number> {
-    const result = await this.query()
-      .where({ company_id: companyId, type: 'credit' })
-      .whereNot({ reference_type: 'subscription_commission' })
-      .sum('amount as total')
+    const result = await companyWallet(this.query(), this.db)
+      .where({ company_id: companyId }).whereIn('type', ['credit', 'refund'])
+      .sum({ total: this.db.raw('ABS(amount::numeric)') })
       .first();
     return parseFloat(result?.total || 0);
   }
 
   async getTotalDebits(companyId: string): Promise<number> {
-    const result = await this.query()
+    const result = await companyWallet(this.query(), this.db)
       .where({ company_id: companyId, type: 'debit' })
-      .sum('amount as total')
+      .sum({ total: this.db.raw('ABS(amount::numeric)') })
       .first();
     return parseFloat(result?.total || 0);
   }
@@ -92,12 +116,10 @@ class CreditTransactionModel extends BaseModel {
   }
 
   async findByCompany(companyId: string, filters: any = {}) {
-    let query = this.query().where({ company_id: companyId });
+    let query = companyWallet(this.query(), this.db).where({ company_id: companyId });
 
     if (filters.reference_type) {
       query = query.where({ reference_type: filters.reference_type });
-    } else {
-      query = query.whereNot({ reference_type: 'subscription_commission' });
     }
 
     if (filters.type) {
@@ -134,11 +156,11 @@ class CreditTransactionModel extends BaseModel {
         break;
     }
 
-    const stats = await this.query()
+    const stats = await companyWallet(this.query(), this.db)
       .where({ company_id: companyId })
       .where('created_at', '>=', startDate)
       .select('type')
-      .sum('amount as total')
+      .sum({ total: this.db.raw('ABS(amount::numeric)') })
       .count('* as count')
       .groupBy('type');
 
@@ -146,9 +168,8 @@ class CreditTransactionModel extends BaseModel {
   }
 
   async transactionHistory(userId: string) {
-    return await this.query()
-      .where('balance_transafered_by', userId)
-      .andWhere('type', 'debit')
+    return await platformFees(this.query(), this.db)
+      .where('user_id', userId)
       .orderBy('created_at', 'desc');
   }
 }

@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import controller from '../app/http/controllers/instagram.controller';
-import messenger, { facebookError } from '../app/http/controllers/facebookMessenger.controller';
+import { metaError, noStore } from '../app/http/controllers/metaHttp.controller';
 
 const route = Router();
-route.use(messenger.noStore);
+route.use(noStore);
 route.get('/setup', controller.setup);
 route.post('/oauth/start', controller.start);
 route.get('/oauth/pages', controller.candidates);
@@ -29,5 +29,5 @@ route.get('/accounts/:id/media/:child/comments', controller.comments);
 route.post('/accounts/:id/media/:child/sync', controller.sync('comment'));
 route.post('/accounts/:id/comments/:child/replies', controller.action('reply'));
 route.patch('/accounts/:id/comments/:child', controller.action('hide'));
-route.use(facebookError);
+route.use(metaError);
 export default route;

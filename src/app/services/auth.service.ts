@@ -82,7 +82,7 @@ class AuthService {
     // Look up company domain if resolvedDomain is missing
     if (!resolvedDomain && user.company_id) {
       try {
-        const domainRow = await companyDomainModel.findOne({ company_id: user.company_id, status: 'active' });
+        const domainRow = await companyDomainModel.findDefaultLoginDomain(user);
         if (domainRow?.domain_name) {
           resolvedDomain = domainRow.domain_name;
         }

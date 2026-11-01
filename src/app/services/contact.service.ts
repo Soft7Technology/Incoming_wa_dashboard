@@ -79,7 +79,7 @@ class ContactService {
     userId: string,
     filters: any = {},
     phoneNumberId?: string,
-    companyId?: string
+    companyId?: string | string[]
   ) {
     if (!userId || !companyId) {
       throw new HTTP400Error({ message: 'Company context is required to fetch contacts by phone number ID' });
@@ -89,7 +89,8 @@ class ContactService {
     }
     if (phoneNumberId !== undefined) {
       const sender = await PhoneNumberModel.findByPhoneNumberId(phoneNumberId);
-      if (!sender || sender.user_id !== userId || sender.company_id !== companyId || sender.deleted_at) {
+      if (!sender || sender.user_id !== userId || !(Array.isArray(companyId)
+        ? companyId.includes(sender.company_id) : sender.company_id === companyId) || sender.deleted_at) {
         throw new HTTP404Error({ message: 'Phone number not found in your account' });
       }
       phoneNumberId = sender.id;
@@ -118,7 +119,11 @@ class ContactService {
     const limit = Number(filters.limit) || 20;
     const offset = (page - 1) * limit;
 
-    const sortBy = filters.sortBy || "created_at";
+    // Inbox callers historically send created_at, which must mean message time,
+    // not the date the contact was imported. Other contact-list sorts stay explicit.
+    const requestedSort = filters.sortBy || 'created_at';
+    const sortBy = filters.read_status !== undefined && requestedSort === 'created_at'
+      ? 'last_message_at' : requestedSort;
     const sortOrder = String(filters.sortOrder || 'desc').toLowerCase();
     if (sortOrder !== 'asc' && sortOrder !== 'desc') {
       throw new HTTP400Error({ message: 'sortOrder must be asc or desc' });
@@ -131,7 +136,8 @@ class ContactService {
     );
 
     if (companyId) {
-      query.where('contacts.company_id', companyId);
+      if (Array.isArray(companyId)) query.whereIn('contacts.company_id', companyId);
+      else query.where('contacts.company_id', companyId);
     }
     if (preference !== undefined) query.where('contacts.is_opted_out', preference);
 
@@ -148,7 +154,6 @@ class ContactService {
     // -------------------------
     // FETCH CONTACTS
     // -------------------------
-    if (filters.read_status === 'all') ContactModel.orderByReadStatus(pageQuery);
     const sortedQuery = ['last_message', 'last_message_at'].includes(sortBy)
       ? ContactModel.orderByLastMessage(pageQuery, sortOrder)
       : pageQuery.orderBy(sortBy, sortOrder);
@@ -178,12 +183,10 @@ class ContactService {
       // Inbox counts cover incoming messages only; outgoing read receipts are separate.
       contact.read_count = Number(summary?.read_count ?? 0);
       contact.unread_count = Number(summary?.unread_count ?? 0);
-      contact.read_status = lastMessage
-        ? (lastMessage.inbox_read_at != null || lastMessage.status === 'read' || lastMessage.read_at != null ? 'read' : 'unread')
-        : null;
-      const timestamp = lastMessage?.updated_at ?? null;
+      contact.read_status = contact.unread_count > 0 ? 'unread' : contact.read_count > 0 ? 'read' : null;
+      const timestamp = lastMessage?.created_at ?? null;
       contact.last_message = lastMessage ? { ...lastMessage, timestamp } : null;
-      // Expose the same activity timestamp inside and outside the message object.
+      // Receipts and read-state updates must not change the displayed message time.
       contact.last_message_at = timestamp;
     });
 
@@ -221,6 +224,7 @@ class ContactService {
     const [summary] = await MessageModel.findLatestForContacts([contact]);
     contact.read_count = Number(summary?.read_count ?? 0);
     contact.unread_count = Number(summary?.unread_count ?? 0);
+    contact.read_status = contact.unread_count > 0 ? 'unread' : contact.read_count > 0 ? 'read' : null;
 
     return contact;
   }

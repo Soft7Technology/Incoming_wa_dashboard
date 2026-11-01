@@ -19,7 +19,7 @@ function configure() {
   Object.assign(process.env, {
     FACEBOOK_APP_ID: '10001', FACEBOOK_APP_SECRET: 'unit-test-app-secret', FACEBOOK_GRAPH_VERSION: 'v26.0',
     FACEBOOK_PUBLIC_URL: 'https://support.example.test', FACEBOOK_LOGIN_CONFIG_ID: '10002', FACEBOOK_LOGIN_MODE: 'business',
-    FACEBOOK_LEADS_LOGIN_CONFIG_ID: '10003',
+    FACEBOOK_LEADS_LOGIN_CONFIG_ID: '10003', FACEBOOK_FRONTEND_URL: 'https://app.example.test',
     INSTAGRAM_LOGIN_CONFIG_ID: '10004', INSTAGRAM_LOGIN_MODE: 'business', INSTAGRAM_AUTH_PROVIDER: 'facebook',
     INSTAGRAM_APP_ID: '10005', INSTAGRAM_APP_SECRET: 'unit-test-instagram-secret', INSTAGRAM_GRAPH_VERSION: 'v26.0',
     INSTAGRAM_PUBLIC_URL: 'https://support.example.test', INSTAGRAM_WEBHOOK_VERIFY_TOKEN: 'unit-test-ig-verify',
@@ -130,4 +130,4 @@ async function fixture(run) {
     await database.destroy(); await admin.raw('DROP SCHEMA ?? CASCADE', [schema]); await admin.destroy();
   }
 }
-module.exports = { load, configure, utils, migration, leadMigration, leadServiceModule, contentMigration, contentModule, instagramMigration, instagramLoginMigration, instagramPublishingMigration, instagramGraphModule, instagramServiceModule, publishingServiceModule, publishingMediaModule, fixture, MetaFixture };
+module.exports = { serviceModule, load, configure, utils, migration, leadMigration, leadServiceModule, contentMigration, contentModule, instagramMigration, instagramLoginMigration, instagramPublishingMigration, instagramGraphModule, instagramServiceModule, publishingServiceModule, publishingMediaModule, fixture, MetaFixture };

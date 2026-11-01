@@ -1,7 +1,9 @@
 import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
-  await knex.schema.createTable('facebook_pages', (t) => {
+  // Some installations provisioned these tables before recording this migration.
+  // Preserve those tables while creating any missing messaging tables.
+  if (!(await knex.schema.hasTable('facebook_pages'))) await knex.schema.createTable('facebook_pages', (t) => {
     t.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     t.uuid('company_id').notNullable().references('id').inTable('companies').onDelete('CASCADE');
     t.uuid('owner_id').notNullable().references('id').inTable('users').onDelete('CASCADE');
@@ -18,7 +20,7 @@ export async function up(knex: Knex): Promise<void> {
     t.timestamp('updated_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());
     t.index(['company_id', 'owner_id']);
   });
-  await knex.schema.createTable('facebook_oauth_sessions', (t) => {
+  if (!(await knex.schema.hasTable('facebook_oauth_sessions'))) await knex.schema.createTable('facebook_oauth_sessions', (t) => {
     t.string('state_hash', 64).primary();
     t.string('browser_hash', 64).notNullable();
     t.uuid('company_id').notNullable().references('id').inTable('companies').onDelete('CASCADE');
@@ -30,7 +32,7 @@ export async function up(knex: Knex): Promise<void> {
     t.timestamp('expires_at', { useTz: true }).notNullable();
     t.index(['expires_at']);
   });
-  await knex.schema.createTable('facebook_conversations', (t) => {
+  if (!(await knex.schema.hasTable('facebook_conversations'))) await knex.schema.createTable('facebook_conversations', (t) => {
     t.uuid('id').primary().defaultTo(knex.raw('gen_random_uuid()'));
     t.uuid('page_connection_id').notNullable().references('id').inTable('facebook_pages').onDelete('CASCADE');
     t.string('psid', 80).notNullable();
@@ -41,7 +43,7 @@ export async function up(knex: Knex): Promise<void> {
     t.unique(['page_connection_id', 'psid']);
     t.index(['page_connection_id', 'last_message_at']);
   });
-  await knex.schema.createTable('facebook_messages', (t) => {
+  if (!(await knex.schema.hasTable('facebook_messages'))) await knex.schema.createTable('facebook_messages', (t) => {
     t.uuid('id').primary();
     t.uuid('conversation_id').notNullable().references('id').inTable('facebook_conversations').onDelete('CASCADE');
     t.uuid('page_connection_id').notNullable().references('id').inTable('facebook_pages').onDelete('CASCADE');
@@ -58,7 +60,7 @@ export async function up(knex: Knex): Promise<void> {
     t.unique(['conversation_id', 'client_request_id']);
     t.index(['conversation_id', 'event_at']);
   });
-  await knex.schema.createTable('facebook_deletion_requests', (t) => {
+  if (!(await knex.schema.hasTable('facebook_deletion_requests'))) await knex.schema.createTable('facebook_deletion_requests', (t) => {
     t.string('confirmation_hash', 64).primary();
     t.string('status', 20).notNullable();
     t.timestamp('completed_at', { useTz: true }).notNullable().defaultTo(knex.fn.now());

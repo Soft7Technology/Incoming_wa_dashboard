@@ -15,7 +15,7 @@ class CampaignModel extends BaseModel {
           .orOn(phoneIdMatch);
       })
       .where('c.id', campaignId)
-      .select('c.*', 't.name as template_name', 'pn.display_phone_number as phone_number')
+      .select('c.*', 't.name as template_name', 't.category as template_category', 'pn.display_phone_number as phone_number')
       .first();
   }
 

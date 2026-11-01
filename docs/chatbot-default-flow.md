@@ -2,6 +2,8 @@
 
 ## Ready-made industry templates
 
+The database-backed library now includes 21 templates in 11 categories. See [the template library API guide](chatbot-template-library.md) for the 12 additional Ecommerce, IT Services, Real Estate and Finance & Banking flows, demo API, and database tables.
+
 The authenticated `/v1/admin/chatbot/templates` API provides a shared library of editable starter flows. These are platform starters, not Meta-approved outbound message templates. A library preview does not create a chatbot or use a plan slot. Clicking **Use template** creates one private draft under the authenticated account owner, with copied nodes/edges and fresh UUIDs. It consumes the normal `Chatbot` allowance, including add-on capacity. Editing a copy never changes the shared template or another user's chatbot.
 
 | Category | Template ID | Included branches |
@@ -46,7 +48,7 @@ Content-Type: application/json
 
 `business_name` is required (1–100 characters). `support_contact` is optional (1–120 characters); the default is “our team in this WhatsApp chat”. `name` is optional (1–100 characters), defaulting to the template name. Fields are plain text without `{{...}}` placeholders. No request company/user IDs, graph overrides or published state are accepted. Ownership comes from authenticated membership, and the server verifies the owner belongs to that company.
 
-HTTP 201 returns the created chatbot in `data`, including its `id`, `user_id`, `company_id`, `status: "draft"`, `published: false`, copied `nodes` and `edges`, `template_id`, `template_version`, `phoneNumberIds: []` and `requires_phone_assignment: true`. The copy is saved to the existing `chat_bot`, `chat_bot_node` and `chat_bot_edge` tables. No schema migration is required. Creating the bot, graph, activity audit and quota update is one transaction; failures leave no partial draft. Use-template requests intentionally create new copies, so disable the button while a request is pending and refetch the chatbot list before retrying an ambiguous timeout.
+HTTP 201 returns the created chatbot in `data`, including its `id`, `user_id`, `company_id`, `status: "draft"`, `published: false`, copied `nodes` and `edges`, `template_id`, `template_version`, `phoneNumberIds: []` and `requires_phone_assignment: true`. The copy is saved to the existing `chat_bot`, `chat_bot_node` and `chat_bot_edge` tables. Migration `20261101000004_chatbot_template_library.ts` creates and seeds the library tables and records each copy in `chatbot_template_installs`. Creating the bot, graph, activity audit and quota update is one transaction; failures leave no partial draft. Use-template requests intentionally create new copies, so disable the button while a request is pending and refetch the chatbot list before retrying an ambiguous timeout.
 
 For the frontend:
 

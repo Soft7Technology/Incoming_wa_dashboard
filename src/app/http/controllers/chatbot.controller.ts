@@ -12,13 +12,16 @@ import chatbotTemplates from '../../services/chatbotTemplate.service';
 
 class chatBotController {
     templateCategories = tryCatchAsync(async (req: AuthRequest, res: Response) =>
-        successResponse(req, res, 'Chatbot template categories', chatbotTemplates.categories()));
+        successResponse(req, res, 'Chatbot template categories', await chatbotTemplates.categories()));
 
     listTemplates = tryCatchAsync(async (req: AuthRequest, res: Response) =>
-        successResponse(req, res, 'Ready-made chatbot templates', chatbotTemplates.list(req.query.category)));
+        successResponse(req, res, 'Ready-made chatbot templates', await chatbotTemplates.list(req.query.category, req.query.search)));
 
     getTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) =>
-        successResponse(req, res, 'Chatbot template preview', chatbotTemplates.detail(req.params.templateId)));
+        successResponse(req, res, 'Chatbot template preview', await chatbotTemplates.detail(req.params.templateId)));
+
+    demoTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) =>
+        successResponse(req, res, 'Simulated template conversation', await chatbotTemplates.demo(req.params.templateId, req.body || {})));
 
     useTemplate = tryCatchAsync(async (req: AuthRequest, res: Response) => {
         const bot = await chatbotTemplates.use({ userId: req.userId, ownerId: req.ownerId, companyId: req.companyId },

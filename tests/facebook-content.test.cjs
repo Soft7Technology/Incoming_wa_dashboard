@@ -8,8 +8,8 @@ const local = !process.env.FACEBOOK_TEST_DATABASE_URL && 'Set FACEBOOK_TEST_DATA
 const dbTest = (name, run) => test(name, { skip: local }, () => contentFixture(run));
 
 async function contentFixture(run) {
-  const oldConfig = process.env.FACEBOOK_PAGES_LOGIN_CONFIG_ID, oldMode = process.env.FACEBOOK_PAGES_LOGIN_MODE;
-  process.env.FACEBOOK_PAGES_LOGIN_CONFIG_ID = '10006'; process.env.FACEBOOK_PAGES_LOGIN_MODE = 'business';
+  const oldConfig = process.env.FACEBOOK_POSTS_LOGIN_CONFIG_ID, oldMode = process.env.FACEBOOK_PAGES_LOGIN_MODE;
+  process.env.FACEBOOK_POSTS_LOGIN_CONFIG_ID = '10006'; process.env.FACEBOOK_PAGES_LOGIN_MODE = 'business';
   try { await fixture(async context => {
     const { meta, contentService: content, a } = context;
     const grants = Array.from(contentModule.contentPermissions);
@@ -34,7 +34,7 @@ async function contentFixture(run) {
     async function login(scope = a) { const result = await content.start(scope); return { ...result, state: new URL(result.url).searchParams.get('state') }; }
     async function connect(scope = a) { const session = await login(scope); assert.equal(await content.callback(session.state, session.browser, 'FIXTURE_CODE', false), 'ready'); return content.connect(scope, session.browser, '20001'); }
     await run({ ...context, content, grants, rows, loginContent: login, connectContent: connect });
-  }); } finally { if (oldConfig === undefined) delete process.env.FACEBOOK_PAGES_LOGIN_CONFIG_ID; else process.env.FACEBOOK_PAGES_LOGIN_CONFIG_ID = oldConfig; if (oldMode === undefined) delete process.env.FACEBOOK_PAGES_LOGIN_MODE; else process.env.FACEBOOK_PAGES_LOGIN_MODE = oldMode; }
+  }); } finally { if (oldConfig === undefined) delete process.env.FACEBOOK_POSTS_LOGIN_CONFIG_ID; else process.env.FACEBOOK_POSTS_LOGIN_CONFIG_ID = oldConfig; if (oldMode === undefined) delete process.env.FACEBOOK_PAGES_LOGIN_MODE; else process.env.FACEBOOK_PAGES_LOGIN_MODE = oldMode; }
 }
 
 dbTest('Page content OAuth binds the browser, app and redirect, checks grants and consumes selection once', async ({ content, loginContent, a, b, meta, database }) => {
@@ -60,8 +60,8 @@ dbTest('Page content token import works without a Login configuration and preser
   await assert.rejects(connectContent(other), /another workspace/);
   await assert.rejects(content.start(member), /account owner/);
   await assert.rejects(content.start({ ...a, reviewPageId: '20001' }), e => e.status === 403);
-  delete process.env.FACEBOOK_PAGES_LOGIN_CONFIG_ID;
-  await assert.rejects(content.start(a), /FACEBOOK_PAGES_LOGIN_CONFIG_ID/);
+  delete process.env.FACEBOOK_POSTS_LOGIN_CONFIG_ID;
+  await assert.rejects(content.start(a), /FACEBOOK_POSTS_LOGIN_CONFIG_ID/);
   const imported = await content.importToken(a, 'VALID_PRIVATE_USER_TOKEN_123');
   assert.equal((await content.candidates(a, imported.browser)).status, 'ready');
   assert.equal((await content.connect(a, imported.browser, '20001')).status, 'connected');
@@ -170,41 +170,6 @@ dbTest('Page content HTTP routes bind cookies and OAuth callback and reject unau
     const page = (await response.json()).data;
     response = await fetch(endpoint + '/pages/' + page.id + '/posts', { headers: { Authorization: 'Bearer ' + bearer(context.b) } }); assert.equal(response.status,404);
     response = await fetch(endpoint + '/pages/' + page.id + '/posts', { method: 'POST', headers, body: JSON.stringify({ message: 'HTTP published update', client_request_id: crypto.randomUUID() }) }); assert.equal(response.status,200); assert.equal((await response.json()).data.status,'confirmed');
-    response = await fetch(base + '/v1/facebook/posts'); assert.equal(response.status,200); assert.match(await response.text(), /pages_read_user_content/);
+    response = await fetch(base + '/v1/facebook/posts'); assert.equal(response.status, 404);
   });
 });
-
-test('Page posts browser reads visitor content and comments and creates, edits and deletes an app post', { skip: local || !process.env.FACEBOOK_TEST_CHROME && 'Set FACEBOOK_TEST_CHROME.', timeout: 60000 }, () => contentFixture(async context => {
-  const fs = require('node:fs'), path = require('node:path'), { spawn } = require('node:child_process');
-  const pause = ms => new Promise(resolve => setTimeout(resolve, ms)); await context.connectContent();
-  await httpFixture(context, async base => {
-    const profile = path.resolve('.facebook-test-runtime/content-chrome-' + crypto.randomUUID()); fs.mkdirSync(profile,{recursive:true});
-    const chrome = spawn(process.env.FACEBOOK_TEST_CHROME,['--headless=new','--disable-gpu','--no-first-run','--no-default-browser-check','--remote-debugging-port=0','--user-data-dir='+profile,'about:blank'],{windowsHide:true,stdio:'ignore'});
-    let socket;
-    try {
-      const portFile = path.join(profile,'DevToolsActivePort'); for (let i=0;i<100&&!fs.existsSync(portFile);i++) await pause(100);
-      const port = fs.readFileSync(portFile,'utf8').split('\n')[0]; const target = (await (await fetch('http://127.0.0.1:'+port+'/json/list')).json()).find(t=>t.type==='page');
-      socket = new WebSocket(target.webSocketDebuggerUrl); await new Promise((resolve,reject)=>{socket.addEventListener('open',resolve,{once:true});socket.addEventListener('error',reject,{once:true});});
-      let seq=0; const waiting=new Map(), errors=[];
-      socket.addEventListener('message',event=>{const m=JSON.parse(event.data);if(m.method==='Runtime.exceptionThrown')errors.push(m.params);if(m.method==='Page.javascriptDialogOpening')call('Page.handleJavaScriptDialog',{accept:true}).catch(()=>{});const pending=waiting.get(m.id);if(pending){waiting.delete(m.id);clearTimeout(pending.timer);m.error?pending.reject(new Error(m.error.message)):pending.resolve(m.result);}});
-      const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq,timer=setTimeout(()=>reject(new Error('Chrome timeout: '+method)),5000);waiting.set(id,{resolve,reject,timer});socket.send(JSON.stringify({id,method,params}));});
-      const evaluate=async expression=>{const r=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});if(r.exceptionDetails)throw new Error(r.exceptionDetails.text);return r.result.value;};
-      const waitFor=async expression=>{for(let i=0;i<100;i++){if(await evaluate(expression))return;await pause(100);}throw new Error('Browser condition failed: '+expression+' Notice: '+await evaluate("document.getElementById('notice').textContent"));};
-      await call('Runtime.enable');await call('Page.enable');await call('Page.navigate',{url:base+'/v1/facebook/posts'});
-      await waitFor("!document.getElementById('workspace').hidden && typeof api==='function'");
-      await waitFor("Boolean(document.querySelector('#pages button'))");await evaluate("document.querySelector('#pages button').click()");
-      await waitFor("!document.getElementById('page-workspace').hidden");await evaluate("document.getElementById('refresh-feed').click()");
-      await waitFor("document.getElementById('posts').innerText.includes('Visitor question')");assert.equal(await evaluate("document.querySelector('#posts img')===null"),true);
-      await evaluate("document.querySelector('#posts button').click()");await waitFor("document.getElementById('comments').innerText.includes('Is delivery available?')");assert.equal(await evaluate("document.querySelector('#comments img')===null"),true);
-      await evaluate("document.getElementById('post-text').value='Browser Page update';document.getElementById('post-form').requestSubmit()");
-      await waitFor("document.getElementById('posts').innerText.includes('Browser Page update') && document.getElementById('notice').textContent==='Post published on Facebook.'");
-      await evaluate("Array.from(document.querySelectorAll('#posts article')).find(c=>c.textContent.includes('Browser Page update')).querySelectorAll('button')[1].click()");
-      await evaluate("const c=Array.from(document.querySelectorAll('#posts article')).find(c=>c.textContent.includes('Browser Page update'));c.querySelector('textarea').value='Edited browser update';c.querySelector('form').requestSubmit()");
-      await waitFor("document.getElementById('posts').innerText.includes('Edited browser update') && document.getElementById('notice').textContent==='Post updated on Facebook.'");
-      await evaluate("Array.from(document.querySelectorAll('#posts article')).find(c=>c.textContent.includes('Edited browser update')).querySelectorAll('button')[2].click()");
-      await waitFor("document.getElementById('posts').innerText.includes('Deleted post')");assert.equal(errors.length,0,JSON.stringify(errors));
-      const screenshot=await call('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(path.resolve('.facebook-test-runtime/facebook-content-browser.png'),Buffer.from(screenshot.data,'base64'));
-      assert.equal(context.meta.calls.filter(c=>c.method==='POST'&&c.path==='20001/feed').length,1);
-    } finally {if(socket)socket.close();chrome.kill();}
-  });
-}));

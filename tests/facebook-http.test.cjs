@@ -20,10 +20,7 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
     '../app/http/controllers/facebookLeads.controller': { __esModule: true, default: { callback: (_req, res) => res.sendStatus(400) } },
     '../app/http/controllers/facebookMessenger.controller': controllerModule,
     './facebookLoginTest.route': express.Router(),
-    './facebookReviewLogin.route': load('src/routes/facebookReviewLogin.route.ts', {
-      '@surefy/utils/facebookReviewSession': load('library/surefy/src/utils/facebookReviewSession.ts'),
-      '../app/http/controllers/auth.controller': { __esModule: true, default: {} },
-    }),
+    './facebookReviewLogin.route': express.Router(),
   }).default;
   const protectedRoute = load('src/routes/facebookMessenger.route.ts', {
     '../app/http/controllers/facebookMessenger.controller': controllerModule,
@@ -49,9 +46,9 @@ test('actual HTTP middleware verifies raw webhook bytes, JWT company scope, call
   const bearer = scope => ({ Authorization: 'Bearer ' + jwt.sign({ userId: scope.userId, ownerId: scope.ownerId, companyId: scope.companyId, role: 'company' }, process.env.JWT_SECRET) });
   try {
     await connect();
-    let response = await fetch(base + '/v1/facebook/page'); assert.equal(response.status, 200); assert.match(await response.text(), /Connect Facebook Page/);
+    let response = await fetch(base + '/v1/facebook/page'); assert.equal(response.status, 404);
     assert.match(response.headers.get('content-security-policy'), /frame-ancestors 'none'/);
-    response = await fetch(base + '/v1/facebook/app.js'); assert.equal(response.status, 200); assert.match(await response.text(), /client_request_id/);
+    response = await fetch(base + '/v1/facebook/app.js'); assert.equal(response.status, 404);
     response = await fetch(base + '/v1/facebook/webhook?hub.mode=subscribe&hub.verify_token=unit-test-verify&hub.challenge=12345'); assert.equal(await response.text(), '12345');
     response = await fetch(base + '/v1/facebook/webhook?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=12345'); assert.equal(response.status, 403);
     const body = JSON.stringify(inbound(), null, 2);

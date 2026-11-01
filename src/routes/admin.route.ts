@@ -1,9 +1,6 @@
 import { recordActivity } from '../app/middleware/activity.middleware';
 import UserApiKeyRoute from './userApiKey.route';
-import FacebookMessengerRoute from './facebookMessenger.route';
-import FacebookLeadsRoute from './facebookLeads.route';
 import InstagramRoute from './instagram.route';
-import FacebookContentRoute from './facebookContent.route';
 import GoogleSheetsRoute from './googleSheets.route';
 import GooglePeopleRoute from './googlePeople.route';
 import ShopifyRoute from './shopify.route';
@@ -31,16 +28,15 @@ import aiAssistantRoute from './aiAssistant.route';
 import PipelineStageRoute from './pipelineStage.route';
 import cleanupRoute from './cleanup.route';
 import imageUploadRoute from './imageUpload.route';
+import facebookRoute from './facebook.route';
 
 const AdminRoute = Router();
 
 // Apply JWT authentication to all admin routes
 AdminRoute.use(jwtAuthMiddleware);
 AdminRoute.use(recordActivity);
-AdminRoute.use('/facebook-messenger', FacebookMessengerRoute);
-AdminRoute.use('/facebook-leads', FacebookLeadsRoute);
 AdminRoute.use('/instagram', InstagramRoute);
-AdminRoute.use('/facebook-content', FacebookContentRoute);
+AdminRoute.use('/facebook', facebookRoute)
 AdminRoute.use('/google-sheets', GoogleSheetsRoute);
 AdminRoute.use('/google-people', GooglePeopleRoute);
 AdminRoute.use('/shopify', ShopifyRoute);

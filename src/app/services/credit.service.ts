@@ -5,18 +5,23 @@ import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import creditTransactionModel from '@surefy/console/models/creditTransaction.model';
+import db from '@surefy/database';
+import { creditAmount, allowed, filters as validateFilters, requireInput, uuid } from '../utils/superAdminValidation';
+import { PLATFORM_FEE_TYPES } from '../utils/creditLedger';
 
 class CreditService {
   /**
    * Get credit balance for company
    */
-  async getBalance(companyId: string) {
+  async getBalance(companyId: string, platformUserId?: string) {
+    if (platformUserId) {
+      return { ...await this.getPlatformBalance(platformUserId), company_id: companyId };
+    }
     const company = await CompanyModel.findById(companyId);
     if (!company) {
       throw new HTTP404Error({ message: 'Company not found' });
     }
 
-    console.log("COMPANY",company)
     const transactions = await CreditTransactionModel.findByCompanyId(companyId, 10);
 
     return {
@@ -26,55 +31,51 @@ class CreditService {
     };
   }
 
+  async getPlatformBalance(userId: string) {
+    uuid(userId, 'userId');
+    const user = await db('users').where({ id: userId, role: 'superadmin' }).whereNull('deleted_at')
+      .first('id', 'credit_balance');
+    if (!user) throw new HTTP404Error({ message: 'Platform wallet not found' });
+    const [total, last] = await Promise.all([
+      CreditTransactionModel.getPlatformFeeTotal(userId),
+      CreditTransactionModel.getLatestPlatformTransaction(userId),
+    ]);
+    return { wallet_scope: 'platform', wallet_user_id: user.id, currency: 'INR',
+      balance: user.credit_balance || '0', platform_fee_total: total, last_transaction: last || null };
+  }
+
+  async getPlatformTransactions(userId: string, query: Record<string, unknown> = {}) {
+    uuid(userId, 'userId');
+    allowed(query, ['page', 'limit', 'type', 'reference_type', 'from', 'to']);
+    const { type, reference_type, ...rest } = query;
+    requireInput(type === undefined || ['all', 'credit', 'debit', 'refund'].includes(type as string), 'Invalid transaction type');
+    requireInput(reference_type === undefined || PLATFORM_FEE_TYPES.includes(reference_type as string), 'Invalid platform fee reference_type');
+    const filters = { ...validateFilters(rest), type, reference_type };
+    const result = await CreditTransactionModel.getPlatformTransactions(userId, filters);
+    return { wallet_scope: 'platform', wallet_user_id: userId, ...result };
+  }
+
   /**
-   * Add credits (admin/superadmin only)
+   * Grant company credits without debiting the platform wallet.
    */
   async addCredit(userId:string,data: AddCreditDto & { user_role?: string }) {
-    // Check authorization - only admin or superadmin can add credits
-    if (data.user_role && data.user_role !== 'admin' && data.user_role !== 'superadmin') {
-      throw new HTTP401Error({ message: 'Only admin or superadmin can add credits' });
+    if (data.user_role !== 'superadmin') {
+      throw new HTTP401Error({ message: 'Only superadmin can add credits' });
     }
-
-    const company = await CompanyModel.findById(data.company_id);
-    console.log("Company",company)
-    if (!company) {
-      throw new HTTP404Error({ message: 'Company not found' });
-    }
-
-    if (data.amount <= 0) {
-      throw new HTTP400Error({ message: 'Amount must be greater than 0' });
-    }
-
-    const balanceBefore = parseFloat(company.credit_balance || '0');
-    const balanceAfter = balanceBefore + data.amount;
-
-    // Create transaction
-    const transaction = await CreditTransactionModel.create({
-      company_id: data.company_id,
-      company_name: company.name,
-      type: 'debit',
-      amount: data.amount,
-      balance_before: balanceBefore,
-      balance_after: balanceAfter,
-      description: `${data.amount} balance added to ${company.name}`,
-      created_by: data.created_by,
-      balance_transafered_by:userId,
-      reference_type: 'manual',
+    const amount = creditAmount(data.amount);
+    return db.transaction(async trx => {
+      const company = await trx('companies').where({ id: data.company_id }).whereNull('deleted_at').forUpdate().first();
+      if (!company) throw new HTTP404Error({ message: 'Company not found' });
+      const [updatedCompany] = await trx('companies').where({ id: company.id })
+        .update({ credit_balance: trx.raw('credit_balance + ?::numeric', [amount]), updated_at: trx.fn.now() }).returning('*');
+      const [transaction] = await trx('credit_transactions').insert({
+        company_id: company.id, company_name: company.name, type: 'credit', amount,
+        balance_before: company.credit_balance, balance_after: updatedCompany.credit_balance,
+        description: `${amount} balance added to ${company.name}`, created_by: userId,
+        balance_transafered_by: userId, reference_type: 'manual',
+      }).returning('*');
+      return { transaction, company: updatedCompany, message: `Successfully added ${amount} credits to ${company.name}` };
     });
-
-    // Update company balance
-    await CompanyModel.update(data.company_id, {
-      credit_balance: balanceAfter,
-    });
-
-    // Get updated company
-    const updatedCompany = await CompanyModel.findById(data.company_id);
-
-    return {
-      transaction,
-      company: updatedCompany,
-      message: `Successfully added ${data.amount} credits to ${company.name}`,
-    };
   }
 
   /**
@@ -120,8 +121,8 @@ class CreditService {
   /**
    * Get transaction history
    */
-  async getTransactions(companyId: string, filters:any) {
-    return CreditTransactionModel.getCompanyTransaction(companyId, filters);
+  async getTransactions(companyId: string, filters:any, platformUserId?: string) {
+    return CreditTransactionModel.getCompanyTransaction(companyId, filters, platformUserId);
   }
 
   /**

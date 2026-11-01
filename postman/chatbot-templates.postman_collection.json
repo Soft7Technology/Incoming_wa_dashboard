@@ -2,7 +2,7 @@
   "info": {
     "name": "Editable Industry Chatbot Templates",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "description": "Nine platform starter flows: real-estate-starter, health-care-starter, e-commerce-starter, travel-starter, digital-marketing-starter, hotels-resorts-starter, education-starter, it-saas-starter, mlm-affiliates-starter. These are not Meta-approved outbound templates. Browse and preview without using quota. Use creates one private unpublished draft and consumes one Chatbot slot. Saving and publishing use the existing flow APIs. No credentials or customer IDs are included."
+    "description": "Database-backed library with 21 platform starter flows across 11 categories. Includes Ecommerce, IT Services, Real Estate and Finance & Banking. These are not Meta-approved outbound message templates. Preview/demo do not send messages or consume quota. Use creates an editable unpublished WhatsApp chatbot and consumes one Chatbot slot. See docs/chatbot-template-library.md."
   },
   "auth": {
     "type": "bearer",
@@ -55,7 +55,7 @@
         "method": "GET",
         "header": [],
         "url": "{{base_url}}/v1/admin/chatbot/templates/categories",
-        "description": "Nine industry categories."
+        "description": "Available categories with template counts."
       },
       "event": [
         {
@@ -268,6 +268,65 @@
           }
         }
       ]
+    },
+    {
+      "name": "Search IT templates",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/v1/admin/chatbot/templates?category=it-services&search=support"
+      }
+    },
+    {
+      "name": "Start simulated demo",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/chatbot/templates/{{template_id}}/demo",
+        "body": {
+          "mode": "raw",
+          "raw": "{}"
+        }
+      }
+    },
+    {
+      "name": "Select demo team enquiry",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/chatbot/templates/{{template_id}}/demo",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"node_id\": \"menu\",\n  \"choice_id\": \"choice_team\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Answer demo name question",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/v1/admin/chatbot/templates/{{template_id}}/demo",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"node_id\": \"team_name\",\n  \"answer\": \"Demo Customer\"\n}"
+        }
+      }
     }
   ]
 }

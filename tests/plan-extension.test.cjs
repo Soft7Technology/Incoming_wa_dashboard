@@ -266,6 +266,7 @@ test('mounted API forwards only authenticated actor data and returns the updated
   const router = loadSource('src/routes/subscription.route.ts', { express,
     '@surefy/console/http/controllers/subscription.controller': other,
     '../app/http/controllers/planCatalog.controller': other, '../app/http/controllers/platformPricing.controller': other,
+    '../app/http/controllers/platformWallet.controller': other,
     '../app/http/controllers/planExtension.controller': controller,
   }).default;
   const app = express(); app.use(express.json());

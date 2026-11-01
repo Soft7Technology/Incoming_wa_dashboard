@@ -1,10 +1,13 @@
+import { additionalIndustryTemplates } from './chatbotIndustryTemplates';
+
 export interface TemplateBranch {
   id: string;
   title: string;
   questions: Array<[string, string]>;
   completion: string;
 }
-interface IndustryTemplate {
+export interface IndustryTemplate {
+  id?: string;
   category: string;
   category_name: string;
   name: string;
@@ -103,10 +106,14 @@ const industries: IndustryTemplate[] = [
   },
 ];
 
+industries.push(...additionalIndustryTemplates);
+
 const metadata = (item: IndustryTemplate) => ({
-  id: `${item.category}-starter`, version: 1, category: item.category, category_name: item.category_name,
+  id: item.id || `${item.category}-starter`, version: 1, category: item.category, category_name: item.category_name,
   name: item.name, description: item.description, language: 'en', editable: true,
   approval_status: 'platform_starter', meta_approved: false,
+  channel: 'whatsapp', badge: 'Starter', tags: [item.category_name, ...item.branches.map(branch => branch.title)],
+  highlights: item.branches.map(branch => ({ label: branch.title })),
   use_cases: [...item.branches.map(branch => branch.title), 'Contact our team'],
   customization_fields: [
     { key: 'business_name', label: 'Business name', required: true, max_length: 100 },
@@ -117,7 +124,10 @@ const metadata = (item: IndustryTemplate) => ({
 });
 
 export function chatbotTemplateCategories() {
-  return industries.map(item => ({ id: item.category, name: item.category_name, template_count: 1 }));
+  return Array.from(new Set(industries.map(item => item.category))).map(category => ({
+    id: category, name: industries.find(item => item.category === category)!.category_name,
+    template_count: industries.filter(item => item.category === category).length,
+  }));
 }
 
 export function listChatbotTemplates(category?: string) {
@@ -125,7 +135,7 @@ export function listChatbotTemplates(category?: string) {
 }
 
 export function buildChatbotTemplate(id: string) {
-  const item = industries.find(value => `${value.category}-starter` === id);
+  const item = industries.find(value => (value.id || `${value.category}-starter`) === id);
   if (!item) return undefined;
   const branches: TemplateBranch[] = [...item.branches, { id: 'team', title: 'Contact our team',
     questions: [['name', 'What is your name?'], ['request', 'What would you like our team to help with?']],

@@ -4,6 +4,7 @@ import AuthRoute from './auth.route';
 import AdminRoute from './admin.route';
 import ApiConsumerRoute from './apiConsumer.route';
 import WebhookPublicRoute from './webhookPublic.route';
+import InstagramPublicRoute from './instagramPublic.route';
 import FacebookPublicRoute from './facebookPublic.route';
 import GoogleSheetsPublicRoute from './googleSheetsPublic.route';
 import GooglePeoplePublicRoute from './googlePeoplePublic.route';
@@ -29,6 +30,7 @@ const ApiRoute = Router();
 // Public routes - no authentication
 ApiRoute.use('/auth', AuthRoute); // Login, register
 ApiRoute.use('/facebook', FacebookPublicRoute);
+ApiRoute.use('/facebook', InstagramPublicRoute);
 ApiRoute.use('/integrations/google', GoogleSheetsPublicRoute);
 ApiRoute.use('/integrations/google-people', GooglePeoplePublicRoute);
 ApiRoute.use('/integrations/shopify', ShopifyPublicRoute);

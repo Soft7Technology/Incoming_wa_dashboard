@@ -35,7 +35,7 @@ class AuthController {
     }
 
     if (domain_name !== 'localhost' && domain_name !== '127.0.0.1') {
-      const existUserDomain = await companyDomainModel.findDomainByCompanyId(existingUser.company_id,domain_name)
+      const existUserDomain = await companyDomainModel.findLoginDomain(existingUser, domain_name)
       if(!existUserDomain){
         throw new HTTP400Error({ message: `Domain ${domain_name} is not associated with this user` });
       }

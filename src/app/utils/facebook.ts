@@ -10,15 +10,6 @@ export class FacebookError extends Error {
   }
 }
 
-export const permissions = ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'];
-export const leadPermissions = [
-  'pages_show_list',
-  'pages_read_engagement',
-  'pages_manage_ads',
-  'leads_retrieval',
-  'pages_manage_metadata',
-];
-export const subscriptions = ['messages', 'message_echoes', 'message_deliveries', 'message_reads'];
 export const hash = (value: string) => crypto.createHash('sha256').update(value).digest('hex');
 export const random = () => crypto.randomBytes(32).toString('base64url');
 export const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -41,26 +32,39 @@ export function publicOrigin(value = process.env.FACEBOOK_PUBLIC_URL, setting = 
     url.username ||
     url.password
   ) {
-    throw new FacebookError(
-      503,
-      `${setting} must be an HTTPS origin (localhost HTTP is allowed in development).`,
-    );
+    throw new FacebookError(503, `${setting} must be an HTTPS origin (localhost HTTP is allowed in development).`);
   }
   return { base, secure: url.protocol === 'https:' };
 }
 
-export function config(feature: 'messenger' | 'leads' | 'transport' = 'messenger') {
+export type FacebookFeature = 'transport';
+
+/** Facebook Graph transport retained for the optional Instagram-via-Facebook provider. */
+export function facebookCredentials() {
+  const appId = process.env.FACEBOOK_APP_ID,
+    secret = process.env.FACEBOOK_APP_SECRET;
+  if (!appId || !secret)
+    throw new FacebookError(503, 'Configure FACEBOOK_APP_ID and FACEBOOK_APP_SECRET.', 'CONFIGURATION_REQUIRED');
+  return { appId, secret };
+}
+
+export function frontendCallback(feature: string, status?: string) {
+  const { base } = publicOrigin(process.env.FACEBOOK_FRONTEND_URL, 'FACEBOOK_FRONTEND_URL');
+  const url = new URL('/user/integrations/facebook', base);
+  url.searchParams.set('feature', feature);
+  if (status) url.searchParams.set('oauth', status);
+  return url.toString();
+}
+
+export function config(_feature: FacebookFeature = 'transport', _requireLogin = false) {
+  const credentials = facebookCredentials();
   const required = [
-    'FACEBOOK_APP_ID',
-    'FACEBOOK_APP_SECRET',
     'FACEBOOK_GRAPH_VERSION',
     'FACEBOOK_PUBLIC_URL',
     'FACEBOOK_TOKEN_ENCRYPTION_KEY',
     'FACEBOOK_WEBHOOK_VERIFY_TOKEN',
     'JWT_SECRET',
   ];
-  if (feature !== 'transport' && process.env.FACEBOOK_LOGIN_MODE !== 'classic')
-    required.push(feature === 'leads' ? 'FACEBOOK_LEADS_LOGIN_CONFIG_ID' : 'FACEBOOK_LOGIN_CONFIG_ID');
   const missing = required.filter((k) => !process.env[k]);
   if (missing.length)
     throw new FacebookError(503, `Facebook configuration missing: ${missing.join(', ')}`, 'CONFIGURATION_REQUIRED');
@@ -71,8 +75,8 @@ export function config(feature: 'messenger' | 'leads' | 'transport' = 'messenger
   return {
     base,
     secure,
-    appId: process.env.FACEBOOK_APP_ID!,
-    secret: process.env.FACEBOOK_APP_SECRET!,
+    ...credentials,
+    loginConfigId: null,
     version: process.env.FACEBOOK_GRAPH_VERSION!,
     callback: `${base}/v1/facebook/oauth/callback`,
   };
@@ -128,18 +132,6 @@ export function signedUser(signed: unknown, secret: string): string {
   return payload.user_id;
 }
 
-export function replyWindow(last: unknown, now = Date.now()) {
-  const end = last ? new Date(last as string).getTime() + 24 * 60 * 60 * 1000 : 0;
-  return {
-    can_reply: end > now,
-    reply_window_ends_at: end ? new Date(end).toISOString() : null,
-    reply_block_reason:
-      end > now
-        ? null
-        : 'The 24-hour Messenger reply window is closed. Ask the customer to message this Page again in Messenger.',
-  };
-}
-
 // Meta errors are translated to safe messages; never propagate HTTP client errors,
 // which can include Authorization headers, access tokens and authorization codes.
 export function graphFailure(code: number): FacebookError {
@@ -152,7 +144,7 @@ export function graphFailure(code: number): FacebookError {
   if ([10, 200, 299].includes(code))
     return new FacebookError(
       403,
-      'Facebook denied permission. Grant the required permissions and verify Page access, Leads Access (for lead forms), and the app access level.',
+      'Meta denied permission. Check the app access level and granted permissions.',
       'PERMISSION_DENIED',
     );
   if ([4, 17, 32, 613].includes(code))

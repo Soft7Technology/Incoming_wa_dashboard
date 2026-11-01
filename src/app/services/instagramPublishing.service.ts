@@ -4,7 +4,7 @@ import { Knex } from 'knex';
 import db from '@surefy/database';
 import instagram, { InstagramService } from './instagram.service';
 import graph, { InstagramGraph, directInstagramConfig, instagramPublishingPermission } from './instagramGraph.service';
-import { FacebookScope } from './facebookMessenger.service';
+import { SocialScope } from './socialAccess.service';
 import { decrypt, FacebookError, hash, random, uuidPattern } from '../utils/facebook';
 import {
   cleanPublishingMedia,
@@ -38,7 +38,7 @@ export class InstagramPublishingService {
     private meta: InstagramGraph = graph,
   ) {}
 
-  async authorize(scope: FacebookScope, id: string) {
+  async authorize(scope: SocialScope, id: string) {
     const account = await this.accounts.account(scope, id);
     if (account.auth_provider !== 'instagram')
       throw new FacebookError(409, 'Connect this account with Instagram to publish posts.');
@@ -54,7 +54,7 @@ export class InstagramPublishingService {
     return account;
   }
 
-  async settings(scope: FacebookScope, id: string) {
+  async settings(scope: SocialScope, id: string) {
     const account = await this.accounts.account(scope, id, false);
     const allowed =
       account.auth_provider === 'instagram' &&
@@ -71,7 +71,7 @@ export class InstagramPublishingService {
     };
   }
 
-  async saveAsset(scope: FacebookScope, id: string, file?: Express.Multer.File) {
+  async saveAsset(scope: SocialScope, id: string, file?: Express.Multer.File) {
     if (!file) throw new FacebookError(400, 'Choose a JPEG photo or MP4 Reel.');
     try {
       await this.authorize(scope, id);
@@ -108,7 +108,7 @@ export class InstagramPublishingService {
     return { path: publishingMediaPath(asset.filename), type: asset.kind === 'IMAGE' ? 'image/jpeg' : 'video/mp4' };
   }
 
-  private async row(scope: FacebookScope, id: string, publication: string) {
+  private async row(scope: SocialScope, id: string, publication: string) {
     await this.accounts.account(scope, id, false);
     if (!uuidPattern.test(publication)) throw new FacebookError(400, 'Invalid publication ID.');
     const row = await this.database('instagram_publications').where({ id: publication, account_id: id }).first();
@@ -120,7 +120,7 @@ export class InstagramPublishingService {
     return Object.fromEntries(fields.map((key) => [key, row[key] ?? null]));
   }
 
-  async list(scope: FacebookScope, id: string) {
+  async list(scope: SocialScope, id: string) {
     await this.accounts.account(scope, id, false);
     return this.database('instagram_publications')
       .where({ account_id: id })
@@ -129,7 +129,7 @@ export class InstagramPublishingService {
       .limit(50);
   }
 
-  async create(scope: FacebookScope, id: string, input: any) {
+  async create(scope: SocialScope, id: string, input: any) {
     const a = await this.authorize(scope, id);
     if (!input || !uuidPattern.test(String(input.client_request_id || '')))
       throw new FacebookError(400, 'Provide a UUID client_request_id.');
@@ -256,7 +256,7 @@ export class InstagramPublishingService {
     return this.view(await this.row(scope, id, row.id));
   }
 
-  async refresh(scope: FacebookScope, id: string, publication: string) {
+  async refresh(scope: SocialScope, id: string, publication: string) {
     const row = await this.row(scope, id, publication);
     if (row.status === 'published' || row.status === 'failed') return this.view(row);
     if (!row.container_id) {
@@ -310,7 +310,7 @@ export class InstagramPublishingService {
     });
   }
 
-  async publish(scope: FacebookScope, id: string, publication: string) {
+  async publish(scope: SocialScope, id: string, publication: string) {
     const a = await this.authorize(scope, id);
     await this.refresh(scope, id, publication);
     const reserved = await this.database.transaction(async (trx) => {

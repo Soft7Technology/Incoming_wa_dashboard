@@ -20,6 +20,8 @@ function load(file, deps) {
       Buffer,
       process: { env: { JWT_SECRET: 'test-secret' } },
       require: (name) => {
+        if (name === '../utils/platformOrganization') return load('src/app/utils/platformOrganization.ts', {});
+        if (name === '../utils/creditLedger') return load('src/app/utils/creditLedger.ts', {});
         assert.ok(name in deps, name);
         return deps[name];
       },
