@@ -7,6 +7,8 @@ import { bucket } from '@surefy/config/firebase.config';
 import activityLogsModel from '../models/activityLogs.model';
 import wabaCredentials from './wabaCredentials.service';
 import crypto from 'crypto';
+import https from 'https';
+import { metaSendError } from '../utils/metaSendError';
 
 class MetaService {
   private client: AxiosInstance;
@@ -20,6 +22,9 @@ class MetaService {
     this.client = axios.create({
       baseURL: `https://graph.facebook.com/${this.apiVersion}`,
       timeout: 30000,
+      // This deployment has no IPv6 route. Avoid Node's short dual-stack attempt
+      // deadline abandoning a usable IPv4 connection before the request timeout.
+      httpsAgent: new https.Agent({ family: 4, keepAlive: true }),
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${this.accessToken}`,
@@ -52,21 +57,23 @@ class MetaService {
       } catch (error: any) { throw new HTTP400Error({ message: `Invalid international recipient: ${error.message}` }); }
     }
     if (!payload.to) throw new HTTP400Error({ message: 'Recipient is required' });
+    const startedAt = Date.now();
     try {
       const response = await this.client.post(`/${phoneNumberId}/messages`, payload);
       return response.data;
     } catch (error: any) {
+      const failure = metaSendError(error);
+      console.error('Meta API Error - Send Message:', {
+        ...failure.diagnostic,
+        elapsed_ms: Date.now() - startedAt,
+        ...(redactLogs ? {} : { phone_number_id: phoneNumberId }),
+      });
       if (redactLogs) {
-        console.error('Meta API - Shopify message attempt failed; recipient and content omitted.');
         throw new HTTP500Error({ message: 'WhatsApp message outcome could not be confirmed.' });
       }
-      console.log(
-        `Sending message via Meta API to phone number ID: ${phoneNumberId} with payload: ${JSON.stringify(payload)}`,
-      );
-      console.error('Meta API Error - Send Message:', error.response?.data || error.message);
       throw new HTTP500Error({
         message: 'Failed to send message via Meta API',
-        details: error.response?.data || error.message,
+        details: failure.details,
       });
     }
   }
