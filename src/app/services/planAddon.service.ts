@@ -5,6 +5,7 @@ import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { CatalogActor, positiveInt, textField } from './planCatalog.service';
 import { isUnmeteredFeature, storedAddonLimit } from '../utils/planFeatures';
+import { addonPrice } from '../utils/addonPricing';
 
 export function walletPaise(value: unknown): number {
   const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value));
@@ -82,7 +83,9 @@ class PlanAddonService {
       positiveInt(Number(addon.units), 'saved add-on units', 2147483647);
       positiveInt(Number(addon.price_paise), 'saved add-on price');
       const units = Number(addon.units) * quantity;
-      const amount = Number(addon.price_paise) * quantity;
+      const pricing = await trx('company_addon_pricing').where({ company_id: actor.companyId, addon_id: addon.id }).first();
+      const quote = addonPrice(addon, Number(pricing?.markup_paise ?? 0), quantity);
+      const amount = quote.platform_fee_paise;
       const existingBonus = storedAddonLimit(limit.addon_limit);
       if (!Number.isSafeInteger(existingBonus))
         throw new HTTP400Error({ message: 'Invalid existing add-on limit' });
@@ -101,7 +104,8 @@ class PlanAddonService {
       const platformBefore = walletPaise(platform.credit_balance ?? 0);
       if (before < amount)
         throw new HTTP400Error({
-          message: `Insufficient company wallet balance; required INR ${(amount / 100).toFixed(2)}`,
+          message: 'Not enough credits. Please ask your administrator.',
+          details: { code: 'INSUFFICIENT_COMPANY_CREDITS', required_platform_fee_paise: amount },
         });
       if (!Number.isSafeInteger(platformBefore + amount))
         throw new HTTP400Error({ message: 'Platform wallet exceeds supported balance' });
@@ -118,6 +122,7 @@ class PlanAddonService {
           quantity,
           units,
           amount_paise: amount,
+          ...quote,
           expires_at: plan.end_date,
         })
         .returning('*');
@@ -171,6 +176,7 @@ class PlanAddonService {
           feature_key: addon.feature_key,
           units,
           amount_paise: amount,
+          ...quote,
         }),
       });
       return purchase;

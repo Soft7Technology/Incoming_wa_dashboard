@@ -64,8 +64,9 @@ function memoryDatabase(initial = {}) {
       matches(row) {
         return filters.every((f) => f(row)) && (!alternatives.length || alternatives.some((f) => f(row)));
       },
-      whereRaw(sql) {
+      whereRaw(sql, bindings = []) {
         if (sql === 'false') filters.push(() => false);
+        else if (sql === 'lower(email) = ?') filters.push(row => row.email?.toLowerCase() === bindings[0]);
         else throw Error('Unsupported fixture SQL');
         return q;
       },

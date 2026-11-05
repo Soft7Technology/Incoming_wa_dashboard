@@ -10,6 +10,7 @@ function load(file, deps = {}) {
     if (name in deps) return deps[name];
     if (name.includes('/exceptions/')) return HttpError;
     if (name.endsWith('/planFeatures')) return load('src/app/utils/planFeatures.ts');
+    if (name.endsWith('/addonPricing')) return load('src/app/utils/addonPricing.ts');
     return require(name);
   } });
   return exports;
@@ -28,7 +29,7 @@ function fixture() {
     plan_features: [{ key: 'TeamInvite', active: true, addon_allowed: true, kind: 'capacity' },
       { key: 'Campaign', active: true, addon_allowed: true, kind: 'usage' }],
     plan_addons: [{ id: uuid(6), name: 'Extra teammate', feature_key: 'TeamInvite', units: 1, price_paise: 5000, active: true }],
-    user_plan_addons: [], credit_transactions: [], activity_logs: [],
+    user_plan_addons: [], company_addon_pricing: [], credit_transactions: [], activity_logs: [],
     contacts: [], phone_numbers: [], chat_bot: [], ai_assistants: [],
     user_team: [{ invite_sent_by: uuid(1), invite_status: 'sent' }, { invite_sent_by: uuid(1), invite_status: 'accepted' }],
   };
@@ -76,8 +77,9 @@ function fixture() {
   };
   const catalog = load('src/app/services/planCatalog.service.ts', { '@surefy/database': db });
   const addons = load('src/app/services/planAddon.service.ts', { '@surefy/database': db, './planCatalog.service': catalog });
+  const companyAddons = load('src/app/services/companyAddon.service.ts', { '@surefy/database': db, './planCatalog.service': catalog });
   const limits = load('src/app/services/planUsage.service.ts', { '@surefy/database': db });
-  return { state: () => state, fail: table => { failTable = table; }, addons: addons.default, catalog: catalog.default, limits: limits.default,
+  return { state: () => state, fail: table => { failTable = table; }, addons: addons.default, companyAddons: companyAddons.default, catalog: catalog.default, limits: limits.default,
     actor: { userId: uuid(7), companyId: uuid(3), userRole: 'admin' },
     body: { user_id: uuid(1), user_plan_id: uuid(5), addon_id: uuid(6), quantity: 3 } };
 }
@@ -409,4 +411,89 @@ test('assistant creation enforces the owner quota and writes through the same tr
   f.state().user_plans[0].limits.AiAssistant.limit = 1;
   await controller.createAssistant(req, {});
   assert.equal(calls, 1); assert.equal(f.state().ai_assistants.length, 1);
+});
+
+test('company markup quotes INR 70 but transfers only INR 20 of platform credits', async () => {
+  const f = fixture();
+  f.state().plan_addons[0].price_paise = 2000;
+  f.state().companies[0].credit_balance = '20.00';
+  const quote = await f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 5000 });
+  assert.equal(quote.platform_fee_paise, 2000);
+  assert.equal(quote.markup_paise, 5000);
+  assert.equal(quote.total_price_paise, 7000);
+  const catalog = await f.catalog.planAddons(f.actor);
+  assert.equal(catalog[0].total_price_paise, 7000);
+  assert.equal(catalog[0].markup_editable, true);
+  assert.equal(f.state().plan_addons[0].price_paise, 2000);
+  const purchase = await f.addons.purchase(f.actor, { ...f.body, quantity: 1 }, 'markup-purchase');
+  assert.equal(purchase.platform_fee_paise, 2000);
+  assert.equal(purchase.amount_paise, 2000);
+  assert.equal(purchase.markup_paise, 5000);
+  assert.equal(purchase.total_price_paise, 7000);
+  assert.equal(f.state().companies[0].credit_balance, 0);
+  assert.equal(f.state().users[1].credit_balance, 25);
+  assert.deepEqual(f.state().credit_transactions.map(row => row.amount), [-20, 20]);
+  await f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 9000 });
+  const retry = await f.addons.purchase(f.actor, { ...f.body, quantity: 1 }, 'markup-purchase');
+  assert.equal(retry.total_price_paise, 7000, 'idempotent purchase retains original price');
+  assert.equal(f.state().credit_transactions.length, 2);
+});
+
+test('shared packs have independent company markup and zero by default', async () => {
+  const f = fixture();
+  f.state().companies.push({ id: uuid(90), credit_balance: '100' });
+  await f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 5000 });
+  const other = { ...f.actor, companyId: uuid(90) };
+  assert.equal((await f.catalog.planAddons(other))[0].markup_paise, 0);
+  await f.companyAddons.setMarkup(other, uuid(6), { markup_paise: 123 });
+  assert.equal((await f.catalog.planAddons(f.actor))[0].markup_paise, 5000);
+  assert.equal((await f.catalog.planAddons(other))[0].markup_paise, 123);
+  await f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 0 });
+  assert.equal((await f.catalog.planAddons(f.actor))[0].total_price_paise, 5000);
+});
+
+test('markup validates roles, ownership, integer paise and rejects price tampering', async () => {
+  const f = fixture();
+  for (const markup_paise of [-1, 1.5, '5000', null, 100000001]) {
+    await assert.rejects(f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise }), /markup_paise/);
+  }
+  await assert.rejects(f.companyAddons.setMarkup({ ...f.actor, userRole: 'user' }, uuid(6), { markup_paise: 5000 }), /administrator/);
+  await assert.rejects(f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 5000, price_paise: 1 }), /Only/);
+  f.state().plan_addons[0].company_id = uuid(99);
+  await assert.rejects(f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 5000 }), /not found/);
+  assert.equal(f.state().company_addon_pricing.length, 0);
+});
+
+test('insufficient platform credits deny all writes even when markup is large', async () => {
+  const f = fixture();
+  f.state().plan_addons[0].price_paise = 2000;
+  await f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 5000 });
+  f.state().companies[0].credit_balance = '19.99';
+  const before = structuredClone(f.state());
+  await assert.rejects(f.addons.purchase(f.actor, { ...f.body, quantity: 1 }, 'low-credit'), error => {
+    assert.equal(error.message, 'Not enough credits. Please ask your administrator.');
+    assert.equal(error.details.code, 'INSUFFICIENT_COMPANY_CREDITS');
+    assert.equal(error.details.required_platform_fee_paise, 2000);
+    return true;
+  });
+  assert.deepEqual(f.state(), before);
+});
+
+test('quantity multiplies both price components and concurrent purchases cannot overspend credits', async () => {
+  const f = fixture();
+  f.state().plan_addons[0].price_paise = 2000;
+  await f.companyAddons.setMarkup(f.actor, uuid(6), { markup_paise: 5000 });
+  f.state().companies[0].credit_balance = '60.00';
+  const results = await Promise.allSettled([
+    f.addons.purchase(f.actor, f.body, 'quantity-one'),
+    f.addons.purchase(f.actor, f.body, 'quantity-two'),
+  ]);
+  assert.equal(results.filter(r => r.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(r => r.status === 'rejected').length, 1);
+  const purchase = f.state().user_plan_addons[0];
+  assert.equal(purchase.platform_fee_paise, 6000);
+  assert.equal(purchase.markup_paise, 15000);
+  assert.equal(purchase.total_price_paise, 21000);
+  assert.equal(f.state().companies[0].credit_balance, 0);
+  assert.equal(f.state().credit_transactions.length, 2);
 });

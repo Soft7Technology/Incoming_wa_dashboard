@@ -14,6 +14,9 @@ function loadSource(file, dependencies, globals = {}) {
 }
 
 class BadRequest extends Error { constructor({ message }) { super(message); this.statusCode = 400; } }
+class WabaError extends Error {
+  constructor(code, message, retryable, statusCode) { super(message); Object.assign(this, { code, retryable, statusCode }); }
+}
 const input = { user_id: 'owner', company_id: 'company', waba_id: '123456' };
 
 function fixture(options = {}) {
@@ -26,6 +29,12 @@ function fixture(options = {}) {
       return account;
     },
     async findOwnedForSync() { return account; },
+    async saveMessagingLimit(waba, tier) {
+      calls.push('save-limit');
+      if (options.deletedDuringRefresh) throw new BadRequest({ message: 'WABA not found in your account' });
+      account = { ...account, whatsapp_business_manager_messaging_limit: tier, messaging_limit_synced_at: new Date() };
+      return account;
+    },
     async syncAccountAndPhones(waba, details, phones) {
       calls.push('save-phones');
       if (options.phoneConflict) throw new BadRequest({ message: 'Phone belongs to another account' });
@@ -37,6 +46,12 @@ function fixture(options = {}) {
     },
   };
   const meta = {
+    async getWabaMessagingLimit(id) {
+      calls.push('legacy-limit');
+      assert.equal(id, input.waba_id);
+      if (options.metaFailure) throw Error('Meta unavailable');
+      return options.limitResponse ?? { id, whatsapp_business_manager_messaging_limit: 'TIER_2K' };
+    },
     async getWabaDetails() {
       calls.push('details');
       if (options.metaFailure) throw Error('Meta unavailable');
@@ -58,9 +73,20 @@ function fixture(options = {}) {
     axios: {}, '../models/activityLogs.model': { async create(data) { logs.push(data); } },
     '../models/contactList.model': {}, '../models/importJob.model': {},
     uuid: require('uuid'), './planUsage.service': {},
-    './wabaCredentials.service': { async forAccount() { return null; } },
-    './wabaGraph.service': { WabaGraph: class { constructor() { throw Error('No OAuth setup is needed'); } } },
-    '../utils/wabaOnboarding': {},
+    './wabaCredentials.service': { async forAccount(userId, companyId, id) {
+      assert.equal(userId, input.user_id); assert.equal(companyId, input.company_id); assert.equal(id, account.id);
+      if (options.credentialFailure) throw Error('Authorization expired');
+      return options.token ?? null;
+    } },
+    './wabaGraph.service': { WabaGraph: class {
+      constructor(token) { assert.equal(token, options.token); }
+      async getWabaMessagingLimit(id) {
+        calls.push('account-limit');
+        assert.equal(id, input.waba_id);
+        return options.limitResponse ?? { id, whatsapp_business_manager_messaging_limit: 'TIER_10K' };
+      }
+    } },
+    '../utils/wabaOnboarding': { WabaOnboardingError: WabaError },
     './template.service': { async syncTemplates() {
       calls.push('templates'); if (options.templateFailure) throw Error('Template sync failed'); return [];
     } },
@@ -76,6 +102,83 @@ function fixture(options = {}) {
   }).default;
   return { service, controller, calls, logs };
 }
+
+const limitAccount = () => ({ ...input, id: '00000000-0000-4000-8000-000000000003', connection_status: 'legacy',
+  whatsapp_business_manager_messaging_limit: 'TIER_250', messaging_limit_synced_at: new Date('2026-11-01T00:00:00Z') });
+
+test('messaging limit refresh saves Meta tier and reads the cached result without another upstream call', async () => {
+  const f = fixture({ account: limitAccount() });
+  const result = await f.service.refreshMessagingLimit(input.user_id, input.company_id, input.waba_id);
+  assert.equal(result.whatsapp_business_manager_messaging_limit, 'TIER_2K');
+  assert.ok(result.messaging_limit_synced_at > new Date('2026-11-01T00:00:00Z'));
+  const saved = await f.service.getMessagingLimit(input.user_id, input.company_id, result.id);
+  assert.equal(saved.whatsapp_business_manager_messaging_limit, 'TIER_2K');
+  assert.deepEqual(f.calls, ['legacy-limit', 'save-limit']);
+});
+
+test('messaging limit uses saved account credentials and accepts an internal UUID', async () => {
+  const account = { ...limitAccount(), connection_status: 'connected' };
+  const f = fixture({ account, token: 'account-token' });
+  const result = await f.service.refreshMessagingLimit(input.user_id, input.company_id, account.id);
+  assert.equal(result.whatsapp_business_manager_messaging_limit, 'TIER_10K');
+  assert.deepEqual(f.calls, ['account-limit', 'save-limit']);
+});
+
+test('messaging limit rejects foreign, deleted and missing accounts before using Meta', async () => {
+  for (const account of [undefined, { ...limitAccount(), user_id: 'other' },
+    { ...limitAccount(), company_id: 'other' }, { ...limitAccount(), deleted_at: new Date() }]) {
+    const f = fixture({ account });
+    await assert.rejects(f.service.refreshMessagingLimit(input.user_id, input.company_id, input.waba_id), /not found/);
+    await assert.rejects(f.service.getMessagingLimit(input.user_id, input.company_id, input.waba_id), /not found/);
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test('invalid IDs cannot become Graph paths', async () => {
+  const f = fixture({ account: limitAccount() });
+  for (const id of ['', '123/phone_numbers', '123?fields=access_token', {}, 123]) {
+    await assert.rejects(f.service.refreshMessagingLimit(input.user_id, input.company_id, id), /wabaId/);
+  }
+  assert.deepEqual(f.calls, []);
+});
+
+test('absent or malformed Meta limit never overwrites the saved tier or timestamp', async () => {
+  for (const limitResponse of [{ id: input.waba_id }, { id: '999', whatsapp_business_manager_messaging_limit: 'TIER_2K' },
+    ...[null, 2000, '', 'TIER_2K\n', '<script>'].map(value => ({ id: input.waba_id, whatsapp_business_manager_messaging_limit: value }))]) {
+    const account = limitAccount(), f = fixture({ account, limitResponse });
+    await assert.rejects(f.service.refreshMessagingLimit(input.user_id, input.company_id, input.waba_id), error => error.statusCode === 502);
+    const saved = await f.service.getMessagingLimit(input.user_id, input.company_id, input.waba_id);
+    assert.equal(saved.whatsapp_business_manager_messaging_limit, 'TIER_250');
+    assert.equal(saved.messaging_limit_synced_at, account.messaging_limit_synced_at);
+    assert.ok(!f.calls.includes('save-limit'));
+  }
+});
+
+test('expired/missing account credentials do not fall back to global credentials', async () => {
+  for (const options of [{ credentialFailure: true }, { account: { ...limitAccount(), connection_status: 'connected' } }]) {
+    const f = fixture({ account: limitAccount(), ...options });
+    await assert.rejects(f.service.refreshMessagingLimit(input.user_id, input.company_id, input.waba_id));
+    assert.deepEqual(f.calls, []);
+  }
+});
+
+test('Meta failure and deletion during refresh cannot report a successful saved limit', async () => {
+  for (const options of [{ metaFailure: true }, { deletedDuringRefresh: true }]) {
+    const f = fixture({ account: limitAccount(), ...options });
+    await assert.rejects(f.service.refreshMessagingLimit(input.user_id, input.company_id, input.waba_id));
+    assert.equal((await f.service.getMessagingLimit(input.user_id, input.company_id, input.waba_id)).whatsapp_business_manager_messaging_limit, 'TIER_250');
+  }
+});
+
+test('never-refreshed accounts return null and frontend cannot set the tier or owner', async () => {
+  const account = limitAccount(); delete account.whatsapp_business_manager_messaging_limit; delete account.messaging_limit_synced_at;
+  const f = fixture({ account });
+  assert.equal((await f.service.getMessagingLimit(input.user_id, input.company_id, input.waba_id)).whatsapp_business_manager_messaging_limit, null);
+  const res = { status() { return this; }, json(body) { this.body = body; return this; } };
+  await f.controller.refreshMessagingLimit({ ownerId: input.user_id, userId: 'member', companyId: input.company_id,
+    params: { wabaId: input.waba_id }, body: { user_id: 'attacker', whatsapp_business_manager_messaging_limit: 'TIER_UNLIMITED' } }, res);
+  assert.equal(res.body.data.whatsapp_business_manager_messaging_limit, 'TIER_2K');
+});
 
 test('onboard accepts only the WABA ID and completes synchronously with trusted owner/company', async () => {
   const f = fixture();

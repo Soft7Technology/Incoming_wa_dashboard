@@ -56,6 +56,9 @@ importers:
       form-data:
         specifier: ^4.0.5
         version: 4.0.5
+      google-auth-library:
+        specifier: ^10.6.2
+        version: 10.6.2
       helmet:
         specifier: ^7.1.0
         version: 7.2.0
@@ -101,6 +104,9 @@ importers:
       pg:
         specifier: ^8.12.0
         version: 8.16.3
+      proxy-addr:
+        specifier: ^2.0.7
+        version: 2.0.7
       swagger-ui-express:
         specifier: ^5.0.0
         version: 5.0.1(express@4.22.1)

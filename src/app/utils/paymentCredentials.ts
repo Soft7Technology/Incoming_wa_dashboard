@@ -18,7 +18,7 @@ export function encryptPaymentCredentials(credentials: object, context: string):
   return [iv, cipher.getAuthTag(), encrypted].map(value => value.toString('base64')).join('.');
 }
 
-export function decryptPaymentCredentials(value: string, context: string): { key_id: string; key_secret: string } {
+export function decryptPaymentCredentials(value: string, context: string): { key_id: string; key_secret: string; webhook_secret?: string } {
   const key = encryptionKey();
   try {
     const parts = value.split('.');

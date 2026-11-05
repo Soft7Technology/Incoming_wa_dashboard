@@ -36,8 +36,8 @@ class PaymentPlanService {
     const requiredBalance = feePaise / 100;
     if (!Number.isFinite(balance) || balance < requiredBalance) {
       throw new HTTP400Error({
-        message: `Insufficient or invalid company credit balance. ${plan.billing_cycle} subscription orders require at least INR ${requiredBalance}.`,
-        details: { required_balance: requiredBalance, current_balance: Number.isFinite(balance) ? balance : null },
+        message: 'Not enough credits. Please ask your administrator.',
+        details: { code: 'INSUFFICIENT_COMPANY_CREDITS', required_platform_fee_paise: feePaise },
       });
     }
     // Eligibility check only: no debit or balance_after transaction is recorded.
@@ -92,7 +92,8 @@ class PaymentPlanService {
     const before = parseBalance(company?.credit_balance);
     const recipientBefore = parseBalance(platform?.credit_balance ?? 0);
     if (!Number.isFinite(before) || before < fee || !Number.isFinite(recipientBefore) || recipientBefore < 0) {
-      throw new HTTP400Error({ message: `Cannot activate paid plan: company/platform wallet balance is invalid or insufficient. Required INR ${fee}. Top up and verify the same order again; do not pay again.` });
+      throw new HTTP400Error({ message: 'Not enough credits. Please ask your administrator. Top up and verify the same order again; do not pay again.',
+        details: { code: 'INSUFFICIENT_COMPANY_CREDITS', required_platform_fee_paise: feePaise, payment_received: true } });
     }
     const after = Math.round((before - fee) * 100) / 100;
     const recipientAfter = Math.round((recipientBefore + fee) * 100) / 100;

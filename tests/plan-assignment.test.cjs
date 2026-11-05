@@ -148,7 +148,7 @@ test('late failure rolls back wallet debit, history, user changes, and new plan'
 test('insufficient funds and unauthorized requests leave all state unchanged', async () => {
   const f = fixture({ balance: 99 });
   const before = structuredClone(f.state());
-  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, actor), /Insufficient/);
+  await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, actor), /Not enough credits/);
   await assert.rejects(f.service.updateUser('u', { assigned_plan: 'p' }, { ...actor, companyId: 'other' }), /Not authorized/);
   assert.deepEqual(f.state(), before);
 });

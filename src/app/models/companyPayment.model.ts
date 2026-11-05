@@ -23,7 +23,7 @@ class CompanyPaymentModel {
     // Deliberately exclude encrypted credentials from dashboard reads.
     return db('company_payment_gateways')
       .where({ company_id: companyId, active: true })
-      .select('id', 'provider', 'mode', 'display_name', 'active', 'created_at');
+      .select('id', 'provider', 'mode', 'display_name', 'active', 'created_at', 'webhook_secret_configured', 'webhook_verified_at');
   }
 
   findExistingOrder(trx: Knex.Transaction, scope: PaymentScope, idempotencyKey: string) {

@@ -70,6 +70,9 @@ export class WabaGraph {
     throw new WabaOnboardingError('WABA_META_RESPONSE_INVALID', 'Meta asset pagination did not complete. Retry setup.', true, 502);
   }
   getWabaDetails(id: string) { return this.call(id, 'GET', { fields: 'id,name,currency,message_template_namespace' }); }
+  getWabaMessagingLimit(id: string) {
+    return this.call(id, 'GET', { fields: 'id,whatsapp_business_manager_messaging_limit' });
+  }
   async getPhoneNumbers(id: string) {
     return { data: await this.list(`${id}/phone_numbers`, {
       fields: 'id,verified_name,display_phone_number,quality_rating,code_verification_status,status,platform_type,is_on_biz_app',

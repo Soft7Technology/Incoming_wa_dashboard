@@ -34,6 +34,12 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
   }));
 
   app.use(cors<express.Request>((req, done) => {
+    if (/^\/v1\/auth\/google(?:\/|$)/.test(req.url)) {
+      const allowed = (process.env.GOOGLE_AUTH_ALLOWED_ORIGINS || '').split(',').map(value => value.trim());
+      const origin = req.headers.origin;
+      return done(null, { origin: origin && allowed.includes(origin) ? origin : false,
+        methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'], credentials: false });
+    }
     // OAuth integrations set a browser-binding cookie on the API origin. Only the
     // configured dashboard origin may use credentialed cross-origin requests.
     if (req.url.startsWith('/v1/admin/google-sheets') || req.url.startsWith('/v1/integrations/google/') ||
@@ -61,6 +67,7 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
     limit: '10mb', verify: (req, _res, buffer) => {
       // Signature validation must use the exact bytes received, before JSON parsing.
       const creditWebhook = /^\/v1\/webhooks\/razorpay\/credits\/?$/.test(req.url?.split('?')[0] || '');
+      const companyPaymentWebhook = /^\/v1\/webhooks\/razorpay\/company-payments\/[^/]+\/?$/.test(req.url?.split('?')[0] || '');
 
       const isFacebookWebhook =
         /^\/v1\/facebook\/(?:leads|messaging)\/webhook\/?$/.test(
@@ -73,8 +80,8 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
       }
 
 
-      if (creditWebhook && buffer.length > 1024 * 1024) throw new CustomError('Razorpay webhook exceeds 1 MB', 413);
-      if (creditWebhook || ['/v1/facebook/webhook', '/v1/facebook/instagram/webhook', '/v1/webhooks/meta'].includes(req.url?.split('?')[0] || '') ||
+      if ((creditWebhook || companyPaymentWebhook) && buffer.length > 1024 * 1024) throw new CustomError('Razorpay webhook exceeds 1 MB', 413);
+      if (creditWebhook || companyPaymentWebhook || ['/v1/facebook/webhook', '/v1/facebook/instagram/webhook', '/v1/webhooks/meta'].includes(req.url?.split('?')[0] || '') ||
         /^\/v1\/integrations\/shopify\/webhook(?:\/|$)/.test(req.url?.split('?')[0] || '') ||
         /^\/v1\/webhook\/flows\//.test(req.url?.split('?')[0] || '')) {
         if (req.url?.startsWith('/v1/webhook/flows/') && buffer.length > 1024 * 1024) {

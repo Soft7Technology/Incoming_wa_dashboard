@@ -55,3 +55,6 @@ backups/
 
 !/tests/facebook-two-apps.test.cjs
 !/tests/facebook-messenger-inbox.test.cjs
+!/tests/company-payment-links.test.cjs
+!/tests/meta-send-transport.test.cjs
+!/tests/google-auth.test.cjs

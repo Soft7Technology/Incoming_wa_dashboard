@@ -4,6 +4,7 @@ import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import { CatalogActor, positiveInt, textField } from './planCatalog.service';
 import { featureKey } from '../utils/planFeatures';
+import { addonMarkup, addonPrice } from '../utils/addonPricing';
 
 const allowedFeatures = ['WabaNumber', 'Chatbot', 'TeamInvite'];
 function companyAdmin(actor: CatalogActor) {
@@ -22,6 +23,33 @@ function uuid(id: string) {
 }
 
 class CompanyAddonService {
+  async setMarkup(actor: CatalogActor, id: string, body: any) {
+    companyAdmin(actor); uuid(id); fields(body, ['markup_paise']);
+    const markup = addonMarkup(body.markup_paise);
+    return db.transaction(async trx => {
+      // Match purchase lock order before taking the catalog lock (FK checks also
+      // touch these rows when the first pricing override is inserted).
+      await trx('users').where({ id: actor.userId }).forUpdate().first();
+      const company = await trx('companies').where({ id: actor.companyId }).forUpdate().first();
+      if (!company) throw new HTTP404Error({ message: 'Company not found' });
+      // Exclusive catalog lock serializes edits and purchases, including the first markup row.
+      const addon = await trx('plan_addons').where({ id }).forUpdate().first();
+      if (!addon || (addon.company_id != null && addon.company_id !== actor.companyId))
+        throw new HTTP404Error({ message: 'Add-on not found in your company' });
+      const scope = { company_id: actor.companyId, addon_id: id };
+      const previous = await trx('company_addon_pricing').where(scope).first();
+      const values = { markup_paise: markup, updated_by: actor.userId, updated_at: new Date() };
+      if (previous) await trx('company_addon_pricing').where(scope).update(values);
+      else await trx('company_addon_pricing').insert({ ...scope, ...values });
+      await trx('activity_logs').insert({ company_id: actor.companyId, user_id: actor.userId,
+        action: 'UPDATE', entity_type: 'SUBSCRIPTION', entity_id: id, read: false, status: 'SUCCESS',
+        description: `Updated company markup for ${addon.name}`,
+        old_data: JSON.stringify({ markup_paise: previous?.markup_paise ?? 0 }),
+        new_data: JSON.stringify({ markup_paise: markup }) });
+      return { ...addon, ...addonPrice(addon, markup), markup_editable: true };
+    });
+  }
+
   async create(actor: CatalogActor, body: any) {
     companyAdmin(actor);
     fields(body, ['name', 'feature_key', 'units', 'active']);

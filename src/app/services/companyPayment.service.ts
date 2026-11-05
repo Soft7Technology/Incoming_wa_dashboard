@@ -6,7 +6,7 @@ import HTTP401Error from '@surefy/exceptions/HTTP401Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import CompanyPaymentModel from '../models/companyPayment.model';
 import { encryptPaymentCredentials, decryptPaymentCredentials } from '../utils/paymentCredentials';
-import { createGatewayOrder, verifyGatewayOrder, GatewayConnection, PaymentMode } from './paymentGateway.provider';
+import { createGatewayOrder, verifyGatewayOrder, GatewayConnection, PaymentMode, createGatewayPaymentLink, fetchGatewayPaymentLink, paymentLinkCheckout, paymentLinkHasCapturedPayment } from './paymentGateway.provider';
 
 
 export interface PaymentContext {
@@ -16,11 +16,25 @@ export interface PaymentContext {
   idempotencyKey?: string;
 }
 
+export function gatewayWebhookStatus(gateway: {
+  id: string; provider: string; webhook_secret_configured?: boolean; webhook_verified_at?: Date | string | null;
+}) {
+  const applicable = gateway.provider === 'razorpay';
+  const configured = applicable && Boolean(gateway.webhook_secret_configured);
+  const verifiedAt = configured ? gateway.webhook_verified_at ?? null : null;
+  return {
+    webhook_verified: Boolean(verifiedAt),
+    webhook_verified_at: verifiedAt,
+    webhook_status: !applicable ? 'not_applicable' : !configured ? 'not_configured' : verifiedAt ? 'verified' : 'pending',
+    webhook_path: applicable ? `/v1/webhooks/razorpay/company-payments/${gateway.id}` : null,
+  };
+}
+
 export function paymentScope(req: PaymentContext, admin = false) {
   if (!req.companyId || !req.userId) throw new HTTP401Error({ message: 'Authenticated company context is required' });
-  if (admin && !['admin', 'superadmin','user','company'].includes(req.userRole || '')) {
+  if (admin && !['admin', 'superadmin', 'company'].includes(req.userRole || '')) {
     throw new HTTP401Error({
-      message: 'Only company user can manage payment gateways and create payment orders',
+      message: 'Only company administrators can manage payment gateways',
     });
   }
   return { company_id: req.companyId, user_id: req.userId };
@@ -55,6 +69,7 @@ function connection(gateway: any): GatewayConnection {
 }
 
 function publicOrder(order: any) {
+  const checkout = typeof order.checkout === 'string' ? JSON.parse(order.checkout) : order.checkout;
   return {
     id: order.id,
     amount_paise: order.amount_paise,
@@ -62,7 +77,14 @@ function publicOrder(order: any) {
     is_test: order.is_test,
     status: order.status,
     provider_order_id: order.provider_order_id,
-    checkout: order.checkout,
+    checkout,
+    payment_flow: order.payment_flow ?? 'checkout',
+    payment_link_id: order.provider_payment_link_id ?? null,
+    payment_url: checkout?.payment_url ?? null,
+    link_status: order.link_status ?? null,
+    activation_status: order.is_test ? 'test_only' : !order.user_plan_id ? 'not_applicable' : order.fulfilled_at ? 'active' :
+      order.status === 'paid' && order.user_plan_id ? 'activation_pending' : 'awaiting_payment',
+    fulfillment_error: order.fulfillment_error ?? null,
     created_at: order.created_at,
     paid_at: order.paid_at,
     user_plan_id: order.user_plan_id ?? null,
@@ -104,8 +126,10 @@ class CompanyPaymentService {
       throw new HTTP400Error({ message: 'Razorpay key_id does not match the selected mode' });
     }
     const display_name = requiredString(body.display_name, 'display_name', 100);
+    const webhook_secret = body.webhook_secret === undefined ? undefined : requiredString(body.webhook_secret, 'webhook_secret', 1024);
+    if (webhook_secret && body.provider !== 'razorpay') throw new HTTP400Error({ message: 'webhook_secret is supported for Razorpay only' });
     const id = randomUUID();
-    const credentials_encrypted = encryptPaymentCredentials({ key_id, key_secret }, `${company_id}:${id}`);
+    const credentials_encrypted = encryptPaymentCredentials({ key_id, key_secret, ...(webhook_secret ? { webhook_secret } : {}) }, `${company_id}:${id}`);
     await db.transaction(async (trx) => {
       // Serialize configuration changes and order creation for this company.
       const company = await CompanyPaymentModel.lockCompany(trx, company_id);
@@ -122,14 +146,18 @@ class CompanyPaymentService {
         mode,
         display_name,
         credentials_encrypted,
+        webhook_secret_configured: Boolean(webhook_secret),
       });
     });
-    return { id, provider: body.provider, mode, display_name, active: true, credentials_configured: true };
+    return { id, provider: body.provider, mode, display_name, active: true, credentials_configured: true,
+      webhook_secret_configured: Boolean(webhook_secret),
+      ...gatewayWebhookStatus({ id, provider: body.provider, webhook_secret_configured: Boolean(webhook_secret) }) };
   }
 
   async configurations(req: PaymentContext) {
     const { company_id } = paymentScope(req, true);
-    return CompanyPaymentModel.activeConfigurations(company_id);
+    const gateways = await CompanyPaymentModel.activeConfigurations(company_id);
+    return gateways.map(gateway => ({ ...gateway, ...gatewayWebhookStatus(gateway) }));
   }
 
   async disable(req: PaymentContext, modeInput: unknown) {
@@ -142,8 +170,20 @@ class CompanyPaymentService {
     return { mode, active: false };
   }
 
-  async create(req: PaymentContext, body: any, test = false) {
-    const scope = paymentScope(req, true);
+  async createPaymentLink(req: PaymentContext, body: any) {
+    if (!body || Array.isArray(body) || Object.keys(body).some(key =>
+      !['mode', 'subscription_plan_id', 'user_id', 'customer_phone'].includes(key))) {
+      throw new HTTP400Error({ message: 'Only mode, subscription_plan_id, user_id and customer_phone are accepted' });
+    }
+    if (!body.subscription_plan_id) throw new HTTP400Error({ message: 'subscription_plan_id is required for a plan payment link' });
+    return this.create(req, { ...body, mode: body.mode ?? 'live' }, false, true);
+  }
+
+  async create(req: PaymentContext, body: any, test = false, paymentLink = false) {
+    const scope = paymentScope(req);
+    if (!['admin', 'superadmin', 'company', 'user'].includes(req.userRole || '')) {
+      throw new HTTP401Error({ message: 'A company user is required to create a payment purchase' });
+    }
     const mode = test ? 'test' : paymentMode(body.mode);
     if (test && body.mode !== undefined && body.mode !== 'test') {
       throw new HTTP400Error({ message: 'The test endpoint only accepts test mode' });
@@ -153,11 +193,14 @@ class CompanyPaymentService {
     }
     const planId = body.subscription_plan_id;
     const recipientId = body.user_id ?? scope.user_id;
+    if (recipientId !== scope.user_id && !['admin', 'superadmin', 'company'].includes(req.userRole || '')) {
+      throw new HTTP401Error({ message: 'Only company administrators can purchase for another user' });
+    }
     if (planId !== undefined) {
       if (typeof planId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planId) || typeof recipientId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(recipientId)) {
         throw new HTTP400Error({ message: 'subscription_plan_id and user_id must be UUIDs' });
       }
-      if (mode !== 'live') throw new HTTP400Error({ message: 'Subscription purchases require live mode; test payments cannot activate plans' });
+      if (mode !== 'live' && !paymentLink) throw new HTTP400Error({ message: 'Subscription purchases require live mode; test payments cannot activate plans' });
       if (body.amount_paise !== undefined) throw new HTTP400Error({ message: 'Omit amount_paise for subscriptions; price comes from the saved plan' });
     } else if (body.user_id !== undefined) throw new HTTP400Error({ message: 'user_id is only supported for subscription purchases' });
     const requestedAmount = planId === undefined ? (test ? 100 : paymentAmount(body.amount_paise)) : null;
@@ -168,7 +211,8 @@ class CompanyPaymentService {
       throw new HTTP400Error({ message: 'customer_phone must contain 10 digits for this INR checkout' });
     }
     const request_hash = createHash('sha256')
-      .update(JSON.stringify(planId === undefined ? { mode, amount_paise: requestedAmount, customer_phone } : { mode, subscription_plan_id: planId, user_id: recipientId, customer_phone }))
+      .update(JSON.stringify(planId === undefined ? { mode, amount_paise: requestedAmount, customer_phone } : { mode, subscription_plan_id: planId, user_id: recipientId, customer_phone,
+        ...(paymentLink ? { payment_flow: 'link' } : {}) }))
       .digest('hex');
     const prepared = await db.transaction(async (trx) => {
       const company = await CompanyPaymentModel.lockCompany(trx, scope.company_id);
@@ -181,6 +225,9 @@ class CompanyPaymentService {
       }
       const gateway = await CompanyPaymentModel.activeGateway(trx, scope.company_id, mode);
       if (!gateway) throw new HTTP400Error({ message: `Configure a ${mode} payment gateway for this company first` });
+      if (paymentLink && (gateway.provider !== 'razorpay' || !gateway.webhook_secret_configured)) {
+        throw new HTTP400Error({ message: 'Configure a Razorpay gateway with webhook_secret before creating payment links' });
+      }
       if (gateway.provider === 'cashfree' && !customer_phone) {
         throw new HTTP400Error({ message: 'customer_phone is required for Cashfree checkout' });
       }
@@ -199,12 +246,32 @@ class CompanyPaymentService {
         is_test: mode === 'test',
         status: 'creating',
         ...(reserved ? { user_plan_id: reserved.userPlanId } : {}),
+        ...(paymentLink ? { payment_flow: 'link', next_check_at: new Date(Date.now() + 60000) } : {}),
       });
       return { gateway, gatewayConnection, order };
     });
     if (prepared.existing) return publicOrder(prepared.existing);
     const { order, gateway, gatewayConnection } = prepared;
     try {
+      if (paymentLink) {
+        const link = await createGatewayPaymentLink(gatewayConnection!, { ...order, customer_phone });
+        // A webhook/reconciler may already have processed this purchase. Lock and
+        // merge metadata without regressing its paid/fulfilled state.
+        await db.transaction(async trx => {
+          const locked = await trx('company_payment_orders').where({ id: order.id }).forUpdate().first();
+          if (locked.provider_payment_link_id && locked.provider_payment_link_id !== link.id) {
+            throw new HTTP400Error({ message: 'Payment link identity changed; reconcile this purchase' });
+          }
+          await trx('company_payment_orders').where({ id: order.id }).update({
+            provider_payment_link_id: link.id,
+            checkout: JSON.stringify(paymentLinkCheckout(gatewayConnection!, link)),
+            status: locked.status === 'paid' ? 'paid' : 'pending',
+            link_status: locked.link_status ?? link.status,
+            updated_at: new Date(),
+          });
+        });
+        return this.get(req, order.id);
+      }
       const result = await createGatewayOrder(gatewayConnection!, {
         ...order,
         customer_phone,
@@ -219,7 +286,9 @@ class CompanyPaymentService {
       return publicOrder(updated);
     } catch (error) {
       // A timeout may still have created an external order. Do not retry POST automatically.
-      await CompanyPaymentModel.updateOrder(scope, order.id, { status: 'creation_unknown', updated_at: new Date() });
+      await db('company_payment_orders').where({ id: order.id, ...scope, status: 'creating' })
+        .update({ status: 'creation_unknown', updated_at: new Date() });
+      if (paymentLink) return this.get(req, order.id);
       throw error;
     }
   }
@@ -242,6 +311,7 @@ class CompanyPaymentService {
   async verify(req: PaymentContext, id: string) {
     const order = await this.findOrder(req, id);
     if (order.status === 'paid' && (!order.user_plan_id || order.fulfilled_at || order.is_test)) return publicOrder(order);
+    if (order.payment_flow === 'link') return this.verifyPaymentLink(req, order);
     if (!order.provider_order_id)
       throw new HTTP400Error({
         message:
@@ -262,6 +332,49 @@ class CompanyPaymentService {
     }
     // Read back the latest state so concurrent verifications never regress paid to pending.
     return this.get(req, id);
+  }
+
+  private async verifyPaymentLink(req: PaymentContext, order: any) {
+    const gateway = await CompanyPaymentModel.findGateway(order.company_id, order.gateway_id);
+    if (!gateway) throw new HTTP404Error({ message: 'Order gateway configuration not found' });
+    const link = await fetchGatewayPaymentLink(connection(gateway), order);
+    if (!link) return this.get(req, order.id);
+    const paid = link.status === 'paid' && link.amount_paid === order.amount_paise;
+    await db.transaction(async trx => {
+      const locked = await trx('company_payment_orders').where({ id: order.id, company_id: order.company_id }).forUpdate().first();
+      if (locked.provider_payment_link_id && locked.provider_payment_link_id !== link.id) {
+        throw new HTTP400Error({ message: 'Payment link identity changed; reconcile this purchase' });
+      }
+      if (locked.status === 'paid') return;
+      await trx('company_payment_orders').where({ id: order.id }).update({
+        provider_payment_link_id: link.id,
+        checkout: JSON.stringify(paymentLinkCheckout(connection(gateway), link)),
+        link_status: link.status, status: paid ? 'paid' : 'pending',
+        ...(paid ? { paid_at: new Date() } : {}),
+        last_checked_at: new Date(), updated_at: new Date(),
+        next_check_at: ['cancelled', 'expired'].includes(link.status) ? null : new Date(Date.now() + 60000),
+      });
+    });
+    // Record receipt independently so a wallet/activation failure never asks a
+    // customer to pay again. Fulfillment itself remains a single transaction.
+    if (paid) {
+      try {
+        if (!await paymentLinkHasCapturedPayment(connection(gateway), link, order)) {
+          await db('company_payment_orders').where({ id: order.id }).whereNull('fulfilled_at')
+            .update({ fulfillment_error: 'PAYMENT_CAPTURE_REVIEW_REQUIRED', next_check_at: new Date(Date.now() + 300000) });
+          return this.get(req, order.id);
+        }
+        await db.transaction(async trx => {
+          const locked = await trx('company_payment_orders').where({ id: order.id, company_id: order.company_id }).forUpdate().first();
+          await paymentPlans.fulfill(trx, locked);
+          await trx('company_payment_orders').where({ id: order.id }).update({ fulfillment_error: null, next_check_at: null });
+        });
+      } catch {
+        await db('company_payment_orders').where({ id: order.id }).whereNull('fulfilled_at')
+          .update({ fulfillment_error: 'PLAN_ACTIVATION_PENDING', next_check_at: new Date(Date.now() + 60000) });
+      }
+    }
+    return this.get(req, order.id);
   }
 }
 

@@ -7,7 +7,8 @@ function harness(){
  let rows={companies:[{id:uuid(1),credit_balance:'1000.00'}],users:[{id:uuid(2),company_id:uuid(1),deleted_at:null},{id:uuid(3),company_id:uuid(9),deleted_at:null},{id:uuid(6),company_id:uuid(9),role:'superadmin',credit_balance:0,deleted_at:null}],
  subscription_plans:[{id:uuid(4),company_id:uuid(1),active:true,billing_cycle:'Monthly',price:'149.50',plan_name:'Business',features:{Contact:{limit_value:100}}}],
  platform_fee_settings:[{id:'default',monthly_fee_paise:10000,yearly_fee_paise:100000}],credit_transactions:[],user_plans:[],company_payment_orders:[],company_payment_gateways:[{id:uuid(5),company_id:uuid(1),provider:'razorpay',mode:'live',active:true,credentials_encrypted:'encrypted'}]};
- let counter=100,paid=false,sends=0,fail=false;
+ let counter=100,paid=false,sends=0,fail=false,link=null,captured=true;
+ rows.company_payment_gateways[0].webhook_secret_configured=true;
  const db=table=>{
   const predicates=[];let operation,values;
   function execute(){if(operation==='insert'){const added=(Array.isArray(values)?values:[values]).map(v=>({id:uuid(counter++),...v}));rows[table].push(...added);operation=undefined;return added;}
@@ -15,8 +16,14 @@ function harness(){
   const q={where(data){predicates.push(r=>Object.entries(data).every(([k,v])=>r[k]===v));return q;},whereNull(key){predicates.push(r=>r[key]==null);return q;},andWhere(data){return q.where(data);},whereNot(key,v){predicates.push(r=>r[key]!==v);return q;},whereIn(key,values){predicates.push(r=>values.includes(r[key]));return q;},orderBy(){return q;},forShare(){return q;},forUpdate(){return q;},first(){return Promise.resolve(execute()[0]);},insert(v){operation='insert';values=v;return q;},update(v){operation='update';values=v;return q;},returning(){return Promise.resolve(execute());},then(resolve,reject){return Promise.resolve(execute()).then(resolve,reject);}};return q;};
  let tail=Promise.resolve();db.transaction=fn=>{const task=tail.then(async()=>{const snapshot=structuredClone(rows);try{return await fn(db);}catch(error){rows=snapshot;throw error;}});tail=task.catch(()=>{});return task;};
  const plans=load('src/app/services/paymentPlan.service.ts',{'../utils/planFeatures':load('src/app/utils/planFeatures.ts'),'../utils/subscriptionDuration':duration,'./planUsage.service':{countTeamSeats:async()=>2},'./platformPricing.service':load('src/app/services/platformPricing.service.ts',{'@surefy/database':db,'./planCatalog.service':{platformAdmin(){}}})});
- const service=load('src/app/services/companyPayment.service.ts',{'@surefy/database':db,'../models/companyPayment.model':load('src/app/models/companyPayment.model.ts',{'@surefy/database':db}).default,'./paymentPlan.service':plans.default,'../utils/paymentCredentials':{encryptPaymentCredentials:()=>'',decryptPaymentCredentials:()=>({})},'./paymentGateway.provider':{createGatewayOrder:async()=>{sends++;if(fail)throw Error('Timeout');return {provider_order_id:'order_'+sends,checkout:{}};},verifyGatewayOrder:async()=>paid}}).default;
- return {service,rows:()=>rows,paid:()=>{paid=true;},fail:()=>{fail=true;},sends:()=>sends,req:{companyId:uuid(1),userId:uuid(2),userRole:'admin',idempotencyKey:'one'},body:{mode:'live',subscription_plan_id:uuid(4)}};
+ const service=load('src/app/services/companyPayment.service.ts',{'@surefy/database':db,'../models/companyPayment.model':load('src/app/models/companyPayment.model.ts',{'@surefy/database':db}).default,'./paymentPlan.service':plans.default,'../utils/paymentCredentials':{encryptPaymentCredentials:()=>'',decryptPaymentCredentials:()=>({})},'./paymentGateway.provider':{
+  createGatewayOrder:async()=>{sends++;if(fail)throw Error('Timeout');return {provider_order_id:'order_'+sends,checkout:{}};},verifyGatewayOrder:async()=>paid,
+  createGatewayPaymentLink:async(gateway,order)=>{sends++;link={id:'plink_123',reference_id:order.id,amount:order.amount_paise,amount_paid:0,status:'created',short_url:'https://rzp.io/i/example',expire_by:Math.floor(Date.now()/1000)+3600};if(fail)throw Error('Timeout');return {...link};},
+  fetchGatewayPaymentLink:async()=>link?{...link,status:paid?'paid':link.status,amount_paid:paid?link.amount:link.amount_paid}:null,
+  paymentLinkCheckout:(_g,link)=>({type:'payment_link',payment_url:link.short_url,payment_link_id:link.id}),
+  paymentLinkHasCapturedPayment:async()=>captured,
+ }}).default;
+ return {service,rows:()=>rows,paid:()=>{paid=true;},fail:()=>{fail=true;},sends:()=>sends,link:()=>link,uncaptured:()=>{captured=false;},req:{companyId:uuid(1),userId:uuid(2),userRole:'admin',idempotencyKey:'one'},body:{mode:'live',subscription_plan_id:uuid(4)}};
 }
 test('checkout snapshots add-on choices and preserves them when the catalog changes before verification',async()=>{
  const h=harness(), selected=[{addon_id:uuid(50),enabled:true}];h.rows().subscription_plans[0].addons=selected;
@@ -62,7 +69,7 @@ test('Monthly and Yearly wallet thresholds accept equal/above and reject insuffi
  for(const [cycle,minimum] of [['Monthly',100],['Yearly',1000]]) {
   for(const balance of [minimum-0.01,minimum,minimum+1]) {
    const h=harness();h.rows().subscription_plans[0].billing_cycle=cycle;h.rows().companies[0].credit_balance=String(balance);
-   if(balance<minimum){await assert.rejects(h.service.create(h.req,h.body),/credit balance/);assert.equal(h.sends(),0);assert.equal(h.rows().user_plans.length,0);assert.equal(h.rows().company_payment_orders.length,0);}
+   if(balance<minimum){await assert.rejects(h.service.create(h.req,h.body),/Not enough credits/);assert.equal(h.sends(),0);assert.equal(h.rows().user_plans.length,0);assert.equal(h.rows().company_payment_orders.length,0);}
    else{await h.service.create(h.req,h.body);assert.equal(h.sends(),1);}
    assert.equal(h.rows().companies[0].credit_balance,String(balance));
   }
@@ -71,7 +78,7 @@ test('Monthly and Yearly wallet thresholds accept equal/above and reject insuffi
 test('invalid wallet balances and client-supplied balances cannot bypass order validation',async()=>{
  for(const balance of [null,undefined,'','invalid','Infinity',-1]) {
   const h=harness();h.rows().companies[0].credit_balance=balance;
-  await assert.rejects(h.service.create(h.req,{...h.body,credit_balance:99999,balance_after:99999,company_id:uuid(9)}),/credit balance/);
+  await assert.rejects(h.service.create(h.req,{...h.body,credit_balance:99999,balance_after:99999,company_id:uuid(9)}),/Not enough credits/);
   assert.equal(h.sends(),0);assert.equal(h.rows().user_plans.length,0);
  }
 });
@@ -129,4 +136,92 @@ test('legacy pending orders keep the original platform fee when they have no sto
  h.rows().platform_fee_settings[0].monthly_fee_paise=99999;
  h.paid();await h.service.verify(h.req,order.id);
  assert.equal(h.rows().companies[0].credit_balance,900);assert.equal(h.rows().credit_transactions[0].amount,-100);
+});
+
+test('payment links use the catalog price, remain pending and return one URL across retries',async()=>{
+ const h=harness();const first=await h.service.createPaymentLink(h.req,h.body);
+ assert.equal(first.payment_flow,'link');assert.equal(first.amount_paise,14950);
+ assert.equal(first.payment_url,'https://rzp.io/i/example');assert.equal(first.payment_link_id,'plink_123');
+ assert.equal(first.activation_status,'awaiting_payment');assert.equal(h.rows().user_plans[0].active,false);
+ h.rows().subscription_plans[0].price='999';
+ const again=await h.service.createPaymentLink(h.req,h.body);
+ assert.equal(again.id,first.id);assert.equal(again.amount_paise,14950);assert.equal(h.sends(),1);
+ await assert.rejects(h.service.create(h.req,h.body),/different payment request/);
+});
+
+test('payment-link validation rejects pricing overrides, foreign recipients/catalogs and unsupported gateways',async()=>{
+ for(const body of [{amount_paise:100},{company_id:uuid(9)},{subscription_plan_id:uuid(99)},{user_id:uuid(3)}]) {
+  const h=harness();await assert.rejects(h.service.createPaymentLink(h.req,{...h.body,...body}));assert.equal(h.sends(),0);
+ }
+ for(const mutation of [{provider:'cashfree'},{webhook_secret_configured:false}]) {
+  const h=harness();Object.assign(h.rows().company_payment_gateways[0],mutation);
+  await assert.rejects(h.service.createPaymentLink(h.req,h.body),/Razorpay gateway with webhook_secret/);
+  assert.equal(h.rows().user_plans.length,0);
+ }
+ const h=harness();await assert.rejects(h.service.createPaymentLink({...h.req,userRole:'user'},{...h.body,user_id:uuid(3)}),/another user/);
+ await assert.rejects(h.service.configure({...h.req,userRole:'user'},{}),/administrators/);
+});
+
+test('a normal user can buy their own plan but cannot read another user or company purchase',async()=>{
+ const h=harness();const own={...h.req,userRole:'user'};const order=await h.service.createPaymentLink(own,h.body);
+ assert.equal((await h.service.get(own,order.id)).id,order.id);
+ await assert.rejects(h.service.get({...own,userId:uuid(8)},order.id),/not found/);
+ await assert.rejects(h.service.verify({...h.req,companyId:uuid(9)},order.id),/not found/);
+});
+
+test('concurrent paid link verification activates and charges the platform fee exactly once',async()=>{
+ const h=harness();const order=await h.service.createPaymentLink(h.req,h.body);h.paid();
+ const results=await Promise.all([h.service.verify(h.req,order.id),h.service.verify(h.req,order.id)]);
+ assert.ok(results.every(result=>result.activation_status==='active'));
+ assert.equal(h.rows().credit_transactions.length,2);assert.equal(h.rows().companies[0].credit_balance,900);
+ assert.equal(h.rows().company_payment_orders[0].next_check_at,null);
+ const end=h.rows().user_plans[0].end_date.getTime();await h.service.verify(h.req,order.id);
+ assert.equal(h.rows().user_plans[0].end_date.getTime(),end);
+});
+
+test('an upstream timeout returns the purchase ID and recovers the original link without a second POST',async()=>{
+ const h=harness();h.fail();const order=await h.service.createPaymentLink(h.req,h.body);
+ assert.equal(order.status,'creation_unknown');assert.equal(order.payment_url,null);
+ assert.equal((await h.service.createPaymentLink(h.req,h.body)).id,order.id);assert.equal(h.sends(),1);
+ const recovered=await h.service.verify(h.req,order.id);assert.equal(recovered.payment_link_id,'plink_123');
+ assert.equal(recovered.status,'pending');h.paid();assert.ok((await h.service.verify(h.req,order.id)).fulfilled_at);
+ assert.equal(h.sends(),1);
+});
+
+test('paid links retain payment receipt when wallet activation fails and activate on same-purchase retry',async()=>{
+ const h=harness();const order=await h.service.createPaymentLink(h.req,h.body);
+ h.rows().companies[0].credit_balance='0';h.paid();
+ const paid=await h.service.verify(h.req,order.id);
+ assert.equal(paid.status,'paid');assert.equal(paid.activation_status,'activation_pending');assert.ok(paid.paid_at);
+ assert.equal(paid.fulfillment_error,'PLAN_ACTIVATION_PENDING');assert.equal(paid.fulfilled_at,null);
+ assert.equal(h.rows().user_plans[0].active,false);assert.equal(h.rows().credit_transactions.length,0);
+ h.rows().companies[0].credit_balance='100';
+ const active=await h.service.verify(h.req,order.id);assert.equal(active.activation_status,'active');
+ assert.equal(active.fulfillment_error,null);assert.equal(h.rows().credit_transactions.length,2);assert.equal(h.sends(),1);
+});
+
+test('test payment links use catalog prices but never activate a plan or debit wallets',async()=>{
+ const h=harness();h.rows().company_payment_gateways[0].mode='test';
+ const order=await h.service.createPaymentLink(h.req,{...h.body,mode:'test'});h.paid();
+ const result=await h.service.verify(h.req,order.id);
+ assert.equal(result.status,'paid');assert.equal(result.activation_status,'test_only');assert.equal(result.fulfilled_at,null);
+ assert.equal(result.amount_paise,14950);assert.equal(h.rows().user_plans[0].active,false);
+ assert.equal(h.rows().credit_transactions.length,0);assert.equal(h.rows().companies[0].credit_balance,'1000.00');
+});
+
+test('partial and expired links grant no access and expiry stops scheduled polling',async()=>{
+ const h=harness();const order=await h.service.createPaymentLink(h.req,h.body);
+ Object.assign(h.link(),{status:'partially_paid',amount_paid:100});
+ assert.equal((await h.service.verify(h.req,order.id)).activation_status,'awaiting_payment');
+ Object.assign(h.link(),{status:'expired'});
+ assert.equal((await h.service.verify(h.req,order.id)).link_status,'expired');
+ assert.equal(h.rows().company_payment_orders[0].next_check_at,null);assert.equal(h.rows().user_plans[0].active,false);
+});
+
+test('a paid link without a matching captured unrefunded payment never activates',async()=>{
+ const h=harness();const order=await h.service.createPaymentLink(h.req,h.body);h.paid();h.uncaptured();
+ const result=await h.service.verify(h.req,order.id);
+ assert.equal(result.status,'paid');assert.equal(result.fulfillment_error,'PAYMENT_CAPTURE_REVIEW_REQUIRED');
+ assert.equal(result.fulfilled_at,null);assert.equal(h.rows().user_plans[0].active,false);
+ assert.equal(h.rows().credit_transactions.length,0);
 });

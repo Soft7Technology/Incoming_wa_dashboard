@@ -2,6 +2,8 @@ Development examples are kept on the `dev` branch. Test pages and Postman collec
 
 # Company payment gateways
 
+For hosted Razorpay links and automatic plan activation, see the [payment-link frontend integration guide](company-payment-links.md). That flow has its own webhook and background reconciliation; the checkout-order flow described below still requires explicit verification.
+
 Base URL: `/v1/admin/payments`. All requests require `Authorization: Bearer <JWT>`.
 The JWT company determines the merchant account; a payload `company_id` cannot select another company.
 Company administrators (`admin`, `company`, `superadmin`) with a company context can configure gateways and create orders.

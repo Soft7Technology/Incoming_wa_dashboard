@@ -5,6 +5,19 @@ type GraphIndex = {
 };
 
 const indexes = new WeakMap<object, GraphIndex>();
+/** Capture only a declared option from the matched source, including older-message replies. */
+export function captureInteractiveChoice(bot: any, edge: any, variables: Record<string, any> = {}) {
+  const source = bot.nodes.find((node: any) => node.id === edge.source);
+  const attributes = source?.data?.attributes;
+  const variable = attributes?.variable;
+  if (typeof variable !== 'string' || !/^[a-zA-Z][a-zA-Z0-9_]*$/.test(variable) ||
+      ['constructor', 'prototype', '__proto__', 'user_id', 'phone_number', 'chatbot_delay_token', 'chatbot_ai'].includes(variable)) return variables;
+  const choice = options(source).find(option => handles(edge).includes(option.id));
+  if (!choice) return variables;
+  const configured = attributes?.choice_values;
+  const value = configured && Object.prototype.hasOwnProperty.call(configured, choice.id) ? configured[choice.id] : choice.id;
+  return { ...variables, [variable]: typeof value === 'string' ? value : choice.id };
+}
 const normalize = (value: unknown) => typeof value === 'string'
   ? value.trim().toLowerCase().replace(/\s+/g, ' ') : '';
 const handles = (edge: any): string[] => [...new Set<string>([

@@ -6,6 +6,7 @@ import planUsage from './planUsage.service';
 import chatbotTemplateModel from '../models/chatbotTemplate.model';
 import { validateChatbotMessage } from '../utils/chatbotMessage';
 import { markActivityRecorded } from '../utils/activityContext';
+import { captureInteractiveChoice } from './chatbot/interactiveChoice';
 
 interface TemplateActor { userId?: string; ownerId?: string; companyId?: string }
 function text(value: unknown, field: string, max: number): string {
@@ -54,10 +55,11 @@ class ChatbotTemplateService {
     if (body.choice_id !== undefined || body.answer !== undefined) {
       if (body.node_id === undefined) throw new HTTP400Error({ message: 'Provide the node_id returned by the previous demo response' });
       let edge;
-      if (node.data.key === '@whatsapp/send-list-message') {
+      if (['@whatsapp/send-list-message', '@whatsapp/send-button-message'].includes(node.data.key)) {
         if (typeof body.choice_id !== 'string' || body.answer !== undefined)
           throw new HTTP400Error({ message: 'Select a valid choice_id for this menu' });
         edge = graph.edges.find(e => e.source === node!.id && e.sourceHandle === body.choice_id);
+        if (edge) captured = captureInteractiveChoice(graph, edge);
       } else if (node.data.key === '@whatsapp/ask-question') {
         if (typeof body.answer !== 'string' || !body.answer.trim() || body.answer.length > 2000 || body.choice_id !== undefined)
           throw new HTTP400Error({ message: 'Provide an answer of 1 to 2000 characters for this question' });
@@ -70,7 +72,8 @@ class ChatbotTemplateService {
     }
     const message = node.data.attributes.message;
     return { template_id: id, node_id: node.id, message,
-      choices: message.interactive?.action?.sections?.flatMap((section: any) => section.rows) || [],
+      choices: message.interactive?.action?.sections?.flatMap((section: any) => section.rows)
+        || message.interactive?.action?.buttons?.map((button: any) => button.reply) || [],
       awaiting_answer: node.data.key === '@whatsapp/ask-question',
       completed: !graph.edges.some(e => e.source === node!.id), captured,
       simulated: true, persisted: false };

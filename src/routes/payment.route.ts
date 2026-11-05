@@ -12,6 +12,7 @@ PaymentRoute.put('/gateways', PaymentController.configure);
 PaymentRoute.delete('/gateways/:mode', PaymentController.disable);
 PaymentRoute.post('/test-orders', PaymentController.createTestOrder);
 PaymentRoute.post('/orders', PaymentController.createOrder);
+PaymentRoute.post('/payment-links', PaymentController.createPaymentLink);
 PaymentRoute.get('/orders/:id', PaymentController.getOrder);
 PaymentRoute.post('/orders/:id/verify', PaymentController.verifyOrder);
 

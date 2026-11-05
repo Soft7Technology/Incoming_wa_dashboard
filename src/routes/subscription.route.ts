@@ -18,6 +18,7 @@ SubscriptionRoute.post('/features', planCatalog.createFeature);
 SubscriptionRoute.get('/addons', planCatalog.addons);
 SubscriptionRoute.post('/addons', planCatalog.createAddon);
 SubscriptionRoute.patch('/addons/:id', planCatalog.updateCompanyAddon);
+SubscriptionRoute.put('/addons/:id/markup', planCatalog.setAddonMarkup);
 SubscriptionRoute.delete('/addons/:id', planCatalog.disableAddon);
 SubscriptionRoute.post('/addon-purchases', planCatalog.purchase);
 SubscriptionRoute.get('/entitlements', planCatalog.entitlements);

@@ -5,6 +5,7 @@ import CampaignSchedulerService from '@surefy/console/services/campaignScheduler
 import ShopifyPrivacyScheduler from './app/services/shopifyPrivacyScheduler.service';
 import { supportEventHub } from './app/services/supportEventHub';
 import { closeSupportStreams } from './app/http/controllers/supportLive.controller';
+import CompanyPaymentLinkScheduler from './app/services/companyPaymentLinkScheduler.service';
 
 // Only start server if not in worker mode
 if (process.env.WORKER_MODE !== 'true') {
@@ -12,10 +13,12 @@ if (process.env.WORKER_MODE !== 'true') {
     onListening: () => {
       CampaignSchedulerService.start();
       ShopifyPrivacyScheduler.start();
+      CompanyPaymentLinkScheduler.start();
     },
     onShutdown: () => {
       CampaignSchedulerService.stop();
       ShopifyPrivacyScheduler.stop();
+      CompanyPaymentLinkScheduler.stop();
       closeSupportStreams();
       void supportEventHub.close();
     },

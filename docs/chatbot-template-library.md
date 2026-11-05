@@ -1,6 +1,6 @@
 # Chatbot template library: frontend API
 
-The library contains 21 starter templates in 11 categories. Twelve templates were added for the four categories below. They use the existing WhatsApp chatbot engine. They are platform-provided starters (`approval_status: "platform_starter"`, `meta_approved: false`), not Meta-approved outbound message templates. No approval request is sent to Meta.
+The library contains 22 starter templates in 11 categories. They use the existing WhatsApp chatbot engine. They are platform-provided starters (`approval_status: "platform_starter"`, `meta_approved: false`), not Meta-approved outbound message templates. No approval request is sent to Meta.
 
 ## New templates
 
@@ -15,6 +15,7 @@ The library contains 21 starter templates in 11 categories. Twelve templates wer
 | `real-estate` | `real-estate-buyer-enquiry` | Home search, commercial property enquiry |
 | `real-estate` | `real-estate-visit-request` | Site visit, virtual tour request |
 | `real-estate` | `real-estate-rental-enquiry` | Tenant preferences, landlord enquiry |
+| `real-estate` | `real-estate-lead-management` | Buy, rent, sell, matching-property requests and site-visit requests |
 | `finance-banking` | `finance-loan-enquiry` | Loan enquiry, callback request |
 | `finance-banking` | `finance-investment-consultation` | Goal discussion, adviser appointment |
 | `finance-banking` | `finance-tax-consultation` | Personal tax, business tax enquiry |
@@ -22,6 +23,20 @@ The library contains 21 starter templates in 11 categories. Twelve templates wer
 Every template also includes a team-enquiry branch. Paths run from a keyword trigger to a menu, question nodes, and a completion message. Each question has a named session variable. These flows collect enquiries; live order lookup, booking confirmation, ticket creation and financial decisions require configured integrations or team action. They contain no invented performance percentages.
 
 ## Endpoints
+
+### Real Estate Lead Management
+
+Use `real-estate-lead-management` with the detail, demo and use endpoints below. Migration `20261104000001_real_estate_lead_template.ts` adds it from `realEstateLeadManagement.v1.ts`, without changing existing templates or tenant copies.
+
+The supplied `real_estate_lead_automation` flow is adapted to the editor's `trigger`/`message` nodes with `data.key`, `data.attributes`, positions and reply handles. Keywords are `property`, `real estate`, `buy`, `rent` and `sell`; a tenant can also configure the copied chatbot as its default flow. The welcome list includes Buy, Rent, Sell and Talk to agent. Buy and rent have separate location paths. Seller enquiries end with team follow-up instead of entering buyer property search.
+
+Buttons and lists capture `attributes.variable`; optional `attributes.choice_values` maps each reply ID to its stored value (otherwise the ID is stored). Text matching a menu title captures the same value as clicking it. Invalid input repeats the menu with its optional `fallback_message`. Demo responses include both button/list choices and captured menu values.
+
+Captured fields include `intent`, `propertyType`, `location`, `budget`, `bhk`, `timeline`, `moveInDate`, `propertyLocation`, `expectedPrice`, `leadName`, `nextAction`, `visitProperty`, `visitDate`, `visitTime` and `consultantRequest`, depending on the branch. Commercial properties can choose Not applicable for BHK. Each copy receives fresh node/edge UUIDs and retains reply handles.
+
+The incoming-message service finds or creates the contact. The template saves enquiry details in the chat session. Property inventory search/cards, CRM lead creation, appointment creation and round-robin assignment require integration endpoints and tenant configuration. Matching-property requests and site visits therefore end with an explicit team-confirmation message; terminal messages end automation.
+
+### API reference
 
 Base path: `/v1/admin/chatbot`. Send the existing `Authorization: Bearer <token>` header. Responses wrap results in `data` with `success` and `message`.
 

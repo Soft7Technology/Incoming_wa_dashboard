@@ -23,8 +23,7 @@ export interface WabaSyncClient {
 }
 
 class WabaService {
-  /** Refresh an already connected WABA using its Meta ID or local UUID. */
-  async syncWaba(userId: string, companyId: string, wabaId: string, authorizedClient?: WabaSyncClient) {
+  private async ownedWaba(userId: string, companyId: string, wabaId: string) {
     if (!userId || !companyId) throw new HTTP400Error({ message: 'User and company context are required' });
     if (typeof wabaId !== 'string' || wabaId.length > 255 ||
         (!/^\d+$/.test(wabaId) && !uuidValidate(wabaId))) {
@@ -34,6 +33,38 @@ class WabaService {
     if (!waba || waba.deleted_at || waba.user_id !== userId || waba.company_id !== companyId) {
       throw new HTTP404Error({ message: 'WABA not found in your account' });
     }
+    return waba;
+  }
+
+  private messagingLimitResult(waba: any) {
+    return { id: waba.id, waba_id: waba.waba_id,
+      whatsapp_business_manager_messaging_limit: waba.whatsapp_business_manager_messaging_limit ?? null,
+      messaging_limit_synced_at: waba.messaging_limit_synced_at ?? null };
+  }
+
+  async getMessagingLimit(userId: string, companyId: string, wabaId: string) {
+    return this.messagingLimitResult(await this.ownedWaba(userId, companyId, wabaId));
+  }
+
+  /** Only Meta can supply the tier; failed refreshes preserve the last saved value. */
+  async refreshMessagingLimit(userId: string, companyId: string, wabaId: string) {
+    const waba = await this.ownedWaba(userId, companyId, wabaId);
+    const token = await wabaCredentials.forAccount(userId, companyId, waba.id);
+    if (!token && waba.connection_status && waba.connection_status !== 'legacy') throw new WabaOnboardingError(
+      'WABA_SETUP_REQUIRED', 'Reconnect this WhatsApp account before refreshing its messaging limit.', false, 403);
+    const client = token ? new WabaGraph(token) : MetaService;
+    const response = await client.getWabaMessagingLimit(waba.waba_id);
+    const tier = response?.whatsapp_business_manager_messaging_limit;
+    if (response?.id !== waba.waba_id || typeof tier !== 'string' || tier.trim() !== tier || !/^[A-Z][A-Z0-9_]{0,63}$/.test(tier)) {
+      throw new WabaOnboardingError('WABA_MESSAGING_LIMIT_UNAVAILABLE',
+        'Meta did not return a valid messaging limit for this account. The last saved limit is unchanged.', true, 502);
+    }
+    return this.messagingLimitResult(await WabaModel.saveMessagingLimit(waba, tier));
+  }
+
+  /** Refresh an already connected WABA using its Meta ID or local UUID. */
+  async syncWaba(userId: string, companyId: string, wabaId: string, authorizedClient?: WabaSyncClient) {
+    const waba = await this.ownedWaba(userId, companyId, wabaId);
     const savedToken = authorizedClient ? null : await wabaCredentials.forAccount(userId, companyId, waba.id);
     if (!authorizedClient && !savedToken && waba.connection_status && waba.connection_status !== 'legacy') throw new WabaOnboardingError(
       'WABA_SETUP_REQUIRED', 'Finish the saved onboarding or reconnect this WhatsApp account before syncing.', false, 403);

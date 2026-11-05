@@ -2,7 +2,7 @@
 
 import chatSessionModel from "@surefy/console/app/models/chatSession.model";
 import { executeNode } from "@surefy/console/services/chatbot/engine/executeNode"
-import { resolveInteractiveEdge } from '../interactiveChoice';
+import { captureInteractiveChoice, resolveInteractiveEdge } from '../interactiveChoice';
 
 export const menuFlow = async ({
   bot,
@@ -49,7 +49,7 @@ export const menuFlow = async ({
       if(!nextNode) return null;
 
       //VARIABLES
-      let updatedVariables = session?.variables || {};
+      const updatedVariables = captureInteractiveChoice(bot, globalEdge, session?.variables || {});
 
 
       //Update session
@@ -201,6 +201,12 @@ export const menuFlow = async ({
   const matchedEdge = resolveInteractiveEdge(bot, currentNodeId, incomingId, incomingText);
 
   if (!matchedEdge) {
+    if (currentNode.data?.attributes?.fallback_message &&
+        ['@whatsapp/send-button-message', '@whatsapp/send-list-message'].includes(nodeKey)) {
+      const prompt = await executeNode({ bot, session, currentNode });
+      return { messages: [{ type: 'text', text: currentNode.data.attributes.fallback_message },
+        ...(prompt?.messages || (prompt ? [prompt] : []))] };
+    }
     console.log("❌ No matched edge");
     // A default menu should answer arbitrary text again while awaiting a choice.
     // Question answers and delay waits are handled above and must not restart.
@@ -217,8 +223,10 @@ export const menuFlow = async ({
 
   if (!nextNode) return null;
 
+  const updatedVariables = captureInteractiveChoice(bot, matchedEdge, session?.variables || {});
   await chatSessionModel.update(session.id, {
     current_node_id: nextNode.id,
+    variables: updatedVariables,
     last_message: incomingText,
     updated_at: new Date(),
   });
@@ -229,7 +237,8 @@ export const menuFlow = async ({
     bot,
     session: {
       ...session,
-      current_node_id: nextNode.id
+      current_node_id: nextNode.id,
+      variables: updatedVariables,
     },
     currentNode: nextNode
   });

@@ -67,16 +67,27 @@ class AuthService {
     }
 
     // Verify password
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const isPasswordValid = typeof user.password === 'string' && await bcrypt.compare(password, user.password);
 
     if (!isPasswordValid) {
       throw new HTTP401Error({ message: 'Invalid credentials' });
     }
 
+    return this.createSession(user, ipAddress, resolvedDomain);
+  }
+
+  /** Internal session issuer. Call only after independently verifying authentication. */
+  async createSession(user: any, ipAddress: string, resolvedDomain = '') {
+    if (user.deleted_at || user.status !== 'active') {
+      throw new HTTP401Error({ message: 'Your account is not active. Please contact your administrator.' });
+    }
     // Get company details if user has company_id
     let company = null;
     if (user.company_id) {
       company = await CompanyModel.findById(user.company_id);
+      if (user.role !== 'superadmin' && (!company || company.deleted_at || company.status !== 'active')) {
+        throw new HTTP401Error({ message: 'Your company is not active. Please contact your administrator.' });
+      }
     }
 
     // Look up company domain if resolvedDomain is missing
@@ -148,6 +159,7 @@ class AuthService {
     return {
       data: {
         ...userWithoutPassword,
+        has_password: typeof user.password === 'string' && user.password.length > 0,
         plan_active: activePlan ? activePlan.active : false,
         plan_name: activePlan ? activePlan.plan_name : null,
         plan_start_date: activePlan ? activePlan.start_date : null,

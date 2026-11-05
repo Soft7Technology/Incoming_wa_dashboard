@@ -58,6 +58,16 @@ class WabaController {
     return successResponse(req, res, 'WABA accounts retrieved successfully', wabas);
   });
 
+  getMessagingLimit = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const result = await WabaService.getMessagingLimit(req.ownerId ?? req.userId!, req.companyId!, req.params.wabaId);
+    return successResponse(req, res, 'Saved WABA messaging limit retrieved', result);
+  });
+
+  refreshMessagingLimit = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const result = await WabaService.refreshMessagingLimit(req.ownerId ?? req.userId!, req.companyId!, req.params.wabaId);
+    return successResponse(req, res, 'WABA messaging limit refreshed from Meta', result);
+  });
+
   /**
    * POST /v1/waba/:wabaId/phone-numbers
    * Add phone number to WABA

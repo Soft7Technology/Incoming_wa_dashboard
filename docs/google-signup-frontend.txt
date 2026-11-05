@@ -1,0 +1,262 @@
+Google signup/login: backend setup and frontend handoff
+
+Implemented locally; not deployed, migrated, or tested against a live Google account.
+The frontend is a separate application and must implement the flow below.
+
+Google Cloud setup for app.soft7.in
+1. Open https://console.cloud.google.com/auth/clients in the existing project used
+   for Google Sheets. Select its OAuth client of type Web application.
+2. Under Authorized JavaScript origins add https://app.soft7.in (no path).
+   Having the domain on a consent screen or in Sheets redirect URLs alone is not enough.
+   Keep all existing Sheets redirect URIs and settings.
+3. This implementation uses the GIS JavaScript popup callback. It does not require
+   a new OAuth redirect URI, a login client secret, or Sheets/Drive scopes.
+4. Check Branding and Audience in Google Auth Platform. Configure support email,
+   homepage/privacy links, and the audience for the intended users. If the project
+   is in testing, check its test-user restrictions before inviting customers.
+5. The same Web client ID may be reused. A separate Web client in the same project
+   is also supported if you want independent origin configuration.
+
+Backend configuration
+GOOGLE_AUTH_CLIENT_ID=<same Web client ID as GOOGLE_CLIENT_ID, or your separate Web client ID>
+GOOGLE_AUTH_ALLOWED_ORIGINS=https://app.soft7.in
+GOOGLE_AUTH_TRUSTED_PROXIES=<optional trusted reverse-proxy IPs/CIDRs>
+
+GOOGLE_AUTH_CLIENT_ID is public configuration, not a secret. Do not expose the
+existing GOOGLE_CLIENT_SECRET or other Sheets credentials to the browser.
+There is intentionally no automatic fallback from GOOGLE_AUTH_CLIENT_ID to the
+Sheets ID: an operator must explicitly enable authentication.
+Local .env and production configuration were not changed by this implementation.
+
+Origins are an exact comma-separated allowlist, without trailing slashes. Each
+origin's hostname must resolve to exactly one active company_domains row and an
+active company. The company is resolved on the server. Do not accept company_id,
+domain_name, email, user ID or role from a signup form for this flow.
+Company B's dashboard cannot log in a Company A account. Existing cross-company
+legacy login aliases are not enabled by this new Google authentication flow.
+White-label/custom domains need both a backend allowed origin and an Authorized
+JavaScript origin on the Google Web client. Wildcards are not supported.
+For localhost testing add its exact origin to both allowlists and configure a
+matching company domain in a development database; do not create production
+tenant records for local testing.
+
+Start requests are limited to 30 per client IP per 10 minutes across API replicas.
+When behind an ingress/reverse proxy, configure only its actual trusted IPs/CIDRs
+so the backend can resolve the real client IP. Empty configuration uses the socket
+peer, which may group all users behind a proxy into one rate-limit bucket.
+Never configure all internet addresses as trusted proxies. Proxy headers must be
+sanitized by your trusted ingress. Completing a flow permits at most 5 attempts.
+
+Release order
+1. Install dependencies using the repository's pnpm-lock.yaml and build the API.
+2. Apply ONLY this migration with the intended database configuration:
+   npm run knex -- migrate:up 20261105000002_google_signin.ts
+3. Deploy the API release, set GOOGLE_AUTH_CLIENT_ID and allowed origins, restart
+   the API, then enable the frontend Google button.
+Do not run migrate:latest just for this feature: this workspace has other pending
+features. The migration adds two Google tables and makes users.password nullable.
+Old password hashes remain unchanged. All API replicas must include the null-
+password login guard before Google-only users are allowed to register.
+The down migration intentionally refuses to remove existing Google identities or
+Google-only users' only login method. Do not blindly roll back to old login code.
+
+Login/signup screen
+Use the official Google Identity Services button on both pages:
+  https://accounts.google.com/gsi/client
+Use its JavaScript callback mode; do not use a form POST, OAuth access token,
+Google Sheets connection flow, or Google redirect login_uri for these endpoints.
+The login and signup buttons use the same API flow. A first login with a new email
+creates a user. An existing active account with the same verified Gmail/Workspace
+email is connected automatically and logged in, without asking for its password.
+This retains the account ID, password hash, role, plans, credits and other data.
+Subsequent logins retrieve the account by Google's verified sub, not by email.
+Automatic connection requires a valid signed token, verified email, and either a
+Gmail address or Google's Workspace hd claim. Other email providers still use
+explicit connection below. Deleted/inactive accounts and wrong tenants are blocked;
+an existing connection to another Google identity is never replaced.
+
+Step 1: Start a short-lived flow when rendering/activating the Google button.
+POST /v1/auth/google/start
+Content-Type: application/json
+Body: {}
+No Authorization header is needed. The browser sends Origin automatically.
+
+Response:
+{
+  "success": true,
+  "data": {
+    "client_id": "<web-client-id>.apps.googleusercontent.com",
+    "flow_token": "<opaque-one-time-token>",
+    "nonce": "<random-nonce>",
+    "expires_at": "<ISO-timestamp>"
+  }
+}
+Keep flow_token only in this page's memory. It expires after 10 minutes and is
+consumed after success. Do not put it, credentials or passwords in URLs/logs.
+Use the returned client_id and nonce in google.accounts.id.initialize().
+
+Step 2: The Google callback supplies response.credential (an ID token).
+POST /v1/auth/google/login
+Content-Type: application/json
+{
+  "credential": "<response.credential>",
+  "flow_token": "<token-from-start>"
+}
+Do not send client-selected profile data, passwords, roles or company IDs.
+The server verifies Google's signature, issuer, audience, expiry, verified email,
+and the nonce. It verifies the company and consumes the flow transactionally.
+
+Step 3: Handle the same session structure as the existing password login.
+{
+  "success": true,
+  "message": "Google sign-in successful",
+  "data": {
+    "token": "<your-application-JWT>",
+    "expiresIn": "7d",
+    "is_new_user": true,
+    "data": {
+      "id": "<user-UUID>",
+      "role": "user",
+      "company_id": "<server-resolved-company-UUID>",
+      "has_password": false,
+      "plan_active": false,
+      "permissions": [],
+      "owner_id": "<user-UUID>"
+    },
+    "company": { "id": "<company-UUID>" }
+  }
+}
+Illustrative subset; existing login fields remain and expiresIn follows config.
+The outer data is the login result; outer data.data is the user, matching the
+password login envelope. Reuse the existing login session handler and redirects.
+Use the application's JWT for subsequent API calls, never Google's credential.
+Allow an optional phone/profile-completion screen; Google does not supply a phone
+number here. New users get the normal role 'user', with no automatic paid plan,
+trial, credits, add-ons, admin role or connected Google Sheets account.
+
+Example frontend logic (adapt apiBase and existing session handler)
+
+async function renderGoogleLogin(container) {
+  // Run once per mounted login screen, after GIS has loaded.
+  // Avoid generating multiple starts from component re-renders.
+  const startResponse = await fetch(`${apiBase}/v1/auth/google/start`, {
+    method: 'POST', credentials: 'omit',
+    headers: { 'Content-Type': 'application/json' }, body: '{}'
+  });
+  const start = await startResponse.json();
+  if (!startResponse.ok || !start.success) throw new Error(start.message);
+  const flow = start.data;
+  let submitting = false;
+  google.accounts.id.initialize({
+    client_id: flow.client_id,
+    nonce: flow.nonce,
+    auto_select: false,
+    callback: async ({ credential }) => {
+      if (submitting) return;
+      submitting = true;
+      try {
+        const response = await fetch(`${apiBase}/v1/auth/google/login`, {
+          method: 'POST', credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential, flow_token: flow.flow_token })
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+          showGoogleError(result.error?.code, result.message);
+          // Offer an explicit restart that creates a new flow and rerenders GIS.
+          return;
+        }
+        handleExistingLoginSession(result.data);
+      } catch {
+        showGoogleError('NETWORK_ERROR', 'Could not complete sign-in. Please try again.');
+      } finally {
+        submitting = false;
+      }
+    }
+  });
+  google.accounts.id.renderButton(container, { type: 'standard', text: 'continue_with', theme: 'outline', size: 'large' });
+}
+
+Render Google cancellation as a normal cancellation, not registration success.
+On timeout/consumed-flow errors start a NEW flow and request a NEW Google token.
+Do not reuse a credential with a new nonce or repeatedly retry the same token.
+If a response is lost after successful signup, a fresh Google login retrieves the
+already-created user. Do not create another local account or ask for a payment.
+
+Existing-account connection in Settings > Account > Sign-in methods
+GET /v1/auth/google/status
+Authorization: Bearer <existing-application-JWT>
+Returns data: { "google_connected": false, "has_password": true }.
+
+Most existing Gmail/Workspace customers can now click Google on the login page
+directly; no Settings visit is required. The response has is_new_user:false and
+uses the normal login session handler. Keep the old error message only when the
+backend actually returns error.code GOOGLE_ACCOUNT_LINK_REQUIRED; do not show it
+merely because the email already exists or for every HTTP 409 response.
+
+For optional manual connection, or third-party email accounts requiring it:
+1. Show 'Connect Google' after they sign in normally.
+2. Ask for their current dashboard password (not their Google password).
+3. POST /v1/auth/google/link/start with existing JWT and {} JSON.
+4. Render GIS with that response's client_id/nonce, exactly as for login.
+5. POST /v1/auth/google/link with JWT and JSON:
+   {
+     "credential": "<Google-ID-token>",
+     "flow_token": "<link-start-flow-token>",
+     "current_password": "<dashboard-password>"
+   }
+6. On success data.google_connected is true. Refresh sign-in methods and discard
+   the password/Google credential/flow token. Existing email/password login remains.
+The Google account email must match the local account email. This explicit linking
+endpoint needs both an authenticated app session and the current password. Only
+the backend may automatically connect accounts after verifying Google's ownership
+claims; never do it based on frontend email data. Unlinking/replacement is unsupported.
+
+Passwords
+New Google signup stores password: null. No random/shared/default password is created,
+and the app never receives the user's Google password. Password login rejects a
+Google-only account normally, without an internal error.
+Optionally offer 'Set a password' while logged in using the existing authenticated
+POST /v1/auth/change-password with { "new_password": "<chosen-password>" }.
+Apply the existing password policy. Refresh google/status afterward; has_password
+becomes true. Google login still works. This route is for local passwords only.
+Existing email/password users retain their original password after automatic
+Google connection and can immediately use either login method. Google-only users
+must choose a local password once before email/password login is available. Never
+ask them to type their Google password into this application.
+
+Errors (read error.code, not data.code)
+GOOGLE_AUTH_NOT_CONFIGURED (503): hide/disable Google button; show configuration unavailable.
+GOOGLE_ORIGIN_NOT_ALLOWED (403): dashboard origin must be configured by the operator.
+GOOGLE_DOMAIN_UNAVAILABLE (403): active company/domain mapping needs administrator attention.
+GOOGLE_ACCOUNT_LINK_REQUIRED (409): third-party email ownership needs explicit
+  connection. 'Sign in with your existing method, then connect Google in account settings.'
+GOOGLE_EMAIL_VERIFICATION_REQUIRED (403): for Google accounts using non-Gmail,
+  non-Workspace emails, use existing email signup first, then connect Google.
+GOOGLE_ACCOUNT_UNAVAILABLE (403): account inactive, deleted or belongs to another dashboard.
+GOOGLE_FLOW_EXPIRED (401): restart the button flow and obtain a new credential.
+GOOGLE_TOKEN_INVALID (401): show a generic verification error; offer restart.
+GOOGLE_AUTH_UNAVAILABLE (503): temporary Google verification outage; offer retry.
+GOOGLE_AUTH_RATE_LIMITED (429): wait before starting again.
+GOOGLE_PASSWORD_REQUIRED (401): correct/current dashboard password required to link.
+GOOGLE_EMAIL_MISMATCH (409): choose the Google account matching the current email.
+GOOGLE_ALREADY_LINKED / GOOGLE_ACCOUNT_CONFLICT (409): do not overwrite an identity.
+Preserve existing email/password login throughout all Google failures.
+
+Acceptance checks
+- New Gmail/Workspace account creates one normal user for the current company.
+- Repeat Google login uses that same user and existing plan/permissions.
+- Current password login and password reset still work for existing users.
+- A Google-only account can later set a local password while authenticated.
+- Existing verified Gmail/Workspace emails sign in without a password prompt;
+  the same account/password/plan is retained and is_new_user is false.
+- Third-party emails still require explicit linking; no duplicate user is created.
+- An email already connected to another Google identity is not overwritten.
+- Wrong password/email, suspended users, wrong tenants and expired flows fail.
+- Double clicks and lost responses do not create duplicate accounts.
+- Sheets remains connected and is not implicitly granted to Google login users.
+- Smoke-test Google popup on the actual frontend origin after deployment.
+
+Official references
+https://developers.google.com/identity/gsi/web/guides/get-google-api-clientid
+https://developers.google.com/identity/gsi/web/guides/verify-google-id-token

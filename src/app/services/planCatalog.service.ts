@@ -2,6 +2,7 @@ import db from '@surefy/database';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import { normalizeFeatures, featureKey, isUnmeteredFeature, snapshotPlanAddons } from '../utils/planFeatures';
+import { addonPrice } from '../utils/addonPricing';
 
 export interface CatalogActor {
   userId?: string;
@@ -34,7 +35,11 @@ class PlanCatalogService {
       if (companyId) scope.orWhere({ company_id: companyId });
     });
     const rows = await (includeInactive ? query : query.where({ active: true }));
-    return rows.filter(row => !isUnmeteredFeature(row.feature_key));
+    const pricing = companyId && !allCompanies
+      ? await db('company_addon_pricing').where({ company_id: companyId }) : [];
+    const markups = new Map(pricing.map(row => [row.addon_id, Number(row.markup_paise)]));
+    return rows.filter(row => !isUnmeteredFeature(row.feature_key))
+      .map(row => ({ ...row, ...addonPrice(row, markups.get(row.id) ?? 0) }));
   }
 
   async validatePlanAddons(input: unknown, inputFeatures: unknown, billingCycle: string, companyId?: string) {
@@ -76,6 +81,7 @@ class PlanCatalogService {
     const features = plan ? normalizeFeatures(typeof plan.features === 'string' ? JSON.parse(plan.features) : plan.features) : {};
     return (await this.addons(Boolean(plan) || includeInactive, actor.companyId)).map(addon => ({ ...addon,
       editable: Boolean(addon.company_id && addon.company_id === actor.companyId && ['admin', 'company'].includes(actor.userRole || '')),
+      markup_editable: Boolean(actor.companyId && ['admin', 'company'].includes(actor.userRole || '')),
       enabled: plan ? selections === null ? plan.billing_cycle !== 'Free' && features[addon.feature_key]?.enabled === true &&
         features[addon.feature_key]?.limit_value !== null : selections.some(row => row.addon_id === addon.id && row.enabled) : false,
     }));

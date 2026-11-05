@@ -14,7 +14,9 @@ function load(file, deps = {}) {
 class HttpError extends Error { constructor({ message }) { super(message); } }
 const errors = Object.fromEntries(['HTTP400Error', 'HTTP403Error', 'HTTP404Error'].map(key => [`@surefy/exceptions/${key}`, HttpError]));
 const additional = load('src/app/utils/chatbotIndustryTemplates.ts');
-const catalog = load('src/app/utils/chatbotTemplates.ts', { './chatbotIndustryTemplates': additional });
+const realEstate = load('src/database/data/realEstateLeadManagement.v1.ts');
+const catalog = load('src/app/utils/chatbotTemplates.ts', { './chatbotIndustryTemplates': additional,
+  '../../database/data/realEstateLeadManagement.v1': realEstate });
 const catalogModel = { categories: async () => catalog.chatbotTemplateCategories(), list: async (category, search) => catalog.listChatbotTemplates(category).filter(t => !search || t.name.toLowerCase().includes(search.toLowerCase())), detail: async id => catalog.buildChatbotTemplate(id) };
 const messages = load('src/app/utils/chatbotMessage.ts');
 const featureUtils = load('src/app/utils/planFeatures.ts', errors);
@@ -44,9 +46,10 @@ test('demo walks every template branch without creating bots or consuming quota'
       let step = await f.api.demo(template.id, { node_id: 'menu', choice_id: choice.id });
       let count = 0;
       while (!step.completed) {
-        assert.equal(step.awaiting_answer, true);
-        step = await f.api.demo(template.id, { node_id: step.node_id, answer: 'Sample answer' });
-        assert.ok(++count < 10);
+        step = await f.api.demo(template.id, step.awaiting_answer
+          ? { node_id: step.node_id, answer: 'Sample answer' }
+          : { node_id: step.node_id, choice_id: step.choices[0].id });
+        assert.ok(++count < 20);
       }
       assert.ok(step.message.text.body.includes('our demo team'));
     }
@@ -88,13 +91,15 @@ function fixture(limit = 2) {
   const quota = load('src/app/services/planUsage.service.ts', { ...errors, '@surefy/database': db, '../utils/planFeatures': featureUtils }).default;
   const api = load('src/app/services/chatbotTemplate.service.ts', { ...errors, uuid: { v4: crypto.randomUUID },
     './planUsage.service': quota, '../models/chatbotTemplate.model': catalogModel, '../utils/chatbotMessage': messages,
+    './chatbot/interactiveChoice': choices,
     '../utils/activityContext': { markActivityRecorded() {} } }).default;
   return { api, state: () => state, fail(table) { failedTable = table; } };
 }
 
 test('all industry templates expose previews with valid connected existing message nodes', async () => {
   const f = fixture(), list = await f.api.list();
-  assert.equal(list.length, 21); assert.equal((await f.api.categories()).length, 11);
+  assert.equal(list.length, 22); assert.equal((await f.api.categories()).length, 11);
+  assert.equal((await f.api.list('real-estate')).length, 5);
   assert.equal((await f.api.list('travel')).length, 1);
   await assert.rejects(f.api.list('unknown'), /Unknown/);
   await assert.rejects(f.api.detail('unknown'), /not found/);
@@ -112,7 +117,7 @@ test('all industry templates expose previews with valid connected existing messa
     for (const row of menu.data.attributes.message.interactive.action.sections[0].rows) {
       assert.ok(row.title.length <= 24);
       const edge = choices.resolveInteractiveEdge(graph, 'menu', row.id, row.title);
-      assert.ok(edge); assert.equal(graph.nodes.find(node => node.id === edge.target).data.key, '@whatsapp/ask-question');
+      assert.ok(edge); assert.ok(graph.nodes.find(node => node.id === edge.target));
     }
     graph.nodes[0].data.attributes.keywords.push('tenant-edit');
     assert.equal((await f.api.detail(item.id)).nodes[0].data.attributes.keywords.includes('tenant-edit'), false);
@@ -186,12 +191,18 @@ test('all copies run every menu branch and collect answers through the current m
       let answered = 0;
       while (session.active) {
         const node = bot.nodes.find(node => node.id === session.current_node_id);
-        assert.equal(node.data.key, '@whatsapp/ask-question');
-        assert.equal(typeof reply.text, 'string');
         const variable = node.data.attributes.variable;
-        reply = await flow({ bot, session, incomingText: 'Customer answer' });
-        assert.equal(session.variables[variable], 'Customer answer');
-        assert.ok(++answered < 10, 'branch must reach its end');
+        if (node.data.key === '@whatsapp/ask-question') {
+          assert.equal(typeof reply.text, 'string');
+          reply = await flow({ bot, session, incomingText: 'Customer answer' });
+          assert.equal(session.variables[variable], 'Customer answer');
+        } else {
+          const action = node.data.attributes.message.interactive.action;
+          const option = action.buttons?.[0].reply || action.sections[0].rows[0];
+          reply = await flow({ bot, session, incomingId: option.id, incomingText: option.title });
+          if (variable) assert.equal(session.variables[variable], node.data.attributes.choice_values[option.id]);
+        }
+        assert.ok(++answered < 20, 'branch must reach its end');
       }
       assert.ok(answered >= 1); assert.ok(reply.text.includes('support@example.invalid'));
     }
@@ -199,7 +210,7 @@ test('all copies run every menu branch and collect answers through the current m
 });
 
 test('copies can be saved using the existing flow API with phone assignment and preserved list reply handles', async () => {
-  const f = fixture(), bot = await f.api.use(actor, 'real-estate-starter', input), writes = [];
+  const f = fixture(), bot = await f.api.use(actor, 'real-estate-lead-management', input), writes = [];
   const trx = table => {
     const q = { where() { return q; }, whereIn() { return q; }, whereNot() { return q; }, whereRaw() { return q; }, leftJoin() { return q; }, forUpdate() { return q; },
       first: async () => bot, select: async () => [], delete: async () => {}, update: async () => {},
@@ -217,7 +228,92 @@ test('copies can be saved using the existing flow API with phone assignment and 
   const menu = nodes.find(node => JSON.parse(node.data).key === '@whatsapp/send-list-message');
   for (const row of JSON.parse(menu.data).attributes.message.interactive.action.sections[0].rows)
     assert.equal(edges.filter(edge => edge.source === menu.id && JSON.parse(edge.data).sourceHandle === row.id).length, 1);
+  for (const node of nodes) {
+    const data = JSON.parse(node.data);
+    for (const button of data.attributes.message?.interactive?.action?.buttons || [])
+      assert.equal(edges.filter(edge => edge.source === node.id && JSON.parse(edge.data).sourceHandle === button.reply.id).length, 1);
+  }
   assert.ok(writes.some(write => write.table === 'chatbot_triggers' && write.value.active === false));
+});
+
+test('real estate menus have unique reply handles, valid WhatsApp sizes and one edge per option', () => {
+  const graph = catalog.buildChatbotTemplate('real-estate-lead-management');
+  const seen = new Set();
+  for (const node of graph.nodes) {
+    const interactive = node.data.attributes.message?.interactive;
+    if (!interactive) continue;
+    const list = interactive.type === 'list';
+    const options = list ? interactive.action.sections.flatMap(section => section.rows)
+      : interactive.action.buttons.map(button => button.reply);
+    assert.ok(options.length <= (list ? 10 : 3));
+    for (const option of options) {
+      assert.ok(option.title.length <= (list ? 24 : 20));
+      assert.equal(seen.has(option.id), false); seen.add(option.id);
+      const matched = graph.edges.filter(edge => edge.source === node.id && edge.sourceHandle === option.id);
+      assert.equal(matched.length, 1);
+      assert.equal(matched[0].data.sourceHandle, option.id);
+    }
+  }
+});
+
+test('real estate copies capture buy/rent/sell and site visits through button and text replies', async () => {
+  const routes = [
+    { steps: ['menu_buy', 'buy_property_residential', 'Mumbai', 'buy_budget_50l_1cr', 'buy_bhk_2bhk',
+      'buy_timeline_one_month', 'Buyer', 'lead_next_visit', 'Project A', '12 November', 'site_visit_time_morning'],
+      expected: { intent: 'buy', propertyType: 'residential', location: 'Mumbai', budget: '50l_1cr', bhk: '2bhk',
+        timeline: 'one_month', leadName: 'Buyer', nextAction: 'visit', visitProperty: 'Project A', visitDate: '12 November', visitTime: 'morning' } },
+    { steps: ['menu_rent', 'rent_property_office', 'Thane', 'rent_budget_30_50k', 'rent_bhk_not_applicable',
+      'rent_movein_15_days', 'Tenant', 'lead_next_matches'], expected: { intent: 'rent', propertyType: 'office',
+        location: 'Thane', budget: '30_50k', bhk: 'not_applicable', moveInDate: '15_days', leadName: 'Tenant', nextAction: 'matches' } },
+    { steps: ['menu_sell', 'Navi Mumbai', '90 Lakhs', 'Seller'],
+      expected: { intent: 'sell', propertyLocation: 'Navi Mumbai', expectedPrice: '90 Lakhs', leadName: 'Seller' } },
+    { steps: ['menu_team', 'Please call Alex'], expected: { intent: 'team', consultantRequest: 'Please call Alex' } },
+  ];
+  const f = fixture(10);
+  const builder = load('src/app/utils.ts', { './utils/chatbotMessage': messages, nodemailer: { createTransport: () => ({}) } }).buildResponse;
+  for (const route of routes) for (const useText of [false, true]) {
+    const bot = await f.api.use(actor, 'real-estate-lead-management', input);
+    const menu = bot.nodes.find(node => node.data.attributes.variable === 'intent');
+    const session = { id: 'session', active: true, current_node_id: menu.id, variables: {} };
+    const sessions = { update: async (_id, changes) => Object.assign(session, changes) };
+    const execute = load('src/app/services/chatbot/engine/executeNode.ts', {
+      '@surefy/console/app/models/chatSession.model': sessions, '@surefy/console/utils': { buildResponse: builder },
+    }).executeNode;
+    const flow = load('src/app/services/chatbot/flows/menu.flow.ts', {
+      '@surefy/console/app/models/chatSession.model': sessions,
+      '@surefy/console/services/chatbot/engine/executeNode': { executeNode: execute }, '../interactiveChoice': choices,
+    }).menuFlow;
+    const invalid = await flow({ bot, session, incomingText: 'unrecognized choice' });
+    assert.equal(invalid.messages.length, 2);
+    assert.equal(session.current_node_id, menu.id);
+    assert.deepEqual(session.variables, {});
+    let reply;
+    for (const value of route.steps) {
+      const node = bot.nodes.find(item => item.id === session.current_node_id);
+      const action = node.data.attributes.message?.interactive?.action;
+      const options = action?.buttons?.map(button => button.reply) || action?.sections?.flatMap(section => section.rows) || [];
+      const option = options.find(item => item.id === value);
+      reply = await flow({ bot, session, incomingId: option && !useText ? option.id : undefined,
+        incomingText: option ? option.title : value });
+    }
+    assert.equal(session.active, false);
+    assert.equal(JSON.stringify(session.variables), JSON.stringify(route.expected));
+    assert.ok(reply.text.includes('support@example.invalid'));
+    assert.equal(f.state().chatbot_template_installs.at(-1).template_id, 'real-estate-lead-management');
+  }
+});
+
+test('real estate demo captures choices, supports nested buttons and rejects undeclared replies', async () => {
+  const f = fixture();
+  const next = await f.api.demo('real-estate-lead-management', { node_id: 'menu', choice_id: 'menu_rent' });
+  assert.equal(next.captured.intent, 'rent'); assert.equal(next.node_id, 'rent_property');
+  assert.equal(next.choices.length, 3);
+  const location = await f.api.demo('real-estate-lead-management', { node_id: next.node_id, choice_id: 'rent_property_flat' });
+  assert.equal(location.node_id, 'rent_location'); assert.equal(location.captured.propertyType, 'flat');
+  const budget = await f.api.demo('real-estate-lead-management', { node_id: location.node_id, answer: 'Thane' });
+  assert.equal(budget.node_id, 'rent_budget'); assert.equal(budget.captured.location, 'Thane');
+  await assert.rejects(f.api.demo('real-estate-lead-management', { node_id: 'rent_property', choice_id: 'buy_property_plot' }));
+  assert.equal(f.state().chat_bot.length, 0);
 });
 
 test('template endpoints precede chatbot-ID routes and create returns an unpublished editable graph', async () => {
@@ -259,9 +355,15 @@ test('PostgreSQL template copy uses the existing schema and persists a private g
         // Clone actual production-shaped columns/defaults instead of inventing a test schema.
         // Foreign keys are not copied by LIKE, so all fixtures stay inside this isolated schema.
         for (const table of ['users', 'user_plans', 'chat_bot', 'chat_bot_node', 'chat_bot_edge', 'activity_logs', 'chatbot_triggers', 'chatbot_template_installs', 'chatbot_template_categories', 'chatbot_templates'])
-          await trx.raw('CREATE TABLE ?? (LIKE ?? INCLUDING DEFAULTS INCLUDING CONSTRAINTS)', [`${schema}.${table}`, `public.${table}`]);
+          await trx.raw('CREATE TABLE ?? (LIKE ?? INCLUDING DEFAULTS INCLUDING CONSTRAINTS INCLUDING INDEXES)', [`${schema}.${table}`, `public.${table}`]);
         for (const table of ['chatbot_template_categories', 'chatbot_templates'])
           await trx.raw('INSERT INTO ?? SELECT * FROM ??', [`${schema}.${table}`, `public.${table}`]);
+        const migration = load('src/database/migrations/20261104000001_real_estate_lead_template.ts', {
+          '../data/realEstateLeadManagement.v1': realEstate,
+        });
+        await migration.up(trx);
+        await migration.up(trx);
+        assert.equal(Number((await trx('chatbot_templates').where({ id: 'real-estate-lead-management' }).count('* as total').first()).total), 1);
         const ownerId = crypto.randomUUID(), companyId = crypto.randomUUID();
         await trx('users').insert({ id: ownerId, company_id: companyId, name: 'Rollback-only template owner',
           email: `template-${ownerId}@example.invalid`, password: 'not-a-real-login', status: 'active', role: 'user' });
@@ -283,7 +385,7 @@ test('PostgreSQL template copy uses the existing schema and persists a private g
         const api = load('src/app/services/chatbotTemplate.service.ts', { ...errors, uuid: { v4: crypto.randomUUID },
           './planUsage.service': quota, '../models/chatbotTemplate.model': model, '../utils/chatbotMessage': messages,
           '../utils/activityContext': { markActivityRecorded() {} } }).default;
-        const copied = await api.use({ userId: ownerId, companyId }, 'education-starter', input);
+        const copied = await api.use({ userId: ownerId, companyId }, 'real-estate-lead-management', input);
         const bot = await trx('chat_bot').where({ id: copied.id }).first();
         assert.equal(bot.published, false); assert.equal(bot.user_id, ownerId); assert.equal(bot.company_id, companyId);
         const nodes = await trx('chat_bot_node').where({ chatBotId: bot.id });
@@ -296,8 +398,14 @@ test('PostgreSQL template copy uses the existing schema and persists a private g
           assert.equal(edges.filter(edge => edge.source === menu.id && edge.data.sourceHandle === row.id).length, 1);
         assert.equal((await trx('user_plans').where({ user_id: ownerId }).first()).usage.Chatbot, 1);
         assert.equal(Number((await trx('chatbot_triggers').count('* as total').first()).total), 0);
-        assert.equal((await trx('activity_logs').first()).new_data.template_id, 'education-starter');
-        assert.equal((await trx('chatbot_template_installs').first()).template_id, 'education-starter');
+        assert.equal((await trx('activity_logs').first()).new_data.template_id, 'real-estate-lead-management');
+        assert.equal((await trx('chatbot_template_installs').first()).template_id, 'real-estate-lead-management');
+        await migration.down(trx);
+        assert.equal(await model.detail('real-estate-lead-management'), undefined);
+        assert.equal((await trx('chat_bot').where({ id: copied.id }).first()).id, copied.id);
+        assert.equal((await trx('chatbot_template_installs').first()).template_id, 'real-estate-lead-management');
+        await migration.up(trx);
+        assert.equal((await model.detail('real-estate-lead-management')).nodes.length, copied.nodes.length);
         await assert.rejects(api.use({ userId: ownerId, companyId: crypto.randomUUID() }, 'education-starter', input), /authenticated company/);
         throw marker;
       }), error => error === marker);

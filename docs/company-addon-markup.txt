@@ -1,0 +1,133 @@
+Frontend handoff: company add-on markup and subscription credit checks
+
+Implement this in the existing company administrator dashboard.
+Use the existing authenticated API client and company administrator JWT.
+All API money values ending in _paise are integer paise. Display them as INR.
+
+Pricing rule
+Platform fee INR 20 + company markup INR 50 = customer price INR 70, per pack.
+The company wallet must cover only INR 20. INR 50 is the company's selling margin;
+it is not deducted from its credits or transferred to the platform wallet.
+Markup is a fixed amount, not a percentage, and defaults to 0.
+It belongs to the authenticated company, including for shared platform add-ons.
+Changing one company's markup must not change another company's price.
+For quantity 3: platform fee INR 60, markup INR 150, customer price INR 210.
+
+Add-ons table
+Load GET /v1/admin/subscription/addons
+Optional existing parameters: plan_id=<subscription-plan-UUID>, include_inactive=true.
+The normal response envelope contains data as an array. Each row includes:
+{
+  "id": "<addon-UUID>",
+  "name": "Extra WABA number",
+  "units": 1,
+  "price_paise": 2000,
+  "platform_fee_paise": 2000,
+  "markup_paise": 5000,
+  "total_price_paise": 7000,
+  "editable": false,
+  "markup_editable": true
+}
+Existing price_paise remains the platform cost for backward compatibility.
+Use total_price_paise as the customer-facing add-on price.
+
+Columns: Add-on name | Units per pack | Platform fee | Your markup | Customer price | Save.
+Platform fee is read-only for company administrators. Keep existing feature/name/unit
+editing controlled by editable. Allow markup editing when markup_editable is true,
+even when editable is false: shared packs can have company-specific markup.
+Show a preview of platform fee + entered markup. On save, use the server's returned
+total and refresh the catalog. Preserve the input on failure; disable only the
+affected row's Save action while pending. Offer zero as a valid markup/reset value.
+Allow at most two decimal places in the INR input and convert accurately to integer
+paise. The backend accepts markup_paise between 0 and 100000000 inclusive.
+
+Save markup
+PUT /v1/admin/subscription/addons/<addon-UUID>/markup
+Authorization: Bearer <company-admin-JWT>
+Content-Type: application/json
+Body:
+{ "markup_paise": 5000 }
+
+Do not send company_id, platform_fee_paise, price_paise or total_price_paise.
+The server derives company ownership from authentication and computes the total.
+The response data contains the add-on and current platform_fee_paise, markup_paise,
+total_price_paise and markup_editable. The endpoint accepts admin/company roles.
+Do not store markup as a global edit on a shared add-on.
+
+Existing administrator add-on purchase
+POST /v1/admin/subscription/addon-purchases
+Authorization: Bearer <company-admin-JWT>
+Idempotency-Key: <UUID retained for retries of this exact purchase>
+Body:
+{
+  "user_id": "<user-UUID>",
+  "user_plan_id": "<active-user-plan-UUID>",
+  "addon_id": "<addon-UUID>",
+  "quantity": 1
+}
+
+The backend calculates and snapshots quantity-adjusted platform_fee_paise,
+markup_paise and total_price_paise. Legacy amount_paise remains the company-wallet
+debit (the platform fee). It validates the current paid plan and feature capacity,
+locks the wallets and writes the purchase, capacity and fee transfer atomically.
+Retries with the same key return the original receipt, even after prices change.
+Never send prices or grant capacity from the frontend.
+
+This existing endpoint is an administrator wallet-funded entitlement purchase.
+It does not collect INR 70 from a customer's bank/card, create a Razorpay add-on
+payment link, or credit INR 50 of new money to a wallet. The markup is the selling
+price/margin snapshot, not proof that customer payment has been collected.
+Keep any existing collection process distinct from this endpoint. Do not present
+it as a customer payment checkout or infer payment from the displayed total.
+Plan add-on selections remain available-pack settings; this change does not silently
+add all selected pack prices to a subscription's base price.
+
+Insufficient credits
+Before a new subscription payment order/link is created, the backend checks the
+company's current wallet against the configured subscription platform fee.
+An add-on purchase checks its own quantity-adjusted platform fee.
+Manual paid-plan assignment also checks company credits.
+Insufficient funds return HTTP 400:
+{
+  "success": false,
+  "message": "Not enough credits. Please ask your administrator.",
+  "error": {
+    "code": "INSUFFICIENT_COMPANY_CREDITS",
+    "required_platform_fee_paise": 2000
+  }
+}
+The example 2000 is for one INR 20 add-on. A subscription uses its own configured fee.
+Read error.code (not data.code or details.code) from the API response.
+Show the exact message. Do not open checkout, activate the plan, add capacity or
+report success. On an administrator screen offer the existing company credit top-up
+action and refresh credits afterward. On a customer screen ask them to contact their
+administrator. GET /v1/admin/credits/balance returns the current company balance in INR;
+never compare that value directly with paise. The backend check is authoritative.
+
+Payment received but activation pending
+The backend rechecks credits at activation, because another purchase may spend them
+while the customer is paying. For payment-link responses, respect:
+  status: paid
+  activation_status: activation_pending
+  fulfillment_error: PLAN_ACTIVATION_PENDING
+Show "Payment received. Activation is pending; please contact your administrator."
+Never invite a second payment. After top-up, verify the same order again using
+POST /v1/admin/payments/orders/<order-id>/verify or the existing polling flow.
+Direct activation errors also carry payment_received:true when applicable.
+
+Frontend acceptance checks
+- INR 20 + INR 50 renders INR 70; saving and reloading preserves it.
+- Company A's markup does not appear in Company B's catalog.
+- A shared pack permits markup editing but not platform-fee editing.
+- A wallet with INR 20 can buy one INR 20 pack with INR 50 markup; INR 19.99 cannot.
+- Quantity affects fee, markup and total together.
+- Double-click/retry preserves one purchase and its original quoted prices.
+- A subscription credit failure prevents opening checkout.
+- An already-paid activation-pending order never prompts payment again.
+
+Backend rollout requirement
+Migration: src/database/migrations/20261104000004_company_addon_markup.ts
+Apply with the new API release; old add-on purchase code does not populate the new
+required snapshot columns. Quiesce add-on purchase traffic during migration/rollout.
+Existing purchases are backfilled with zero markup and their original platform fee.
+No production migration or deployment was performed as part of this change.

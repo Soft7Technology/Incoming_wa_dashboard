@@ -9,6 +9,7 @@ import wabaCredentials from './wabaCredentials.service';
 import crypto from 'crypto';
 import https from 'https';
 import { metaSendError } from '../utils/metaSendError';
+import { WabaOnboardingError } from '../utils/wabaOnboarding';
 
 class MetaService {
   private client: AxiosInstance;
@@ -184,6 +185,23 @@ class MetaService {
   /**
    * Get WABA phone numbers
    */
+  async getWabaMessagingLimit(wabaId: string): Promise<any> {
+    try {
+      const response = await this.client.get(`/${wabaId}`, {
+        params: { fields: 'id,whatsapp_business_manager_messaging_limit' },
+      });
+      return response.data;
+    } catch (error: any) {
+      if (error instanceof WabaOnboardingError) throw error;
+      const code = Number(error.response?.data?.error?.code);
+      if ([10, 190, 200, 294].includes(code)) throw new WabaOnboardingError('META_PERMISSION_REQUIRED',
+        'Meta denied access to this WABA. Check its authorization and WhatsApp business management permission.', false, 403);
+      // Do not return or log Axios request objects, tokens or upstream bodies.
+      throw new WabaOnboardingError('WABA_MESSAGING_LIMIT_FETCH_FAILED',
+        'Could not fetch the messaging limit from Meta. The last saved limit is unchanged.', true, 502);
+    }
+  }
+
   async getPhoneNumbers(wabaId: string): Promise<any> {
     try {
       const data: any[] = [];

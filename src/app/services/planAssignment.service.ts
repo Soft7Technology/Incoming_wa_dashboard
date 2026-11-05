@@ -113,7 +113,8 @@ class PlanAssignmentService {
         const before = Number(company.credit_balance || 0);
         const recipientBefore = Number(superAdmin.credit_balance || 0);
         if (!Number.isFinite(before) || !Number.isFinite(recipientBefore) || before < fee) {
-          throw new HTTP400Error({ message: `Insufficient or invalid company wallet balance. Required ${fee}` });
+          throw new HTTP400Error({ message: 'Not enough credits. Please ask your administrator.',
+            details: { code: 'INSUFFICIENT_COMPANY_CREDITS', required_platform_fee_paise: feePaise } });
         }
         // Both wallet rows are locked above. Bind the validated balances so this
         // works with legacy varchar columns as well as numeric wallet columns.

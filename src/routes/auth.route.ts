@@ -6,8 +6,15 @@ import { uploadMediaMiddleware } from '@surefy/middleware/upload.middleware';
 import { authorizeSocketOrigin } from '../app/services/socketSession.service';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { tryCatchAsync } from '@surefy/utils/Controller';
+import GoogleAuthController, { googleAuthRequest } from '../app/http/controllers/googleAuth.controller';
 
 const AuthRoute = Router();
+
+AuthRoute.post('/google/start', googleAuthRequest, GoogleAuthController.start);
+AuthRoute.post('/google/login', googleAuthRequest, GoogleAuthController.login);
+AuthRoute.post('/google/link/start', googleAuthRequest, jwtAuthMiddleware, GoogleAuthController.linkStart);
+AuthRoute.post('/google/link', googleAuthRequest, jwtAuthMiddleware, GoogleAuthController.link);
+AuthRoute.get('/google/status', googleAuthRequest, jwtAuthMiddleware, GoogleAuthController.status);
 
 // Public routes (no authentication required)
 AuthRoute.post('/login', AuthController.login);

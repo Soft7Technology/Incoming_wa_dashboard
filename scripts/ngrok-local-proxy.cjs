@@ -9,7 +9,8 @@ const apiPort = Number(process.env.API_PORT || 8001);
 for (const value of [port, frontendPort, apiPort]) {
   if (!Number.isInteger(value) || value < 1 || value > 65535) throw new Error('Invalid local proxy port.');
 }
-const upstreamPort = url => /^(?:\/v1(?:\/|\?|$)|\/health(?:\?|$))/.test(url || '/') ? apiPort : frontendPort;
+// Keep /api, /socket.io and Next.js upgrade requests on the frontend's custom server.
+const upstreamPort = url => /^\/(?:v1|health|uploads|api-docs)(?:\/|\?|$)/.test(url || '/') ? apiPort : frontendPort;
 
 const server = http.createServer((req, res) => {
   const upstream = http.request({
@@ -48,5 +49,5 @@ server.on('upgrade', (req, socket, head) => {
 server.requestTimeout = 0;
 server.on('error', error => { console.error('Local proxy failed:', error.code || 'UNKNOWN'); process.exit(1); });
 server.listen(port, '127.0.0.1', () => {
-  console.log(`Proxy: http://127.0.0.1:${port}; /v1 and /health -> ${apiPort}; frontend -> ${frontendPort}`);
+  console.log(`Proxy: http://127.0.0.1:${port}; /v1, /health, /uploads, /api-docs -> ${apiPort}; frontend -> ${frontendPort}`);
 });

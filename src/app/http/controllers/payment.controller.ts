@@ -1,8 +1,9 @@
-import { Response, NextFunction } from 'express';
+import { Request, Response, NextFunction } from 'express';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import payments, { PaymentContext } from '../../services/companyPayment.service';
 import { AuthRequest } from '@surefy/middleware/auth.middleware';
+import { receivePaymentLinkWebhook } from '../../services/companyPaymentLinkWebhook.service';
 
 // Only authenticated identity and the retry key cross the HTTP/service boundary.
 function paymentContext(req: JWTAuthRequest): PaymentContext {
@@ -32,7 +33,6 @@ class PaymentController {
 
   // POST creates a configuration; PUT can replace an existing configuration.
   createGateway = tryCatchAsync(async (req: AuthRequest, res: Response) => {
-    console.log('Request body',req.body)
     const result = await payments.configure(paymentContext(req), req.body || {}, true);
     return successResponse(req, res, 'Payment gateway created', result, 201);
   });
@@ -55,6 +55,16 @@ class PaymentController {
   createOrder = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const result = await payments.create(paymentContext(req), req.body || {});
     return successResponse(req, res, 'Payment order', result);
+  });
+
+  createPaymentLink = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
+    const result = await payments.createPaymentLink(paymentContext(req), req.body || {});
+    return successResponse(req, res, 'Plan payment link purchase', result);
+  });
+
+  paymentLinkWebhook = tryCatchAsync(async (req: Request & { rawBody?: Buffer }, res: Response) => {
+    const result = await receivePaymentLinkWebhook(req.params.gatewayId, req.rawBody, req.get('X-Razorpay-Signature'));
+    return res.status(200).json(result);
   });
 
   getOrder = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {

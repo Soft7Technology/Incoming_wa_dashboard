@@ -34,6 +34,8 @@ export default {
   ),
   updateCompanyAddon: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
     successResponse(req, res, 'Company add-on updated', await companyAddons.update(actor(req), req.params.id, req.body))),
+  setAddonMarkup: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
+    successResponse(req, res, 'Company add-on markup updated', await companyAddons.setMarkup(actor(req), req.params.id, req.body))),
   disableAddon: tryCatchAsync(async (req: JWTAuthRequest, res: Response) =>
     successResponse(req, res, 'Add-on disabled', req.userRole === 'superadmin'
       ? await catalog.disableAddon(actor(req), req.params.id) : await companyAddons.update(actor(req), req.params.id, { active: false })),

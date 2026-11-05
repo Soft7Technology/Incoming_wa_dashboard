@@ -1,0 +1,69 @@
+WABA messaging limit API and frontend handoff
+
+Refresh from Meta and save:
+POST /v1/admin/waba/<wabaId>/messaging-limit/refresh
+Authorization: Bearer <existing-dashboard-JWT>
+No request body is required. wabaId accepts the Meta WABA ID or the internal
+waba_accounts.id UUID. Ownership comes from the authenticated account/company.
+The frontend cannot set the tier, credentials, company or owner in the body.
+
+Example response (the tier is illustrative):
+{
+  "success": true,
+  "message": "WABA messaging limit refreshed from Meta",
+  "data": {
+    "id": "<internal-WABA-UUID>",
+    "waba_id": "<Meta-WABA-ID>",
+    "whatsapp_business_manager_messaging_limit": "TIER_2K",
+    "messaging_limit_synced_at": "2026-11-05T06:00:00.000Z"
+  }
+}
+The normal API envelope also includes meta.timestamp.
+
+Read the last saved value without calling Meta:
+GET /v1/admin/waba/<wabaId>/messaging-limit
+Authorization: Bearer <existing-dashboard-JWT>
+Returns the same data fields. Both limit and timestamp are null before the first
+successful refresh. GET /v1/admin/waba also includes these columns in each WABA row
+after the migration has been applied.
+
+Database storage:
+Table: waba_accounts
+Column: whatsapp_business_manager_messaging_limit (nullable varchar(64))
+Column: messaging_limit_synced_at (nullable timestamp with time zone)
+The exact Meta tier is stored, including TIER_UNLIMITED or UNTIERED if returned.
+It is not a remaining-messages counter and does not change subscription quotas.
+
+Frontend flow:
+1. Load the saved value with the WABA list or GET endpoint.
+2. Show a "Meta messaging limit" column and a "Last refreshed" timestamp.
+3. Show "Not fetched" for null; never turn null into zero or unlimited.
+4. Add "Refresh from Meta" per WABA. Call the POST endpoint once on click;
+   disable that button while the request is running and replace the displayed
+   value/timestamp with the successful response.
+5. For known tiers, labels may be TIER_250 -> 250, TIER_2K -> 2,000,
+   TIER_10K -> 10,000, TIER_100K -> 100,000, TIER_UNLIMITED -> Unlimited.
+   Show UNTIERED as "Untiered" and preserve unfamiliar values as text.
+6. On failure, show the error and keep the previous value with its old timestamp.
+   Do not label a failed refresh as current or replace the value with zero.
+
+Authorization uses this WABA's saved credentials. Existing legacy accounts retain
+the existing global-token path. Connected accounts missing credentials must
+reconnect; there is no fallback to global authorization for those accounts.
+Meta query: GET /<WABA_ID>?fields=id,whatsapp_business_manager_messaging_limit
+The configured META_API_VERSION is used. The token needs access to that WABA and
+the relevant WhatsApp business management permission.
+
+Failures:
+- 400: malformed ID or missing request context.
+- 404: WABA does not belong to the authenticated account, or was deleted.
+- 403: account authorization requires attention.
+- 502/503: Meta could not return a usable limit. The previous value is preserved.
+- Missing database migration is surfaced by the existing database error handler.
+
+Rollout:
+Apply the migration before enabling refresh in the frontend:
+npm run knex -- migrate:up 20261105000001_waba_messaging_limit.ts
+This adds nullable columns; existing rows and older writers remain compatible.
+Deploy the updated API. No migration, production deployment or live Meta request
+was performed as part of this implementation.

@@ -1,4 +1,5 @@
 import { additionalIndustryTemplates } from './chatbotIndustryTemplates';
+import realEstateLeadManagement from '../../database/data/realEstateLeadManagement.v1';
 
 export interface TemplateBranch {
   id: string;
@@ -126,15 +127,19 @@ const metadata = (item: IndustryTemplate) => ({
 export function chatbotTemplateCategories() {
   return Array.from(new Set(industries.map(item => item.category))).map(category => ({
     id: category, name: industries.find(item => item.category === category)!.category_name,
-    template_count: industries.filter(item => item.category === category).length,
+    template_count: industries.filter(item => item.category === category).length +
+      (category === realEstateLeadManagement.category ? 1 : 0),
   }));
 }
 
 export function listChatbotTemplates(category?: string) {
-  return industries.filter(item => category === undefined || item.category === category).map(metadata);
+  const { nodes, edges, ...customMetadata } = realEstateLeadManagement;
+  return [...industries.map(metadata), JSON.parse(JSON.stringify(customMetadata)) as typeof customMetadata]
+    .filter(item => category === undefined || item.category === category);
 }
 
 export function buildChatbotTemplate(id: string) {
+  if (id === realEstateLeadManagement.id) return JSON.parse(JSON.stringify(realEstateLeadManagement)) as typeof realEstateLeadManagement;
   const item = industries.find(value => (value.id || `${value.category}-starter`) === id);
   if (!item) return undefined;
   const branches: TemplateBranch[] = [...item.branches, { id: 'team', title: 'Contact our team',

@@ -39,6 +39,16 @@ class WabaModel extends BaseModel {
       .whereNull('deleted_at').first();
   }
 
+  async saveMessagingLimit(waba: any, tier: string) {
+    const now = new Date();
+    const [saved] = await this.query().where({ id: waba.id, waba_id: waba.waba_id,
+      user_id: waba.user_id, company_id: waba.company_id }).whereNull('deleted_at').update({
+      whatsapp_business_manager_messaging_limit: tier, messaging_limit_synced_at: now, updated_at: now,
+    }).returning('*');
+    if (!saved) throw new HTTP404Error({ message: 'WABA not found in your account' });
+    return saved;
+  }
+
   /** Save one complete Meta snapshot; preserve local phone UUIDs and their relations. */
   async syncAccountAndPhones(waba: any, details: any, phones: any[]) {
     return planUsage.syncWabaNumbers(waba.user_id, async (trx, capacity) => {

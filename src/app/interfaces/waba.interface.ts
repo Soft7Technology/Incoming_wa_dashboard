@@ -2,6 +2,8 @@ export interface WabaAccount {
   connection_status?: 'legacy' | 'pending' | 'connected' | 'disconnected';
   connected_at?: Date;
   last_synced_at?: Date;
+  whatsapp_business_manager_messaging_limit?: string | null;
+  messaging_limit_synced_at?: Date | null;
   id: string;
   company_id: string;
   waba_id: string;

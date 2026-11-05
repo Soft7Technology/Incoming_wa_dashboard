@@ -12,4 +12,4 @@ WebhookRoute.delete('/:id', WebhookController.deleteWebhook);
 WebhookRoute.get('/:id/logs', WebhookController.getWebhookLogs);
 WebhookRoute.post('/logs/:logId/retry', WebhookController.retryWebhook);
 
-export default WebhookRoute;
+export default WebhookRoute
