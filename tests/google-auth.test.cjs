@@ -17,6 +17,27 @@ const password = 'local-password-123';
 const passwordHash = bcrypt.hashSync(password, 4);
 const code = expected => error => error.details?.code === expected;
 
+test('production platform-domain password login remains scoped for superadmins and company users', async () => {
+  class BadRequest extends Error { constructor({ message }) { super(message); } }
+  let user = { id: 'platform-admin', company_id: 'platform', role: 'superadmin' };
+  let sessionCalls = 0;
+  const controller = load('src/app/http/controllers/auth.controller.ts', {
+    '@surefy/utils/Controller': { tryCatchAsync: f => f, successResponse: (_req, _res, _message, result) => result },
+    '@surefy/utils/HttpStatusCode': {}, '@surefy/exceptions/HTTP400Error': BadRequest,
+    '@surefy/console/services/auth.service': { login: async () => { sessionCalls++; return { data: { id: user.id } }; } },
+    '../../services/company.service': {}, '../../utils': {}, '../../models/activityLogs.model': { create: async () => {} },
+    '@surefy/config/firebase.config': {}, '../../models/companyDomain.model': { findLoginDomain: async () => null },
+    '../../models/user.model': { findByEmail: async () => user },
+    '../../models/company.model': { findById: async () => ({ domain: 'admin.example.test' }) },
+  }).default;
+  const request = domain => ({ body: { identifier: 'admin@example.test', password: 'test-password', domain_name: domain }, headers: {}, socket: {} });
+  await controller.login(request('admin.example.test'), {});
+  await assert.rejects(controller.login(request('other.example.test'), {}), /not associated with this superadmin/);
+  user = { ...user, role: 'user' };
+  await assert.rejects(controller.login(request('admin.example.test'), {}), /not associated with this user/);
+  assert.equal(sessionCalls, 1);
+});
+
 function fixture(overrides = {}) {
   const database = memoryDatabase({
     companies: [{ id: 'company-a', status: 'active' }, { id: 'company-b', status: 'active' }],

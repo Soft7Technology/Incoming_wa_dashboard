@@ -35,9 +35,17 @@ class AuthController {
     }
 
     if (domain_name !== 'localhost' && domain_name !== '127.0.0.1') {
-      const existUserDomain = await companyDomainModel.findLoginDomain(existingUser, domain_name)
-      if(!existUserDomain){
-        throw new HTTP400Error({ message: `Domain ${domain_name} is not associated with this user` });
+      // Preserve the platform-domain check already used by the production login hotfix.
+      if (existingUser.role === 'superadmin') {
+        const platformCompany = await companyModel.findById(existingUser.company_id);
+        if (!platformCompany || platformCompany.domain !== domain_name) {
+          throw new HTTP400Error({ message: `Domain ${domain_name} is not associated with this superadmin` });
+        }
+      } else {
+        const existUserDomain = await companyDomainModel.findLoginDomain(existingUser, domain_name);
+        if (!existUserDomain) {
+          throw new HTTP400Error({ message: `Domain ${domain_name} is not associated with this user` });
+        }
       }
     }
 
