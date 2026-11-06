@@ -12,6 +12,7 @@ import { randomBytes } from 'crypto';
 import facebookOauthSessionModel from '../models/facebookOauthSession.model';
 import axios from 'axios';
 import { decrypt, encrypt } from '../utils/facebook';
+import { requireDashboardOrigin, sessionDashboardOrigin } from './dashboardOrigin.service';
 
 export type FacebookFeature = 'leads' | 'messaging';
 
@@ -285,16 +286,10 @@ class facebokOAuthService {
             'FACEBOOK_PUBLIC_URL',
         );
 
-        const frontendOrigin = this.validateOrigin(
-            process.env.FACEBOOK_FRONTEND_URL,
-            'FACEBOOK_FRONTEND_URL',
-        );
-
         const version = process.env.FACEBOOK_GRAPH_VERSION;
 
         if (
             !apiOrigin ||
-            !frontendOrigin ||
             !/^\d+$/.test(config.appId ?? '') ||
             !config.appSecret ||
             !version ||
@@ -305,13 +300,6 @@ class facebokOAuthService {
                 503,
             );
         }
-
-        // Use the actual integration screen in your frontend.
-        const redirect = new URL(
-            '/user/integrations/facebook',
-            frontendOrigin,
-        );
-        redirect.searchParams.set('feature', feature);
 
         const browser = this.readCookie(input.cookieHeader, config.cookieName);
 
@@ -340,6 +328,10 @@ class facebokOAuthService {
                 409,
             );
         }
+
+        const frontendOrigin = await sessionDashboardOrigin(session);
+        const redirect = new URL('/user/integrations/facebook', frontendOrigin);
+        redirect.searchParams.set('feature', feature);
 
         try {
             if (input.denied) {
@@ -500,10 +492,6 @@ class facebokOAuthService {
             process.env.FACEBOOK_PUBLIC_URL,
             'FACEBOOK_PUBLIC_URL'
         )
-        const frontendOrigin = this.validateOrigin(
-            process.env.FACEBOOK_FRONTEND_URL,
-            'FACEBOOK_FRONTEND_URL'
-        )
 
         if (!/^\d+$/.test(config.appId || '')) {
             issues.push(`${feature}: Facebook App ID is missing or invalid.`);
@@ -529,10 +517,6 @@ class facebokOAuthService {
             issues.push('FACEBOOK_PUBLIC_URL must be a valid HTTPS origin.');
         }
 
-        if (!frontendOrigin) {
-            issues.push('FACEBOOK_FRONTEND_URL must be a valid HTTPS origin.');
-        }
-
         const encryptionKey = Buffer.from(
             process.env.FACEBOOK_TOKEN_ENCRYPTION_KEY || '', 'base64',
         );
@@ -553,8 +537,9 @@ class facebokOAuthService {
         }
     }
 
-    async start(feature: FacebookFeature, scope: OAuthScope) {
+    async start(feature: FacebookFeature, scope: OAuthScope, origin: unknown) {
         await this.assertCanManage(scope)
+        const frontendOrigin = await requireDashboardOrigin(origin, scope.companyId);
 
         const setup = await this.setup(feature)
 
@@ -587,6 +572,7 @@ class facebokOAuthService {
             browser_hash: this.hash(browser),
             company_id: scope.companyId,
             owner_id: scope.ownerId,
+            frontend_origin: frontendOrigin,
             status: 'started',
             expires_at: expiresAt
         })

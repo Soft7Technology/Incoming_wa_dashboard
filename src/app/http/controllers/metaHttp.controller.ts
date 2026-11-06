@@ -1,6 +1,7 @@
 import { NextFunction, Request, RequestHandler, Response } from 'express';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { FacebookError } from '../../utils/facebook';
+import { DashboardOriginError } from '../../services/dashboardOrigin.service';
 
 export const metaHandler =
   (fn: (req: JWTAuthRequest, res: Response) => Promise<unknown>): RequestHandler =>
@@ -19,6 +20,9 @@ export const noStore: RequestHandler = (_req, res, next) => {
 };
 
 export function metaError(error: unknown, _req: Request, res: Response, _next: NextFunction) {
+  if (error instanceof DashboardOriginError) {
+    return res.status(error.statusCode).json({ success: false, message: error.message, code: 'DASHBOARD_ORIGIN_NOT_ALLOWED' });
+  }
   const safe = error instanceof FacebookError ? error : new FacebookError(500, 'Integration operation failed. Please try again.');
   if (!(error instanceof FacebookError)) console.error('[Integration] Operation failed; details suppressed.');
   res.status(safe.status).json({ success: false, message: safe.message, code: safe.code });

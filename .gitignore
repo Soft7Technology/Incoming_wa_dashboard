@@ -58,3 +58,4 @@ backups/
 !/tests/company-payment-links.test.cjs
 !/tests/meta-send-transport.test.cjs
 !/tests/google-auth.test.cjs
+!/tests/dashboard-origins.test.cjs

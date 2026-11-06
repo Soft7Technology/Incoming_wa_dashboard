@@ -1,0 +1,100 @@
+White-label Facebook and Instagram dashboard origins
+
+Where to add a frontend URL
+
+1. Code-managed: edit src/config/dashboardOrigins.ts.
+   app.soft7.in is already in sharedDashboardOrigins. Shared entries deliberately
+   allow all authenticated companies to use that dashboard.
+   For a company-specific dashboard, add an entry to companyDashboardOrigins:
+     { companyId: '<internal-company-UUID>', origin: 'https://dashboard.customer.in' }
+   Use a complete origin: scheme + hostname + optional port, no trailing slash,
+   path, query or fragment. Production requires HTTPS. Deploy code changes.
+
+2. Without a deployment for every company: use existing company domain management.
+   The company_domains row must belong to that company and have status='active'
+   AND ssl_status='active'. domain_name can be the HTTPS hostname or HTTPS origin.
+   Finish domain/SSL verification through the existing setup process; do not mark
+   an unverified domain active just to enable login. DB domains use HTTPS port 443.
+   Changes are checked on each request, with no environment edit or restart.
+
+3. Development-only origins are in developmentDashboardOrigins in the same file.
+   localhost:3001 and the current ngrok tunnel are included. These entries are
+   ignored when NODE_ENV=production. Do not add temporary tunnels to the shared
+   production list.
+
+FACEBOOK_FRONTEND_URL is no longer read by these integration flows. Leaving an old
+value in .env has no effect. API credentials, token encryption keys and the central
+FACEBOOK_PUBLIC_URL / INSTAGRAM_PUBLIC_URL still belong in server configuration.
+This change covers Facebook leads, Messenger and Instagram. It does not alter
+Google sign-in, Google Sheets/People, Shopify or WebSocket origin settings.
+
+Frontend handoff
+
+Keep the existing company/user JWT and existing endpoints:
+  POST /v1/admin/facebook/oauth/start
+    body: { "feature": "leads" } or { "feature": "messaging" }
+  POST /v1/admin/instagram/oauth/start
+    body: { "provider": "instagram" } or { "provider": "facebook" }
+
+Use credentials:'include' with fetch or withCredentials:true with Axios on the
+start request and subsequent integration requests. The browser supplies Origin
+automatically; do not manually set that header in browser JavaScript. Non-browser
+clients must send an explicitly registered Origin to start OAuth. Do not send a
+company_id, frontend URL or redirect URL as a way to choose a different tenant.
+
+Example:
+  const response = await fetch(`${API_BASE}/v1/admin/facebook/oauth/start`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feature: 'leads' })
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.message || 'Could not start login');
+  window.location.assign(payload.data.authorization_url);
+
+The server validates the initiating Origin against the authenticated company,
+stores it with the random state/browser-bound OAuth session, and returns to:
+  https://<starting-dashboard>/user/integrations/facebook?feature=leads&oauth=ready
+Instagram uses feature=instagram. Failed/cancelled authorization uses oauth=failed.
+The frontend route must exist on every dashboard. A ready OAuth result means the
+account/page selection step can continue; it does not itself mean connection is
+fully completed. Keep using the existing selection/connect endpoints.
+
+Callback query parameters cannot override the return origin. Domain removal or
+deactivation during login prevents the redirect. Unknown origins and another
+company's private domain are rejected; arbitrary URLs are never reflected in CORS.
+
+Browser binding uses HttpOnly, Secure, SameSite=None cookies on HTTPS backends.
+Local HTTP uses SameSite=Lax. Browsers that block third-party cookies can still
+block a dashboard on a different site from the API. For those deployments, expose
+the API through a same-site gateway/proxy and preserve its OAuth cookie/callback
+flow; origin registration alone cannot override browser cookie restrictions.
+The same-site proxy infrastructure is not implemented by this change.
+
+Rollout
+
+Apply migration 20261106000001_oauth_frontend_origin.ts to add nullable
+frontend_origin on facebook_oauth_sessions, facebook_lead_oauth_sessions and
+instagram_oauth_sessions, then deploy the API release. With the TypeScript
+migration runner configured for the target database:
+  npm run knex -- migrate:up 20261106000001_oauth_frontend_origin.ts
+
+The migration is additive and old writers remain compatible. During rollout,
+avoid starting new integration logins until all API replicas run the new release:
+old replicas still use the environment-based redirect. Old in-progress sessions
+without frontend_origin must reconnect; existing connected accounts remain intact.
+Provider callback paths have not changed. No new provider credentials are needed
+solely for this backend return-origin change.
+
+Checks performed locally: TypeScript type check and automated origin/CORS/OAuth
+tests. No API deployment or real provider login was performed.
+
+Database update, 6 November 2026:
+Applied 20261106000001_oauth_frontend_origin.ts to the configured console_db at
+154.210.206.153 (migration batch 49). Verified all three nullable columns exist.
+app.whatsgo.in already had an active domain and active SSL record for company
+d465329c-6a50-4aa1-8313-541614f50793; no duplicate domain was inserted.
+The updated origin resolver was checked against that database under production
+rules: it accepts https://app.whatsgo.in for its company and rejects another
+company. The updated API must still be deployed before live requests use it.

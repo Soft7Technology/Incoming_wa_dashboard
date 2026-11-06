@@ -13,6 +13,7 @@ import HealthRoute from './routes/health.route';
 import { UPLOADS_DIR } from './middleware/upload.middleware';
 import { protectAsyncRoutes } from './utils/asyncRouter';
 import { requestCapacity } from './middleware/requestCapacity';
+import { isDashboardOriginAllowed } from '@surefy/console/services/dashboardOrigin.service';
 
 interface RouteConfig {
   basePath: string;
@@ -40,18 +41,23 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
       return done(null, { origin: origin && allowed.includes(origin) ? origin : false,
         methods: ['GET', 'POST', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'], credentials: false });
     }
-    // OAuth integrations set a browser-binding cookie on the API origin. Only the
-    // configured dashboard origin may use credentialed cross-origin requests.
+    // CORS checks registration; OAuth start separately checks the JWT's company.
+    if (/^\/v1\/admin\/(?:facebook(?:-(?:leads|messenger|content|ads))?|instagram)(?:[/?]|$)/.test(req.url)) {
+      const origin = req.headers.origin;
+      void isDashboardOriginAllowed(origin).then(allowed => {
+        done(null, { origin: allowed ? origin! : false, credentials: true });
+      }).catch(error => done(error));
+      return;
+    }
+    // Other OAuth integrations retain their existing origin configuration.
     if (req.url.startsWith('/v1/admin/google-sheets') || req.url.startsWith('/v1/integrations/google/') ||
       req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/') ||
-      req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/') ||
-      /^\/v1\/admin\/(?:facebook(?:-(?:leads|messenger|content|ads))?|instagram)(?:[/?]|$)/.test(req.url)) {
+      req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/')) {
       let origin: string | false = false;
       try {
         const shopifyRequest = req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/');
         const peopleRequest = req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/');
-        const facebookLeadsRequest = /^\/v1\/admin\/(?:facebook(?:-(?:leads|messenger|content|ads))?|instagram)(?:[/?]|$)/.test(req.url);
-        const configured = new URL((facebookLeadsRequest ? process.env.FACEBOOK_FRONTEND_URL : shopifyRequest ? process.env.SHOPIFY_FRONTEND_URL :
+        const configured = new URL((shopifyRequest ? process.env.SHOPIFY_FRONTEND_URL :
           peopleRequest ? process.env.GOOGLE_PEOPLE_FRONTEND_URL || process.env.GOOGLE_FRONTEND_URL : process.env.GOOGLE_FRONTEND_URL) || '');
         if (!configured.username && !configured.password && (configured.protocol === 'https:' ||
           (configured.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(configured.hostname)))) origin = configured.origin;

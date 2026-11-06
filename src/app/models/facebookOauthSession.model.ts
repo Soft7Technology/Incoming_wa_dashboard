@@ -39,7 +39,7 @@ class FacebookOauthSessionModel{
       status: 'authorizing',
       error: null,
     })
-    .returning(['state_hash', 'company_id', 'owner_id']);
+    .returning(['state_hash', 'company_id', 'owner_id', 'frontend_origin']);
 
   return session;
 }

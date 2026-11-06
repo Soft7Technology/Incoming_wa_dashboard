@@ -48,8 +48,8 @@ export function facebookCredentials() {
   return { appId, secret };
 }
 
-export function frontendCallback(feature: string, status?: string) {
-  const { base } = publicOrigin(process.env.FACEBOOK_FRONTEND_URL, 'FACEBOOK_FRONTEND_URL');
+export function frontendCallback(frontendOrigin: string, feature: string, status?: string) {
+  const { base } = publicOrigin(frontendOrigin, 'Dashboard origin');
   const url = new URL('/user/integrations/facebook', base);
   url.searchParams.set('feature', feature);
   if (status) url.searchParams.set('oauth', status);

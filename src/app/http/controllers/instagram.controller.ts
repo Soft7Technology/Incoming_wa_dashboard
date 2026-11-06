@@ -7,6 +7,7 @@ import { directInstagramLoginScopes } from '../../services/instagramGraph.servic
 import publishing from '../../services/instagramPublishing.service';
 import { receivePublishingMedia } from '../../utils/instagramPublishingMedia';
 import { metaHandler } from './metaHttp.controller';
+import { requireDashboardOrigin } from '../../services/dashboardOrigin.service';
 
 const scope = (req: JWTAuthRequest) => ({
   companyId: req.companyId!,
@@ -25,6 +26,7 @@ const browser = (req: Request) => {
 class InstagramController {
   setup = metaHandler(async (req, res) => {
     await service.access(scope(req));
+    if (req.headers.origin) await requireDashboardOrigin(req.headers.origin, req.companyId!);
     const providers = ['instagram', 'facebook'].map((provider) => {
       try {
         instagramConfig(provider);
@@ -59,19 +61,19 @@ class InstagramController {
     const provider = req.body?.provider;
     if (provider !== undefined && provider !== 'instagram' && provider !== 'facebook')
       throw new FacebookError(400, 'Choose Instagram or Facebook login.');
-    const result = await service.start(scope(req), provider);
+    const result = await service.start(scope(req), provider, req.headers.origin);
     res.cookie('ig_browser', result.browser, {
       httpOnly: true,
       secure: instagramConfig(provider).secure,
-      sameSite: 'lax',
+      sameSite: instagramConfig(provider).secure ? 'none' : 'lax',
       path: '/v1',
       maxAge: 15 * 60000,
     });
     res.json({ success: true, data: { authorization_url: result.url } });
   });
   callback = metaHandler(async (req, res) => {
-    const status = await service.callback(req.query.state, browser(req), req.query.code, Boolean(req.query.error));
-    res.redirect(303, frontendCallback('instagram', status));
+    const result = await service.callback(req.query.state, browser(req), req.query.code, Boolean(req.query.error));
+    res.redirect(303, frontendCallback(result.frontendOrigin, 'instagram', result.status));
   });
   candidates = metaHandler(async (req, res) =>
     res.json({ success: true, data: await service.candidates(scope(req), browser(req)) }),

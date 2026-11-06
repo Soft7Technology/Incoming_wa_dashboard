@@ -7,6 +7,7 @@ import { AuthRequest } from '@surefy/middleware/auth.middleware';
 import facebookOAuthService, { FacebookFeature, } from '../../services/facebookOAuth.service';
 import { JWTAuthRequest } from '@surefy/middleware/jwtAuth.middleware';
 import { facebookCredentials } from '../../utils/facebook';
+import { requireDashboardOrigin } from '../../services/dashboardOrigin.service';
 
 
 function getFeature(value: unknown): FacebookFeature {
@@ -24,8 +25,9 @@ class facebookOAuthController {
    GET /v1/admin/facebook/setup?feature=leads
    GET /v1/admin/facebook/setup?feature=messaging
   */
-    setup = tryCatchAsync(async (req: Request, res: Response) => {
+    setup = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
         const feature = getFeature(req.query.feature)
+        if (req.headers.origin) await requireDashboardOrigin(req.headers.origin, req.companyId!);
         const result = await facebookOAuthService.setup(feature)
 
         return res.status(200).json({
@@ -55,7 +57,7 @@ class facebookOAuthController {
             companyId: req.companyId,
             ownerId: req.ownerId || req.userId,
             userId: req.userId,
-        });
+        }, req.headers.origin);
 
         const secureCookie =
             process.env.FACEBOOK_PUBLIC_URL?.startsWith('https://') ?? false;
@@ -63,7 +65,7 @@ class facebookOAuthController {
         res.cookie(result.cookieName, result.browser, {
             httpOnly: true,
             secure: secureCookie,
-            sameSite: 'lax',
+            sameSite: secureCookie ? 'none' : 'lax',
             path: '/v1',
             maxAge: 15 * 60 * 1000,
         });

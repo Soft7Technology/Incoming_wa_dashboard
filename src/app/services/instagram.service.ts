@@ -9,6 +9,7 @@ import directGraph, {
 } from './instagramGraph.service';
 import { requireSocialOwner, SocialScope } from './socialAccess.service';
 import { config, decrypt, encrypt, FacebookError, hash, random, uuidPattern } from '../utils/facebook';
+import { requireDashboardOrigin, sessionDashboardOrigin } from './dashboardOrigin.service';
 
 export const instagramPermissions = [
   'instagram_basic',
@@ -64,8 +65,9 @@ export class InstagramService {
     await requireSocialOwner(s, this.database);
   }
 
-  async start(s: SocialScope, provider?: string) {
+  async start(s: SocialScope, provider: string | undefined, origin: unknown) {
     await this.access(s);
+    const frontendOrigin = await requireDashboardOrigin(origin, s.companyId, this.database);
     const c = instagramConfig(provider),
       state = random(),
       browser = random();
@@ -78,6 +80,7 @@ export class InstagramService {
       auth_provider: c.provider,
       provider_app_id: c.appId,
       redirect_uri: c.callback,
+      frontend_origin: frontendOrigin,
       expires_at: new Date(Date.now() + 15 * 60000),
     });
     const url = new URL(
@@ -148,6 +151,7 @@ export class InstagramService {
       .update({ status: 'authorizing' })
       .returning('*');
     if (!session) fail('Instagram login session expired or was already used.', 403);
+    const frontendOrigin = await sessionDashboardOrigin(session, this.database);
     try {
       await this.access({ companyId: session.company_id, ownerId: session.owner_id, userId: session.owner_id });
       const provider = session.auth_provider || 'facebook';
@@ -186,7 +190,7 @@ export class InstagramService {
               }),
             ),
           });
-        return 'ready';
+        return { status: 'ready', frontendOrigin };
       }
       const auth = await this.meta.authorize(code as string, c.callback);
       const missing = instagramPermissions.filter((p) => !auth.granted.includes(p));
@@ -200,7 +204,7 @@ export class InstagramService {
           facebook_user_id: auth.userId,
           candidates_ciphertext: encrypt(JSON.stringify({ pages, dataExpires: auth.dataExpires })),
         });
-      return 'ready';
+      return { status: 'ready', frontendOrigin };
     } catch (e) {
       await this.database('instagram_oauth_sessions')
         .where({ state_hash: session.state_hash })
@@ -209,7 +213,7 @@ export class InstagramService {
           candidates_ciphertext: null,
           error: e instanceof FacebookError ? e.message : 'Instagram authorization failed. Connect again.',
         });
-      return 'failed';
+      return { status: 'failed', frontendOrigin };
     }
   }
 
