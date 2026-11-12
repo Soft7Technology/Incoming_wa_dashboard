@@ -100,8 +100,8 @@ class WabaService {
     const savedToken = existing ? await wabaCredentials.forAccount(data.user_id, data.company_id, existing.id) : null;
     if (!savedToken && existing?.connection_status && existing.connection_status !== 'legacy') throw new WabaOnboardingError(
       'WABA_SETUP_REQUIRED', 'Finish the existing customer authorization before reconnecting this WhatsApp account.', false, 403);
-    return MetaService.withOnboardingTokenFallback(savedToken, async (client, secondary) => {
-      let clientWabaAccount = await this.upsertWaba(data, client);
+    return MetaService.withAccountToken(savedToken, !existing, async (client, secondary) => {
+      let clientWabaAccount = await this.upsertWaba(data, client, secondary ? 'secondary' : undefined);
       const syncResult = await this.syncWaba(data.user_id, data.company_id!, clientWabaAccount.id, client);
       const phoneNumbers = syncResult.phone_numbers;
       if (secondary) await client.verifyOnboardingWebhooks(phoneNumbers.some((phone: any) => phone.meta_data?.is_on_biz_app === true));
@@ -127,7 +127,7 @@ class WabaService {
     });
   }
 
-  async upsertWaba(data: CreateWabaDto, client = MetaService) {
+  async upsertWaba(data: CreateWabaDto, client = MetaService, tokenSource?: 'secondary') {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
     const existing = await WabaModel.findByWabaId(data.waba_id);
     if (existing && (existing.user_id !== data.user_id || existing.company_id !== data.company_id)) {
@@ -144,7 +144,7 @@ class WabaService {
       currency: data.currency || wabaDetails.currency || existing?.currency || 'USD',
       timezone: data.timezone || wabaDetails.timezone || existing?.timezone || null,
       message_template_namespace: wabaDetails.message_template_namespace ?? existing?.message_template_namespace ?? null,
-      meta_data: { ...existing?.meta_data, ...wabaDetails }, deleted_at: null, updated_at: new Date(),
+      meta_data: { ...existing?.meta_data, ...wabaDetails, ...(tokenSource ? { meta_token_source: tokenSource } : {}) }, deleted_at: null, updated_at: new Date(),
     });
   }
 
@@ -232,7 +232,7 @@ class WabaService {
 
     // Validate WABA ID with Meta API before saving
     try {
-      const { wabaDetails, secondary } = await MetaService.withOnboardingTokenFallback(null, async (client, secondary) => {
+      const { wabaDetails, secondary } = await MetaService.withAccountToken(null, true, async (client, secondary) => {
         const wabaDetails = await client.getWabaDetails(data.waba_id);
         if (!wabaDetails || wabaDetails.id !== data.waba_id) {
           throw new HTTP400Error({ message: 'Meta did not return the requested WABA account' });

@@ -44,6 +44,12 @@ export function secondaryMetaToken() {
   metaTokenAppConfig(token);
   return token;
 }
+export function primaryMetaToken() {
+  const token = process.env.META_ACCESS_TOKEN;
+  if (!token) throw new WabaOnboardingError('WABA_CREDENTIAL_UNAVAILABLE',
+    'Restore META_ACCESS_TOKEN for this existing WhatsApp account.', false, 503);
+  return token;
+}
 export function wabaConfig(token?: string) {
   const { appId, appSecret } = metaTokenAppConfig(token);
   const version = process.env.META_API_VERSION;

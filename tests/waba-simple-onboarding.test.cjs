@@ -20,7 +20,7 @@ class WabaError extends Error {
 const input = { user_id: 'owner', company_id: 'company', waba_id: '123456' };
 
 function fixture(options = {}) {
-  const calls = [], logs = [];
+  const calls = [], logs = [], selections = [];
   let account = options.account;
   const model = {
     async create(data) {
@@ -57,8 +57,9 @@ function fixture(options = {}) {
     },
   };
   const meta = {
-    async withOnboardingTokenFallback(savedToken, operation) {
+    async withAccountToken(savedToken, newAccount, operation) {
       calls.push('select-token');
+      selections.push({ savedToken, newAccount });
       return operation(meta, options.secondary === true);
     },
     async verifyOnboardingWebhooks(coexistence) {
@@ -119,7 +120,7 @@ function fixture(options = {}) {
     '@surefy/console/services/waba.service': service,
     '@surefy/exceptions/HTTP400Error': BadRequest,
   }).default;
-  return { service, controller, calls, logs };
+  return { service, controller, calls, logs, selections, get account() { return account; } };
 }
 
 const limitAccount = () => ({ ...input, id: '00000000-0000-4000-8000-000000000003', connection_status: 'legacy',
@@ -317,6 +318,21 @@ test('secondary onboarding verifies coexistence webhooks and remembers the app b
   assert.ok(f.calls.indexOf('verify-coexistence-webhooks') < f.calls.indexOf('webhook'));
   assert.ok(f.calls.indexOf('save-token-source') < f.calls.indexOf('templates'));
   assert.ok(!JSON.stringify(result).includes('access_token'));
+});
+
+test('new onboarding selects the new app and retry keeps its source after webhook verification fails', async () => {
+  const f = fixture({ secondary: true, badCallback: true });
+  await assert.rejects(f.service.onboardWaba(input));
+  assert.equal(f.selections[0].newAccount, true);
+  assert.equal(f.account.meta_data.meta_token_source, 'secondary');
+  await assert.rejects(f.service.onboardWaba(input));
+  assert.equal(f.selections[1].newAccount, false);
+});
+
+test('existing onboarding never asks for the new-account app', async () => {
+  const f = fixture({ account: limitAccount() });
+  await f.service.onboardWaba(input);
+  assert.equal(f.selections[0].newAccount, false);
 });
 
 test('a wrong secondary callback stops before subscription or credential persistence', async () => {

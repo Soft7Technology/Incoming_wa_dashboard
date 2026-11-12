@@ -91,6 +91,23 @@ test('primary success never calls the optional app', async () => {
   } finally { h.close(); }
 });
 
+test('account onboarding pins old accounts to primary and starts new accounts on secondary without fallback', async () => {
+  for (const [saved, isNew, expected] of [[null, false, 'primary-token'], [null, true, 'secondary-token'],
+    ['secondary-token', false, 'secondary-token'], ['customer-token', false, 'customer-token']]) {
+    const h = fixture({ respond: async () => { throw rejection(190); } });
+    try {
+      await assert.rejects(h.service.withAccountToken(saved, isNew, c => c.getWabaDetails('123456')));
+      assert.deepEqual(h.calls.map(c => c.headers.Authorization), ['Bearer ' + expected]);
+      if (expected === 'primary-token') assert.equal(h.calls[0].params?.appsecret_proof, undefined);
+    } finally { h.close(); }
+  }
+  const h = fixture({ env: { META_NEW_APP_ACCESS_TOKEN: '' } });
+  try {
+    await assert.rejects(h.service.withAccountToken(null, true, c => c.getWabaDetails('123456')), e => e.code === 'WABA_CREDENTIAL_UNAVAILABLE');
+    assert.equal(h.calls.length, 0);
+  } finally { h.close(); }
+});
+
 test('concurrent onboarding keeps each WABA on its own selected token', async () => {
   const h = fixture({ respond: async r => {
     if (r.url === '/123456' && r.headers.Authorization === 'Bearer primary-token') throw rejection(190);
@@ -223,7 +240,7 @@ test('ordinary sends do not retry uncertain delivery, restrictions, transient er
       assert.equal(h.calls.length, 1);
     } finally { h.close(); }
   }
-  for (const resourceToken of ['customer-token', 'secondary-token']) {
+  for (const resourceToken of ['customer-token', 'secondary-token', 'primary-token']) {
     const h = fixture({ resourceToken, respond: async () => { throw rejection(190); } });
     try {
       await assert.rejects(h.service.createTemplate('123456', { name: 'test' }));
@@ -372,6 +389,9 @@ test('saved credential references survive process reloads and fail closed if the
     }).default;
     assert.equal(await credentials.forAccount('owner', 'company', 'record'), 'secondary-token');
     assert.equal(await credentials.forResource('1001'), 'secondary-token');
+    account = { connection_status: 'legacy', meta_data: {} };
+    assert.equal(await credentials.forResource('1001'), 'primary-token');
+    account = { connection_status: 'legacy', meta_data: { meta_token_source: 'secondary' } };
     delete h.env.META_NEW_APP_ACCESS_TOKEN;
     await assert.rejects(credentials.forResource('1001'), e => e.code === 'WABA_CREDENTIAL_UNAVAILABLE');
     account = { connection_status: 'connected', meta_data: {} };

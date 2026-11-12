@@ -1,5 +1,5 @@
 import db from '@surefy/database';
-import { openToken, secondaryMetaToken, WabaOnboardingError } from '../utils/wabaOnboarding';
+import { openToken, primaryMetaToken, secondaryMetaToken, WabaOnboardingError } from '../utils/wabaOnboarding';
 
 class WabaCredentials {
   async forAccount(userId: string, companyId: string, wabaRecordId: string) {
@@ -27,7 +27,7 @@ class WabaCredentials {
       'This WhatsApp account has not finished connecting. Complete its onboarding before using Meta operations.', false, 403);
     if (!row.token_encrypted) {
       if (row.connection_status === 'connected') throw new WabaOnboardingError('WABA_CREDENTIAL_UNAVAILABLE', 'Reconnect this WhatsApp account to restore its authorization.', false, 403);
-      return row.waba_meta_data?.meta_token_source === 'secondary' ? secondaryMetaToken() : null;
+      return row.waba_meta_data?.meta_token_source === 'secondary' ? secondaryMetaToken() : primaryMetaToken();
     }
     return this.read(row);
   }

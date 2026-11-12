@@ -47,7 +47,7 @@ class MetaService {
         const token = await wabaCredentials.forResource(resource);
         if (token) {
           request.headers.set('Authorization', `Bearer ${token}`);
-          const secret = metaTokenAppConfig(token).appSecret;
+          const secret = token === process.env.META_ACCESS_TOKEN ? undefined : metaTokenAppConfig(token).appSecret;
           if (secret) request.params = { ...(request.params || {}), appsecret_proof: crypto.createHmac('sha256', secret).update(token).digest('hex') };
         }
       }
@@ -261,12 +261,23 @@ class MetaService {
     }
   }
 
+  /** Keep existing accounts on their app; new accounts must use the new app. */
+  async withAccountToken<T>(savedToken: string | null, newAccount: boolean,
+    operation: (client: MetaService, secondary: boolean) => Promise<T>): Promise<T> {
+    const token = savedToken || (newAccount ? secondaryMetaToken() : this.accessToken);
+    if (!token) throw new WabaOnboardingError('WABA_CREDENTIAL_UNAVAILABLE',
+      'The configured WhatsApp account authorization is unavailable.', false, 503);
+    const secondary = token === process.env.META_NEW_APP_ACCESS_TOKEN && token !== process.env.META_ACCESS_TOKEN;
+    const client = new MetaService({ token, useProof: token !== process.env.META_ACCESS_TOKEN }, this.agent);
+    return operation(client, secondary);
+  }
+
   /** One retry after a confirmed Meta authorization rejection; never after uncertain delivery. */
   async withOnboardingTokenFallback<T>(savedToken: string | null,
     operation: (client: MetaService, secondary: boolean) => Promise<T>): Promise<T> {
     const primaryToken = savedToken || this.accessToken;
     // Reuse keep-alive connections while keeping credentials and failure state per operation.
-    const primary = new MetaService({ token: primaryToken, useProof: Boolean(savedToken) }, this.agent);
+    const primary = new MetaService({ token: primaryToken, useProof: Boolean(savedToken) && primaryToken !== process.env.META_ACCESS_TOKEN }, this.agent);
     try {
       return await operation(primary, Boolean(primaryToken && primaryToken === process.env.META_NEW_APP_ACCESS_TOKEN && primaryToken !== process.env.META_ACCESS_TOKEN));
     } catch (error: any) {
