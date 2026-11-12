@@ -6,9 +6,7 @@ const { loadSource } = require('./helpers/background-database.cjs');
 class HttpError extends Error {
   constructor({ message, details }) { super(message); this.details = details; }
 }
-class CustomError extends Error {
-  constructor(message, statusCode, operational, details) { super(message); Object.assign(this, { statusCode, details }); }
-}
+const { CustomError } = loadSource('library/surefy/src/exceptions/CustomError.ts');
 const rejection = (code, subcode) => ({ response: { status: 400, data: { error: { code, error_subcode: subcode } } } });
 
 function fixture(options = {}) {
@@ -279,7 +277,8 @@ test('all ordinary Meta operations retry a definite primary rejection once using
   for (const operation of operations) {
     const h = fixture({ respond: async r => {
       if (r.headers.Authorization === 'Bearer primary-token') throw rejection(190);
-      return { id: '123456', data: [], success: true, messages: [{ id: 'wamid.accepted' }] };
+      return { id: '123456', data: [], success: true, messages: [{ id: 'wamid.accepted' }],
+        is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'CONNECTED' };
     } });
     try {
       await operation(h.service);
@@ -488,5 +487,77 @@ test('account update signatures from either configured app work, and invalid sig
     let error;
     await wabaAccountUpdate({ body, rawBody, headers: { 'x-hub-signature-256': signature } }, {}, e => { error = e; });
     assert.equal(error, undefined, 'incomplete optional configuration must not break primary webhooks');
+  } finally { h.close(); }
+});
+
+test('verification confirms connected coexistence using only the saved secondary token and never registers it', async () => {
+  const h = fixture({ resourceToken: 'secondary-token', respond: async r => {
+    assert.equal(r.method, 'get'); assert.equal(r.url, '/1001');
+    assert.ok(r.params.fields.includes('is_on_biz_app'));
+    return { id: '1001', is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'CONNECTED' };
+  } });
+  try {
+    const result = await h.service.verifiedPhoneNumbers('1001');
+    assert.equal(result.success, true); assert.equal(result.already_registered, true);
+    assert.equal(result.connection_mode, 'coexistence');
+    assert.deepEqual(h.calls.map(c => c.headers.Authorization), ['Bearer secondary-token']);
+  } finally { h.close(); }
+});
+
+test('verification rejects incomplete SMB onboarding, unknown mode, on-premises and unverified Cloud numbers without registration', async () => {
+  for (const [phone, code] of [
+    [{ is_on_biz_app: true, platform_type: 'ON_PREMISE', status: 'DISCONNECTED', code_verification_status: 'NOT_VERIFIED' }, 'WABA_COEXISTENCE_PENDING'],
+    [{ is_on_biz_app: true, platform_type: 'CLOUD_API', status: 'DISCONNECTED' }, 'WABA_COEXISTENCE_PENDING'],
+    [{ is_on_biz_app: true, platform_type: 'ON_PREMISE', status: 'CONNECTED' }, 'WABA_COEXISTENCE_PENDING'],
+    [{ platform_type: 'CLOUD_API', status: 'CONNECTED' }, 'WABA_PHONE_MODE_UNCONFIRMED'],
+    [{ is_on_biz_app: false, platform_type: 'ON_PREMISE' }, 'WABA_PHONE_MODE_UNCONFIRMED'],
+    [{ is_on_biz_app: false, platform_type: 'UNRECOGNIZED' }, 'WABA_PHONE_MODE_UNCONFIRMED'],
+    [{ is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'DISCONNECTED', code_verification_status: 'NOT_VERIFIED' }, 'WABA_PHONE_VERIFICATION_REQUIRED'],
+  ]) {
+    const h = fixture({ resourceToken: 'secondary-token', respond: async () => phone });
+    try {
+      await assert.rejects(h.service.verifiedPhoneNumbers('1001'), e => e.code === code && e.statusCode === 409);
+      assert.deepEqual(h.calls.map(c => c.method), ['get']);
+    } finally { h.close(); }
+  }
+});
+
+test('already connected standard numbers retain primary credentials and skip duplicate registration', async () => {
+  const h = fixture({ resourceToken: 'primary-token', respond: async () => ({ is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'CONNECTED' }) });
+  try {
+    assert.equal((await h.service.verifiedPhoneNumbers('1001')).already_registered, true);
+    assert.deepEqual(h.calls.map(c => c.method), ['get']);
+    assert.equal(h.calls[0].headers.Authorization, 'Bearer primary-token');
+  } finally { h.close(); }
+});
+
+test('standard verified numbers register once and require a confirmed connection afterward', async () => {
+  for (const confirmed of [true, false]) {
+    let reads = 0;
+    const h = fixture({ resourceToken: 'secondary-token', respond: async r => {
+      if (r.method === 'post') { assert.equal(r.url, '/1001/register'); return { success: true }; }
+      reads++;
+      return { is_on_biz_app: false, platform_type: 'CLOUD_API', status: reads > 1 && confirmed ? 'CONNECTED' : 'DISCONNECTED', code_verification_status: 'VERIFIED' };
+    } });
+    try {
+      if (confirmed) assert.equal((await h.service.verifiedPhoneNumbers('1001')).success, true);
+      else await assert.rejects(h.service.verifiedPhoneNumbers('1001'), e => e.code === 'WABA_REGISTRATION_PENDING');
+      assert.deepEqual(h.calls.map(c => c.method), ['get', 'post', 'get']);
+      assert.ok(h.calls.every(c => c.headers.Authorization === 'Bearer secondary-token'));
+    } finally { h.close(); }
+  }
+});
+
+test('an authorization failure after accepted registration never replays the write with the other app', async () => {
+  let reads = 0;
+  const h = fixture({ respond: async r => {
+    if (r.method === 'post') return { success: true };
+    if (++reads > 1) throw rejection(190);
+    return { is_on_biz_app: false, platform_type: 'CLOUD_API', status: 'DISCONNECTED', code_verification_status: 'VERIFIED' };
+  } });
+  try {
+    await assert.rejects(h.service.verifiedPhoneNumbers('1001'), e => e.code === 'WABA_REGISTRATION_PENDING');
+    assert.deepEqual(h.calls.map(c => c.method), ['get', 'post', 'get']);
+    assert.ok(h.calls.every(c => c.headers.Authorization === 'Bearer primary-token'));
   } finally { h.close(); }
 });

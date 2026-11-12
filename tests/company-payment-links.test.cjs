@@ -155,7 +155,7 @@ test('gateway API exposes server-derived verification states and ignores client 
     insertGateway: async (_trx, data) => { records = [{ ...data, webhook_verified_at: null }]; },
   };
   const service = load('src/app/services/companyPayment.service.ts', {
-    './paymentPlan.service': {}, '@surefy/database': { transaction: async fn => fn({}) },
+    './paymentPlan.service': {}, './planAddon.service': {}, '@surefy/database': { transaction: async fn => fn({}) },
     '../models/companyPayment.model': model, '../utils/paymentCredentials': { encryptPaymentCredentials: () => 'cipher' },
     './paymentGateway.provider': {},
   }).default;
@@ -201,6 +201,7 @@ test('production JSON parser preserves signed company-payment bytes with query s
     catch (error) { next(error); }
   });
   const app = load('library/surefy/src/server.ts', {
+    '@surefy/console/services/dashboardOrigin.service': { isDashboardOriginAllowed: async () => false },
     './middleware/requestCapacity': { requestCapacity: () => (_req, _res, next) => next() },
     './utils/asyncRouter': { protectAsyncRoutes() {} }, './routes/health.route': express.Router(),
     './middleware/upload.middleware': { UPLOADS_DIR: require('node:path').resolve('.cache') },
@@ -291,4 +292,36 @@ test('reconciliation leases due purchases, retries failures and persists complet
   rows[0].next_check_at = new Date(0);
   await load('src/app/services/companyPaymentLinkScheduler.service.ts', deps).default.tick();
   assert.deepEqual(calls, ['1']);
+});
+
+test('add-on payment links reject client prices, invalid quantities and mixed purchases before writing', async () => {
+  let writes = 0;
+  const service = load('src/app/services/companyPayment.service.ts', {
+    './paymentPlan.service': {}, './planAddon.service': {},
+    '@surefy/database': { transaction: async () => { writes++; throw Error('unexpected database write'); } },
+    '../models/companyPayment.model': {}, '../utils/paymentCredentials': {}, './paymentGateway.provider': {},
+  }).default;
+  const actor = { companyId: 'company-a', userId: 'user-a', userRole: 'user', idempotencyKey: 'addon-once' };
+  const valid = { purchase_type: 'addon', addon_id: purchase.id, user_plan_id: purchase.id, quantity: 1 };
+  for (const body of [{ ...valid, amount_paise: 1 }, { ...valid, quantity: 0 }, { ...valid, quantity: 21 },
+    { ...valid, quantity: 1.5 }, { ...valid, addon_id: 'bad' }, { ...valid, subscription_plan_id: purchase.id }]) {
+    await assert.rejects(service.createPaymentLink(actor, body), error => !error.message.includes('unexpected database write'));
+  }
+  assert.equal(writes, 0);
+});
+
+test('add-on quotes enforce plan ownership and company wallet funding', async () => {
+  let balance = '50.00';
+  const trx = () => ({ where() { return this; }, async first() { return { credit_balance: balance }; } });
+  const quote = { total_price_paise: 1000, platform_fee_paise: 500 };
+  const service = load('src/app/services/companyPayment.service.ts', {
+    './paymentPlan.service': {}, './planAddon.service': { __esModule: true,
+      default: { quote: async () => ({ plan: { user_id: 'plan-owner' }, quote }) }, walletPaise: value => Math.round(Number(value) * 100) },
+    '@surefy/database': {}, '../models/companyPayment.model': {}, '../utils/paymentCredentials': {}, './paymentGateway.provider': {},
+  }).default;
+  const actor = { userId: 'other-user', userRole: 'user' };
+  await assert.rejects(service.quoteAddon(trx, actor, 'company-a', {}), /own plan/);
+  assert.equal(await service.quoteAddon(trx, { ...actor, ownerId: 'plan-owner' }, 'company-a', {}), quote);
+  balance = '0.00';
+  await assert.rejects(service.quoteAddon(trx, { ...actor, ownerId: 'plan-owner' }, 'company-a', {}), /Not enough credits/);
 });

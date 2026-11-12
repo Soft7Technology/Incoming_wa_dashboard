@@ -94,11 +94,11 @@ function validatePaymentLink(link: any, purchase: LinkPurchase) {
   return link;
 }
 
-export async function createGatewayPaymentLink(gateway: GatewayConnection, purchase: LinkPurchase & { customer_phone: string }) {
+export async function createGatewayPaymentLink(gateway: GatewayConnection, purchase: LinkPurchase & { customer_phone: string; description?: string }) {
   if (gateway.provider !== 'razorpay') throw new HTTP400Error({ message: 'Payment links require a Razorpay gateway' });
   const link = await request(gateway, 'POST', '/payment_links', {
     amount: purchase.amount_paise, currency: 'INR', accept_partial: false,
-    reference_id: purchase.id, description: 'Subscription plan purchase',
+    reference_id: purchase.id, description: purchase.description || 'Subscription plan purchase',
     ...(purchase.customer_phone ? { customer: { contact: purchase.customer_phone } } : {}),
     notify: { sms: false, email: false }, reminder_enable: false,
     expire_by: Math.floor(Date.now() / 1000) + 3600,

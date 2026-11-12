@@ -11,6 +11,7 @@ function paymentContext(req: JWTAuthRequest): PaymentContext {
     userId: req.userId,
     companyId: req.companyId,
     userRole: req.userRole,
+    ownerId: req.ownerId,
     idempotencyKey: req.get('Idempotency-Key'),
   };
 }
@@ -59,7 +60,7 @@ class PaymentController {
 
   createPaymentLink = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const result = await payments.createPaymentLink(paymentContext(req), req.body || {});
-    return successResponse(req, res, 'Plan payment link purchase', result);
+    return successResponse(req, res, 'Payment link purchase', result);
   });
 
   paymentLinkWebhook = tryCatchAsync(async (req: Request & { rawBody?: Buffer }, res: Response) => {

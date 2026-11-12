@@ -1,4 +1,6 @@
 import paymentPlans from './paymentPlan.service';
+import planAddons, { walletPaise } from './planAddon.service';
+import { Knex } from 'knex';
 import { createHash, randomUUID } from 'crypto';
 import db from '@surefy/database';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
@@ -13,8 +15,18 @@ export interface PaymentContext {
   userId?: string;
   companyId?: string;
   userRole?: string;
+  /** Plan owner for team members (their plan belongs to the owner). */
+  ownerId?: string;
   idempotencyKey?: string;
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_ADDON_PACKS = 20;
+const PLAN_LINK_FIELDS = ['mode', 'subscription_plan_id', 'user_id', 'customer_phone'];
+const ADDON_LINK_FIELDS = ['mode', 'purchase_type', 'addon_id', 'user_plan_id', 'quantity', 'customer_phone'];
+
+/** Orders whose payment unlocks something (a plan or add-on units) once paid. */
+const needsFulfillment = (order: any) => order.purchase_type === 'addon' || Boolean(order.user_plan_id);
 
 export function gatewayWebhookStatus(gateway: {
   id: string; provider: string; webhook_secret_configured?: boolean; webhook_verified_at?: Date | string | null;
@@ -82,12 +94,16 @@ function publicOrder(order: any) {
     payment_link_id: order.provider_payment_link_id ?? null,
     payment_url: checkout?.payment_url ?? null,
     link_status: order.link_status ?? null,
-    activation_status: order.is_test ? 'test_only' : !order.user_plan_id ? 'not_applicable' : order.fulfilled_at ? 'active' :
-      order.status === 'paid' && order.user_plan_id ? 'activation_pending' : 'awaiting_payment',
+    activation_status: order.is_test ? 'test_only' : !needsFulfillment(order) ? 'not_applicable' : order.fulfilled_at ? 'active' :
+      order.status === 'paid' ? 'activation_pending' : 'awaiting_payment',
     fulfillment_error: order.fulfillment_error ?? null,
     created_at: order.created_at,
     paid_at: order.paid_at,
-    user_plan_id: order.user_plan_id ?? null,
+    purchase_type: order.purchase_type ?? 'plan',
+    user_plan_id: order.user_plan_id ?? order.addon_user_plan_id ?? null,
+    addon_id: order.addon_id ?? null,
+    addon_quantity: order.addon_quantity ?? null,
+    addon_purchase_id: order.addon_purchase_id ?? null,
     fulfilled_at: order.fulfilled_at ?? null,
   };
 }
@@ -171,12 +187,71 @@ class CompanyPaymentService {
   }
 
   async createPaymentLink(req: PaymentContext, body: any) {
-    if (!body || Array.isArray(body) || Object.keys(body).some(key =>
-      !['mode', 'subscription_plan_id', 'user_id', 'customer_phone'].includes(key))) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new HTTP400Error({ message: 'A JSON object body is required' });
+    }
+    if (body.purchase_type === 'addon') {
+      if (Object.keys(body).some(key => !ADDON_LINK_FIELDS.includes(key))) {
+        throw new HTTP400Error({ message: `Only ${ADDON_LINK_FIELDS.join(', ')} are accepted for an add-on payment link` });
+      }
+      return this.create(req, { ...body, mode: body.mode ?? 'live' }, false, true);
+    }
+    if (body.purchase_type !== undefined && body.purchase_type !== 'plan') {
+      throw new HTTP400Error({ message: 'purchase_type must be plan or addon' });
+    }
+    const { purchase_type: _type, ...planBody } = body;
+    if (Object.keys(planBody).some(key => !PLAN_LINK_FIELDS.includes(key))) {
       throw new HTTP400Error({ message: 'Only mode, subscription_plan_id, user_id and customer_phone are accepted' });
     }
-    if (!body.subscription_plan_id) throw new HTTP400Error({ message: 'subscription_plan_id is required for a plan payment link' });
-    return this.create(req, { ...body, mode: body.mode ?? 'live' }, false, true);
+    if (!planBody.subscription_plan_id) throw new HTTP400Error({ message: 'subscription_plan_id is required for a plan payment link' });
+    return this.create(req, { ...planBody, mode: planBody.mode ?? 'live' }, false, true);
+  }
+
+  /** Validates the add-on part of a payment-link request. Price is never taken from the client. */
+  private addonRequest(body: any, paymentLink: boolean) {
+    if (body.purchase_type === undefined) return null;
+    if (body.purchase_type !== 'addon' || !paymentLink) {
+      throw new HTTP400Error({ message: 'Add-on purchases are only supported through payment links' });
+    }
+    if (typeof body.addon_id !== 'string' || !UUID.test(body.addon_id) ||
+      typeof body.user_plan_id !== 'string' || !UUID.test(body.user_plan_id)) {
+      throw new HTTP400Error({ message: 'addon_id and user_plan_id must be UUIDs' });
+    }
+    const quantity = body.quantity ?? 1;
+    if (typeof quantity !== 'number' || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > MAX_ADDON_PACKS) {
+      throw new HTTP400Error({ message: `quantity must be an integer between 1 and ${MAX_ADDON_PACKS}` });
+    }
+    if (body.amount_paise !== undefined) throw new HTTP400Error({ message: 'Omit amount_paise; add-on price comes from the catalog' });
+    return { addonId: body.addon_id as string, userPlanId: body.user_plan_id as string, quantity };
+  }
+
+  /** Prices an add-on link and checks the buyer may top up this plan. Runs under the company lock. */
+  private async quoteAddon(trx: Knex.Transaction, req: PaymentContext, companyId: string,
+    request: { addonId: string; userPlanId: string; quantity: number }) {
+    const { plan, quote } = await planAddons.quote(trx, { companyId, ...request });
+    const owner = req.ownerId ?? req.userId;
+    if (plan.user_id !== owner && !['admin', 'superadmin', 'company'].includes(req.userRole || '')) {
+      throw new HTTP401Error({ message: 'You can only buy add-ons for your own plan' });
+    }
+    if (quote.total_price_paise < 100) {
+      throw new HTTP400Error({ message: 'This add-on costs less than INR 1 and cannot be paid online' });
+    }
+    // Same early check as plan purchases: the platform fee is taken from the company
+    // wallet when the payment is fulfilled, so do not let the customer pay if it can't be.
+    const company = await trx('companies').where({ id: companyId }).first();
+    if (walletPaise(company?.credit_balance ?? 0) < quote.platform_fee_paise) {
+      throw new HTTP400Error({
+        message: 'Not enough credits. Please ask your administrator.',
+        details: { code: 'INSUFFICIENT_COMPANY_CREDITS', required_platform_fee_paise: quote.platform_fee_paise },
+      });
+    }
+    return quote;
+  }
+
+  /** Activates whatever a paid order bought. Caller holds the order row lock. */
+  private async fulfill(trx: Knex.Transaction, order: any) {
+    if (order.purchase_type === 'addon') return planAddons.fulfillOrder(trx, order);
+    return paymentPlans.fulfill(trx, order);
   }
 
   async create(req: PaymentContext, body: any, test = false, paymentLink = false) {
@@ -191,6 +266,10 @@ class CompanyPaymentService {
     if (test && body.amount_paise !== undefined && body.amount_paise !== 100) {
       throw new HTTP400Error({ message: 'Test orders use a fixed amount_paise of 100 (INR 1)' });
     }
+    const addon = this.addonRequest(body, paymentLink);
+    if (addon && (body.subscription_plan_id !== undefined || body.user_id !== undefined)) {
+      throw new HTTP400Error({ message: 'An add-on payment link cannot also include subscription_plan_id or user_id' });
+    }
     const planId = body.subscription_plan_id;
     const recipientId = body.user_id ?? scope.user_id;
     if (recipientId !== scope.user_id && !['admin', 'superadmin', 'company'].includes(req.userRole || '')) {
@@ -203,7 +282,7 @@ class CompanyPaymentService {
       if (mode !== 'live' && !paymentLink) throw new HTTP400Error({ message: 'Subscription purchases require live mode; test payments cannot activate plans' });
       if (body.amount_paise !== undefined) throw new HTTP400Error({ message: 'Omit amount_paise for subscriptions; price comes from the saved plan' });
     } else if (body.user_id !== undefined) throw new HTTP400Error({ message: 'user_id is only supported for subscription purchases' });
-    const requestedAmount = planId === undefined ? (test ? 100 : paymentAmount(body.amount_paise)) : null;
+    const requestedAmount = planId === undefined && !addon ? (test ? 100 : paymentAmount(body.amount_paise)) : null;
     const idempotency_key = requiredString(req.idempotencyKey, 'Idempotency-Key header', 100);
     const customer_phone =
       body.customer_phone === undefined ? '' : requiredString(body.customer_phone, 'customer_phone', 15);
@@ -211,7 +290,9 @@ class CompanyPaymentService {
       throw new HTTP400Error({ message: 'customer_phone must contain 10 digits for this INR checkout' });
     }
     const request_hash = createHash('sha256')
-      .update(JSON.stringify(planId === undefined ? { mode, amount_paise: requestedAmount, customer_phone } : { mode, subscription_plan_id: planId, user_id: recipientId, customer_phone,
+      .update(JSON.stringify(addon
+        ? { mode, purchase_type: 'addon', addon_id: addon.addonId, user_plan_id: addon.userPlanId, quantity: addon.quantity, customer_phone, payment_flow: 'link' }
+        : planId === undefined ? { mode, amount_paise: requestedAmount, customer_phone } : { mode, subscription_plan_id: planId, user_id: recipientId, customer_phone,
         ...(paymentLink ? { payment_flow: 'link' } : {}) }))
       .digest('hex');
     const prepared = await db.transaction(async (trx) => {
@@ -231,8 +312,9 @@ class CompanyPaymentService {
       if (gateway.provider === 'cashfree' && !customer_phone) {
         throw new HTTP400Error({ message: 'customer_phone is required for Cashfree checkout' });
       }
+      const addonQuote = addon ? await this.quoteAddon(trx, req, scope.company_id, addon) : null;
       const reserved = planId === undefined ? null : await paymentPlans.reserve(trx, scope.company_id, recipientId, planId);
-      const amount_paise = reserved?.amount ?? requestedAmount!;
+      const amount_paise = addonQuote?.total_price_paise ?? reserved?.amount ?? requestedAmount!;
       const gatewayConnection = connection(gateway);
       const id = randomUUID();
       const order = await CompanyPaymentModel.insertOrder(trx, {
@@ -246,6 +328,12 @@ class CompanyPaymentService {
         is_test: mode === 'test',
         status: 'creating',
         ...(reserved ? { user_plan_id: reserved.userPlanId } : {}),
+        ...(addon ? {
+          purchase_type: 'addon',
+          addon_id: addon.addonId,
+          addon_user_plan_id: addon.userPlanId,
+          addon_quantity: addon.quantity,
+        } : {}),
         ...(paymentLink ? { payment_flow: 'link', next_check_at: new Date(Date.now() + 60000) } : {}),
       });
       return { gateway, gatewayConnection, order };
@@ -254,7 +342,11 @@ class CompanyPaymentService {
     const { order, gateway, gatewayConnection } = prepared;
     try {
       if (paymentLink) {
-        const link = await createGatewayPaymentLink(gatewayConnection!, { ...order, customer_phone });
+        const link = await createGatewayPaymentLink(gatewayConnection!, {
+          ...order,
+          customer_phone,
+          description: addon ? 'Plan add-on purchase' : 'Subscription plan purchase',
+        });
         // A webhook/reconciler may already have processed this purchase. Lock and
         // merge metadata without regressing its paid/fulfilled state.
         await db.transaction(async trx => {
@@ -310,7 +402,7 @@ class CompanyPaymentService {
 
   async verify(req: PaymentContext, id: string) {
     const order = await this.findOrder(req, id);
-    if (order.status === 'paid' && (!order.user_plan_id || order.fulfilled_at || order.is_test)) return publicOrder(order);
+    if (order.status === 'paid' && (!needsFulfillment(order) || order.fulfilled_at || order.is_test)) return publicOrder(order);
     if (order.payment_flow === 'link') return this.verifyPaymentLink(req, order);
     if (!order.provider_order_id)
       throw new HTTP400Error({
@@ -326,7 +418,7 @@ class CompanyPaymentService {
       await db.transaction(async trx => {
         const locked = await trx('company_payment_orders').where({ id, company_id: order.company_id }).forUpdate().first();
         if (!locked) throw new HTTP404Error({ message: 'Payment order not found' });
-        await paymentPlans.fulfill(trx, locked);
+        await this.fulfill(trx, locked);
         if (locked.status !== 'paid') await trx('company_payment_orders').where({ id }).update({ status: 'paid', paid_at: new Date(), updated_at: new Date() });
       });
     }
@@ -366,7 +458,7 @@ class CompanyPaymentService {
         }
         await db.transaction(async trx => {
           const locked = await trx('company_payment_orders').where({ id: order.id, company_id: order.company_id }).forUpdate().first();
-          await paymentPlans.fulfill(trx, locked);
+          await this.fulfill(trx, locked);
           await trx('company_payment_orders').where({ id: order.id }).update({ fulfillment_error: null, next_check_at: null });
         });
       } catch {

@@ -672,24 +672,61 @@ class MetaService {
     }
   }
 
-  /**
-   * Veriified Phone Numbers
-   */
+  /** Confirm existing connections; only register a verified Cloud-only number. */
   async verifiedPhoneNumbers(phoneNumberId: string): Promise<any> {
     if (this.useServerFallback) return this.withResourceTokenFallback(phoneNumberId, client => client.verifiedPhoneNumbers(phoneNumberId));
+    let registrationAccepted = false;
     try {
+      const inspect = async () => (await this.client.get(`/${phoneNumberId}`, {
+        params: { fields: 'id,status,platform_type,is_on_biz_app,code_verification_status' },
+      })).data;
+      const phone = await inspect();
+      if (phone.is_on_biz_app === true) {
+        // Business-app numbers must finish Coexistence in Embedded Signup. Calling
+        // /register cannot complete that connection and Meta rejects it for SMBs.
+        if (phone.status !== 'CONNECTED' || phone.platform_type !== 'CLOUD_API') {
+          throw new WabaOnboardingError('WABA_COEXISTENCE_PENDING',
+            'This number is linked to the WhatsApp Business app, but its Cloud API connection is not complete. Finish connecting the existing WhatsApp Business app number through Embedded Signup and approve the connection in the app, then sync and try again.', false, 409);
+        }
+        return { success: true, already_registered: true, connection_mode: 'coexistence' };
+      }
+      if (phone.is_on_biz_app !== false || !['CLOUD_API', 'NOT_APPLICABLE'].includes(phone.platform_type)) {
+        throw new WabaOnboardingError('WABA_PHONE_MODE_UNCONFIRMED',
+          'Meta has not confirmed this is a standard Cloud API number. Complete the appropriate onboarding or migration in WhatsApp Manager before registering it.', false, 409);
+      }
+      if (phone.status === 'CONNECTED' && phone.platform_type === 'CLOUD_API') {
+        return { success: true, already_registered: true, connection_mode: 'cloud_api' };
+      }
+      if (phone.code_verification_status !== 'VERIFIED') {
+        throw new WabaOnboardingError('WABA_PHONE_VERIFICATION_REQUIRED',
+          'Complete phone verification in Meta Embedded Signup or WhatsApp Manager before registering this Cloud API number.', false, 409);
+      }
       const response = await this.client.post(`/${phoneNumberId}/register`, {
         messaging_product: 'whatsapp',
         pin: '123456',
       });
-      console.log('Response Verified Data data', response.data);
+      registrationAccepted = true;
+      const confirmed = await inspect();
+      if (confirmed.status !== 'CONNECTED' || confirmed.platform_type !== 'CLOUD_API') {
+        throw new WabaOnboardingError('WABA_REGISTRATION_PENDING',
+          'Meta has not confirmed the Cloud API connection yet. Sync the account to check its status before trying registration again.', true, 409);
+      }
       return response.data;
     } catch (error: any) {
-      console.error('Meta API Error - Get Phone Numbers:', metaSendError(error).diagnostic);
-      throw new HTTP500Error({
-        message: 'Failed to fetch phone numbers from Meta API',
-        details: error.response?.data || error.message,
-      });
+      if (error instanceof WabaOnboardingError) throw error;
+      this.rememberAuthorizationFailure(error);
+      const failure = metaSendError(error);
+      console.error('Meta API Error - Verify Phone Number:', failure.diagnostic);
+      if (registrationAccepted) {
+        // A read failure after an accepted write must not replay registration
+        // with another app's token through the outer authorization fallback.
+        throw new WabaOnboardingError('WABA_REGISTRATION_PENDING',
+          'Meta accepted registration, but its connection status could not be confirmed. Sync the account to recheck before trying registration again.', true, 409);
+      }
+      throw this.preserveRejection(error, new HTTP500Error({
+        message: 'Failed to verify the WhatsApp phone connection with Meta',
+        details: failure.details,
+      }));
     }
   }
 }

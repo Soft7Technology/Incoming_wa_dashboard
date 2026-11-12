@@ -53,6 +53,7 @@ backups/
 !/tests/platform-organization.test.cjs
 !/tests/template-payload.test.cjs
 !/tests/credit-topup.test.cjs
+!/tests/legacy-database-repair.test.cjs
 
 !/tests/facebook-two-apps.test.cjs
 !/tests/facebook-messenger-inbox.test.cjs

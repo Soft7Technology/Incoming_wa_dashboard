@@ -5,6 +5,9 @@ import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 export class WabaOnboardingError extends CustomError {
   constructor(public code: string, message: string, public retryable = false, status = 400) {
     super(message, status, true, { code, retryable });
+    // CustomError sets its own prototype; restore the subtype so callers can
+    // preserve expected setup errors instead of wrapping them as server errors.
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 export interface WabaScope { userId: string; companyId: string }
