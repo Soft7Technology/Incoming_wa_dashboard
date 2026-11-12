@@ -1,10 +1,12 @@
 import db from '@surefy/database';
-import { openToken, WabaOnboardingError } from '../utils/wabaOnboarding';
+import { openToken, secondaryMetaToken, WabaOnboardingError } from '../utils/wabaOnboarding';
 
 class WabaCredentials {
   async forAccount(userId: string, companyId: string, wabaRecordId: string) {
     const row = await db('waba_credentials').where({ user_id: userId, company_id: companyId, waba_record_id: wabaRecordId }).first();
-    return row ? this.read(row) : null;
+    if (row) return this.read(row);
+    const account = await db('waba_accounts').where({ id: wabaRecordId, user_id: userId, company_id: companyId }).whereNull('deleted_at').first();
+    return account?.connection_status === 'legacy' && account.meta_data?.meta_token_source === 'secondary' ? secondaryMetaToken() : null;
   }
   private read(row: any) {
     if (row.expires_at && new Date(row.expires_at) <= new Date()) throw new WabaOnboardingError('SIGNUP_TOKEN_INVALID', 'The connected WhatsApp authorization expired. Reconnect through Embedded Signup.', false, 403);
@@ -19,13 +21,13 @@ class WabaCredentials {
         .whereNull('p.deleted_at').where('p.phone_number_id', metaId))
       .orWhereExists(db('templates as t').select(db.raw('1')).whereRaw('t.waba_id = w.id AND t.company_id = w.company_id')
         .whereNull('t.deleted_at').where('t.template_id', metaId)))
-      .select('c.*', 'w.connection_status').first();
+      .select('c.*', 'w.connection_status', 'w.meta_data as waba_meta_data').first();
     if (!row) return null;
     if (!['legacy', 'connected'].includes(row.connection_status)) throw new WabaOnboardingError('WABA_SETUP_REQUIRED',
       'This WhatsApp account has not finished connecting. Complete its onboarding before using Meta operations.', false, 403);
     if (!row.token_encrypted) {
       if (row.connection_status === 'connected') throw new WabaOnboardingError('WABA_CREDENTIAL_UNAVAILABLE', 'Reconnect this WhatsApp account to restore its authorization.', false, 403);
-      return null;
+      return row.waba_meta_data?.meta_token_source === 'secondary' ? secondaryMetaToken() : null;
     }
     return this.read(row);
   }

@@ -1001,7 +1001,7 @@ class CampaignService {
     // Upload to Meta Resumable Upload API (for template creation sample handle)
     let handle = null;
     try {
-      handle = await MetaService.uploadTemplateMedia(file);
+      handle = await MetaService.uploadTemplateMedia(file, metaPhoneNumberId);
       console.log("Generated Meta Template Handle:", handle);
     } catch (error: any) {
       console.warn("Could not generate template resumable upload handle:", error.response?.data || error.message);

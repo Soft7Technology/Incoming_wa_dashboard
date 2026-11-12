@@ -23,6 +23,17 @@ function fixture(options = {}) {
   const calls = [], logs = [];
   let account = options.account;
   const model = {
+    async create(data) {
+      calls.push('create');
+      if (options.createFailure) throw Error('Database unavailable');
+      account = { ...data, id: 'local-id', connection_status: 'legacy' };
+      return account;
+    },
+    async saveSecondaryTokenSource(row) {
+      calls.push('save-token-source');
+      account = { ...row, meta_data: { ...row.meta_data, meta_token_source: 'secondary' } };
+      return account;
+    },
     async findByWabaId() { return account; },
     async upsertOwnedAccount(data) {
       account = { ...account, ...data, id: account?.id || '00000000-0000-4000-8000-000000000003', connection_status: account?.connection_status || 'legacy' };
@@ -40,12 +51,20 @@ function fixture(options = {}) {
       if (options.phoneConflict) throw new BadRequest({ message: 'Phone belongs to another account' });
       const saved = phones.slice(0, options.remaining ?? phones.length);
       const skipped = phones.slice(saved.length).map(phone => ({ phone_number_id: phone.id, reason: 'PLAN_LIMIT_EXCEEDED' }));
-      return { waba, phone_numbers: saved.map(phone => ({ ...phone, phone_number_id: phone.id })),
+      return { waba, phone_numbers: saved.map(phone => ({ ...phone, phone_number_id: phone.id, meta_data: phone })),
         total_phone_numbers: phones.length, created: saved.length, updated: 0,
         skipped_count: skipped.length, skipped_phone_numbers: skipped, remaining_slots: 0 };
     },
   };
   const meta = {
+    async withOnboardingTokenFallback(savedToken, operation) {
+      calls.push('select-token');
+      return operation(meta, options.secondary === true);
+    },
+    async verifyOnboardingWebhooks(coexistence) {
+      calls.push(coexistence ? 'verify-coexistence-webhooks' : 'verify-webhooks');
+      if (options.badCallback) throw Error('Secondary webhook configuration missing');
+    },
     async getWabaMessagingLimit(id) {
       calls.push('legacy-limit');
       assert.equal(id, input.waba_id);
@@ -55,7 +74,7 @@ function fixture(options = {}) {
     async getWabaDetails() {
       calls.push('details');
       if (options.metaFailure) throw Error('Meta unavailable');
-      return { id: input.waba_id, name: 'Business' };
+      return options.detailsResponse ?? { id: input.waba_id, name: 'Business' };
     },
     async getPhoneNumbers() { calls.push('phones'); return { data: options.phones ?? [{ id: '1001', display_phone_number: '+1 555 0101' }] }; },
     async subscribeToWebhooks() {
@@ -105,6 +124,33 @@ function fixture(options = {}) {
 
 const limitAccount = () => ({ ...input, id: '00000000-0000-4000-8000-000000000003', connection_status: 'legacy',
   whatsapp_business_manager_messaging_limit: 'TIER_250', messaging_limit_synced_at: new Date('2026-11-01T00:00:00Z') });
+
+test('add account uses fallback validation and persists only the server-selected credential reference', async () => {
+  for (const secondary of [false, true]) {
+    const f = fixture({ secondary });
+    const result = await f.service.createWaba({ ...input, meta_data: { label: 'Customer', meta_token_source: 'attacker' } });
+    assert.equal(result.meta_data.meta_token_source, secondary ? 'secondary' : undefined);
+    assert.equal(result.meta_data.label, 'Customer');
+    assert.equal(result.name, 'Business');
+    assert.deepEqual(f.calls, ['select-token', 'details', 'create']);
+  }
+});
+
+test('add account rejects invalid IDs, duplicates and failed Meta validation before inserting', async () => {
+  for (const options of [{ account: limitAccount() }, { metaFailure: true }, { detailsResponse: { id: '999' } }]) {
+    const f = fixture(options);
+    await assert.rejects(f.service.createWaba(input));
+    assert.ok(!f.calls.includes('create'));
+  }
+  for (const id of ['', '123/phone_numbers', 123, {}]) {
+    const f = fixture();
+    await assert.rejects(f.service.createWaba({ ...input, waba_id: id }));
+    assert.deepEqual(f.calls, []);
+  }
+  const f = fixture({ createFailure: true, secondary: true });
+  await assert.rejects(f.service.createWaba(input));
+  assert.deepEqual(f.calls, ['select-token', 'details', 'create'], 'database errors cannot retry the account insertion');
+});
 
 test('messaging limit refresh saves Meta tier and reads the cached result without another upstream call', async () => {
   const f = fixture({ account: limitAccount() });
@@ -192,7 +238,7 @@ test('onboard accepts only the WABA ID and completes synchronously with trusted 
   assert.equal(data.clientWabaAccount.code, undefined);
   assert.equal(data.phoneNumbers[0].phone_number_id, '1001');
   assert.equal(data.webhook.success, true);
-  assert.deepEqual(f.calls, ['details', 'details', 'phones', 'save-phones', 'webhook', 'templates']);
+  assert.deepEqual(f.calls, ['select-token', 'details', 'details', 'phones', 'save-phones', 'webhook', 'templates']);
   assert.equal(f.logs[0].status, 'SUCCESS');
 });
 
@@ -261,6 +307,29 @@ test('upsert preserves optional metadata absent from Meta', async () => {
   assert.equal(result.data.clientWabaAccount.timezone, 'Asia/Kolkata');
   assert.equal(result.data.clientWabaAccount.message_template_namespace, 'existing-namespace');
   assert.equal(result.data.clientWabaAccount.meta_data.retained, true);
+});
+
+test('secondary onboarding verifies coexistence webhooks and remembers the app before template sync', async () => {
+  const options = { secondary: true, phones: [{ id: '1001', display_phone_number: '+15550101', is_on_biz_app: true }] };
+  const f = fixture(options);
+  const result = await f.service.onboardWaba(input);
+  assert.equal(result.data.clientWabaAccount.meta_data.meta_token_source, 'secondary');
+  assert.ok(f.calls.indexOf('verify-coexistence-webhooks') < f.calls.indexOf('webhook'));
+  assert.ok(f.calls.indexOf('save-token-source') < f.calls.indexOf('templates'));
+  assert.ok(!JSON.stringify(result).includes('access_token'));
+});
+
+test('a wrong secondary callback stops before subscription or credential persistence', async () => {
+  const f = fixture({ secondary: true, badCallback: true });
+  await assert.rejects(f.service.onboardWaba(input), /configuration missing/);
+  assert.ok(!f.calls.includes('webhook'));
+  assert.ok(!f.calls.includes('save-token-source'));
+});
+
+test('customer credentials missing from an existing connected account cannot trigger server-token onboarding', async () => {
+  const f = fixture({ account: { ...limitAccount(), connection_status: 'connected' } });
+  await assert.rejects(f.service.onboardWaba(input), e => e.code === 'WABA_SETUP_REQUIRED');
+  assert.deepEqual(f.calls, []);
 });
 
 test('WABA transport exposes no code exchange method or redirect parameter', async () => {

@@ -19,9 +19,33 @@ export function encryptionKey() {
   if (key.length !== 32) throw new WabaOnboardingError('WABA_CONFIGURATION_REQUIRED', 'Configure WABA_TOKEN_ENCRYPTION_KEY as a stable base64-encoded 32-byte key.', false, 503);
   return key;
 }
-export function wabaConfig() {
-  const appId = process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
-  const appSecret = process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+/** Resolve secrets by token identity; never sign a second app's token with the primary secret. */
+export function metaTokenAppConfig(token?: string) {
+  const newId = process.env.META_NEW_APP_ID || process.env.FACEBOOK_MESSENGER_APP_ID;
+  const newSecret = process.env.META_NEW_APP_SECRET || process.env.FACEBOOK_MESSENGER_APP_SECRET;
+  const secondary = Boolean(token && process.env.META_NEW_APP_ACCESS_TOKEN && process.env.META_NEW_APP_ACCESS_TOKEN !== process.env.META_ACCESS_TOKEN &&
+    (token === process.env.META_NEW_APP_ACCESS_TOKEN || newId && newSecret && token === `${newId}|${newSecret}`));
+  const appId = secondary
+    ? process.env.META_NEW_APP_ID || process.env.FACEBOOK_MESSENGER_APP_ID
+    : process.env.META_APP_ID || process.env.FACEBOOK_APP_ID;
+  const appSecret = secondary
+    ? process.env.META_NEW_APP_SECRET || process.env.FACEBOOK_MESSENGER_APP_SECRET
+    : process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET;
+  if (secondary && (!appId || !appSecret)) throw new WabaOnboardingError('WABA_CONFIGURATION_REQUIRED',
+    'Configure META_NEW_APP_ID and META_NEW_APP_SECRET (or the matching FACEBOOK_MESSENGER app credentials) before using the optional token.', false, 503);
+  return { appId, appSecret };
+}
+export function secondaryMetaToken() {
+  const token = process.env.META_NEW_APP_ACCESS_TOKEN;
+  if (!token) throw new WabaOnboardingError('WABA_CREDENTIAL_UNAVAILABLE',
+    'Restore META_NEW_APP_ACCESS_TOKEN for this WhatsApp account.', false, 503);
+  if (token === process.env.META_ACCESS_TOKEN) throw new WabaOnboardingError('WABA_CONFIGURATION_REQUIRED',
+    'The secondary app requires its own access token; it cannot use META_ACCESS_TOKEN.', false, 503);
+  metaTokenAppConfig(token);
+  return token;
+}
+export function wabaConfig(token?: string) {
+  const { appId, appSecret } = metaTokenAppConfig(token);
   const version = process.env.META_API_VERSION;
   if (!appId || !appSecret || !version || !/^v\d+\.\d+$/.test(version)) throw new WabaOnboardingError(
     'WABA_CONFIGURATION_REQUIRED', 'Configure the Embedded Signup Meta app ID, app secret, and an active META_API_VERSION.', false, 503);

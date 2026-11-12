@@ -49,6 +49,17 @@ class WabaModel extends BaseModel {
     return saved;
   }
 
+  /** Persist only the credential reference, never the environment token itself. */
+  async saveSecondaryTokenSource(waba: any) {
+    const [saved] = await this.query().where({ id: waba.id, user_id: waba.user_id, company_id: waba.company_id })
+      .whereNull('deleted_at').where('connection_status', 'legacy').update({
+        meta_data: this.db.raw("coalesce(meta_data, '{}'::jsonb) || ?::jsonb", [JSON.stringify({ meta_token_source: 'secondary' })]),
+        updated_at: new Date(),
+      }).returning('*');
+    if (!saved) throw new HTTP404Error({ message: 'WABA not found or its authorization changed during onboarding' });
+    return saved;
+  }
+
   /** Save one complete Meta snapshot; preserve local phone UUIDs and their relations. */
   async syncAccountAndPhones(waba: any, details: any, phones: any[]) {
     return planUsage.syncWabaNumbers(waba.user_id, async (trx, capacity) => {

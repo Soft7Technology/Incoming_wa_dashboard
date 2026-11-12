@@ -33,6 +33,7 @@ backups/
 /tests
 !/tests/
 !/tests/waba-simple-onboarding.test.cjs
+!/tests/waba-token-fallback.test.cjs
 !/tests/subscription-plan-names.test.cjs
 !/tests/user-plan-independence.test.cjs
 !/tests/support-live.test.cjs

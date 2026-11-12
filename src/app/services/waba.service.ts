@@ -92,33 +92,49 @@ class WabaService {
     if (typeof data.waba_id !== 'string' || !/^\d{1,255}$/.test(data.waba_id)) {
       throw new HTTP400Error({ message: 'A valid Meta WABA ID is required' });
     }
-    const clientWabaAccount = await this.upsertWaba(data);
-    const syncResult = await this.syncWaba(data.user_id, data.company_id!, clientWabaAccount.id);
-    const phoneNumbers = syncResult.phone_numbers;
-    const webhook = await MetaService.subscribeToWebhooks(data.waba_id);
-    const templates = await templateService.syncTemplates(data.user_id, clientWabaAccount.id, data.company_id);
-    await activityLogsModel.create({
-      company_id: data.company_id!, user_id: data.user_id, action: 'CREATE', entity_type: 'WABA',
-      entity_id: clientWabaAccount.id, description: `Connected WhatsApp Business Account (${data.waba_id})`,
-      new_data: { waba_id: data.waba_id, account_id: clientWabaAccount.id,
-        phone_numbers_synced: phoneNumbers.length, templates_synced: templates.length },
-      status: 'SUCCESS', read: false,
+    if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
+    const existing = await WabaModel.findByWabaId(data.waba_id);
+    if (existing && (existing.user_id !== data.user_id || existing.company_id !== data.company_id)) {
+      throw new HTTP400Error({ message: 'WABA is already connected to another account' });
+    }
+    const savedToken = existing ? await wabaCredentials.forAccount(data.user_id, data.company_id, existing.id) : null;
+    if (!savedToken && existing?.connection_status && existing.connection_status !== 'legacy') throw new WabaOnboardingError(
+      'WABA_SETUP_REQUIRED', 'Finish the existing customer authorization before reconnecting this WhatsApp account.', false, 403);
+    return MetaService.withOnboardingTokenFallback(savedToken, async (client, secondary) => {
+      let clientWabaAccount = await this.upsertWaba(data, client);
+      const syncResult = await this.syncWaba(data.user_id, data.company_id!, clientWabaAccount.id, client);
+      const phoneNumbers = syncResult.phone_numbers;
+      if (secondary) await client.verifyOnboardingWebhooks(phoneNumbers.some((phone: any) => phone.meta_data?.is_on_biz_app === true));
+      const webhook = await client.subscribeToWebhooks(data.waba_id);
+      // Remember the subscription's app even if a subsequent template sync fails.
+      if (secondary && clientWabaAccount.connection_status === 'legacy') {
+        clientWabaAccount = await WabaModel.saveSecondaryTokenSource(clientWabaAccount);
+      }
+      const templates = await templateService.syncTemplates(data.user_id, clientWabaAccount.id, data.company_id, client);
+      await activityLogsModel.create({
+        company_id: data.company_id!, user_id: data.user_id, action: 'CREATE', entity_type: 'WABA',
+        entity_id: clientWabaAccount.id, description: `Connected WhatsApp Business Account (${data.waba_id})`,
+        new_data: { waba_id: data.waba_id, account_id: clientWabaAccount.id,
+          meta_token_source: secondary ? 'secondary' : savedToken ? 'customer' : 'primary',
+          phone_numbers_synced: phoneNumbers.length, templates_synced: templates.length },
+        status: 'SUCCESS', read: false,
+      });
+      return { clientAccountStatusMessage: 'Client WABA account setup successfully',
+        data: { clientWabaAccount, phoneNumbers, webhook, templates,
+          phone_number_sync: { total_phone_numbers: syncResult.total_phone_numbers, created: syncResult.created,
+            updated: syncResult.updated, skipped_count: syncResult.skipped_count,
+            skipped_phone_numbers: syncResult.skipped_phone_numbers, remaining_slots: syncResult.remaining_slots } } };
     });
-    return { clientAccountStatusMessage: 'Client WABA account setup successfully',
-      data: { clientWabaAccount, phoneNumbers, webhook, templates,
-        phone_number_sync: { total_phone_numbers: syncResult.total_phone_numbers, created: syncResult.created,
-          updated: syncResult.updated, skipped_count: syncResult.skipped_count,
-          skipped_phone_numbers: syncResult.skipped_phone_numbers, remaining_slots: syncResult.remaining_slots } } };
   }
 
-  async upsertWaba(data: CreateWabaDto) {
+  async upsertWaba(data: CreateWabaDto, client = MetaService) {
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
     const existing = await WabaModel.findByWabaId(data.waba_id);
     if (existing && (existing.user_id !== data.user_id || existing.company_id !== data.company_id)) {
       throw new HTTP400Error({ message: 'WABA is already connected to another account' });
     }
     // Fetch latest data from Meta
-    const wabaDetails = await MetaService.getWabaDetails(data.waba_id);
+    const wabaDetails = await client.getWabaDetails(data.waba_id);
     if (!wabaDetails || wabaDetails.id !== data.waba_id) {
       throw new HTTP400Error({ message: 'Meta did not return the requested WABA account' });
     }
@@ -204,6 +220,9 @@ class WabaService {
    * Create WABA account
    */
   async createWaba(data: CreateWabaDto) {
+    if (typeof data.waba_id !== 'string' || !/^\d{1,255}$/.test(data.waba_id)) {
+      throw new HTTP400Error({ message: 'A valid Meta WABA ID is required' });
+    }
     if (!data.user_id || !data.company_id) throw new HTTP400Error({ message: 'User and company context are required' });
     // Check if WABA ID already exists in our database
     const existing = await WabaModel.findByWabaId(data.waba_id);
@@ -213,7 +232,17 @@ class WabaService {
 
     // Validate WABA ID with Meta API before saving
     try {
-      const wabaDetails = await MetaService.getWabaDetails(data.waba_id);
+      const { wabaDetails, secondary } = await MetaService.withOnboardingTokenFallback(null, async (client, secondary) => {
+        const wabaDetails = await client.getWabaDetails(data.waba_id);
+        if (!wabaDetails || wabaDetails.id !== data.waba_id) {
+          throw new HTTP400Error({ message: 'Meta did not return the requested WABA account' });
+        }
+        return { wabaDetails, secondary };
+      });
+      const metadata = { ...data.meta_data, ...wabaDetails };
+      // Credential selection is server-managed, never supplied by an API caller.
+      delete metadata.meta_token_source;
+      if (secondary) metadata.meta_token_source = 'secondary';
 
       // Create WABA with details from Meta
       return WabaModel.create({
@@ -221,10 +250,7 @@ class WabaService {
         name: data.name || wabaDetails.name,
         currency: data.currency || wabaDetails.currency,
         timezone: data.timezone || wabaDetails.timezone,
-        meta_data: {
-          ...data.meta_data,
-          ...wabaDetails,
-        },
+        meta_data: metadata,
       });
     } catch (error: any) {
       throw new HTTP400Error({

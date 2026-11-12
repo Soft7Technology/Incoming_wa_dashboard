@@ -80,7 +80,8 @@ test('legacy phone sync returns all refreshed phone rows and uses the authentica
 
 function metaFixture(pages) {
   const calls = [];
-  const service = load('src/app/services/meta.service.ts', { axios: { create: () => ({
+  const service = load('src/app/services/meta.service.ts', { https: require('node:https'),
+    '../utils/metaSendError': { metaSendError: () => ({ diagnostic: {} }) }, axios: { create: () => ({
     get: async (path, config) => {
       calls.push({ path, config });
       const page = pages[calls.length - 1];

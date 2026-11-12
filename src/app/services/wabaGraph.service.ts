@@ -6,7 +6,7 @@ import { WabaOnboardingError, wabaConfig } from '../utils/wabaOnboarding';
 export class WabaGraph {
   constructor(private readonly token?: string, private readonly heartbeat?: () => Promise<void>) {}
   async call(path: string, method = 'GET', params: Record<string, any> = {}, data?: any): Promise<any> {
-    const config = wabaConfig();
+    const config = wabaConfig(this.token);
     await this.heartbeat?.();
     try {
       const response = await axios.request({ url: `https://graph.facebook.com/${config.version}/${path}`,
@@ -29,7 +29,7 @@ export class WabaGraph {
     }
   }
   async inspect() {
-    const { appId, appSecret } = wabaConfig();
+    const { appId, appSecret } = wabaConfig(this.token);
     const result = await new WabaGraph(`${appId}|${appSecret}`, this.heartbeat).call('debug_token', 'GET', { input_token: this.token });
     const info = result.data;
     if (!info?.is_valid || String(info.app_id) !== appId ||
@@ -80,7 +80,7 @@ export class WabaGraph {
   }
   phone(id: string) { return this.call(id, 'GET', { fields: 'id,status,platform_type,is_on_biz_app,code_verification_status' }); }
   async subscribe(id: string) {
-    const { appId } = wabaConfig();
+    const { appId } = wabaConfig(this.token);
     const hasApp = (rows: any[]) => rows.some(row => String(row.whatsapp_business_api_data?.id ?? row.id) === appId);
     if (hasApp(await this.list(`${id}/subscribed_apps`))) return;
     const result = await this.call(`${id}/subscribed_apps`, 'POST', {}, {});
@@ -95,7 +95,7 @@ export class WabaGraph {
     if (response.success !== true) throw new WabaOnboardingError('WABA_REGISTRATION_PENDING', 'Meta has not confirmed phone registration yet.', true, 502);
   }
   async verifyAppWebhooks(coexistence: boolean) {
-    const { appId, appSecret } = wabaConfig();
+    const { appId, appSecret } = wabaConfig(this.token);
     const callback = process.env.WABA_WEBHOOK_CALLBACK_URL;
     if (!callback || !/^https:\/\//.test(callback) || !process.env.META_WEBHOOK_VERIFY_TOKEN) throw new WabaOnboardingError(
       'WABA_WEBHOOK_CONFIGURATION_REQUIRED', 'Configure WABA_WEBHOOK_CALLBACK_URL (HTTPS) and META_WEBHOOK_VERIFY_TOKEN, then verify that callback in the Meta app dashboard.', false, 503);

@@ -81,6 +81,7 @@ function metaSender(providerError) {
   const service = loadSource('src/app/services/meta.service.ts', {
     '../utils/campaignPhone': { campaignRecipientNumber: value => value },
     '../utils/importPhone': {},
+    '../utils/metaSendError': loadSource('src/app/utils/metaSendError.ts'),
     axios: { create: () => ({
       interceptors: { request: { use() {} }, response: { use(_success, failure) { failureHandlers.push(failure); } } },
       post() {

@@ -25,9 +25,9 @@ class TemplateService {
     return waba;
   }
 
-  async syncTemplates(userId: string, wabaId: string, companyId?: string) {
+  async syncTemplates(userId: string, wabaId: string, companyId?: string, client = MetaService) {
     const waba = await this.resolveWaba(wabaId, { userId, companyId: companyId! });
-    const response = await MetaService.getTemplates(waba.waba_id);
+    const response = await client.getTemplates(waba.waba_id);
     const synced = [];
     for (const template of response.data || []) {
       const existing = await TemplateModel.findByNameAndLanguage(companyId!, template.name, template.language, waba.id);
