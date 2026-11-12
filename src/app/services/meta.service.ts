@@ -488,11 +488,21 @@ class MetaService {
       return client.subscribeToWebhooks(wabaId, options);
     });
     try {
-      const response = await this.client.post(`/${wabaId}/subscribed_apps`, {
-        // params: {
-        //   subscribed_fields: 'messages,message_deliveries,message_reads'
-        // }
-      });
+      let response;
+      try {
+        response = await this.client.post(`/${wabaId}/subscribed_apps`, {});
+      } catch (error: any) {
+        // Meta can reject a repeated subscription even when Embedded Signup has
+        // already subscribed this app. Confirm that exact app with the same token.
+        if (error.response?.status !== 403 || error.response?.data?.error?.code !== 200) throw error;
+        let subscriptions;
+        try { subscriptions = await this.client.get(`/${wabaId}/subscribed_apps`); }
+        catch { throw error; }
+        const { appId } = metaTokenAppConfig(this.accessToken);
+        if (!appId || !Array.isArray(subscriptions.data?.data) ||
+            !subscriptions.data.data.some((row: any) => row.whatsapp_business_api_data?.id === appId)) throw error;
+        response = { data: { success: true, already_subscribed: true } };
+      }
 
       if (!response.data?.success) {
         throw new Error('Webhook subscription failed');

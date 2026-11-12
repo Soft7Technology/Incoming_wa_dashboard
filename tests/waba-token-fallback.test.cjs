@@ -162,6 +162,68 @@ test('a successful webhook subscription pins the app even if a later operation r
   } finally { h.close(); }
 });
 
+test('a denied repeated subscription succeeds only after confirming the selected app with the same token', async () => {
+  const denied = { response: { status: 403, data: { error: { code: 200 } } } };
+  const h = fixture({ respond: async r => {
+    if (r.method === 'post') throw denied;
+    return { data: [{ whatsapp_business_api_data: { id: '222' } }] };
+  } });
+  try {
+    const result = await h.service.withAccountToken(null, true, c => c.subscribeToWebhooks('123456'));
+    assert.equal(result.success, true);
+    assert.equal(result.already_subscribed, true);
+    assert.deepEqual(h.calls.map(c => [c.method, c.url, c.headers.Authorization]), [
+      ['post', '/123456/subscribed_apps', 'Bearer secondary-token'],
+      ['get', '/123456/subscribed_apps', 'Bearer secondary-token'],
+    ]);
+    assert.equal(h.logs.length, 0);
+  } finally { h.close(); }
+});
+
+test('subscription confirmation cannot accept another app, malformed results, or an unreadable subscription', async () => {
+  for (const response of [{ data: [] }, { data: [{ whatsapp_business_api_data: { id: '111' } }] },
+    { data: [{ id: '222' }] }, { data: {} }, null]) {
+    const denied = { response: { status: 403, data: { error: { code: 200 } } } };
+    const h = fixture({ respond: async r => {
+      if (r.method === 'post') throw denied;
+      if (response === null) throw { code: 'ECONNABORTED' };
+      return response;
+    } });
+    try {
+      await assert.rejects(h.service.withAccountToken(null, true, c => c.subscribeToWebhooks('123456')),
+        e => e.details === denied.response.data);
+      assert.equal(h.calls.length, 2);
+      assert.ok(h.calls.every(c => c.headers.Authorization === 'Bearer secondary-token'));
+    } finally { h.close(); }
+  }
+});
+
+test('other subscription failures remain failures without confirmation reads', async () => {
+  for (const failure of [rejection(190), { code: 'ECONNABORTED' },
+    { response: { status: 500, data: { error: { code: 200 } } } }]) {
+    const h = fixture({ respond: async () => { throw failure; } });
+    try {
+      await assert.rejects(h.service.withAccountToken(null, true, c => c.subscribeToWebhooks('123456')));
+      assert.equal(h.calls.length, 1);
+    } finally { h.close(); }
+  }
+});
+
+test('a subscription confirmed by reading also prevents later switching to another app', async () => {
+  const h = fixture({ respond: async r => {
+    if (r.method === 'post') throw { response: { status: 403, data: { error: { code: 200 } } } };
+    if (r.url.endsWith('/subscribed_apps')) return { data: [{ whatsapp_business_api_data: { id: '111' } }] };
+    throw rejection(200);
+  } });
+  try {
+    await assert.rejects(h.service.withOnboardingTokenFallback(null, async c => {
+      await c.subscribeToWebhooks('123456'); await c.getTemplates('123456');
+    }));
+    assert.equal(h.calls.length, 3);
+    assert.ok(h.calls.every(c => c.headers.Authorization === 'Bearer primary-token'));
+  } finally { h.close(); }
+});
+
 test('secondary webhook verification checks destination and extra coexistence fields', async () => {
   for (const options of [
     { callback: 'https://other.example/webhook' }, { fields: ['messages'] },
