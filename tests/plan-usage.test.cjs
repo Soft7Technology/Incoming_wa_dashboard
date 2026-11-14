@@ -11,7 +11,7 @@ function load(file, deps) {
   const code = ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
   }).outputText;
-  vm.runInNewContext(code, { exports, require: id => deps[id] || (id === '../utils/planFeatures' ? load('src/app/utils/planFeatures.ts', {}) : id === '../utils/importPhone' ? phoneUtils : HttpError), Date, console });
+  vm.runInNewContext(code, { exports, require: id => deps[id] || (id === '../utils/planFeatures' ? load('src/app/utils/planFeatures.ts', {}) : id === '../utils/importPhone' ? phoneUtils : HttpError), Date, URL, console });
   return exports;
 }
 const source = 'src/app/services/planUsage.service.ts';
@@ -153,9 +153,10 @@ test('failed invitation email releases its reserved seat and removes the pending
       await trx('user_team').insert({ ...data, id: 'invite' }); return { ...data, id: 'invite' };
     } },
     '@surefy/console/utils': { __esModule: true, default: async () => { sent++; throw Error('mail failed'); }, generateInviteTemplate: () => 'html' },
+    '../models/companyDomain.model': { findByDomain: async () => ({ company_id: 'company' }) },
     crypto: require('node:crypto'),
   }).default;
-  await assert.rejects(team.inviteTeam({ name: 'Member', email: 'test@example.invalid', role: 'member', invite_sent_by: 'owner', domain_name: 'example.invalid' }), /mail failed/);
+  await assert.rejects(team.inviteTeam({ name: 'Member', email: 'test@example.invalid', role: 'member', invite_sent_by: 'owner', company_id: 'company', domain_name: 'example.invalid' }), /mail failed/);
   assert.equal(sent, 1);
   assert.equal(h.state().user_team.length, 0);
   assert.equal(h.state().user_plans[0].usage.TeamInvite, 0);

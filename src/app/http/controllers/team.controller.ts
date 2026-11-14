@@ -13,11 +13,11 @@ import { sendResponse } from '@surefy/utils/Response';
 
 class teamController {
   /**
-   * POST /v1/team/invite
+   * POST /v1/admin/team/invite
    */
   teamInvite = tryCatchAsync(async (req: AuthRequest, res: Response) => {
     try {
-      const { name, email, phone_number, role, permission, domain_name } = req.body;
+      const { name, email, phone_number, role, permission, domain_name, delivery_method = 'email' } = req.body;
       if (!email || !phone_number || !role || !domain_name) {
         throw new HTTP400Error({ message: 'Email, phone number, domain_name, and role are required' });
       }
@@ -36,7 +36,7 @@ class teamController {
         });
       }
 
-            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray,domain_name  })
+            const inviteTeam = await teamService.inviteTeam({assigned_plan, name, invite_sent_by, company_id, email, phone_number, role, permission: permissionArray, domain_name, delivery_method })
             if (!inviteTeam.success) {
                 const reason = inviteTeam.message || 'Failed to send invite email';
                 return sendResponse(
@@ -47,7 +47,9 @@ class teamController {
                     { error: reason }
                 );
             }
-            return successResponse(req, res, `Invite sent to ${email} successfully`, inviteTeam.data);
+            return successResponse(req, res, delivery_method === 'link'
+              ? 'Team invite link generated successfully'
+              : `Invite sent to ${email} successfully`, inviteTeam.data);
         } catch (error: any) {
             console.error('Create Ticket Error:', error);
 

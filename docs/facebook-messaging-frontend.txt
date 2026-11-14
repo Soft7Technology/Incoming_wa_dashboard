@@ -1,0 +1,73 @@
+Facebook Messenger connection: frontend handoff
+
+The API rejects a callback before exchanging the authorization code when its
+state parameter or browser session cookie is missing or malformed. The new
+backend diagnostics distinguish these cases; they do not fix cookie delivery.
+
+API base URL: https://hostapi.soft7.in/v1
+Use the existing authenticated browser Axios client, preserving the dashboard
+JWT and company context. Set withCredentials: true on all three requests:
+
+1. POST /admin/facebook/oauth/start
+   Body: { "feature": "messaging" }
+   Axios: api.post(path, body, { withCredentials: true })
+   Read response.data.data.authorization_url.
+
+2. GET /admin/facebook/oauth/pages?feature=messaging
+   Axios: api.get(path, { withCredentials: true })
+   Read response.data.data: { status, error, pages }.
+
+3. POST /admin/facebook/pages
+   Body: { "feature": "messaging", "page_id": "SELECTED_NUMERIC_PAGE_ID" }
+   Axios: api.post(path, body, { withCredentials: true })
+   Mark connected only after this request succeeds.
+
+For fetch, use credentials: 'include' with the existing authentication headers.
+These requests must run in the browser; a server-side request alone will not
+store the API's session cookie in the user's browser.
+
+Open a blank popup synchronously in the Connect button click handler, then
+await the start request and navigate that popup to authorization_url unchanged.
+Handle a blocked popup or failed start request in the UI. Disable duplicate
+Connect actions while an attempt is active: a new start replaces the session.
+Do not rebuild the authorization URL, replace state, or exchange the code in
+the frontend. Tokens and the app secret remain on the backend.
+
+After the callback, the backend redirects the popup to the initiating dashboard:
+/user/integrations/facebook?feature=messaging&oauth=ready
+or the same path with oauth=failed.
+Fetch the session through /oauth/pages to determine the actual result. The
+opener may poll this endpoint with a bounded timeout and cleanup on unmount.
+If using postMessage for notification, restrict targetOrigin to the initiating
+dashboard origin and verify event.origin and event.source in the receiver.
+Never send tokens or authorization codes through postMessage.
+
+Session handling:
+- started / authorizing: show loading and poll with a bounded timeout.
+- ready: display pages[].name and use pages[].page_id for the user's selection.
+- failed: show the safe API error and offer a fresh connection attempt.
+- none: the session is unavailable; offer a fresh connection attempt.
+Stop polling on terminal results, timeout, or component unmount.
+Do not automatically retry the callback or reuse its authorization code.
+
+Browser verification:
+- oauth/start response sets fb_messaging_browser for hostapi.soft7.in.
+- The cookie has HttpOnly, Secure, SameSite=None and Path=/v1 over HTTPS.
+- oauth/callback request includes that cookie and the unchanged state parameter.
+- Page listing and connection requests also send that cookie.
+- Inspect blocked-cookie reasons in browser DevTools. JavaScript cannot read
+  Set-Cookie or this HttpOnly cookie; do not create a replacement cookie.
+
+If third-party cookies are blocked, withCredentials cannot override the browser.
+Temporarily allow cookies for the test site to diagnose this. A durable solution
+requires a coordinated same-site API/proxy or backend session-flow change;
+changing only the frontend base URL is insufficient because callback routing
+and the cookie's host must also match.
+
+New backend messages:
+- "Facebook authorization state is missing or invalid...": preserve the exact
+  backend authorization URL and start again.
+- "Facebook login session cookie is missing or invalid...": inspect credentials
+  and blocked-cookie reasons, then start again.
+
+Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie

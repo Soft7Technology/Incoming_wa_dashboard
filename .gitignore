@@ -61,3 +61,4 @@ backups/
 !/tests/meta-send-transport.test.cjs
 !/tests/google-auth.test.cjs
 !/tests/dashboard-origins.test.cjs
+!/tests/team-invite.test.cjs

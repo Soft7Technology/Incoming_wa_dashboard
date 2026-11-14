@@ -192,15 +192,36 @@ class facebokOAuthService {
                 },
             );
 
-            if (!response.data || response.data.error) {
+            if (response.data?.error) {
+                throw { response: { status: response.status, data: response.data } };
+            }
+            if (!response.data) {
                 throw new Error('Invalid Facebook response.');
             }
 
             return response.data;
-        } catch {
-            // Axios errors can contain authorization codes, tokens, and secrets.
+        } catch (error: unknown) {
+            // Never log Axios errors, request parameters, or Meta's free-form text:
+            // they can contain authorization codes, tokens, and app secrets.
+            const failure = error as { response?: { status?: unknown; data?: { error?: {
+                code?: unknown; error_subcode?: unknown; fbtrace_id?: unknown;
+            } } } };
+            const meta = failure?.response?.data?.error;
+            const numeric = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+                ? value : undefined;
+            const step = path === 'oauth/access_token'
+                ? params.grant_type === 'fb_exchange_token' ? 'long-lived token exchange' : 'authorization code exchange'
+                : path === 'debug_token' ? 'token validation' : 'Page discovery';
+            const code = numeric(meta?.code);
+            console.warn('[Facebook OAuth] Graph request failed', {
+                feature, step, app_id: config.appId,
+                http_status: numeric(failure?.response?.status), meta_code: code,
+                meta_subcode: numeric(meta?.error_subcode),
+                fbtrace_id: typeof meta?.fbtrace_id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(meta.fbtrace_id)
+                    ? meta.fbtrace_id : undefined,
+            });
             throw new CustomError(
-                'Facebook authorization could not be completed. Please connect again.',
+                `Facebook ${step} failed${code === undefined ? '' : ` (Meta error ${code})`}. Please connect again.`,
                 502,
             );
         }
@@ -305,11 +326,22 @@ class facebokOAuthService {
 
         if (
             typeof input.state !== 'string' ||
-            !/^[A-Za-z0-9_-]{43}$/.test(input.state) ||
-            !browser
+            !/^[A-Za-z0-9_-]{43}$/.test(input.state)
         ) {
+            console.warn('[Facebook OAuth] Invalid callback session', {
+                feature, reason: 'missing_or_invalid_state',
+            });
             throw new HTTP400Error({
-                message: 'Invalid Facebook authorization session. Connect again.',
+                message: 'Facebook authorization state is missing or invalid. Start a new connection using the authorization URL returned by the server.',
+            });
+        }
+
+        if (!browser) {
+            console.warn('[Facebook OAuth] Invalid callback session', {
+                feature, reason: 'missing_or_invalid_browser_cookie',
+            });
+            throw new HTTP400Error({
+                message: 'Facebook login session cookie is missing or invalid. Check browser cookie settings and connect again.',
             });
         }
 
@@ -426,9 +458,13 @@ class facebokOAuthService {
                 ? auth.scopes
                 : [];
 
-            if (!config.permissions.every((permission) => granted.includes(permission))) {
+            const missingPermissions = config.permissions.filter((permission) => !granted.includes(permission));
+            if (missingPermissions.length) {
+                console.warn('[Facebook OAuth] Required permissions missing', {
+                    feature, app_id: config.appId, missing_permissions: missingPermissions,
+                });
                 throw new CustomError(
-                    'Required Facebook permissions were not granted. Connect again.',
+                    `Required Facebook permissions were not granted: ${missingPermissions.join(', ')}. Check the login configuration and app access approvals, then connect again.`,
                     403,
                 );
             }

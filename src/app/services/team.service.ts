@@ -14,19 +14,44 @@ import companyDomainModel from '../models/companyDomain.model';
 import { assertStrongPassword } from '../utils/passwordPolicy';
 
 class teamService{
+    private inviteHostname(value: unknown): string {
+        const domainName = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        try {
+            const origin = new URL(`https://${domainName}`);
+            if (!domainName || origin.hostname !== domainName || origin.port || origin.pathname !== '/' ||
+                origin.search || origin.hash || origin.username || origin.password) throw new Error('Invalid domain');
+            return domainName;
+        } catch {
+            throw new HTTP400Error({ message: 'domain_name must be a dashboard hostname without a scheme or path' });
+        }
+    }
+
     async inviteTeam(data: any) {
-        const { name, email, role, invite_sent_by, domain_name } = data;
+        const { name, email, role, invite_sent_by, domain_name, delivery_method = 'email', ...inviteData } = data;
+        if (delivery_method !== 'email' && delivery_method !== 'link') {
+            throw new HTTP400Error({ message: 'delivery_method must be "email" or "link"' });
+        }
+        if (!data.company_id || !invite_sent_by) {
+            throw new HTTP400Error({ message: 'Company and inviter context are required' });
+        }
+        const domainName = this.inviteHostname(domain_name);
         const token = crypto.randomBytes(32).toString('hex');
-        const inviteUrl = `https://${domain_name}/team/setup-password?token=${token}`;
-        const html = generateInviteTemplate({ name, email, role, inviteUrl });
+        const inviteUrl = new URL('/team/setup-password', `https://${domainName}`);
+        inviteUrl.searchParams.set('token', token);
         // Reserve the seat and persist the invitation before contacting the mail provider.
         const invite = await planUsageService.run(invite_sent_by, 'TeamInvite', async (trx, plan) => {
             const existing = await trx('user_team').where({ email, invite_sent_by }).first();
             if (existing) throw new HTTP400Error({ message: 'User already invited' });
-            return userTeamModel.create({ ...data, assigned_plan: plan.id,
+            return userTeamModel.create({ ...inviteData, name, email, invite_sent_by, domain_name: domainName, assigned_plan: plan.id,
                 role: role.toLowerCase(), invite_token: token, invite_status: 'sent' }, trx);
         });
+        const result = () => ({ success: true,
+            message: delivery_method === 'link' ? 'Team invite link generated successfully' : 'Team invite sent successfully',
+            data: { ...invite, invite_url: inviteUrl.toString(), delivery_method, email_sent: delivery_method === 'email' },
+        });
+        if (delivery_method === 'link') return result();
         try {
+            const html = generateInviteTemplate({ name, email, role, inviteUrl: inviteUrl.toString() });
             const sent = await sendEmail(email, "You're Invited to Join Soft7", '', html);
             if (!sent) throw new Error('Failed to send invite email');
         } catch (error) {
@@ -38,17 +63,14 @@ class teamService{
             });
             throw error;
         }
-        return { success: true, message: 'Team invite sent successfully', data: invite };
+        return result();
     }
 
     async setUpTeammatePassword(token: string, password: string, domain_name: string) {
         assertStrongPassword(password);
         const found = await userTeamModel.findOne({ invite_token: token });
         if (!found) throw new HTTP400Error({ message: 'Invalid invite token' });
-        const domain = await companyDomainModel.findByDomain(domain_name);
-        if (!domain || domain.company_id !== found.company_id) {
-            throw new HTTP400Error({ message: 'Invitation does not belong to this company domain' });
-        }
+        const domainName = this.inviteHostname(domain_name);
         const hashedPassword = await bcrypt.hash(password, 10);
         return db.transaction(async trx => {
             await trx('users').where({ id: found.invite_sent_by }).forUpdate().first();
@@ -56,10 +78,22 @@ class teamService{
             if (!invite || invite.invite_status !== 'sent') {
                 throw new HTTP400Error({ message: 'Invitation is no longer pending' });
             }
+            // New invites bind the chosen destination to the token, not to the domain registry.
+            // Legacy rows without a saved destination retain the company-domain check.
+            if (invite.domain_name) {
+                if (this.inviteHostname(invite.domain_name) !== domainName) {
+                    throw new HTTP400Error({ message: 'Invitation does not belong to this hostname' });
+                }
+            } else {
+                const domain = await companyDomainModel.findByDomain(domainName);
+                if (!domain || domain.company_id !== invite.company_id) {
+                    throw new HTTP400Error({ message: 'Invitation does not belong to this company domain' });
+                }
+            }
             const existing = await trx('users').where({ email: invite.email }).first();
             if (existing) throw new HTTP400Error({ message: 'User email already exists' });
             const createdUser = await userModel.create({
-                name: invite.name, company_id: invite.company_id, domain_name: domain.domain_name,
+                name: invite.name, company_id: invite.company_id, domain_name: domainName,
                 email: invite.email, phone: invite.phone_number, role: invite.role,
                 permissions: Array.isArray(invite.permission) ? invite.permission : (invite.permission?.nav ?? []),
                 password: hashedPassword, status: 'active',

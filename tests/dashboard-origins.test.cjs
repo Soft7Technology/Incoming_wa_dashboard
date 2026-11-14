@@ -184,3 +184,106 @@ test('HTTP preflights allow registered dashboards with credentials and reject ar
     assert.equal(denied.headers.get('access-control-allow-origin'), null);
   }
 });
+
+function oauthDiagnosticsFixture({ failAt, embeddedError = false, scopes } = {}) {
+  const logs = [], saved = [], calls = [], claims = [];
+  const secret = 'private-app-secret-never-log';
+  const token = 'private-user-token-never-log';
+  const code = 'private-authorization-code-never-log';
+  const providerError = { code: 100, error_subcode: 36008, fbtrace_id: 'safe_meta_trace',
+    message: `${secret} ${token} ${code}`, error_user_msg: `${secret} ${token}` };
+  const service = loadSource('src/app/services/facebookOAuth.service.ts', {
+    '@surefy/exceptions/CustomError': { CustomError: AppError },
+    '@surefy/exceptions/HTTP400Error': class extends AppError {
+      constructor({ message }) { super(message, 400); }
+    },
+    './dashboardOrigin.service': { sessionDashboardOrigin: async () => 'https://dashboard.alpha.test' },
+    '../models/facebookOauthSession.model': {
+      claimCallback: async (...args) => {
+        claims.push(args);
+        return { company_id: 'a', owner_id: 'owner', frontend_origin: 'https://dashboard.alpha.test' };
+      },
+      finishCallback: async (_feature, _state, _browser, result) => { saved.push(result); return true; },
+    },
+    '../utils/facebook': { encrypt: () => 'encrypted-candidates' },
+    axios: { get: async (url, options) => {
+      calls.push({ url, options });
+      if (calls.length === failAt) {
+        if (embeddedError) return { status: 200, data: { error: providerError } };
+        throw { message: `${secret} ${token} ${code}`, config: options,
+          response: { status: 400, data: { error: providerError } } };
+      }
+      if (url.endsWith('/oauth/access_token')) return { data: { access_token: token } };
+      if (url.endsWith('/debug_token')) return { data: { data: {
+        is_valid: true, app_id: '123', type: 'USER', user_id: '456',
+        scopes: scopes ?? ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'],
+      } } };
+      return { data: { data: [{ id: '789', name: 'Page', access_token: token }] } };
+    } },
+  }, { process: { env: { FACEBOOK_PUBLIC_URL: 'https://api.test', FACEBOOK_GRAPH_VERSION: 'v23.0',
+    FACEBOOK_MESSENGER_APP_ID: '123', FACEBOOK_MESSENGER_APP_SECRET: secret } },
+    console: { warn: (...values) => logs.push(values) } }).default;
+  return { logs, saved, calls, claims, secret, token, code,
+    run: (overrides = {}) => service.messagingCallback({ state: 's'.repeat(43), code,
+      denied: false, cookieHeader: `fb_messaging_browser=${'b'.repeat(43)}`, ...overrides }) };
+}
+
+test('OAuth invalid state or browser cookie rejects before claiming a session or exchanging a code', async () => {
+  const cases = [
+    [{ state: undefined }, 'missing_or_invalid_state', /state is missing or invalid/],
+    [{ state: 'private-invalid-state' }, 'missing_or_invalid_state', /state is missing or invalid/],
+    [{ state: ['s'.repeat(43)] }, 'missing_or_invalid_state', /state is missing or invalid/],
+    [{ cookieHeader: undefined }, 'missing_or_invalid_browser_cookie', /session cookie is missing or invalid/],
+    [{ cookieHeader: 'fb_messaging_browser=private-invalid-cookie' }, 'missing_or_invalid_browser_cookie', /session cookie is missing or invalid/],
+    [{ cookieHeader: `unrelated=${'b'.repeat(43)}` }, 'missing_or_invalid_browser_cookie', /session cookie is missing or invalid/],
+  ];
+  for (const [input, reason, message] of cases) {
+    const f = oauthDiagnosticsFixture();
+    await assert.rejects(f.run(input), error => error.statusCode === 400 && message.test(error.message));
+    assert.equal(f.claims.length, 0);
+    assert.equal(f.calls.length, 0);
+    assert.equal(f.saved.length, 0);
+    assert.equal(f.logs[0][1].reason, reason);
+    const output = JSON.stringify(f.logs);
+    for (const value of [f.secret, f.token, f.code, 'private-invalid-state', 'private-invalid-cookie', 'b'.repeat(43)]) {
+      assert.ok(!output.includes(value));
+    }
+  }
+});
+
+test('OAuth callback identifies each failing Graph step without exposing credentials', async () => {
+  const steps = ['authorization code exchange', 'long-lived token exchange', 'token validation', 'Page discovery'];
+  for (let index = 0; index < steps.length; index++) {
+    const f = oauthDiagnosticsFixture({ failAt: index + 1 });
+    assert.equal(new URL(await f.run()).searchParams.get('oauth'), 'failed');
+    assert.equal(f.saved[0].status, 'failed');
+    assert.ok(f.saved[0].error.includes(steps[index]));
+    assert.ok(f.saved[0].error.includes('Meta error 100'));
+    assert.equal(f.logs[0][1].meta_subcode, 36008);
+    assert.equal(f.logs[0][1].fbtrace_id, 'safe_meta_trace');
+    const output = JSON.stringify({ logs: f.logs, saved: f.saved });
+    for (const value of [f.secret, f.token, f.code]) assert.ok(!output.includes(value));
+  }
+  const f = oauthDiagnosticsFixture({ failAt: 1, embeddedError: true });
+  await f.run();
+  assert.equal(f.logs[0][1].meta_code, 100);
+});
+
+test('OAuth permission rejection names only missing permissions and stops before Page discovery', async () => {
+  const f = oauthDiagnosticsFixture({ scopes: ['pages_show_list', 'pages_manage_metadata'] });
+  await f.run();
+  assert.equal(f.calls.length, 3);
+  assert.match(f.saved[0].error, /not granted: pages_messaging\./);
+  assert.deepEqual(Array.from(f.logs[0][1].missing_permissions), ['pages_messaging']);
+  assert.ok(!JSON.stringify(f.saved).includes(f.token));
+});
+
+test('OAuth successful authorization still saves Page selection and uses per-login tokens', async () => {
+  const f = oauthDiagnosticsFixture();
+  assert.equal(new URL(await f.run()).searchParams.get('oauth'), 'ready');
+  assert.equal(f.saved[0].status, 'ready');
+  assert.equal(f.logs.length, 0);
+  assert.equal(f.calls[0].options.params.client_secret, f.secret);
+  assert.equal(f.calls[0].options.params.code, f.code);
+  assert.equal(f.calls[3].options.headers.Authorization, `Bearer ${f.token}`);
+});

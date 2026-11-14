@@ -160,6 +160,8 @@ class MessageController {
   handleWebhook = tryCatchAsync(async (req: Request, res: Response) => {
     const { entry } = req.body;
 
+    console.log("Phone nube",entry)
+
     const values = (entry || []).flatMap((item: any) => item.changes || [])
       .filter((change: any) => change.field === 'messages' && change.value)
       .map((change: any) => change.value);
