@@ -8,6 +8,9 @@ export interface AuthRequest extends Request {
   userId?: string;
   userRole?: string;
   apiKey?: string;
+  apiKeyId?: string;
+  apiKeyPrefix?: string;
+  apiRequestId?: string;
   assigned_plan?:string
   /** For team members: the inviter's userId whose data they should see */
   ownerId?: string;
@@ -19,7 +22,7 @@ export { generateCompanyKey };
 /** Authenticate a user API key and derive its user/company context. */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const legacyKey = req.headers['Authorization'];
+    const legacyKey = req.headers['x-api-key'];
     const authorization = req.headers.authorization;
     let bearerKey: string | undefined;
 
@@ -46,6 +49,8 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     req.ownerId = account.userId;
     req.companyId = account.companyId;
     req.userRole = account.userRole;
+    req.apiKeyId = account.apiKeyId;
+    req.apiKeyPrefix = account.apiKeyPrefix;
     return next();
   } catch (error) {
     next(error);

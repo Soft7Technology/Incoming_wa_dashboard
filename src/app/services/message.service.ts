@@ -33,6 +33,12 @@ import { publishSocketEvent } from './socket-bridge';
 import userModel from '../models/user.model';
 import { downloadMedia } from '../utils';
 import { assertActivePhone } from '../utils/activePhone';
+import ApiRequestLogModel from '../models/apiRequestLog.model';
+
+interface SendMessageOptions {
+  phoneNumber?: any; templateRecord?: any; allowUnverifiedRecipient?: boolean;
+  source?: string; campaignMessageId?: string; apiRequestId?: string; apiRequestBody?: unknown;
+}
 
 const supportedIncomingMessageTypes = new Set([
   'text', 'image', 'video', 'document', 'audio', 'template',
@@ -61,7 +67,22 @@ class MessageService {
   /**
    * Send messages
    */
-  async sendMessage(data: SendMessageDto, resolved?: { phoneNumber?: any; templateRecord?: any; allowUnverifiedRecipient?: boolean; source?: string; campaignMessageId?: string }) {
+  async sendMessage(data: SendMessageDto, resolved?: SendMessageOptions) {
+    if (!resolved?.apiRequestId) return this.sendMessageInternal(data, resolved);
+    const id = data.messageUUID || uuidv4();
+    const requestId = resolved.apiRequestId;
+    await ApiRequestLogModel.startMessage(requestId, id, resolved.apiRequestBody ?? data);
+    try {
+      return await this.sendMessageInternal({ ...data, messageUUID: id }, resolved);
+    } catch (error: any) {
+      await ApiRequestLogModel.failMessage(requestId, id,
+        getDatabaseFailure(error) ? 'Message outcome could not be recorded' : error?.message || 'Message send failed', !!getDatabaseFailure(error))
+        .catch(() => console.error('Could not finalize API message audit', { requestId, messageId: id }));
+      throw error;
+    }
+  }
+
+  private async sendMessageInternal(data: SendMessageDto, resolved?: SendMessageOptions) {
     if (data.shopify_job_id && (resolved?.source !== 'shopify' || data.messageUUID !== data.shopify_job_id || !uuidValidate(data.shopify_job_id))) {
       throw new HTTP400Error({ message: 'Shopify job linkage is reserved for the Shopify message worker' });
     }
@@ -859,7 +880,7 @@ class MessageService {
     }
   }
 
-  async bulkSendMessages(userId: string, messages: BulkSendMessageDto[]) {
+  async bulkSendMessages(userId: string, messages: BulkSendMessageDto[], apiRequestId?: string) {
     // Validate messages array length
     if (!Array.isArray(messages) || messages.length === 0) {
       throw new HTTP400Error({ message: 'Messages array cannot be empty' });
@@ -905,14 +926,23 @@ class MessageService {
       ...msg,
       user_id: userId,
       company_id: user.company_id,
-      messageUUID: msg.messageUUID && uuidValidate(msg.messageUUID) ? msg.messageUUID : uuidv4(),
+      // API audit IDs must not be supplied by a caller or link to an older message.
+      messageUUID: !apiRequestId && msg.messageUUID && uuidValidate(msg.messageUUID) ? msg.messageUUID : uuidv4(),
     }));
 
     // Add job to queue
-    const job = await bulkMessageSendQueue.add('bulk-send', {
-      userId,
-      messages: normalizedMessages,
-    });
+    if (apiRequestId) await ApiRequestLogModel.reserveMessages(apiRequestId,
+      normalizedMessages.map((msg, index) => ({ id: msg.messageUUID, body: messages[index] })));
+    let job;
+    try {
+      job = await bulkMessageSendQueue.add('bulk-send', {
+        userId, messages: normalizedMessages, ...(apiRequestId ? { apiRequestId } : {}),
+      });
+    } catch (error) {
+      if (apiRequestId) await ApiRequestLogModel.failJob(apiRequestId, true)
+        .catch(() => console.error('Could not finalize API bulk audit', { requestId: apiRequestId }));
+      throw error;
+    }
 
     return {
       job_id: job.id,

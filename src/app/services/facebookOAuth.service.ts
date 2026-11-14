@@ -98,6 +98,8 @@ class facebokOAuthService {
         };
 
         const pages = new Map<string, CandidatePage>();
+        let returnedCount = 0;
+        let missingTokenCount = 0;
         const seenCursors = new Set<string>();
         let after: string | undefined;
 
@@ -118,6 +120,7 @@ class facebokOAuthService {
             }
 
             for (const page of result.data) {
+                returnedCount++;
                 if (
                     typeof page?.id !== 'string' ||
                     !/^\d{1,80}$/.test(page.id) ||
@@ -131,6 +134,7 @@ class facebokOAuthService {
                     typeof page.access_token !== 'string' ||
                     !page.access_token
                 ) {
+                    missingTokenCount++;
                     continue;
                 }
 
@@ -157,7 +161,7 @@ class facebokOAuthService {
             after = nextCursor;
         } while (after);
 
-        return [...pages.values()];
+        return { pages: [...pages.values()], returnedCount, missingTokenCount };
     }
 
     private async oauthGraphGet(
@@ -288,6 +292,9 @@ class facebokOAuthService {
             sessionTable: 'facebook_oauth_sessions',
 
             permissions: [
+                // Precheck the core Page flow. Additional asset/configuration
+                // dependencies are enforced by Meta's actual Graph calls, not
+                // assumed from the broader Messenger onboarding permission list.
                 'pages_show_list',
                 'pages_messaging',
                 'pages_manage_metadata',
@@ -469,11 +476,19 @@ class facebokOAuthService {
                 );
             }
 
-            const pages = await this.fetchOAuthPages(feature, token);
+            const { pages, returnedCount, missingTokenCount } = await this.fetchOAuthPages(feature, token);
 
             if (pages.length === 0) {
+                // Only validated identifiers and counts; never log token responses.
+                console.warn('[Facebook OAuth] No usable Pages after successful token exchange', {
+                    feature, app_id: config.appId, facebook_user_id: auth.user_id,
+                    returned_page_count: returnedCount, pages_without_token: missingTokenCount,
+                    reason: returnedCount === 0 ? 'empty_page_list' : 'missing_page_tokens',
+                });
                 throw new CustomError(
-                    'No accessible Facebook Pages were returned. Check your Page access.',
+                    returnedCount === 0
+                        ? 'Facebook token exchange succeeded, but this Facebook login returned no Pages. Check the Facebook profile and grant this app access to the intended Page, then connect again.'
+                        : 'Facebook token exchange succeeded and Pages were returned, but Facebook supplied no Page access tokens. Check your Page tasks and the app\'s Page access, then connect again.',
                     409,
                 );
             }

@@ -47,7 +47,7 @@ class MessageController {
       sticker,
       reaction,
       context,
-    }, { source: `${req.method} ${req.baseUrl}${req.path}` });
+    }, { source: `${req.method} ${req.baseUrl}${req.path}`, apiRequestId: req.apiRequestId, apiRequestBody: req.body });
 
     const { data } = message
 
@@ -226,7 +226,7 @@ class MessageController {
     }
 
     const effectiveUserId = req.ownerId ?? req.userId!;
-    const result = await MessageService.bulkSendMessages(effectiveUserId, messages);
+    const result = await MessageService.bulkSendMessages(effectiveUserId, messages, req.apiRequestId);
 
     return successResponse(req, res, 'Bulk messages queued for sending', result, HttpStatusCode.ACCEPTED);
   });

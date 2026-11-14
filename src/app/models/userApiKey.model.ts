@@ -41,7 +41,8 @@ class UserApiKeyModel extends BaseModel {
       .whereRaw('u.company_id = k.company_id')
       .where({ 'u.status': 'active', 'c.status': 'active' })
       .whereNull('k.revoked_at').whereNull('u.deleted_at').whereNull('c.deleted_at')
-      .select('u.id as userId', 'u.role as userRole', 'c.id as companyId').first();
+      .select('u.id as userId', 'u.role as userRole', 'c.id as companyId',
+        'k.id as apiKeyId', 'k.key_prefix as apiKeyPrefix').first();
   }
 }
 

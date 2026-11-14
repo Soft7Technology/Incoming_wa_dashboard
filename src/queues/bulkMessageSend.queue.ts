@@ -5,6 +5,7 @@ import { BulkSendMessageDto } from '@surefy/console/interfaces/message.interface
 
 export interface BulkMessageSendJobData {
   userId: string;
+  apiRequestId?: string;
   messages: BulkSendMessageDto[];
   nextIndex?: number;
   result?: { total: number; successful: number; failed: number; errors: any[] };

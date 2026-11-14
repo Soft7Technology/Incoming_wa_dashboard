@@ -185,7 +185,7 @@ test('HTTP preflights allow registered dashboards with credentials and reject ar
   }
 });
 
-function oauthDiagnosticsFixture({ failAt, embeddedError = false, scopes } = {}) {
+function oauthDiagnosticsFixture({ failAt, embeddedError = false, scopes, pages } = {}) {
   const logs = [], saved = [], calls = [], claims = [];
   const secret = 'private-app-secret-never-log';
   const token = 'private-user-token-never-log';
@@ -218,7 +218,7 @@ function oauthDiagnosticsFixture({ failAt, embeddedError = false, scopes } = {})
         is_valid: true, app_id: '123', type: 'USER', user_id: '456',
         scopes: scopes ?? ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'],
       } } };
-      return { data: { data: [{ id: '789', name: 'Page', access_token: token }] } };
+      return { data: { data: pages ?? [{ id: '789', name: 'Page', access_token: token }] } };
     } },
   }, { process: { env: { FACEBOOK_PUBLIC_URL: 'https://api.test', FACEBOOK_GRAPH_VERSION: 'v23.0',
     FACEBOOK_MESSENGER_APP_ID: '123', FACEBOOK_MESSENGER_APP_SECRET: secret } },
@@ -270,7 +270,7 @@ test('OAuth callback identifies each failing Graph step without exposing credent
 });
 
 test('OAuth permission rejection names only missing permissions and stops before Page discovery', async () => {
-  const f = oauthDiagnosticsFixture({ scopes: ['pages_show_list', 'pages_manage_metadata'] });
+  const f = oauthDiagnosticsFixture({ scopes: ['pages_show_list', 'pages_manage_metadata', 'pages_read_engagement', 'business_management'] });
   await f.run();
   assert.equal(f.calls.length, 3);
   assert.match(f.saved[0].error, /not granted: pages_messaging\./);
@@ -286,4 +286,46 @@ test('OAuth successful authorization still saves Page selection and uses per-log
   assert.equal(f.calls[0].options.params.client_secret, f.secret);
   assert.equal(f.calls[0].options.params.code, f.code);
   assert.equal(f.calls[3].options.headers.Authorization, `Bearer ${f.token}`);
+});
+
+test('Messenger core Page permissions reach discovery without a blanket business-management check', async () => {
+  const f = oauthDiagnosticsFixture({ scopes: ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'] });
+  assert.equal(new URL(await f.run()).searchParams.get('oauth'), 'ready');
+  assert.equal(f.calls.length, 4);
+  assert.equal(f.saved[0].status, 'ready');
+  assert.equal(f.logs.length, 0);
+});
+
+test('Lead retrieval cannot replace the Page webhook permission for Messenger', async () => {
+  const f = oauthDiagnosticsFixture({ scopes: ['pages_show_list', 'pages_messaging', 'leads_retrieval'] });
+  assert.equal(new URL(await f.run()).searchParams.get('oauth'), 'failed');
+  assert.equal(f.calls.length, 3);
+  assert.match(f.saved[0].error, /not granted: pages_manage_metadata/);
+  assert.deepEqual(Array.from(f.logs[0][1].missing_permissions), ['pages_manage_metadata']);
+});
+
+test('Meta Page discovery permission errors still fail after the minimal scope check', async () => {
+  const f = oauthDiagnosticsFixture({ failAt: 4, scopes: ['pages_show_list', 'pages_messaging', 'pages_manage_metadata'] });
+  assert.equal(new URL(await f.run()).searchParams.get('oauth'), 'failed');
+  assert.match(f.saved[0].error, /Page discovery failed/);
+  assert.equal(f.logs[0][1].meta_code, 100);
+});
+
+test('OAuth distinguishes empty Page grants from Pages without tokens after successful exchanges', async () => {
+  for (const [pages, reason, text] of [
+    [[], 'empty_page_list', /this Facebook login returned no Pages/],
+    [[{ id: '789', name: 'Page' }], 'missing_page_tokens', /supplied no Page access tokens/],
+  ]) {
+    const f = oauthDiagnosticsFixture({ pages });
+    assert.equal(new URL(await f.run()).searchParams.get('oauth'), 'failed');
+    assert.equal(f.calls.length, 4);
+    assert.match(f.saved[0].error, /token exchange succeeded/);
+    assert.match(f.saved[0].error, text);
+    assert.equal(f.logs[0][1].reason, reason);
+    assert.equal(f.logs[0][1].facebook_user_id, '456');
+    assert.equal(f.logs[0][1].returned_page_count, pages.length);
+    assert.equal(f.logs[0][1].pages_without_token, pages.length);
+    const output = JSON.stringify({ logs: f.logs, saved: f.saved });
+    for (const value of [f.secret, f.token, f.code]) assert.ok(!output.includes(value));
+  }
 });

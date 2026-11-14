@@ -1,5 +1,6 @@
 import { recordActivity } from '../app/middleware/activity.middleware';
 import UserApiKeyRoute from './userApiKey.route';
+import ApiRequestLogRoute from './apiRequestLog.route';
 import InstagramRoute from './instagram.route';
 import GoogleSheetsRoute from './googleSheets.route';
 import GooglePeopleRoute from './googlePeople.route';
@@ -42,6 +43,7 @@ AdminRoute.use('/google-people', GooglePeopleRoute);
 AdminRoute.use('/shopify', ShopifyRoute);
 
 AdminRoute.use('/api-keys', UserApiKeyRoute);
+AdminRoute.use('/api-logs', ApiRequestLogRoute);
 AdminRoute.use('/payments', PaymentRoute);
 
 // Mount all admin routes

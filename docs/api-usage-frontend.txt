@@ -1,0 +1,182 @@
+API key usage and message history
+
+Add an "API usage" screen beside the dashboard's API keys screen. The backend
+automatically records authenticated calls to /v1/api/*; the frontend does not
+POST log records. Existing API clients keep using their personal API key:
+Authorization: Bearer <user-api-key> OR x-api-key: <user-api-key>.
+If both headers are present, their values must match.
+
+Read these endpoints with Authorization: Bearer <dashboard-JWT>:
+
+GET /v1/admin/api-logs/summary
+GET /v1/admin/api-logs?page=1&limit=20
+GET /v1/admin/api-logs/<request-id>
+GET /v1/admin/api-logs/messages?page=1&limit=20
+GET /v1/admin/api-logs/messages?request_id=<request-id>&page=1&limit=20
+
+Use the configured API base URL, e.g. https://hostapi.soft7.in. These routes
+return only the authenticated user's API-key calls in their company. Do not
+send a user ID, owner ID or company ID. A team member cannot read the owner's
+logs through their own dashboard JWT. Revoking or rotating a key preserves its
+recorded history. The list contains api_key_id and a non-secret key_prefix so
+old keys can be distinguished from the active key.
+
+Shared optional filters:
+- api_key_id: key UUID, including a revoked key's ID
+- request_id: request UUID
+- outcome: success | failed | pending | aborted (HTTP request outcome)
+- http_status: integer 100..599
+- method: GET | POST | PUT | PATCH | DELETE | HEAD | OPTIONS
+- endpoint: exact path, e.g. /v1/api/messages/send (no query string)
+- from_date, to_date: inclusive ISO timestamps WITH timezone, e.g.
+  2026-11-14T00:00:00.000Z. Use URLSearchParams to encode these values.
+  The date range selects requests by creation time, including for messages.
+
+List pagination: page starts at 1, limit defaults to 20, maximum 100. Invalid
+filters return 400. No date range means all recorded history.
+The messages endpoint additionally accepts status:
+queued | processing | sent | delivered | read | failed | unknown | deleted.
+Do not send the message status filter to the request list or summary.
+
+Summary response example:
+{
+  "success": true,
+  "message": "API usage retrieved",
+  "data": {
+    "requests": {
+      "total": 12, "success": 9, "failed": 2, "pending": 1, "aborted": 0
+    },
+    "http_statuses": [
+      { "http_status": 201, "count": 8 },
+      { "http_status": 202, "count": 1 },
+      { "http_status": 400, "count": 2 },
+      { "http_status": null, "count": 1 }
+    ],
+    "messages": {
+      "total": 15, "queued": 1, "processing": 1, "sent": 2,
+      "delivered": 4, "read": 6, "failed": 1, "unknown": 0
+    }
+  }
+}
+
+Counts cover all requests matching the filters, not just the current page.
+Message counts are mutually exclusive CURRENT states: a read message counts
+under read, not under both delivered and sent. Unknown future statuses may
+appear as additional count keys. An API call with multiple recipients counts
+as ONE request and multiple messages. A request rejected before message
+attempts are created contributes to failed calls, but has no message rows.
+
+Request list response example (IDs shortened for readability):
+{
+  "success": true,
+  "message": "API requests retrieved",
+  "data": {
+    "items": [{
+      "id": "<request-uuid>",
+      "api_key_id": "<key-uuid>",
+      "key_prefix": "s7_abc123...",
+      "method": "POST",
+      "endpoint": "/v1/api/messages/send",
+      "query": {},
+      "request_body": {
+        "phone_number_id": "<Meta-phone-id>", "to": "919876543210",
+        "type": "text", "text": { "body": "Hello" }
+      },
+      "http_status": 201,
+      "outcome": "success",
+      "duration_ms": 430,
+      "created_at": "2026-11-14T08:30:00.000Z",
+      "completed_at": "2026-11-14T08:30:00.430Z"
+    }],
+    "pagination": {
+      "page": 1, "limit": 20, "total": 1, "total_pages": 1, "has_next": false
+    }
+  }
+}
+
+The detail endpoint returns data as a single request object, including
+response_body (sanitized JSON response, or null if none was captured).
+Use it for the request/response JSON drawer. A request outside the user's
+scope returns 404. No authorization headers or raw API keys are returned.
+Authenticated API responses include X-API-Request-ID for server clients to
+correlate a call with this history.
+
+Message list returns the same data.items + data.pagination envelope:
+{
+  "message_id": "<reserved-message-uuid>",
+  "request_id": "<request-uuid>",
+  "request_body": { "to": "919876543210", "type": "text", "text": { "body": "Hello" } },
+  "created_at": "2026-11-14T08:30:00.000Z",
+  "wamid": "wamid...",
+  "to_phone": "919876543210",
+  "type": "text",
+  "status": "delivered",
+  "error_code": null,
+  "error_message": null,
+  "queued_at": "2026-11-14T08:30:00.000Z",
+  "sent_at": "2026-11-14T08:30:00.300Z",
+  "delivered_at": "2026-11-14T08:30:01.000Z",
+  "read_at": null,
+  "failed_at": null
+}
+WAMID and delivery timestamps may be null while queued, processing, or rejected
+before a provider send. Each bulk recipient retains its own request body. IDs
+for API bulk sends are generated by the backend; caller-supplied messageUUID
+values are not used. Polling reads existing message states updated by webhooks.
+This is a current-status view with timestamps, not a full webhook-event ledger.
+
+Suggested frontend behavior:
+1. Show cards for total calls, successful calls, failed calls and pending calls;
+   show a separate message-status breakdown. Never label HTTP 201/202 as delivered.
+2. Provide Requests and Messages tabs. Requests columns: time, method, endpoint,
+   key prefix, HTTP status, outcome, duration, View details. Messages columns:
+   recipient, type, status, WAMID, error code, View body, View API request.
+3. On filter changes reset page to 1. Apply shared filters to the summary too.
+   Use pagination.total for the filtered count, not items.length. Empty results
+   have items: [], total: 0, total_pages: 0 and has_next: false.
+4. Refresh active views every 10-15 seconds while visible, or provide Refresh.
+   Cancel stale requests when changing filters. Preserve pagination while
+   polling. Use loading, empty, 401, 403 and error states.
+5. Render JSON as escaped text (e.g. JSON.stringify(value, null, 2)), never HTML.
+   Do not send bodies to analytics or log them to the browser console. Responses
+   are Cache-Control: no-store. For Axios, rows are response.data.data.items;
+   for fetch, parsedJson.data.items. Summary is response.data.data for Axios.
+
+Meaning of outcomes and limits:
+- success: HTTP response below 400 with no JSON success:false. A successful
+  bulk enqueue can still contain messages that later fail.
+- failed: HTTP 4xx/5xx or JSON success:false. Check response_body for context.
+- pending: request started but response completion has not been recorded.
+  A process interruption or logging write failure can leave this state; it
+  does not prove the operation is still running or safe to retry.
+- aborted: client disconnected before completion. The operation may still have
+  completed; check message status before retrying. Do not auto-retry sends.
+- processing/unknown message: sending began or the job outcome is uncertain.
+  Neither guarantees delivery nor proves a failure.
+
+Only authenticated /v1/api/* requests reaching this middleware are included.
+Invalid/revoked-key attempts, invalid JSON rejected by the body parser,
+proxy-level failures, preflight requests and dashboard JWT calls are excluded.
+Never associate an invalid key with a user's account based on unverified data.
+All API routes are counted; per-message correlation covers /messages/send and
+/messages/bulk-send. Campaign API calls are logged as requests, but messages
+later produced by campaign/automation/chatbot workers remain in their existing
+message history, not this API-message list. Historical calls are not backfilled.
+
+Bodies are snapshots with nested credential fields redacted. URL query strings,
+fragments and embedded URL credentials are removed, including signed media links.
+Binary content is omitted. Each captured body has a roughly 64 KiB budget and
+20-level nesting limit; larger content is marked [TRUNCATED], [TRUNCATED STRING]
+or _truncated. A large bulk request may be truncated in the request row while
+its individual recipient bodies are available in the paginated Messages tab.
+Ordinary message text and recipient data are retained for this user's history.
+
+Backend rollout:
+- Apply 20261114000001_api_request_logs.ts before starting the new API/worker.
+  It adds api_request_logs and api_request_messages. Follow the existing release
+  migration process; do not use the previous team-invite "no migration" guidance.
+- Deploy both API and bulk-message worker, then enable the frontend screen.
+- If the initial log cannot be saved, /v1/api/* returns 503 before starting the
+  action. Completion updates happen after the response; rare write failures or
+  crashes leave pending rows. No automatic retry or retention deletion is added.
+- These changes are source changes until the migration and deployment run.

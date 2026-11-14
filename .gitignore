@@ -62,3 +62,4 @@ backups/
 !/tests/google-auth.test.cjs
 !/tests/dashboard-origins.test.cjs
 !/tests/team-invite.test.cjs
+!/tests/api-request-logs.test.cjs

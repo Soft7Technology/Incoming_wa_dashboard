@@ -8,6 +8,7 @@ import MessageService from '@surefy/console/services/message.service';
 import PhoneNumberModel from '@surefy/console/models/phoneNumber.model';
 import CompanyModel from '@surefy/console/models/company.model';
 import userModel from '@surefy/console/app/models/user.model';
+import ApiRequestLogModel from '../../app/models/apiRequestLog.model';
 
 const BATCH_SIZE = 50; // Process 50 messages at a time
 const DELAY_BETWEEN_BATCHES = 1000; // 1 second delay between batches
@@ -59,6 +60,7 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>, token?: 
           try {
             sendsStarted = true;
             const message = await MessageService.sendMessage({
+              messageUUID: messageData.messageUUID,
               user_id: userId,
               company_id: messageData.company_id,
               country_code: messageData.country_code,
@@ -73,7 +75,12 @@ async function processBulkMessageSend(job: Job<BulkMessageSendJobData>, token?: 
               document: messageData.document,
               audio: messageData.audio,
               context: messageData.context,
-            });
+              interactive: messageData.interactive,
+              location: messageData.location,
+              contacts: messageData.contacts,
+              sticker: messageData.sticker,
+              reaction: messageData.reaction,
+            }, { apiRequestId: job.data.apiRequestId });
 
             return { success: true, to: messageData.to, message };
           } catch (error: any) {
@@ -164,6 +171,8 @@ bulkMessageSendWorker.on('completed', (job, result) => {
 
 bulkMessageSendWorker.on('failed', (job, err) => {
   reportBackgroundError('Worker bulk-message-send', err, { jobId: job?.id });
+  if (job?.data.apiRequestId) void ApiRequestLogModel.failJob(job.data.apiRequestId)
+    .catch(() => console.error('Could not finalize failed API bulk job audit', { jobId: job.id }));
 });
 
 bulkMessageSendWorker.on('error', (error) => {

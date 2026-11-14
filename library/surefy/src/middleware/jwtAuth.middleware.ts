@@ -11,6 +11,7 @@ export interface JWTAuthRequest extends Request {
   email?: string;
   phone?: string;
   assigned_plan?:string
+  apiRequestId?: string;
   /** For team members: the inviter's userId whose data they should see.
    *  For account owners: same as userId. */
   ownerId?: string;

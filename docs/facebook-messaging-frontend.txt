@@ -71,3 +71,57 @@ New backend messages:
   and blocked-cookie reasons, then start again.
 
 Reference: https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie
+
+Page discovery diagnostics:
+- "Facebook token exchange succeeded, but this Facebook login returned no
+  Pages..." means both exchanges and token/permission validation passed, but
+  /me/accounts returned no Pages for that login. Check the Facebook profile and
+  the Pages selected for this app during authorization.
+- "Facebook token exchange succeeded and Pages were returned, but Facebook
+  supplied no Page access tokens..." means Page records exist but none contain
+  a usable token. Check Page tasks and app access to those Pages.
+Display these errors as returned; do not replace them with "token exchange
+failed". A separately generated Graph API Explorer token can have different
+Page grants from the callback's token, even when both belong to the same app.
+Backend diagnostics record only the validated Facebook user ID, app ID, Page
+counts and a reason (empty_page_list or missing_page_tokens). No token is logged.
+After installing this change, start a fresh connection to populate the new
+diagnostics; previously failed sessions retain their old error message.
+
+Testing with a public Facebook user (not an app developer/tester):
+- The backend exchanges each login's own code and stores its selected Page
+  token encrypted. It never substitutes the developer's manually generated
+  token. Keep the app ID, app secret, encryption key and webhook verification
+  configuration; these settings are not the developer's User access token.
+- Use a separate browser profile/private window, log into the intended
+  dashboard account, then log into Facebook as the Page's authorized manager.
+  Clearing backend OAuth sessions does not log a browser out of facebook.com
+  or revoke authorizations at Meta. Starting Connect again replaces the previous
+  session for that dashboard owner and sets a fresh browser cookie.
+- For the configured Messenger app, check public availability/Live mode and
+  approved Advanced Access for the requested permissions. Standard Access for
+  an app developer does not prove that public users can grant the same access.
+- In Facebook Login for Business, update the configuration referenced by
+  FACEBOOK_MESSENGER_LOGIN_CONFIG_ID to request a User access token, Page assets
+  and the core Page permissions: pages_show_list, pages_messaging,
+  pages_manage_metadata. These three are the backend's precheck. leads_retrieval
+  belongs to the Leads feature and cannot replace pages_manage_metadata for
+  Messenger webhook subscriptions.
+- Meta's broader Messenger onboarding overview also lists pages_read_engagement
+  and business_management dependencies. Their absence is not an unconditional
+  local rejection: the backend proceeds to Meta's Page APIs, which enforce the
+  actual asset/configuration requirements. Removing this local check does not
+  grant permissions, bypass Meta, or guarantee Page discovery/subscription.
+  If Meta requires additional permissions for the flow, configure and obtain
+  the corresponding approval. Complete required App Review/business verification.
+- The connecting person must have the required MESSAGING and MODERATE tasks on
+  the intended Page and select it during authorization. Keep the popup flow's
+  redirect URI exactly matched to the backend callback.
+- Test with a fresh authorization after changing the configuration. Do not
+  reuse a previous callback code or use Graph API Explorer as the production
+  customer onboarding flow.
+
+Meta references:
+https://developers.facebook.com/documentation/business-messaging/messenger-platform/overview
+https://developers.facebook.com/documentation/facebook-login/facebook-login-for-business
+https://developers.facebook.com/docs/graph-api/reference/page/subscribed_apps
