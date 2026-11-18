@@ -1,0 +1,25 @@
+Facebook lead source
+
+GET /v1/admin/facebook/forms/:formConnectionId/leads now includes source: "facebook"
+on each item in data.leads. Render this value as "Facebook" in the Source column.
+This includes webhook leads, manually synced leads, and previously saved leads.
+Existing pagination, account access checks and field_data remain unchanged.
+
+When importing Facebook leads into contacts using POST /v1/admin/contacts/import,
+add source=facebook to the existing multipart/form-data upload. Keep the existing
+file, list_name, phone_number_id, phone_column and other import fields.
+Do not put source in a spreadsheet column. Ordinary imports can omit source and
+will continue to use "import". Only "import" and "facebook" are accepted.
+
+New contacts created by that import have source: "facebook". Display "Facebook"
+for this value in contact lists. Existing contacts keep their original source.
+The import job's saved import_options.source also records its source.
+
+Facebook webhook and manual form sync still save leads separately from contacts.
+This change labels their lead responses; it does not automatically create a
+contact or contact import job when a webhook arrives. Use the existing import
+workflow to create contacts from those leads.
+
+Deployment: apply migration 20261117000001_facebook_contact_source, then deploy
+both the API and contact import worker before enabling the new import source.
+Existing contacts are not backfilled because their Facebook origin is unknown.

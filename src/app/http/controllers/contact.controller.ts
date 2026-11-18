@@ -13,6 +13,7 @@ import activityLogsModel from '../../models/activityLogs.model';
 import userTeamModel from '../../models/team.model';
 import db from '@surefy/database';
 import { companyReadScope } from '../../utils/platformOrganization';
+import { contactImportSource } from '../../utils/contactSource';
 
 class ContactController {
   /** Apply existing tags to a batch of contacts in the authenticated account. */
@@ -319,6 +320,7 @@ class ContactController {
   importContacts = tryCatchAsync(async (req: JWTAuthRequest, res: Response) => {
     const file = req.file;
     const { list_name, phone_column, phone_number_id, name_column, email_column, tag_ids, country_code } = req.body;
+    const source = contactImportSource(req.body.source);
 
     console.log("Request file", req.body)
 
@@ -359,6 +361,7 @@ class ContactController {
       phoneColumn: phone_column,
       nameColumn: name_column,
       emailColumn: email_column,
+      source,
       tagIds: tag_ids ? tag_ids.split(',') : undefined,
     }).catch(async error => {
       // Keep files belonging to failed queue jobs for retry; quota failures created no job.

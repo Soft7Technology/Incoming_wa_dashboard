@@ -49,7 +49,7 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
       }).catch(error => done(error));
       return;
     }
-    // Other OAuth integrations retain their existing origin configuration.
+    // Sheets also accepts registered dashboards; other integrations retain their configuration.
     if (req.url.startsWith('/v1/admin/google-sheets') || req.url.startsWith('/v1/integrations/google/') ||
       req.url.startsWith('/v1/admin/google-people') || req.url.startsWith('/v1/integrations/google-people/') ||
       req.url.startsWith('/v1/admin/shopify') || req.url.startsWith('/v1/integrations/shopify/')) {
@@ -62,6 +62,14 @@ const createBaseApp = (routes: RouteConfig[] = [], lifecycle: {
         if (!configured.username && !configured.password && (configured.protocol === 'https:' ||
           (configured.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(configured.hostname)))) origin = configured.origin;
       } catch { /* Same-origin and server-to-server usage need no CORS header. */ }
+      if (/^\/v1\/(?:admin\/google-sheets|integrations\/google)(?:[/?]|$)/.test(req.url)) {
+        // CORS enables browser transport only; Sheets routes still require owner-scoped JWTs.
+        const requested = req.headers.origin;
+        void isDashboardOriginAllowed(requested).then(allowed => {
+          done(null, { origin: allowed ? requested! : requested === origin ? origin : false, credentials: true });
+        }).catch(error => done(error));
+        return;
+      }
       return done(null, { origin, credentials: true });
     }
     done(null, { origin: '*' });

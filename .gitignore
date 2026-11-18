@@ -63,3 +63,4 @@ backups/
 !/tests/dashboard-origins.test.cjs
 !/tests/team-invite.test.cjs
 !/tests/api-request-logs.test.cjs
+!/tests/contact-custom-fields.test.cjs

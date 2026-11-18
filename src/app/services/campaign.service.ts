@@ -2,7 +2,7 @@ import contactOptOut from './contactOptOut.service';
 import { createOptionalCampaignPhoneResolver, campaignRecipientNumber, validateCampaignPhoneInputs } from '../utils/campaignPhone';
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
-import { parseContactCustomFields } from '../utils/contactCustomFields';
+import { parseContactCustomFields, findContactFieldKey } from '../utils/contactCustomFields';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
@@ -349,11 +349,13 @@ class CampaignService {
       let remaining = path;
       while (source != null) {
         // Prefer exact keys so custom field names containing dots still work.
-        if (own(source, remaining)) return { found: true, value: source[remaining] };
+        const matched = source === contact ? (own(source, remaining) ? remaining : undefined) : findContactFieldKey(source, remaining);
+        if (matched !== undefined) return { found: true, value: source[matched] };
         const separator = remaining.indexOf('.');
         if (separator < 1) break;
-        const key = remaining.slice(0, separator);
-        if (!own(source, key)) break;
+        const segment = remaining.slice(0, separator);
+        const key = source === contact ? (own(source, segment) ? segment : undefined) : findContactFieldKey(source, segment);
+        if (key === undefined) break;
         source = source === contact && ['custom_fields', 'attributes'].includes(key)
           ? contactFields(key) : source[key];
         remaining = remaining.slice(separator + 1);

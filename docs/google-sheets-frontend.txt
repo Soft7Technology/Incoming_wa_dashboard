@@ -1,0 +1,58 @@
+Google Sheets connections on all dashboard domains
+
+Deployment, 16 November 2026: incoming-api:sheets-origins-20261116 is live on both
+API replicas. All six origins passed Sheets and Google sign-in CORS preflights.
+Unauthenticated Sheets connection requests return 401 with the matching CORS
+headers; unknown origins receive no CORS authorization. API health passed.
+37 automated tests, TypeScript checking and the production build passed. Full
+browser consent, Picker, and spreadsheet operations were not exercised here.
+
+Dashboard origins:
+https://app.soft7.in
+https://app.thersvpdesk.com
+https://app.software247.in
+https://app.whatsgo.in
+https://waofficial.businessautomations.in
+https://app.akashadstudio.in
+
+Google Sheets authorization is separate from Google dashboard sign-in. A dashboard
+login does not grant access to spreadsheets. Connect Google Sheets for each account.
+
+Backend: Sheets CORS accepts shared dashboards and active company_domains with active
+SSL. GOOGLE_FRONTEND_URL remains a legacy fallback; do not put a comma-separated
+list into that variable. GOOGLE_AUTH_ALLOWED_ORIGINS controls sign-in only.
+Account-owner JWT checks and company-scoped Sheets connections remain required.
+
+Google Cloud: edit the Web OAuth client used by GOOGLE_CLIENT_ID. The live client is
+396186384814-d8jact1o8qbl06heqd9e5uj3agieg2be.apps.googleusercontent.com
+Keep this exact Authorized redirect URI for every dashboard:
+https://hostapi.soft7.in/v1/integrations/google/callback
+Do not replace it with a dashboard /auth URL. The backend handles the OAuth code.
+Keep all six dashboard origins above in Authorized JavaScript origins for browser
+Google sign-in. Keep Google Sheets and Drive APIs enabled, and Picker API if used.
+For Google Picker, add each dashboard's https://hostname/* to the browser API key's
+HTTP referrer restrictions. Use the current window.location.origin for setOrigin;
+do not hardcode app.soft7.in. Keep keys restricted to the required APIs.
+
+Frontend connection flow:
+1. GET https://hostapi.soft7.in/v1/admin/google-sheets/connection with the existing
+   dashboard owner JWT. An unauthorized response must be shown as an auth error.
+2. On Connect Google, POST /v1/admin/google-sheets/oauth/start with the same JWT,
+   credentials: 'include' (Axios: withCredentials: true). The browser supplies Origin.
+3. Open the returned data.authorization_url in a popup or navigate to it. Keep the
+   dashboard's current flow editor state. The callback returns JSON, not a frontend
+   redirect or postMessage. The dashboard can poll /connection while the popup is open
+   and refresh the connection selector when connected becomes true. Stop polling on
+   success, cancellation, timeout, or when leaving the screen.
+4. After authorization, select the connection and retry the spreadsheet action.
+   Use /setup for Picker configuration and /picker-token for a short-lived token.
+   Never log authorization URLs, OAuth codes, state values, or tokens.
+
+Third-party cookie restrictions can prevent the browser-session cookie from reaching
+the API callback on unrelated domains. A same-site API proxy is needed where browsers
+block that cookie; adding CORS origins alone does not override browser restrictions.
+
+Troubleshooting: inspect the Network request URL, status and CORS response. A generic
+Network Error alone cannot establish its cause. origin_mismatch is a Google client
+origin setting; redirect_uri_mismatch concerns the backend callback URI above. A 401
+means the dashboard JWT is missing/invalid; team members cannot connect as the owner.

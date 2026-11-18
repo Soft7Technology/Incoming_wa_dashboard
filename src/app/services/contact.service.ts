@@ -21,6 +21,7 @@ import db from '@surefy/database';
 import { parseContactCustomFields } from '../utils/contactCustomFields';
 import { getDatabaseFailure, reportBackgroundError } from '@surefy/utils/databaseErrors';
 import { contactImportStatus } from '../utils/contactImportStatus';
+import { contactImportSource, ContactImportSource } from '../utils/contactSource';
 import { contactListImportSummary } from '../utils/contactImportSummary';
 import { validate as isUUID } from 'uuid';
 
@@ -238,20 +239,14 @@ class ContactService {
       throw new HTTP404Error({ message: 'Contact not found' });
     }
 
-    const currentCustomFields = parseContactCustomFields(
-      contact.custom_fields ?? contact.attributes ?? {},
-      'stored custom fields'
-    ) || {};
     const attributes = parseContactCustomFields(data.attributes, 'attributes');
     const customFields = parseContactCustomFields(data.custom_fields, 'custom_fields');
-    const hasCustomFieldUpdate = attributes !== undefined || customFields !== undefined;
 
     const updatePayload: any = {
       name: data.name,
       email: data.email,
-      custom_fields: hasCustomFieldUpdate
-        ? { ...currentCustomFields, ...(attributes || {}), ...(customFields || {}) }
-        : currentCustomFields,
+      attributes,
+      custom_fields: customFields,
       notes: data.notes,
       assigned_to: data.assigned_to,
     };
@@ -343,8 +338,10 @@ class ContactService {
       nameColumn?: string;
       emailColumn?: string;
       tagIds?: string[];
+      source?: ContactImportSource;
     } = {}
   ) {
+    const source = contactImportSource(options.source);
     // Validate the file before creating an import record
     const validation = await XLSXParserService.validateFile(filePath);
     if (!validation.valid) {
@@ -384,6 +381,7 @@ class ContactService {
       total_rows: preview.total_rows,
       import_options: {
         execution_mode: 'worker', list_name: listName,
+        source,
         phone_column: options.phoneColumn,
         name_column: options.nameColumn,
         email_column: options.emailColumn,

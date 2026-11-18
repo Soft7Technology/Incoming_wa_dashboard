@@ -18,6 +18,7 @@ export interface ContactImportJobData {
     nameColumn?: string;
     emailColumn?: string;
     tagIds?: string[];
+    source?: 'import' | 'facebook';
   };
 }
 

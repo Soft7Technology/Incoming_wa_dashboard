@@ -9,14 +9,14 @@ import. Campaigns are drafts unless `send_immediately` or `scheduled_at` is prov
 
 1. In Google Cloud, enable the Google Sheets API, Google Drive API and Google Picker API.
 2. Configure the OAuth consent screen, add test users, and create a **Web application** client.
-3. Register `https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/google/callback` as an authorized redirect URI.
+3. Register `https://hostapi.soft7.in/v1/integrations/google/callback` as an authorized redirect URI.
 4. Set the following on the API and worker servers. Generate an independent encryption key,
    keep it stable across restarts/replicas, and keep secrets outside source control:
 
    ```env
    GOOGLE_CLIENT_ID=your-web-client-id
    GOOGLE_CLIENT_SECRET=your-client-secret
-   GOOGLE_REDIRECT_URI=https://ea13-2401-4900-8fea-1cc3-f8ac-28c8-9ea8-a7ab.ngrok-free.app/v1/integrations/google/callback
+   GOOGLE_REDIRECT_URI=https://hostapi.soft7.in/v1/integrations/google/callback
    GOOGLE_FRONTEND_URL=https://app.soft7.in
    GOOGLE_TOKEN_ENCRYPTION_KEY=base64-encoded-32-random-bytes
    ```
@@ -65,8 +65,11 @@ the frontend should then query `/connection` to refresh its UI.
 
 Call `/oauth/start` from the dashboard with `credentials: 'include'`, then navigate the
 same browser to `data.authorization_url`. After consent, the callback must receive the
-cookie created by `/oauth/start`. For cross-origin requests, `GOOGLE_FRONTEND_URL` must
-match the dashboard origin. HTTPS cookies use SameSite=None; localhost HTTP uses Lax.
+cookie created by `/oauth/start`. Google Sheets CORS accepts registered dashboard
+origins from active company_domains records with active SSL, plus the shared dashboard
+and the legacy GOOGLE_FRONTEND_URL. These are transport permissions; every protected
+Sheets endpoint still requires the authenticated account owner and company.
+HTTPS cookies use SameSite=None; localhost HTTP uses Lax.
 Browsers blocking third-party cookies may block a connection initiated across unrelated
 sites; use dashboard/API hostnames under the same site or a same-site reverse proxy.
 

@@ -5,6 +5,7 @@ const fs = require('node:fs'), vm = require('node:vm'), ts = require('typescript
 const knex = require('knex');
 class HttpError extends Error { constructor({ message }) { super(message); } }
 function load(file, deps) {
+  if (file.endsWith('contact.model.ts')) deps = { ...deps, '../utils/contactCustomFields': load('src/app/utils/contactCustomFields.ts', { '@surefy/exceptions/HTTP400Error': HttpError }) };
   const exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },

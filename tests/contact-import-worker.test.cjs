@@ -18,6 +18,9 @@ function load(file, deps, globals = {}) {
     if (id.endsWith('/databaseAwareWorker')) return background.processorFactory(deps);
     if (id === '../utils/contactImportStatus') return background.loadSource('src/app/utils/contactImportStatus.ts');
     if (id === '../utils/contactImportSummary') return background.loadSource('src/app/utils/contactImportSummary.ts');
+    if (id.endsWith('/utils/contactSource')) return background.loadSource('src/app/utils/contactSource.ts', {
+      '@surefy/exceptions/HTTP400Error': class extends Error { constructor({ message }) { super(message); } },
+    });
     return deps[id] || {};
   }, process: { cwd: () => '/workspace' }, console: { log() {}, error() {} }, ...globals });
   return exports;
@@ -46,6 +49,7 @@ test('API queues a tracked import with account scope and column mappings and ret
   assert.equal(result, stored);
   assert.equal(result.status, 'queued');
   assert.equal(result.import_options.execution_mode, 'worker');
+  assert.equal(result.import_options.source, 'import');
   assert.equal(result.result, undefined);
   assert.equal(queued.length, 1);
   assert.equal(queued[0][0], 'contact-import');
@@ -55,6 +59,11 @@ test('API queues a tracked import with account scope and column mappings and ret
   });
   assert.equal(queued[0][2].jobId, 'job');
   assert.equal((await service.getImportJobStatus('job')).bull_job_state, 'completed');
+  await service.queueContactImport('owner', 'company', 'phone', '91', '/upload.xlsx', 'Facebook', { phoneColumn: 'Phone', source: 'facebook' });
+  assert.equal(stored.import_options.source, 'facebook');
+  assert.equal(queued[1][1].options.source, 'facebook');
+  await assert.rejects(service.queueContactImport('owner', 'company', 'phone', '91', '/upload.xlsx', 'List', { source: 'unknown' }), /source must be import or facebook/);
+  assert.equal(queued.length, 2);
 });
 test('enqueue failures persist a failed import job and propagate instead of returning accepted', async () => {
   let failure;
@@ -118,7 +127,7 @@ test('contact import endpoint returns 202 with a queued job and the authenticate
     } },
   }).default;
   const response = await controller.importContacts({ ownerId: 'owner', userId: 'member', companyId: 'company',
-    body: { phone_number_id: 'phone', list_name: 'List', phone_column: 'Phone', tag_ids: 'tag1,tag2' },
+    body: { phone_number_id: 'phone', list_name: 'List', phone_column: 'Phone', tag_ids: 'tag1,tag2', source: 'facebook' },
     file: { path: '/temporary/upload.xlsx', originalname: 'upload.xlsx' },
   }, {});
   assert.equal(response.status, 202);
@@ -129,6 +138,7 @@ test('contact import endpoint returns 202 with a queued job and the authenticate
   assert.equal(response.data.imported, undefined);
   assert.equal(calls[0][0], 'owner');
   assert.equal(calls[0][1], 'company');
+  assert.equal(calls[0][6].source, 'facebook');
   assert.deepEqual(Array.from(calls[0][6].tagIds), ['tag1', 'tag2']);
 });
 
@@ -202,11 +212,11 @@ function importer(fatal = false, allInvalid = false, failProgressOnce = false, r
     },
     '@surefy/console/models/contact.model': {
       findOwnedByPhone: async (_user, phone) => contacts.get(phone),
-      update: async (id, data) => ({ id, ...data }),
+      update: async (id, data) => { assert.equal(data.source, undefined); return { id, ...data }; },
       create: async (row, trx) => {
         clock += rowDuration;
         assert.equal(trx, 'transaction');
-        assert.equal(row.source, 'import');
+        assert.equal(row.source, fixtures.source || 'import');
         if (rowDatabaseError) throw Object.assign(Error('column missing'), { code: '42703' });
         if (row.phone_number === '222') throw Error('row rejected');
         const contact = { ...row, id: 'contact' };
@@ -241,6 +251,23 @@ test('worker importer retains plan checks, list/tag writes, progress, and partia
   assert.equal(result.duplicate_count, 0); assert.equal(result.created_count, 1);
   assert.equal(result.updated_count, 0);
   assert.deepEqual(h.calls, [['owner', 'Contact'], ['owner', 'Contact']]);
+});
+
+test('Facebook import source survives worker processing and retries without relabeling existing contacts', async () => {
+  const h = importer(false, false, true, false, 0, { source: 'facebook' });
+  h.job.import_options = { source: 'facebook' };
+  await assert.rejects(h.run(), /Progress write failed/);
+  const result = await h.run();
+  assert.equal(result.updated_count, 1);
+  assert.equal(h.job.import_options.source, 'facebook');
+});
+
+test('spreadsheet row cannot override the saved import source', async () => {
+  const h = importer(false, false, false, false, 0, { parsed: {
+    headers: ['Phone', 'source'], valid: 1, invalid: 0, needs_country: 0, errors: [],
+    contacts: [{ phone_number: '111', country_code: '91', source: 'facebook' }],
+  } });
+  assert.equal((await h.run()).created_count, 1);
 });
 
 test('worker rejects changed capacity before creating a list or writing contacts', async () => {

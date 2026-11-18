@@ -591,7 +591,7 @@ class FacebookLeadService {
 
         return {
             form_connection_id: formConnectionId,
-            leads: rows.slice(0, limit),
+            leads: rows.slice(0, limit).map(lead => ({ ...lead, source: 'facebook' as const })),
             pagination: {
                 page,
                 limit,

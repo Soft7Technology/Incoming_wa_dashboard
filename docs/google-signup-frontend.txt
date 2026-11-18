@@ -1,6 +1,6 @@
 Google signup/login: backend setup and frontend handoff
 
-Implemented locally; not deployed, migrated, or tested against a live Google account.
+Backend Google authentication is deployed; a full browser Google sign-in has not been tested here.
 The frontend is a separate application and must implement the flow below.
 
 Google Cloud setup for app.soft7.in
@@ -19,14 +19,44 @@ Google Cloud setup for app.soft7.in
 
 Backend configuration
 GOOGLE_AUTH_CLIENT_ID=<same Web client ID as GOOGLE_CLIENT_ID, or your separate Web client ID>
-GOOGLE_AUTH_ALLOWED_ORIGINS=https://app.soft7.in
+GOOGLE_AUTH_ALLOWED_ORIGINS=https://app.soft7.in,https://app.thersvpdesk.com,https://app.software247.in,https://app.whatsgo.in,https://waofficial.businessautomations.in,https://app.akashadstudio.in
 GOOGLE_AUTH_TRUSTED_PROXIES=<optional trusted reverse-proxy IPs/CIDRs>
 
 GOOGLE_AUTH_CLIENT_ID is public configuration, not a secret. Do not expose the
 existing GOOGLE_CLIENT_SECRET or other Sheets credentials to the browser.
 There is intentionally no automatic fallback from GOOGLE_AUTH_CLIENT_ID to the
 Sheets ID: an operator must explicitly enable authentication.
-Local .env and production configuration were not changed by this implementation.
+Set the allowlist in the running API's environment as well as local .env.
+Updating this documentation or .env.example alone does not configure production.
+
+Google Cloud configuration for these dashboards
+In Google Auth Platform > Clients, select the Web application whose client ID
+matches response.data.client_id from POST /v1/auth/google/start. Add each entry
+below to Authorized JavaScript origins, retaining existing entries:
+  https://app.soft7.in
+  https://app.thersvpdesk.com
+  https://app.software247.in
+  https://app.whatsgo.in
+  https://waofficial.businessautomations.in
+  https://app.akashadstudio.in
+Save without trailing slashes or paths. The backend cannot register these origins
+in Google Cloud. A successful /start response verifies backend configuration only;
+verify the Google popup and /login response separately from each dashboard.
+Continue using the returned client_id and nonce with GIS and send the credential
+and matching flow_token to /v1/auth/google/login. No frontend endpoint or new
+redirect URI is required for this JavaScript callback flow.
+
+Production configuration update, 16 November 2026
+Added app.thersvpdesk.com, app.software247.in, app.whatsgo.in,
+waofficial.businessautomations.in and app.akashadstudio.in to the running API's
+GOOGLE_AUTH_ALLOWED_ORIGINS, retaining app.soft7.in. Existing active company
+and SSL registrations were verified for all six dashboards. Rolled both API
+replicas with the existing image; no application rebuild or migration was needed.
+Verified each origin's CORS preflight and POST /v1/auth/google/start (HTTP 200),
+unapproved-origin rejection (HTTP 403), and API health (HTTP 200).
+Google Cloud client configuration was not changed, and a full browser Google
+sign-in was not tested. Register the listed JavaScript origins on this Web client:
+396186384814-d8jact1o8qbl06heqd9e5uj3agieg2be.apps.googleusercontent.com
 
 Origins are an exact comma-separated allowlist, without trailing slashes. Each
 origin's hostname must resolve to exactly one active company_domains row and an

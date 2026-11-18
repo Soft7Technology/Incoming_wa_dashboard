@@ -1,0 +1,33 @@
+Contact attributes and campaign mappings
+
+Contact create/edit and imports save the same merged custom data in both
+attributes and custom_fields. The two fields are compatibility aliases.
+Prefer sending only attributes from the frontend. Existing clients sending
+custom_fields continue to work.
+
+Attribute names are matched without capitalization or surrounding whitespace.
+The existing spelling is retained: editing "check-in date" updates the existing
+"Check-In Date" key instead of creating another key. Values keep their original
+types and capitalization. Unrelated saved attributes are preserved.
+
+Do not submit different values for the same attribute in both columns or under
+different capitalization in one request. The backend rejects conflicting input
+with HTTP 400. Display that error so the user can choose the correct value.
+
+Build the campaign mapping selector from saved attribute keys. Use each key as
+the selector value without changing its spelling. For example:
+{
+  "parameter_mapping": {
+    "1": { "field": "contact.attributes.Check-In Date" },
+    "2": { "field": "contact.attributes.Check-Out Date" }
+  }
+}
+
+Campaign resolution accepts unambiguous capitalization differences for legacy
+mappings too. It preserves exact-key priority, literal dotted keys, nested
+fields, and per-recipient values. Missing values still need a supplied fallback
+or corrected contact data; this change does not invent placeholder text.
+
+Existing campaign variables are snapshots: editing a contact does not update
+previous campaigns or resend messages. Retry/resend is a separate user action.
+Deploy the API and campaign/import workers to enable the new backend behavior.

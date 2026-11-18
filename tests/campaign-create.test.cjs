@@ -38,6 +38,27 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
 
+test('imported date attributes resolve despite mapping capitalization and whitespace',async()=>{
+ const contacts=['24 Nov','23 Nov'].map((checkout,index)=>({id:`date-${index}`,
+  phone_number:`+91937259745${index}`,phone_number_id:'sender-db',custom_fields:{},
+  attributes:{'Check-In Date':'20 Nov','Check-Out Date':checkout}}));
+ const f=fixture({contacts});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':{field:'contact.custom_fields.Check-in Date'},
+  '2':{field:'contact.attributes. check-out date '}}});
+ const messages=f.writes.find(row=>row.messages).messages;
+ assert.deepEqual(JSON.parse(JSON.stringify(messages.map(row=>row.template_variables))),[
+  {'1':'20 Nov','2':'24 Nov'},{'1':'20 Nov','2':'23 Nov'}]);
+});
+
+test('ambiguous legacy case variants fail before persisting or queueing the campaign',async()=>{
+ const f=fixture({contacts:[{id:'ambiguous',phone_number:'+919372597458',phone_number_id:'sender-db',
+  attributes:{'Check-In Date':'20 Nov','Check-in Date':'21 Nov'}}]});
+ await assert.rejects(f.service.createCampaign('u','c',{...payload,
+  parameter_mapping:{'1':{field:'attributes.CHECK-IN DATE'}}}),/Ambiguous contact attribute/);
+ assert.deepEqual(f.writes,[]);
+});
+
 test('create and preview reject unavailable lists before any contact writes or quota consumption',async()=>{
  for(const method of ['createCampaign','previewRecipients']) {
   const f=fixture({availableLists:[]});

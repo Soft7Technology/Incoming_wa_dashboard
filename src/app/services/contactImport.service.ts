@@ -13,6 +13,7 @@ import ContactTagModel from '@surefy/console/models/contactTag.model';
 import XLSXParserService from '@surefy/console/services/xlsxParser.service';
 import * as path from 'path';
 import { buildContactImportSummary } from '../utils/contactImportSummary';
+import { contactImportSource } from '../utils/contactSource';
 
 const BATCH_SIZE = 500; // Process 500 contacts at a time
 
@@ -34,6 +35,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
   try {
     console.log(`[Job ${jobId}] Starting contact import processing`);
     const savedOptions = { ...(importJob.import_options || {}) };
+    const source = contactImportSource(savedOptions.source);
     await ImportJobModel.updateStatus(jobId, 'processing', {
       failed_at: null, error_message: null, error_stack: null,
       processed_rows: 0, successful_rows: 0, failed_rows: 0, skipped_rows: 0, progress_percentage: 0, errors: [],
@@ -142,7 +144,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
           if (contact) {
             // Update existing contact
             contact = await ContactModel.update(contact.id, {
-              attributes: { ...contact.attributes, ...contactData.attributes },
+              attributes: contactData.attributes,
               name: contactData.name || contact.name,
               email: contactData.email || contact.email,
               country_code: contactData.country_code,
@@ -157,7 +159,7 @@ export async function processContactImport(data: ContactImportJobData, updatePro
               phone_number_id:phone_number_id,
               name: contactData.attributes?.name || contactData.name || '',
               ...contactData,
-              source: 'import',
+              source,
             }, trx));
           }
 

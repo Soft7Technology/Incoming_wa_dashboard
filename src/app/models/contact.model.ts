@@ -6,6 +6,7 @@ import phoneNumberModel from './phoneNumber.model';
 import { Knex } from 'knex';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import { CampaignContactSelection } from '../interfaces/campaignContacts.interface';
+import { synchronizedContactFields } from '../utils/contactCustomFields';
 
 function parseImportedPhone(value: unknown, code = '') {
   try { return parseStoredContactPhone(value, code); }
@@ -87,7 +88,7 @@ class ContactModel extends BaseModel {
       }
       data = { ...data, phone_number_id: phone.id };
     }
-    const normalized = { ...data, source: data.source ?? 'manually', ...parseImportedPhone(data.phone_number, data.country_code || '') };
+    const normalized = { ...data, ...synchronizedContactFields(data), source: data.source ?? 'manually', ...parseImportedPhone(data.phone_number, data.country_code || '') };
     const insert = async (transaction: Knex.Transaction) => {
       // Serialize creates for the same owner, business number and normalized phone.
       const key = JSON.stringify([data.company_id, data.user_id, data.phone_number_id ?? null, normalized.country_code, normalized.phone_number]);
@@ -106,8 +107,11 @@ class ContactModel extends BaseModel {
   }
 
   async update(id: any, data: any, currentContact?: any) {
-    if (data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
+    const hasFields = data.attributes !== undefined || data.custom_fields !== undefined;
+    if (!hasFields && data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
     const existing = currentContact?.id === id ? currentContact : await this.findById(id);
+    if (hasFields) data = { ...data, ...synchronizedContactFields(data, existing) };
+    if (data.phone_number === undefined && data.country_code === undefined) return super.update(id, data);
     return super.update(id, { ...data, ...parseImportedPhone(
       data.phone_number ?? (data.country_code && !existing.country_code ? existing.phone_number.replace(/^\+/, '') : existing.phone_number), data.country_code ?? existing.country_code ?? '',
     ) });
@@ -236,7 +240,7 @@ class ContactModel extends BaseModel {
 
   async bulkCreate(contacts: any[], trx?: Knex.Transaction) {
     return (trx ? trx(this.tableName) : this.query()).insert(contacts.map(contact => ({
-      ...contact, source: contact.source ?? 'manually', ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
+      ...contact, ...synchronizedContactFields(contact), source: contact.source ?? 'manually', ...parseImportedPhone(contact.phone_number, contact.country_code || ''),
     }))).returning('*');
   }
 
@@ -246,8 +250,7 @@ class ContactModel extends BaseModel {
       if (existing) {
         return this.update(existing.id, {
           ...contact,
-          attributes: { ...existing.attributes, ...contact.attributes },
-        });
+        }, existing);
       }
       return this.create({ ...contact, user_id: userId });
     });

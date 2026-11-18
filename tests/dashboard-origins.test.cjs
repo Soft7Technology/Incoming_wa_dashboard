@@ -166,12 +166,14 @@ test('HTTP preflights allow registered dashboards with credentials and reject ar
     './routes/health.route': express.Router(),
     './middleware/upload.middleware': { UPLOADS_DIR: 'uploads' },
     './utils/asyncRouter': { protectAsyncRoutes() {} },
-  }, { process: { env: { WORKER_MODE: 'true' } } });
+  }, { process: { env: { WORKER_MODE: 'true', GOOGLE_FRONTEND_URL: 'https://legacy-sheets.test' } } });
   const app = createApp();
   const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
   t.after(() => new Promise(resolve => server.close(resolve)));
   const base = `http://127.0.0.1:${server.address().port}`;
-  for (const path of ['/v1/admin/facebook/oauth/start', '/v1/admin/instagram/oauth/start']) {
+  for (const path of ['/v1/admin/facebook/oauth/start', '/v1/admin/instagram/oauth/start',
+    '/v1/admin/google-sheets/connection', '/v1/admin/google-sheets/oauth/start',
+    '/v1/integrations/google/callback']) {
     const response = await fetch(base + path, { method: 'OPTIONS', headers: {
       Origin: 'https://dashboard.alpha.test', 'Access-Control-Request-Method': 'POST',
       'Access-Control-Request-Headers': 'authorization,content-type',
@@ -182,6 +184,13 @@ test('HTTP preflights allow registered dashboards with credentials and reject ar
     assert.match(response.headers.get('vary'), /Origin/);
     const denied = await fetch(base + path, { method: 'OPTIONS', headers: { Origin: 'https://evil.test' } });
     assert.equal(denied.headers.get('access-control-allow-origin'), null);
+  }
+  for (const origin of ['https://legacy-sheets.test', 'https://pending.test', 'https://ssl-pending.test',
+    'https://dashboard.alpha.test.evil.test', 'https://dashboard.alpha.test:8443']) {
+    const response = await fetch(base + '/v1/admin/google-sheets/connection', {
+      method: 'OPTIONS', headers: { Origin: origin, 'Access-Control-Request-Method': 'GET' },
+    });
+    assert.equal(response.headers.get('access-control-allow-origin'), origin === 'https://legacy-sheets.test' ? origin : null);
   }
 });
 
