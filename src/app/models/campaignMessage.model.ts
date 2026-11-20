@@ -410,6 +410,9 @@ class CampaignMessageModel extends BaseModel {
         'm.read_at as readAt'
       )
       .orderBy('cm.created_at', 'desc')
+      // Bulk-created recipients share a timestamp; a unique tie-breaker keeps
+      // offset pages from repeating contacts and omitting others on rebroadcast.
+      .orderBy('cm.id', 'desc')
       .limit(pageSize)
       .offset(offset);
 

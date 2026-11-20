@@ -8,7 +8,11 @@ const customFields = {};
 vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/utils/contactCustomFields.ts','utf8'),{
  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
 }).outputText,{exports:customFields,require:()=>HttpError});
-function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, tag=null, availableLists}={}) {
+const campaignImage = {};
+vm.runInNewContext(ts.transpileModule(fs.readFileSync('src/app/utils/campaignImage.ts','utf8'),{
+ compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
+}).outputText,{exports:campaignImage,URL,require:()=>HttpError});
+function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, tag=null, availableLists, components=[]}={}) {
   const writes=[], reads=[], contactBatches=[], usageCalls=[];
   const phone={id:'sender-db',phone_number_id:'payload-sender',user_id:wrongSender?'other':'u',company_id:'c'};
   const deps={
@@ -17,11 +21,12 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
     '../utils/campaignPhone':require('../src/app/utils/campaignPhone'),
     '../utils/campaignRecipients':require('../src/app/utils/campaignRecipients'),
     '../utils/contactCustomFields':customFields,
+    '../utils/campaignImage':campaignImage,
     './planUsage.service':{run:async(_user,feature,fn,amount=1)=>{usageCalls.push({feature,amount});writes.push(feature === 'Contact' ? 'contact-usage' : 'usage');return fn({});}},
     '../models/campaign.model':{create:async data=>{writes.push({campaign:data});return {id:'campaign',...data};}},
     '../models/campaignMessage.model':{bulkCreate:async data=>{writes.push({messages:data});}},
     './contact.service':{getContactsByFilters:async()=>contacts},
-    '../models/template.model':{findById:async()=>{reads.push('template');return {status:'APPROVED',components:[]};}},
+    '../models/template.model':{findById:async()=>{reads.push('template');return {status:'APPROVED',components};}},
     '../models/contact.model':{findCampaignPhoneCandidates:async(...args)=>{reads.push(['candidates',...args]);return saved;},
       findWithFilters:()=>{throw Error('Unexpected redundant contact lookup');},
       bulkCreate:async data=>{contactBatches.push(data);writes.push('contacts');}},
@@ -37,6 +42,95 @@ function fixture({contacts=[], saved=contacts, excluded=[], wrongSender=false, t
   return {service:exports.default,writes,reads,contactBatches,usageCalls};
 }
 const payload={name:'Test',phone_number_id:'payload-sender',template_id:'template'};
+
+function workerPayloadBuilder() {
+ const exports={};
+ const deps={
+  '../../app/utils/campaignImage':campaignImage,
+  bullmq:{Worker:class {on(){}}},
+  '../campaignCapacity':{campaignCapacity:{},createCapacitySampler:()=>({})},
+ };
+ const js=ts.transpileModule(fs.readFileSync('src/queues/processors/campaignExecution.processor.ts','utf8'),{
+  compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020,esModuleInterop:true},
+ }).outputText;
+ vm.runInNewContext(js+'\nexports.buildTemplatePayloadForTest = buildTemplatePayload;',{
+  exports,require:name=>name.endsWith('/databaseAwareWorker')?background.processorFactory(deps):deps[name]||{},
+  console:{log(){}},setInterval:()=>({unref(){}}),
+ });
+ return exports.buildTemplatePayloadForTest;
+}
+
+test('image attributes are snapshotted per recipient and used by both sending paths',async()=>{
+ const components=[{type:'HEADER',format:'IMAGE'},{type:'BODY',text:'Hello {{1}}'}];
+ const contacts=[
+  {id:'image-a',name:'Alice',phone_number:'+919372597450',phone_number_id:'sender-db',attributes:{'Image URL':' https://example.com/a.jpg '}},
+  {id:'image-b',name:'Bob',phone_number:'+919372597451',phone_number_id:'sender-db',custom_fields:{'Image URL':'https://example.com/b.jpg'}},
+  {id:'image-c',name:'Carol',phone_number:'+919372597452',phone_number_id:'sender-db',attributes:{'Image URL':null}},
+ ];
+ const f=fixture({contacts,components});
+ await f.service.createCampaign('u','c',{...payload,parameter_mapping:{
+  '1':{field:'contact.name'},
+  header_image_url:{field:'contact.attributes.Image URL',fallbackValue:'https://example.com/fallback.jpg'},
+ },media_uploads:[{type:'image',media_id:'shared-media'}]});
+ const messages=f.writes.find(row=>row.messages).messages;
+ contacts[0].attributes['Image URL']='https://example.com/changed.jpg';
+ const expected=['https://example.com/a.jpg','https://example.com/b.jpg','https://example.com/fallback.jpg'];
+ const workerBuild=workerPayloadBuilder();
+ for (const [i,message] of messages.entries()) {
+  assert.equal(message.template_variables.header_image_url,expected[i]);
+  for (const build of [workerBuild,f.service.buildTemplatePayload.bind(f.service)]) {
+   const result=build({components},message.template_variables,[{type:'image',media_id:'shared-media'}]);
+   assert.deepEqual(JSON.parse(JSON.stringify(result.components)),[
+    {type:'header',parameters:[{type:'image',image:{link:expected[i]}}]},
+    {type:'body',parameters:[{type:'text',text:contacts[i].name}]},
+   ]);
+  }
+ }
+});
+
+test('missing or invalid contact images fail before campaign persistence and queueing',async()=>{
+ for(const value of [undefined,null,'','  ','not-a-url','javascript:alert(1)','ftp://example.com/a.jpg',
+  'https://user:password@example.com/a.jpg','https://example.com/bad image.jpg',42,false,{}]) {
+  const f=fixture({components:[{type:'HEADER',format:'IMAGE'}],contacts:[{
+   id:'invalid-image',phone_number:'+919372597458',phone_number_id:'sender-db',attributes:{image:value},
+  }]});
+  await assert.rejects(f.service.createCampaign('u','c',{...payload,send_immediately:true,
+   parameter_mapping:{header_image_url:{field:'attributes.image'}}}),error=>{
+    assert.equal(error.details.code,'CAMPAIGN_IMAGE_URL_INVALID');
+    assert.equal(error.details.field,'parameter_mapping.header_image_url');
+    assert.equal(error.details.contact_id,'invalid-image');return true;
+   });
+  assert.deepEqual(f.writes,[]);
+ }
+});
+
+test('image mapping requires an IMAGE header before preparing recipients',async()=>{
+ for(const components of [[],[{type:'HEADER',format:'TEXT'}],[{type:'HEADER',format:'VIDEO'}]]) {
+  const f=fixture({components});
+  await assert.rejects(f.service.createCampaign('u','c',{...payload,
+   parameter_mapping:{header_image_url:{value:'https://example.com/a.jpg'}}}),
+   error=>error.details.code==='CAMPAIGN_IMAGE_HEADER_REQUIRED');
+  assert.deepEqual(f.writes,[]);
+ }
+});
+
+test('both image builders retain fixed media compatibility and reject broken mapped images',()=>{
+ const workerBuild=workerPayloadBuilder();
+ const service=fixture().service;
+ const template={components:[{type:'HEADER',format:'IMAGE',example:{header_handle:['https://example.com/sample.jpg']}}]};
+ for(const build of [workerBuild,service.buildTemplatePayload.bind(service)]) {
+  for(const [media,expected] of [
+   [{type:'image',media_id:'id',url:'https://example.com/ignored.jpg'},{id:'id'}],
+   [{type:'image',link:'https://example.com/link.jpg'},{link:'https://example.com/link.jpg'}],
+   [{type:'image',url:'https://example.com/url.jpg'},{link:'https://example.com/url.jpg'}],
+   [undefined,{link:'https://example.com/sample.jpg'}],
+  ]) {
+   assert.deepEqual(JSON.parse(JSON.stringify(build(template,{},media?[media]:[]).components[0].parameters[0].image)),expected);
+  }
+  assert.throws(()=>build(template,{header_image_url:null},[{type:'image',media_id:'id'}]),
+   error=>error.details.code==='CAMPAIGN_IMAGE_URL_INVALID');
+ }
+});
 
 test('imported date attributes resolve despite mapping capitalization and whitespace',async()=>{
  const contacts=['24 Nov','23 Nov'].map((checkout,index)=>({id:`date-${index}`,
@@ -125,6 +219,7 @@ test('contact-prefixed custom fields and legacy attributes resolve independently
  const messages=f.writes.find(w=>w.messages).messages;
  const exports={};
  const deps={
+  '../../app/utils/campaignImage':campaignImage,
   'bullmq':{Worker:class {on(){}}},
   '../campaignCapacity':{campaignCapacity:{},createCapacitySampler:()=>({})},
  };

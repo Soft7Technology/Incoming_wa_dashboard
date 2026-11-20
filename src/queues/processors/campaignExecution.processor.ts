@@ -1,4 +1,5 @@
 import { campaignRecipientNumber } from '../../app/utils/campaignPhone';
+import { campaignHeaderImage } from '../../app/utils/campaignImage';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import { Job, DelayedError } from 'bullmq';
 import { campaignExecutionQueue } from '../campaignExecution.queue';
@@ -349,16 +350,11 @@ function buildTemplatePayload(template: any, variables: Record<string, any>, med
   if (template.components) {
     for (const component of template.components) {
       if (component.type === 'HEADER' && component.format === 'IMAGE') {
-        const media = mediaUploads.find((m: any) => m.type === 'image');
-        if (media) {
+        const image = campaignHeaderImage(variables, mediaUploads, component);
+        if (image) {
           components.push({
             type: 'header',
-            parameters: [{ type: 'image', image: media.media_id ? { id: media.media_id } : { link: media.link || media.url } }],
-          });
-        } else if (component.example?.header_handle?.[0]) {
-          components.push({
-            type: 'header',
-            parameters: [{ type: 'image', image: { link: component.example.header_handle[0] } }],
+            parameters: [{ type: 'image', image }],
           });
         }
       } else if (component.type === 'HEADER' && component.format === 'VIDEO') {

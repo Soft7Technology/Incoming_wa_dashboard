@@ -75,3 +75,54 @@ Existing string entries remain supported: `fullName` maps to `name`, `vb_phoneno
 Mappings are resolved separately for each recipient when the campaign is created and saved in its message's `template_variables`. Subsequent contact edits do not change those saved values. This extends `parameter_mapping` on the existing snake_case campaign API; the alternate camelCase payload (`templateMapping`, `contactList`, etc.) is not an API alias.
 
 Recipient previews include each contact's `custom_fields` and `attributes` objects so the frontend can discover available keys. Contact creation accepts `custom_fields` as an object or a JSON object string and saves it in that column. Campaign field resolution also supports older rows whose `custom_fields` or `attributes` contain a JSON object string. Malformed referenced field containers produce a validation error identifying the contact before campaign/message creation; they do not silently turn a stored value into a missing parameter.
+
+## Images from contact columns
+
+Campaigns with an approved `HEADER` component whose `format` is `IMAGE` accept the reserved mapping key `header_image_url`. It selects an image URL separately for each recipient using the same contact field lookup as text variables. No database migration or additional upload is required for a stored URL.
+
+Send this in the existing `POST /v1/admin/campaigns` request (the API-key equivalent is `POST /v1/api/campaigns`):
+
+```json
+{
+  "name": "Personalized image campaign",
+  "phone_number_id": "SENDING_PHONE_NUMBER_ID",
+  "template_id": "APPROVED_IMAGE_TEMPLATE_UUID",
+  "contact_filters": { "list_ids": ["CONTACT_LIST_UUID"] },
+  "parameter_mapping": {
+    "1": { "field": "contact.name", "fallbackValue": "Guest" },
+    "header_image_url": {
+      "field": "contact.attributes.Image URL",
+      "fallbackValue": "https://cdn.example.com/default.jpg"
+    }
+  },
+  "send_immediately": false
+}
+```
+
+For a contact with `attributes: { "Image URL": "https://cdn.example.com/alice.jpg" }`, the outgoing header contains `parameters: [{ "type": "image", "image": { "link": "https://cdn.example.com/alice.jpg" } }]`. Another contact uses its own URL. The numbered body mappings remain independent.
+
+`contact.custom_fields.Image URL` also works, including the existing lookup across both attribute containers. Nested paths, literal dotted keys, and case/whitespace matching follow the text-variable rules above. A fixed mapped image can use `"header_image_url": { "value": "https://cdn.example.com/shared.jpg" }`.
+
+### Frontend controls and preview
+
+1. Show an image source selector only for an `IMAGE` header: **Upload or fixed URL** and **Contact column**.
+2. For **Contact column**, reuse the variable field selector and populate it from the recipient preview's contact columns, `attributes`, and `custom_fields`. Store the selected field path in `parameter_mapping.header_image_url.field`; use explicit field objects instead of plain strings. Do not add `{{header_image_url}}` to the template text.
+3. Offer an optional **Fallback image URL** input. Send it as `fallbackValue` only when supplied. It applies to missing or null values. Empty strings and invalid nonempty values cause validation errors even when a fallback is configured; show these contacts as needing correction.
+4. Display the selected recipient's resolved image and URL in the preview. Use a directly accessible image URL, not a page containing an image or a local file path. Backend validation checks HTTP(S) URL syntax and rejects embedded credentials; it does not download the URL or check image contents or availability.
+5. When switching back to **Upload or fixed URL**, remove `header_image_url` from `parameter_mapping` and use the existing `media_uploads`, for example `[{ "type": "image", "url": "https://cdn.example.com/shared.jpg" }]` or `[{ "type": "image", "media_id": "UPLOADED_MEDIA_ID" }]`. Remove the image mapping when switching to a template without an image header.
+
+The mapped image takes precedence over campaign-wide `media_uploads` and the template sample. An invalid mapped image never silently switches to those images. When the reserved mapping key is absent, the existing shared media and template sample behavior remains in place. Within a shared image entry, `media_id` takes precedence over `link` or `url`.
+
+### Validation and saved campaigns
+
+Creation returns HTTP 400 if a mapped recipient image is missing or invalid, before saving the campaign or recipient messages or queueing sends. Error details include `code: "CAMPAIGN_IMAGE_URL_INVALID"`, `field: "parameter_mapping.header_image_url"`, and `contact_id` for the affected recipient. Display the error on the image selector and identify the contact that needs correction. Direct-number requests can still create missing contacts during the existing recipient preparation step before image validation.
+
+Mapping an image on a template without an image header returns HTTP 400 with `code: "CAMPAIGN_IMAGE_HEADER_REQUIRED"` and the same `field`. Existing malformed mapping and attribute-container validation errors also apply.
+
+Resolved image URLs are saved in each message's `template_variables.header_image_url` at campaign creation. Later edits to contact attributes do not change an already-created campaign. Create a new campaign to use updated links. The recipient preview endpoint lists contacts and attributes; it does not validate the image mapping.
+
+### Test sends
+
+`POST /v1/admin/campaigns/:id/test` retains its existing `{ "test_phone_number": "..." }` request. It resolves mappings using the existing mock contact (`name: "Test User"`, the supplied phone number, and empty attributes), not the saved contact matching that phone number. For a contact-column image, configure a valid fallback URL to test sending; otherwise the test returns `CAMPAIGN_IMAGE_URL_INVALID`. A fixed mapped URL or the existing shared media also works. Production sends use each recipient's saved image URL. Both paths use the same image payload builder.
+
+Deploy the updated API and campaign worker together before enabling the frontend selector. Regression checks: `node --test tests/campaign-create.test.cjs tests/contact-custom-fields.test.cjs tests/template-payload.test.cjs`.

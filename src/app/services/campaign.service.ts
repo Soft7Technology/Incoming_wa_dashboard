@@ -3,6 +3,7 @@ import { createOptionalCampaignPhoneResolver, campaignRecipientNumber, validateC
 import planUsageService from './planUsage.service';
 import { campaignPhoneIdentity, uniqueCampaignRecipients } from '../utils/campaignRecipients';
 import { parseContactCustomFields, findContactFieldKey } from '../utils/contactCustomFields';
+import { CAMPAIGN_IMAGE_VARIABLE, campaignHeaderImage, validateCampaignImageUrl } from '../utils/campaignImage';
 import { getMessageError } from '@surefy/console/app/utils/messageError';
 import CampaignModel from '../models/campaign.model';
 import CampaignMessageModel from '../models/campaignMessage.model';
@@ -48,7 +49,7 @@ interface CreateCampaignData {
     attributes?: Record<string, any>;
   };
   parameter_mapping?: ParameterMapping;
-  media_uploads?: Array<{ type: string; media_id: string; url?: string }>;
+  media_uploads?: Array<{ type: string; media_id?: string; url?: string; link?: string }>;
   scheduled_at?: Date | 'now';
   send_immediately?: boolean;   // frontend sends this flag
 }
@@ -95,6 +96,14 @@ class CampaignService {
 
     if (!preview && template!.status !== 'APPROVED') {
       throw new HTTP400Error({ message: 'Template must be approved before use in campaigns' });
+    }
+
+    if (!preview && Object.prototype.hasOwnProperty.call(data.parameter_mapping || {}, CAMPAIGN_IMAGE_VARIABLE) &&
+        !template!.components?.some((component: any) => component.type === 'HEADER' && component.format === 'IMAGE')) {
+      throw new HTTP400Error({
+        message: 'header_image_url requires a template with an IMAGE header',
+        details: { code: 'CAMPAIGN_IMAGE_HEADER_REQUIRED', field: 'parameter_mapping.header_image_url' },
+      });
     }
 
     // ── Resolve tag names → tag IDs ──────────────────────────────────────
@@ -273,11 +282,13 @@ class CampaignService {
     }
 
     // Resolve from each full contact record before persisting or queueing the campaign.
-    const recipientMessages = contactList.map(contact => ({
-      contact_id: contact.id,
-      status: 'pending',
-      template_variables: this.resolveTemplateVariables(contact, data.parameter_mapping || {}),
-    }));
+    const recipientMessages = contactList.map(contact => {
+      const variables = { ...this.resolveTemplateVariables(contact, data.parameter_mapping || {}) };
+      if (Object.prototype.hasOwnProperty.call(variables, CAMPAIGN_IMAGE_VARIABLE)) {
+        variables[CAMPAIGN_IMAGE_VARIABLE] = validateCampaignImageUrl(variables[CAMPAIGN_IMAGE_VARIABLE], contact.id);
+      }
+      return { contact_id: contact.id, status: 'pending', template_variables: variables };
+    });
 
     // Create campaign
     const campaign = await planUsageService.run(userId, 'Campaign', async trx => {
@@ -599,32 +610,11 @@ class CampaignService {
     if (template.components) {
       for (const component of template.components) {
         if (component.type === 'HEADER' && component.format === 'IMAGE') {
-          const media = mediaUploads.find((m) => m.type === 'image');
-          console.log('Media uploads:', mediaUploads, media);
-          if (media) {
+          const image = campaignHeaderImage(variables, mediaUploads, component);
+          if (image) {
             components.push({
               type: 'header',
-              parameters: [
-                {
-                  type: 'image',
-                  image: {
-                    id: media.media_id,
-                  },
-                },
-              ],
-            });
-          } else if (component.example?.header_handle?.[0]) {
-            // Use the template's example image URL if no media uploaded
-            components.push({
-              type: 'header',
-              parameters: [
-                {
-                  type: 'image',
-                  image: {
-                    link: component.example.header_handle[0],
-                  },
-                },
-              ],
+              parameters: [{ type: 'image', image }],
             });
           }
         } else if (component.type === 'HEADER' && component.format === 'VIDEO') {
