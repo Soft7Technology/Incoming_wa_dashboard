@@ -48,7 +48,19 @@ class CompanyModel extends BaseModel {
   }
 
   async getCompanyDetails(domain_name: string) {
-    return this.query().where({ domain: domain_name }).first()
+    // Public login branding must resolve registered white-label domains and expose no credentials.
+    const domains = await this.db('company_domains').where({ domain_name }).limit(2)
+      .select('company_id', 'status', 'ssl_status');
+    const columns = ['id', 'name', 'logo', 'domain'];
+    if (domains.length) {
+      if (domains.length !== 1 || domains[0].status !== 'active' || domains[0].ssl_status !== 'active') return undefined;
+      return this.query().where({ id: domains[0].company_id, status: 'active' }).whereNull('deleted_at')
+        .select(columns).first();
+    }
+    // Preserve legacy company-domain lookups when no domain registration exists.
+    const companies = await this.query().where({ domain: domain_name, status: 'active' }).whereNull('deleted_at')
+      .select(columns).limit(2);
+    return companies.length === 1 ? companies[0] : undefined;
   }
 
   async getUserStats(userId: string) {

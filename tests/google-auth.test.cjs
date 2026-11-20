@@ -24,6 +24,7 @@ test('production platform-domain password login remains scoped for superadmins a
   const controller = load('src/app/http/controllers/auth.controller.ts', {
     '@surefy/utils/Controller': { tryCatchAsync: f => f, successResponse: (_req, _res, _message, result) => result },
     '@surefy/utils/HttpStatusCode': {}, '@surefy/exceptions/HTTP400Error': BadRequest,
+    '@surefy/exceptions/HTTP404Error': BadRequest,
     '@surefy/console/services/auth.service': { login: async () => { sessionCalls++; return { data: { id: user.id } }; } },
     '../../services/company.service': {}, '../../utils': {}, '../../models/activityLogs.model': { create: async () => {} },
     '@surefy/config/firebase.config': {}, '../../models/companyDomain.model': { findLoginDomain: async () => null },

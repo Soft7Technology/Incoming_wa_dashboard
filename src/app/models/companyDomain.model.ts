@@ -6,6 +6,15 @@ class CompanyDomainModel extends BaseModel {
     super('company_domains');
   }
 
+  async update(id: string, data: any) {
+    // pg encodes JavaScript arrays as PostgreSQL arrays, not JSON. This column is JSONB.
+    const values = { ...data };
+    if (Array.isArray(values.ssl_validation_records)) {
+      values.ssl_validation_records = JSON.stringify(values.ssl_validation_records);
+    }
+    return super.update(id, values);
+  }
+
   async getCompanyDomains(userId: string) {
     return this.query().returning("*")
   }

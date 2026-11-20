@@ -3,6 +3,7 @@ import { successResponse, tryCatchAsync } from '@surefy/utils/Controller';
 import { HttpStatusCode } from '@surefy/utils/HttpStatusCode';
 import AuthService from '@surefy/console/services/auth.service';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
+import HTTP404Error from '@surefy/exceptions/HTTP404Error';
 import companyService from '../../services/company.service';
 import sendEmail from '../../utils';
 import activityLogsModel from '../../models/activityLogs.model';
@@ -304,12 +305,16 @@ class AuthController {
     }
   }
 
-  async getCompanyDetails(req:Request,res:Response){
-    const {domain_name} = req.body
-    const company_details = await companyModel.getCompanyDetails(domain_name)
-    console.log("Company details",company_details)
-    return res.status(200).json({success:true,message:"Company details retrieve successfully",company:company_details})
-  } 
+  getCompanyDetails = tryCatchAsync(async (req: Request, res: Response) => {
+    const input = req.method === 'GET' ? req.query.domain_name ?? req.body?.domain_name : req.body?.domain_name;
+    if (typeof input !== 'string' || input.trim().length > 253 ||
+        !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(input.trim())) {
+      throw new HTTP400Error({ message: 'Provide domain_name as a hostname, for example app.example.com.' });
+    }
+    const company = await companyModel.getCompanyDetails(input.trim().toLowerCase());
+    if (!company) throw new HTTP404Error({ message: 'No active company is configured for this domain.' });
+    return res.status(200).json({ success: true, message: 'Company details retrieved successfully', company });
+  });
 }
 
 export default new AuthController();

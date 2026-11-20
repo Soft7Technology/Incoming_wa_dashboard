@@ -9,6 +9,7 @@ import { generateCompanyKey } from '@surefy/middleware/auth.middleware';
 import HTTP400Error from '@surefy/exceptions/HTTP400Error';
 import HTTP403Error from '@surefy/exceptions/HTTP403Error';
 import HTTP404Error from '@surefy/exceptions/HTTP404Error';
+import { CustomError } from '@surefy/exceptions/CustomError';
 import AuthService from './auth.service';
 import userModel from '../models/user.model';
 import companyModel from '../models/company.model';
@@ -81,6 +82,7 @@ class CompanyService {
   }
 
   private async createCustomerName(company_domain: any) {
+    this.requireCloudflareToken();
     try {
       const payload = {
         hostname: company_domain.domain_name,
@@ -95,12 +97,11 @@ class CompanyService {
         },
       };
 
-      console.log("PAYLOAD:", payload, process.env.CLOUDFLARE_API_TOKEN);
-
       const response = await axios.post(
         "https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames",
         payload,
         {
+          timeout: 15000,
           headers: {
             Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
             "Content-Type": "application/json",
@@ -108,49 +109,56 @@ class CompanyService {
         }
       );
 
-      console.log("Cloudflare Response:", response.data);
-
+      if (response.data?.success === false || !response.data?.result?.id) {
+        throw this.cloudflareFailure({ response });
+      }
       return response.data;
     } catch (error: any) {
-      console.error("Cloudflare Custom Hostname Error");
-
-      if (error.response) {
-        console.error("Status:", error.response.status);
-        console.error("Response:", error.response.data);
-
-        throw new Error(
-          error.response.data?.errors?.[0]?.message ||
-          "Cloudflare API request failed"
-        );
-      }
-
-      if (error.request) {
-        console.error("No response received:", error.request);
-
-        throw new Error(
-          "No response received from Cloudflare. Check network connectivity."
-        );
-      }
-
-      console.error("Unexpected Error:", error.message);
-
-      throw new Error(error.message || "Unknown error occurred");
+      throw this.cloudflareFailure(error);
     }
   }
 
-  private async getCustomHostnameDetails(hostnameId: string) {
-    console.log("Token",process.env.CLOUDFLARE_API_TOKEN,hostnameId)
-    const response = await axios.get(
-      `https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames/${hostnameId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+  private requireCloudflareToken() {
+    if (!process.env.CLOUDFLARE_API_TOKEN?.trim()) {
+      throw new CustomError('Own-domain registration is not configured on the server.', 503, true,
+        { code: 'CLOUDFLARE_NOT_CONFIGURED' });
+    }
+  }
 
-    return response.data.result;
+  private cloudflareFailure(error: any) {
+    if (error instanceof CustomError) return error;
+    const status = error?.response?.status;
+    const message = status === 401 || status === 403
+      ? 'Cloudflare rejected the server credentials or zone permissions. Contact your administrator.'
+      : 'Cloudflare could not complete the domain request. Check the domain configuration and try again.';
+    return new CustomError(message, 502, true, {
+      code: 'CLOUDFLARE_DOMAIN_REQUEST_FAILED',
+      ...(typeof status === 'number' ? { provider_status: status } : {}),
+      provider_codes: Array.isArray(error?.response?.data?.errors)
+        ? error.response.data.errors.map((entry: any) => entry?.code).filter((code: unknown) => typeof code === 'number') : [],
+    });
+  }
+
+  private async getCustomHostnameDetails(hostnameId: string) {
+    this.requireCloudflareToken();
+    try {
+      const response = await axios.get(
+        `https://api.cloudflare.com/client/v4/zones/1b1e4a9725e08e652c177d3cfc2e3eed/custom_hostnames/${hostnameId}`,
+        {
+          timeout: 15000,
+          headers: {
+            Authorization: `Bearer ${process.env.CLOUDFLARE_API_TOKEN}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (response.data?.success === false || !response.data?.result?.id) {
+        throw this.cloudflareFailure({ response });
+      }
+      return response.data.result;
+    } catch (error) {
+      throw this.cloudflareFailure(error);
+    }
   }
 
   async getCompanyDetails(companyId: string) {
@@ -417,6 +425,7 @@ class CompanyService {
     company_id: string,
     domain_name: string
   ) {
+    this.requireCloudflareToken();
     const companyDomain = await companyDomainModel.create({
       user_id,
       company_id,
@@ -432,9 +441,8 @@ class CompanyService {
     );
 
     if (!response.success) {
-      throw new Error(
-        response.message || "Cloudflare hostname creation failed"
-      );
+      throw new CustomError(response.message || 'Cloudflare hostname creation failed', 502, true,
+        { code: 'CLOUDFLARE_DOMAIN_REQUEST_FAILED' });
     }
 
     const details = response.data;
@@ -654,12 +662,8 @@ class CompanyService {
         data: details,
       };
     } catch (error: any) {
-      console.error(error);
-
-      return {
-        success: false,
-        message: error.message,
-      };
+      // Preserve operational errors for the HTTP handler; never turn SQL failures into public strings.
+      throw error;
     }
   }
 

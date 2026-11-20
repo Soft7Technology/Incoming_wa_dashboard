@@ -35,6 +35,10 @@ companyRoute.put('/user/:userId', CompanyController.updateCompanyUser);
 companyRoute.get('/user/:userId', companyController.getCompanyUser);
 companyRoute.post('/custom-domain', companyController.createCustomName);
 companyRoute.post('/own-domain', companyController.createOwnDomain);
+companyRoute.get('/own-domain', (_req, res) => {
+  res.setHeader('Allow', 'POST');
+  res.status(405).json({ success: false, message: 'Use POST with a domain_name JSON field to register an own domain.' });
+});
 companyRoute.get('/domain', companyController.getCompanyCustomDomain);
 companyRoute.get('/domain-status/:domainId', companyController.domainStatus);
 companyRoute.get('/company-domain', companyController.getCompanyDomain);

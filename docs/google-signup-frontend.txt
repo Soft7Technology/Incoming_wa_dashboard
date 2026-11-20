@@ -19,7 +19,7 @@ Google Cloud setup for app.soft7.in
 
 Backend configuration
 GOOGLE_AUTH_CLIENT_ID=<same Web client ID as GOOGLE_CLIENT_ID, or your separate Web client ID>
-GOOGLE_AUTH_ALLOWED_ORIGINS=https://app.soft7.in,https://app.thersvpdesk.com,https://app.software247.in,https://app.whatsgo.in,https://waofficial.businessautomations.in,https://app.akashadstudio.in
+GOOGLE_AUTH_ALLOWED_ORIGINS=https://app.soft7.in,https://app.thersvpdesk.com,https://app.software247.in,https://app.whatsgo.in,https://waofficial.businessautomations.in,https://app.akashadstudio.in,https://wba.quantumbyteitsolutions.com
 GOOGLE_AUTH_TRUSTED_PROXIES=<optional trusted reverse-proxy IPs/CIDRs>
 
 GOOGLE_AUTH_CLIENT_ID is public configuration, not a secret. Do not expose the
@@ -39,12 +39,34 @@ below to Authorized JavaScript origins, retaining existing entries:
   https://app.whatsgo.in
   https://waofficial.businessautomations.in
   https://app.akashadstudio.in
+  https://wba.quantumbyteitsolutions.com
 Save without trailing slashes or paths. The backend cannot register these origins
 in Google Cloud. A successful /start response verifies backend configuration only;
 verify the Google popup and /login response separately from each dashboard.
 Continue using the returned client_id and nonce with GIS and send the credential
 and matching flow_token to /v1/auth/google/login. No frontend endpoint or new
 redirect URI is required for this JavaScript callback flow.
+
+Quantum Byte dashboard setup, 20 November 2026
+https://wba.quantumbyteitsolutions.com already has one active company_domains row
+with active SSL for company Aditya (2820c692-aec0-411b-a52d-b179cf601712).
+No additional domain row is needed. Deployed the current main checkout plus the
+local company-details and own-domain fixes as image
+docker.io/library/incoming-api:domains-41f36e3-20261120-075023.
+Both incoming-api replicas and the incoming-worker replica are ready, with zero
+restarts at verification. No database migrations were required.
+The deployments now reference soft7-env-domains-41f36e3-20261120-075023, a copy of
+their previous secret with this origin appended and all six existing origins
+preserved. The previous secret and image remain available for rollback.
+Release source and protected configuration backups are under
+/root/soft7-releases/domains-41f36e3-20261120-075023 on the production server.
+Verified live: health HTTP 200, Google preflight HTTP 204 with this exact origin,
+POST /v1/auth/google/start HTTP 200, POST /v1/auth/company-details HTTP 200 with
+Aditya branding, app.soft7.in start HTTP 200, and unknown-origin rejection HTTP 403.
+Google Cloud configuration has not been changed here and a complete browser
+Google sign-in has not been tested. Ensure this origin is in Authorized JavaScript
+origins on the Web OAuth client used by GOOGLE_AUTH_CLIENT_ID, retaining existing
+entries and redirect URIs, then complete Google signup in the browser.
 
 Production configuration update, 16 November 2026
 Added app.thersvpdesk.com, app.software247.in, app.whatsgo.in,

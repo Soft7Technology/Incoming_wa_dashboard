@@ -696,8 +696,16 @@ class CompanyController {
     );
   }
 
-  async createOwnDomain(req: AuthRequest, res: Response) {
-    const { domain_name } = req.body;
+  createOwnDomain = tryCatchAsync(async (req: AuthRequest, res: Response) => {
+    const input = req.body?.domain_name;
+    if (typeof input !== 'string' || !input.trim() || input.trim().length > 253 ||
+        !/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(input.trim())) {
+      throw new HTTP400Error({
+        message: 'Provide domain_name as a hostname such as app.example.com, without https://, a path, or spaces.',
+        details: { code: 'DOMAIN_NAME_INVALID', field: 'domain_name' },
+      });
+    }
+    const domain_name = input.trim().toLowerCase();
 
     const existingDomain = await companyDomainModel.findByDomain(domain_name)
     if(existingDomain){
@@ -729,7 +737,7 @@ class CompanyController {
       "Domain name sent successfully to superadmin for review",
       createCustomerDomain
     );
-  }
+  });
 
   async getCompanyDomain(req: AuthRequest, res: Response) {
     const companyDomain = await companyService.getCompanyDomains(req.userId!)

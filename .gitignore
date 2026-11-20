@@ -64,3 +64,5 @@ backups/
 !/tests/team-invite.test.cjs
 !/tests/api-request-logs.test.cjs
 !/tests/contact-custom-fields.test.cjs
+!/tests/company-own-domain.test.cjs
+!/tests/company-branding.test.cjs
